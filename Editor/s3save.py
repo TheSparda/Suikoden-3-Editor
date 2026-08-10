@@ -97,15 +97,21 @@ GLOBAL = {
 }
 
 # --- Inventory ------------------------------------------------------------------
-# Party + storage inventory begins at file offset 0x7060 (herrvillain map: Party
-# Inventory Hugo 0x7060, then Chris/Geddoe/Thomas, then Storage 0x7420). Entries are
-# 8 bytes: item id (u16) + quantity (u16) + 4 reserved bytes (0). Empty slot = id 0.
-# Validated against real saves (consumables show real stack counts). We treat the whole
-# span as one flat editable list, which is what a player wants (change ids/quantities).
-INV_BASE   = 0x7060
+# Entries are 8 bytes: item id (u16) + quantity (u16) + 4 reserved. Empty slot = id 0.
+# Early game, Hugo/Chris/Geddoe run THREE separate parties (Thomas has a 4th bag too);
+# they merge into one shared inventory + storage after the Flame Champion is chosen.
+# The herrvillain save-offset map documents each bag separately (validated vs real saves):
 INV_ENTRY  = 8
-INV_SLOTS  = 400          # covers the party inventories + storage per the map
-INV_END    = INV_BASE + INV_SLOTS * INV_ENTRY   # 0x7CE0
+INV_REGIONS = [
+    ("Hugo",    0x7060, 30),
+    ("Chris",   0x7150, 30),
+    ("Geddoe",  0x7240, 30),
+    ("Thomas",  0x7330, 30),
+    ("Storage", 0x7420, 90),
+]
+# Sanity bound for a real item id (the game uses < 0x300; empty slots may hold a
+# high-bit sentinel like 0x81xx, which we treat as empty rather than a bogus item).
+ITEM_ID_MAX = 0x2FF
 
 # Roster order for the character blocks. CHAR_BASE (0x33AC) is HUGO — the real
 # story "Flame Champion" record lives one block earlier (0x3320) and is not a
@@ -314,20 +320,26 @@ def item_category(iid):
     return "consumable"
 
 def decode_inventory(gamedata):
-    """Decode the flat item inventory: list of {slot, addr, id, qty, category}.
-    Only non-empty slots are returned (id != 0)."""
-    out = []
-    for s in range(INV_SLOTS):
-        off = INV_BASE + s * INV_ENTRY
-        if off + 4 > len(gamedata):
-            break
-        iid = struct.unpack_from("<H", gamedata, off)[0]
-        qty = struct.unpack_from("<H", gamedata, off + 2)[0]
-        if iid == 0:
-            continue
-        out.append({"slot": s, "addr": off, "id": iid, "qty": qty,
-                    "category": item_category(iid)})
-    return out
+    """Decode the item inventory grouped by bag (Hugo/Chris/Geddoe/Thomas/Storage).
+    Returns [{region, base, items:[{slot, addr, id, qty, category}]}]. `slot` is the
+    absolute entry index from the start of the first bag, so it round-trips on write.
+    Only non-empty slots (real item id) are returned."""
+    groups = []
+    for name, base, count in INV_REGIONS:
+        items = []
+        for k in range(count):
+            off = base + k * INV_ENTRY
+            if off + 4 > len(gamedata):
+                break
+            iid = struct.unpack_from("<H", gamedata, off)[0]
+            qty = struct.unpack_from("<H", gamedata, off + 2)[0]
+            if iid == 0 or iid > ITEM_ID_MAX:      # empty or high-bit sentinel slot
+                continue
+            slot = (off - INV_REGIONS[0][1]) // INV_ENTRY
+            items.append({"slot": slot, "addr": off, "id": iid, "qty": qty,
+                          "category": item_category(iid)})
+        groups.append({"region": name, "base": base, "items": items})
+    return groups
 
 
 def decode_save(gamedata):
@@ -389,7 +401,7 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None):
                 changed += 1
     for slot, ent in (inv_edits or {}).items():
         slot = int(slot)
-        off = INV_BASE + slot * INV_ENTRY
+        off = INV_REGIONS[0][1] + slot * INV_ENTRY   # slot is relative to the first bag
         if off + 4 > len(b):
             continue
         if "id" in ent:
