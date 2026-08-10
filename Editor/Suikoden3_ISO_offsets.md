@@ -676,3 +676,21 @@ few STORY-SCRIPTED tactical skirmishes using the characters' own stats + scripte
 setups (same event-script domain as shops). No standalone editable army-unit table
 exists; editing would mean the script layer (not flat data). Not shippable as a
 data editor. (Bonus: found a clean location-name table at 0x404648 if ever useful.)
+
+## Community cheat-code research (2026-08-10)
+Checked external hex/cheat sources to see if anyone located the tables our
+structural search couldn't (enemy stats/drops, EXP, starting stats, shop):
+- Sources: gamehacking.org (game 105083), etherealgames, drummerscheattables
+  forum, PCSX2 forum "post your cheats", xs1l3n7x/pcsx2_cheats_collection (GitHub),
+  scribd PNACHs. Game CRC = 5F3DD929 (NTSC-U SLUS-20387).
+- Retrieved a working PNACH: Max Money patch=1,EE,05DBB63A,... . Forum code sets
+  cover Cur/Max HP, all-character PDF/MDF-to-max, Head/RH/LH Rune, equipped item.
+- KEY POINT: every code targets HIGH EE RAM (~0x05DBxxxx) = live/save-state game
+  memory, NOT the boot-ELF static tables (~0x00100000 range) we edit in the ISO.
+  Cheats overwrite the runtime copy the game already derived from base data. So they
+  neither expose nor contradict our tables — and crucially, NO community code targets
+  enemy HP/drops, the EXP curve, or shop inventories. If those existed as easy static
+  tables, "9999 enemy HP"/"max EXP" codes would be common; their absence corroborates
+  that those live in code/script, not editable flat data.
+CONCLUSION: external research confirms the editable-data boundary rather than
+extending it. Nothing new to add to the ISO editor from cheat codes.
