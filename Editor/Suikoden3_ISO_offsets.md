@@ -578,3 +578,11 @@ Investigated four rebalance requests. Results:
    table at 0x3E7CB0 in name-table order; drops live in the same un-located enemy
    record structure that defeated the earlier HP spike. Not editable without deeper
    RE / archive unpacking.
+
+## Weapons editor shipped (2026-08-10)
+list4 (0x3DFA08, 28 records, stride 28) surfaced as a proper "Weapons" tab.
+Bytes 0..15 = ATK at sharpen levels 1..16 (edited per-level, u8, clamped 0..255),
+plus a scale-x control per weapon. Bytes 16..27 (sharpen cost/material tail,
+meaning unconfirmed) are preserved untouched on save. Endpoints /api/weapons (GET,
+includes atkDefault) + /api/weapon (POST {index, levels:{lvIdx:atk}}). The old
+"list4 (raw bytes)" section in the character editor still exists for hex access.
