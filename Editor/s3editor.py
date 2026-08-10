@@ -237,6 +237,12 @@ def read_spells():
         })
     iso.close(); return out
 
+def _u(value, width):
+    """Clamp an incoming numeric field to an unsigned int of `width` bytes so a
+    too-large or negative input can never crash struct.pack (returns 0..cap)."""
+    cap = (1 << (8 * width)) - 1
+    return max(0, min(cap, int(value)))
+
 def _desc(iso, rec):
     try:
         v = struct.unpack_from("<I", rec, 0x0C)[0]
@@ -264,8 +270,8 @@ def read_unites():
 def write_unite(index, fields):
     iso = _iso(write=True)
     off = S.UNITE_TABLE_FILE + index * S.UNITE_STRIDE
-    if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", int(fields["power"])))
-    if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", int(fields["cast"])))
+    if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", _u(fields["power"], 4)))
+    if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", _u(fields["cast"], 4)))
     if "target" in fields:
         f14 = iso.u32(off + 0x14)
         f14 = (f14 & 0xFFFF00FF) | ((int(fields["target"]) & 0xFF) << 8)
@@ -404,8 +410,8 @@ def read_charfields(list_no, index):
 def write_spell(index, fields):
     iso = _iso(write=True)
     off = S.SPELL_TABLE_FILE + index * S.SPELL_STRIDE
-    if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", int(fields["power"])))
-    if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", int(fields["cast"])))
+    if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", _u(fields["power"], 4)))
+    if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", _u(fields["cast"], 4)))
     if "elementId" in fields:
         kind = iso.u16(off + 0x04)
         iso.wr(off + 0x04, struct.pack("<H", (kind & 0xFF00) | (int(fields["elementId"]) & 0xFF)))
@@ -433,16 +439,20 @@ def write_char_byte(list_no, index, boff, value, width):
     base, stride, _ = S.TABLES[f"list{list_no}"]
     if boff + width > stride:
         iso.close(); return {"error": "offset past record"}
+    # clamp to the field width so an over-large input can't crash struct.pack
+    cap = 0xFFFF if width == 2 else 0xFF
+    v = max(0, min(cap, int(value)))
+    clamped = (v != int(value))
     pos = base + index*stride + boff
-    iso.wr(pos, struct.pack("<H" if width == 2 else "<B", int(value)))
-    iso.close(); return {"ok": True}
+    iso.wr(pos, struct.pack("<H" if width == 2 else "<B", v))
+    iso.close(); return {"ok": True, "value": v, "clamped": clamped}
 
 def write_shop(table, slot, value):
     iso = _iso(write=True)
     off, cnt, w, _ = S.SHOP[table]
     if not (0 <= slot < cnt):
         iso.close(); return {"error": "slot out of range"}
-    iso.wr(off + slot*w, struct.pack("<I" if w == 4 else "<H", int(value)))
+    iso.wr(off + slot*w, struct.pack("<I" if w == 4 else "<H", _u(value, w)))
     iso.close(); return {"ok": True}
 
 
@@ -1285,7 +1295,7 @@ async function renderChars(m){
   // set dropdown current values
   c.groups.forEach(g=>g.fields.forEach(f=>{
    if(f.kind==="item"||f.kind==="skill"){
-    const el=$(`#rec [data-off="${f.off}"][data-kind]`);if(el)el.value=String(f.value);}}));
+    const el=$(`#rec [data-off="${f.off}"][data-kind]`);if(el)setSel(el,f.value);}}));
   $("#rec").querySelectorAll("[data-off]").forEach(inp=>{
    const ev=inp.tagName==="SELECT"?"change":"blur";
    inp.addEventListener(ev,async()=>{
