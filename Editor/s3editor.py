@@ -703,8 +703,11 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(200, {"error": f"could not read card: {e}"})
                 save_config(lastCard=os.path.abspath(path))
+                # item id->name so the UI can label inventory + offer an item picker
+                items = [{"id": k, "name": v, "desc": ITEM_DESC.get(k, "")}
+                         for k, v in sorted(S.load_item_ids().items())]
                 return self._send(200, {"path": path, "statNames": SV.STAT_NAMES,
-                                        "saves": saves})
+                                        "saves": saves, "items": items})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -754,7 +757,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"error": f"file not found: {path}"})
                 res = SV.write_save_edits(path, body.get("folder", ""),
                                           body.get("edits", {}),
-                                          make_backup=body.get("backup", True))
+                                          make_backup=body.get("backup", True),
+                                          inv_edits=body.get("invEdits", {}))
                 return self._send(200, res)
             return self._send(404, {"error": "not found"})
         except Exception as e:
@@ -891,6 +895,17 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  padding:5px 14px;cursor:pointer;font:inherit;transition:.12s}
 #themebar .tb:hover{color:var(--ink);border-color:var(--acc)}
 #themebar .tb.on{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
+/* Save Editor: keep wide stat tables from overflowing the card */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.savetbl{width:auto;min-width:100%}
+.savetbl th,.savetbl td{padding:6px 8px;white-space:nowrap}
+.savetbl input[type=number]{width:58px;text-align:center}
+.savetbl .nm{position:sticky;left:0;background:var(--panel);z-index:2;font-weight:600}
+.savetbl thead th.nm{background:var(--thead-bg);z-index:6}
+.subtabs{display:flex;gap:6px;margin-bottom:10px}
+.subtabs button{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:8px;
+ padding:6px 12px;cursor:pointer;font:inherit}
+.subtabs button.on{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
 </style></head><body>
 <header><b>Suikoden III ISO Editor</b><span class=iso id=iso></span>
 <label class=hint style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer">
@@ -1634,63 +1649,94 @@ async function openCard(path){
  $("#carderr").textContent="";
  renderSaveSlots(r);
 }
+let SAVE_ITEMS=[];       // [{id,name,desc}] for inventory labels + picker
 function renderSaveSlots(r){
  const body=$("#savebody"); if(!body)return;
  if(!r.saves.length){body.innerHTML=`<div class=card><div class=hint>No Suikoden III save found on this card.</div></div>`;return;}
+ SAVE_ITEMS=r.items||[];
  const statCols=r.statNames||[];
+ const ITEMNAME={}; SAVE_ITEMS.forEach(i=>ITEMNAME[i.id]=i.name);
+ const itemOpts=`<option value="0">— empty —</option>`+SAVE_ITEMS.map(i=>
+   `<option value="${i.id}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`).join("");
  const slotTabs=r.saves.map((s,i)=>`<button class="act sec" data-slot=${i}>${s.label}</button>`).join("");
  body.innerHTML=`<div class=card><div class=row style="align-items:center;gap:8px">
     <b>Save slot:</b> ${slotTabs}
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
- // pending edits for the CURRENT slot: {rosterIndex:{level,curHP,expToNext,stats:{}}}
- let EDITS={};
+ // pending edits for the CURRENT slot
+ let EDITS={}, INV={}, SUB="chars";
  function setEdit(ridx,key,val,stat){
   EDITS[ridx]=EDITS[ridx]||{};
   if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
-  else EDITS[ridx][key]=val;
- }
+  else EDITS[ridx][key]=val;}
+ function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length;}
+ function markSaveDirty(){const w=$("#savewrite");if(w){w.disabled=!dirty();w.textContent=dirty()?"● Write to card":"Write to card";}}
+
  function drawSlot(i){
-  const s=r.saves[i]; EDITS={};
+  const s=r.saves[i]; EDITS={}; INV={};
   body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
   $("#slotmeta").innerHTML=`${s.folder} · leader id ${s.global.partyLeader} · story phase ${s.global.storyPhase} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
   const live=s.characters.filter(c=>c.level>0||c.curHP>0||c.expToNext>0);
-  const head=`<thead><tr><th>#</th><th>Character</th><th>Lv</th><th>HP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
-  const numIn=(c,k,val,stat)=>`<input type=number style=width:70px value="${val}" data-ri=${c.rosterIndex}`+
-    (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
-  const rowsHTML=c=>`<tr data-name="${c.name.toLowerCase()}"><td class=hint>${c.rosterIndex}</td>
-    <td>${c.name}</td>
-    <td>${numIn(c,"level",c.level)}</td>
-    <td>${numIn(c,"curHP",c.curHP)}</td>
-    <td>${numIn(c,"expToNext",c.expToNext)}</td>
-    ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}</tr>`;
+  const inv=s.inventory||[];
   $("#slotbody").innerHTML=`<div class=card>
+     <div class=subtabs>
+      <button data-sub=chars class=on>Characters (${live.length})</button>
+      <button data-sub=items>Inventory (${inv.length})</button></div>
      <div class=row style="margin-bottom:8px;align-items:center">
-      <input class=search id=sq placeholder="filter characters…">
+      <input class=search id=sq placeholder="filter…">
       <label class=hint style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-       <input type=checkbox id=savebak checked> Back up card (.bak) before first write</label>
+       <input type=checkbox id=savebak checked> Back up card (.bak) first</label>
       <button class=act id=savewrite style=margin-left:auto disabled>Write to card</button>
       <span class=hint id=savemsg></span></div>
-     <div class=hint style="margin:-2px 0 8px">${live.length} recruited/active of ${s.characters.length} roster slots.
-      Edit level / HP / EXP / stats, then <b>Write to card</b>. A .bak is made first.
-      Stat labels are a best-effort decode (slot 5 is unused in-game).
-      Recommended: load the game, resave, and play from the new save.</div>
-     <table>${head}<tbody id=sb></tbody></table></div>`;
-  function draw(f=""){$("#sb").innerHTML=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f).map(rowsHTML).join("");
-   decorate($("#sb"));
-   $("#sb").querySelectorAll("input[data-ri]").forEach(inp=>inp.addEventListener("change",()=>{
-     const ri=+inp.dataset.ri, v=+inp.value;
-     if(inp.dataset.stat)setEdit(ri,null,v,inp.dataset.stat); else setEdit(ri,inp.dataset.k,v);
-     $("#savewrite").disabled=false;$("#savewrite").textContent="● Write to card";}));}
-  draw();$("#sq").oninput=e=>draw(e.target.value.toLowerCase());
+     <div class=hint id=subhint style="margin:-2px 0 8px"></div>
+     <div id=subview></div></div>`;
+
+  function drawChars(f=""){
+   const head=`<thead><tr><th class=nm>Character</th><th>Lv</th><th>HP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+   const numIn=(c,k,val,stat)=>`<input type=number value="${val}" data-ri=${c.rosterIndex}`+
+     (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
+   const rows=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f).map(c=>
+     `<tr><td class=nm>${c.name}</td>
+      <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"curHP",c.curHP)}</td>
+      <td>${numIn(c,"expToNext",c.expToNext)}</td>
+      ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}</tr>`).join("");
+   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>${head}<tbody>${rows}</tbody></table></div>`;
+   decorate($("#subview"));
+   $("#subview").querySelectorAll("input[data-ri]").forEach(inp=>inp.addEventListener("change",()=>{
+     const ri=+inp.dataset.ri,v=+inp.value;
+     if(inp.dataset.stat)setEdit(ri,null,v,inp.dataset.stat);else setEdit(ri,inp.dataset.k,v);
+     markSaveDirty();}));}
+
+  function drawItems(f=""){
+   const rows=inv.filter(it=>{const nm=(ITEMNAME[it.id]||"").toLowerCase();
+     return nm.includes(f)||String(it.slot)===f||it.id.toString(16).includes(f);}).map(it=>
+     `<tr><td class=hint>${it.slot}</td>
+       <td><select data-invslot=${it.slot} data-k=id data-def="${it.id}">${itemOpts}</select></td>
+       <td><input type=number data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td></tr>`).join("");
+   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>
+     <thead><tr><th>Slot</th><th>Item</th><th>Qty</th></tr></thead><tbody>${rows||'<tr><td colspan=3 class=hint>no items</td></tr>'}</tbody></table></div>`;
+   $("#subview").querySelectorAll("select[data-invslot]").forEach(sel=>setSel(sel,+sel.dataset.def));
+   decorate($("#subview"));
+   $("#subview").querySelectorAll("[data-invslot]").forEach(inp=>{
+     const ev=inp.tagName==="SELECT"?"change":"blur";
+     inp.addEventListener(ev,()=>{const sl=+inp.dataset.invslot;INV[sl]=INV[sl]||{};INV[sl][inp.dataset.k]=+inp.value;markSaveDirty();});});}
+
+  function showSub(){
+   $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.classList.toggle("on",b.dataset.sub===SUB));
+   $("#sq").value="";
+   if(SUB==="chars"){$("#subhint").innerHTML=`Edit level / HP / EXP / stats. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.`;drawChars();}
+   else{$("#subhint").innerHTML=`Party + storage items (id · quantity). Change an item or its count. Only non-empty slots are shown. A .bak is made first.`;drawItems();}}
+  $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{SUB=b.dataset.sub;showSub();});
+  $("#sq").oninput=e=>{const f=e.target.value.toLowerCase();SUB==="chars"?drawChars(f):drawItems(f);};
+  showSub();
+
   $("#savewrite").onclick=async()=>{
-   if(!Object.keys(EDITS).length){toast("no edits");return;}
+   if(!dirty()){toast("no edits");return;}
    $("#savemsg").textContent="writing…";
    const res=await api("/api/save-write",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,backup:$("#savebak").checked})});
+     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,backup:$("#savebak").checked})});
    if(res.ok){$("#savemsg").innerHTML=`wrote ${res.changed} field(s), ${res.clustersWritten} clusters · checksum 0x${res.checksum.toString(16).toUpperCase()}`;
-    toast("saved to card");$("#savewrite").disabled=true;$("#savewrite").textContent="Write to card";
-    openCard(SAVE_CARD);}  // reload to show persisted values as the new baseline
+    toast("saved to card");openCard(SAVE_CARD);}
    else{$("#savemsg").textContent="error: "+(res.error||"?");toast("write failed");}
   };
  }
