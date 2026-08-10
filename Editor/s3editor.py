@@ -1192,8 +1192,8 @@ async function renderChars(m){
  <div class=hint>Names are from the original exe's list. list1 = Starting Stats, list2 = Growth (same roster),
  list3 = Support characters, list4 = weapon attack types. Equipment/rune/skill fields are dropdowns. Saves on change.</div>
  <div class=row>
-  <label>Data section<select id=list>${Object.entries(LIST_NAMES).map(([k,v])=>`<option value="${k}">${k} — ${v}</option>`).join("")}</select></label>
   <label>Character<select id=idx style=min-width:200px>${nameOpts("list1")}</select></label>
+  <label>Data section<select id=list>${Object.entries(LIST_NAMES).map(([k,v])=>`<option value="${k}">${k} — ${v}</option>`).join("")}</select></label>
   <button class=act id=load>Reload</button>
   <span class=hint id=addr></span>
  </div><div id=rec></div></div>`;
