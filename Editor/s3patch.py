@@ -72,6 +72,23 @@ SPELL_STRIDE     = 0x20
 UNITE_TABLE_FILE = 0x3ECF90
 UNITE_COUNT      = 38
 UNITE_STRIDE     = 0x28
+
+# Enemy NAME table (research spike, 2026-08-09). 100 entries x 0x14, names inline
+# (10-char truncated). Names are index-keyed; there is NO editable flat stat table
+# (see offsets doc) — this is exposed read-only so users can reference enemies.
+ENEMY_NAME_FILE  = 0x3E74E0
+ENEMY_COUNT      = 100
+ENEMY_NAME_STRIDE = 0x14
+
+def read_enemy_names(iso):
+    """Return [{index, name}] for the 100 enemy name-table entries."""
+    out = []
+    for i in range(ENEMY_COUNT):
+        rec = iso.rd(ENEMY_NAME_FILE + i*ENEMY_NAME_STRIDE, ENEMY_NAME_STRIDE)
+        nm = rec.split(b"\x00")[0].decode("latin1", "replace").strip()
+        out.append({"index": i, "name": nm})
+    return out
+
 ELF_PL_FILE      = 0xA4800
 ELF_PL_VADDR     = 0x165D000
 SPELL_FIELDS = {  # name -> (offset, width)
