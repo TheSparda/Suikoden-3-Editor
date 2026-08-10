@@ -646,3 +646,18 @@ Requested: edit character starting stats + the EXP/level curve.
 Both would require ASM/formula patching, not data edits. Not shipped.
 What list2 DOES hold and we already edit: per-stat GROWTH RATES (how fast stats
 rise per level) — that remains the lever for stat rebalancing (see Hard Mode).
+
+## Sharpen cost — global-table hunt (2026-08-10, NOT a flat table, closed)
+Second, deeper look for sharpen/upgrade cost after the per-weapon tail was ruled out:
+- No dedicated sharpen/blacksmith guide on Suikosource; the weapon-growth guide has
+  ZERO potch/cost figures.
+- Data immediately after list4 (0x3DFD18+) is more of the same 5-byte weapon-tail
+  fragments, not a global potch-per-level curve.
+- The 12-byte per-weapon tails are almost all UNIQUE per weapon (only 1 pair shares),
+  so they're per-weapon attributes, not a shared cost table; values (e.g. 3c 50 32 19)
+  don't decode to obvious potch amounts.
+Conclusion: sharpen cost is formula-driven in code (typically f(next ATK)), as in
+other Suikoden titles. No editable cost table exists; not exposed. Would need ASM.
+This closes the rebalance-capability exploration: all remaining requests
+(enemy stats/drops, shop-by-location, starting stats, EXP curve, sharpen cost) are
+code/script-driven, not flat data. Editable-as-data set is fully mapped.
