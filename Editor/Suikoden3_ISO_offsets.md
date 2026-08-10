@@ -661,3 +661,18 @@ other Suikoden titles. No editable cost table exists; not exposed. Would need AS
 This closes the rebalance-capability exploration: all remaining requests
 (enemy stats/drops, shop-by-location, starting stats, EXP curve, sharpen cost) are
 code/script-driven, not flat data. Editable-as-data set is fully mapped.
+
+## War battle spike (2026-08-10, no editable unit table)
+Investigated S3's war/tactical battles. Findings:
+- No war-unit name list or unit-stat table found. String searches for army/unit
+  vocabulary (Cavalry, Battalion, Bow Unit, Morale, Formation-as-army, etc.) hit only
+  UI menu labels (Formation = party menu), item names (War Horse, War Bounty), story
+  text (Unification War), or debug tags (SecWar/WarSch) — none are war-battle data.
+- The 0x4046xx cluster near "Zexen/Chisha/Alma Kinan" is a MAP/LOCATION name table
+  (Ancient Highway, Brass Castle, Vinay del Zexay...), not war units.
+- Suikosource has no S3 war-battle guide (only a Suikoden Tactics link).
+Conclusion: unlike Suikoden II's large army-battle system, S3's war battles are a
+few STORY-SCRIPTED tactical skirmishes using the characters' own stats + scripted
+setups (same event-script domain as shops). No standalone editable army-unit table
+exists; editing would mean the script layer (not flat data). Not shippable as a
+data editor. (Bonus: found a clean location-name table at 0x404648 if ever useful.)
