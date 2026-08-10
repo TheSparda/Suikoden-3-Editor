@@ -981,8 +981,7 @@ async function renderUnites(m){const un=await api("/api/unites");
   <table><thead><tr><th>#</th><th>Unite</th><th>Characters</th><th>Power</th><th>Cast</th><th>Target / Size</th><th>Shape</th><th>Effect</th></tr></thead>
   <tbody id=tb></tbody></table>`;
  function draw(f=""){
-  $("#tb").innerHTML=un.filter(u=>u.name.toLowerCase().includes(f)||u.desc.toLowerCase().includes(f)||(u.chars||"").toLowerCase().includes(f)).map(u=>{const d=UDEF[u.index]||u;return
-   `<tr><td>${u.index}</td><td>${u.name}</td>
+  $("#tb").innerHTML=un.filter(u=>u.name.toLowerCase().includes(f)||u.desc.toLowerCase().includes(f)||(u.chars||"").toLowerCase().includes(f)).map(u=>{const d=UDEF[u.index]||u;return `<tr><td>${u.index}</td><td>${u.name}</td>
      <td class=hint style=min-width:150px>${u.chars||'—'}</td>
      <td><input type=number data-i=${u.index} data-f=power data-def="${d.power}" value="${u.power}"></td>
      <td><input type=number data-i=${u.index} data-f=cast data-def="${d.cast}" value="${u.cast}"></td>
