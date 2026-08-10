@@ -144,6 +144,21 @@ a one-click **“Reopen last ISO.”**
   name lists. Equipment/rune/skill fields are searchable dropdowns with
   descriptions.
 
+### Hard Mode
+- A **player-nerf difficulty** section with a master **Enable Hard Mode** toggle.
+- Difficulty **presets** (Tougher / Hard / Brutal) plus fully custom per-stat
+  multipliers, driven by each character's in-game **stat growth rate** so the whole
+  party grows weaker across all 99 levels.
+- Optional spell/unite **power** scalers. All multipliers scale the ISO's *default*
+  value, so applying a preset is idempotent (never compounds), and **Restore all to
+  default** cleanly reverts. Enemies can't be buffed directly (their stats aren't in
+  an editable table), so difficulty comes from a weaker party.
+
+### Enemies
+- Read-only reference list of all **100 enemy entries** by index + name, searchable.
+  (Enemy HP/attack are set by the battle engine, not a flat table, so they aren't
+  editable — see Hard Mode for raising difficulty.)
+
 ### Reference
 - Searchable **Item** and **Skill** hex-ID lists for looking up values.
 
