@@ -78,8 +78,16 @@ OFF_ID      = 0x0C            # u8 character id
 OFF_LEVEL   = 0x0D            # u8 level
 OFF_MAXHP   = 0x30            # u16 max HP
 OFF_STATS   = 0x20            # u16[8] stat block
+OFF_WEPLV   = 0x0D            # u8 weapon (sharpen) level 1..16
+OFF_SKILLS  = 0x10            # 8 x (skill id u8, rank u8) — verified vs skill-id table
+SKILL_SLOTS = 8
 # stat order confirmed against herrvillain per-character RAM codes (relative spacing)
 STAT_NAMES  = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"]
+
+# Active-party composition: up to 6 member char-ids (u16) at file 0x3216 (herrvillain
+# map), ids in the exe list1 space (1=Hugo, 63=Hallec, ...). 0 = empty slot.
+PARTY_OFF   = 0x3216
+PARTY_SLOTS = 6
 
 # Equipped-gear slots (u16 item ids), located empirically in the save block and matching
 # the herrvillain RAM map's 8-byte spacing. Verified: each decodes to a real rune/armor/
@@ -330,19 +338,32 @@ def decode_character(gamedata, roster_index):
         return None
     stats = list(struct.unpack_from("<8H", rec, OFF_STATS))
     equip = {name: struct.unpack_from("<H", rec, eo)[0] for name, eo in EQUIP_SLOTS}
+    skills = [{"slot": k, "id": rec[OFF_SKILLS + k*2], "rank": rec[OFF_SKILLS + k*2 + 1]}
+              for k in range(SKILL_SLOTS)]
+    lvl = rec[OFF_LEVEL]
+    stat_sum = sum(stats)
     return {
         "rosterIndex": roster_index,
         "name": ROSTER[roster_index] if roster_index < len(ROSTER) else f"#{roster_index}",
         "addr": off,
         "id": rec[OFF_ID],
-        "level": rec[OFF_LEVEL],
+        "level": lvl,
+        "weaponLevel": rec[OFF_WEPLV],
         "curHP": struct.unpack_from("<H", rec, OFF_CURHP)[0],
         "maxHP": struct.unpack_from("<H", rec, OFF_MAXHP)[0],
         "expToNext": struct.unpack_from("<I", rec, OFF_EXP)[0],
         "stats": dict(zip(STAT_NAMES, stats)),
         "equip": equip,
+        "skills": skills,
+        # "recruited": the block is initialized (has a level or any stat) vs all-zero.
+        "recruited": lvl > 0 or stat_sum > 0,
         "raw": list(rec),
     }
+
+
+def decode_party(gamedata):
+    """Active-party member char-ids (0 = empty slot)."""
+    return [struct.unpack_from("<H", gamedata, PARTY_OFF + k*2)[0] for k in range(PARTY_SLOTS)]
 
 
 # Item-id category boundaries (from the herrvillain "Item Digits" grouping + the ISO's
@@ -388,6 +409,7 @@ def decode_save(gamedata):
              for key, off, n, label in NAME_FIELDS]
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
+            "party": decode_party(gamedata),
             "characters": [
                 c for c in (decode_character(gamedata, i)
                             for i in range(min(CHAR_COUNT, len(ROSTER)))) if c],
@@ -396,10 +418,11 @@ def decode_save(gamedata):
 
 # Editable per-character scalar fields -> (offset within the 140-byte block, byte width).
 CHAR_FIELDS = {
-    "level":     (OFF_LEVEL, 1),
-    "curHP":     (OFF_CURHP, 2),
-    "maxHP":     (OFF_MAXHP, 2),
-    "expToNext": (OFF_EXP,   4),
+    "level":       (OFF_LEVEL, 1),
+    "weaponLevel": (OFF_WEPLV, 1),
+    "curHP":       (OFF_CURHP, 2),
+    "maxHP":       (OFF_MAXHP, 2),
+    "expToNext":   (OFF_EXP,   4),
 }
 # stat block: 8 u16 at OFF_STATS, addressed by stat name
 STAT_INDEX = {n: i for i, n in enumerate(STAT_NAMES)}
@@ -411,10 +434,13 @@ def _clamp(v, width):
 
 NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
 
-def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None):
-    """edits: {rosterIndex: {field: value, "stats": {STAT: value}}}.
+def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
+                            party_edits=None):
+    """edits: {rosterIndex: {field: value, "stats": {STAT: value},
+                             "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
+    party_edits: {partySlot(0..5): charId} for the active-party composition.
     Returns (new_gamedata_with_fixed_checksum, changed_field_count)."""
     b = bytearray(gamedata)
     changed = 0
@@ -442,6 +468,16 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None):
                     if ename in EQUIP_OFF:
                         struct.pack_into("<H", b, base + EQUIP_OFF[ename], _clamp(eval_, 2))
                         changed += 1
+            elif k == "skills":
+                for slot, sk in (v or {}).items():
+                    slot = int(slot)
+                    if not (0 <= slot < SKILL_SLOTS):
+                        continue
+                    so = base + OFF_SKILLS + slot * 2
+                    if "id" in sk:
+                        b[so] = _clamp(sk["id"], 1); changed += 1
+                    if "rank" in sk:
+                        b[so + 1] = _clamp(sk["rank"], 1); changed += 1
             elif k in CHAR_FIELDS:
                 off, w = CHAR_FIELDS[k]
                 fmt = {1: "<B", 2: "<H", 4: "<I"}[w]
@@ -456,9 +492,14 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None):
             struct.pack_into("<H", b, off, _clamp(ent["id"], 2)); changed += 1
         if "qty" in ent:
             struct.pack_into("<H", b, off + 2, _clamp(ent["qty"], 2)); changed += 1
+    for slot, cid in (party_edits or {}).items():
+        slot = int(slot)
+        if 0 <= slot < PARTY_SLOTS:
+            struct.pack_into("<H", b, PARTY_OFF + slot * 2, _clamp(cid, 2)); changed += 1
     return fix_gamedata_checksum(bytes(b)), changed
 
-def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None):
+def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
+                     party_edits=None):
     """Apply edits to one save folder's gamedata on a memcard file, in place.
     Fixes the save checksum and per-page ECC. Backs up the card first by default.
     Returns a summary dict."""
@@ -473,7 +514,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     gd = card.read_file(target["cluster"], target["length"], "gamedata")
     if gd is None:
         return {"error": "gamedata not found in save folder"}
-    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits)
+    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
