@@ -828,3 +828,19 @@ Empty slots may hold a high-bit sentinel (e.g. 0x81xx) rather than 0, so we trea
 Chris / Geddoe / Thomas / Storage), each with the Party-Items vs Key/Valuables split.
 Slots are addressed by absolute index from the first bag so writes round-trip. Verified:
 per-bag counts render, a Hugo-bag qty edit persisted, checksum sum stayed 0, ECC clean.
+
+## Save Editor v5: metadata display + editable names (2026-08-10)
+- Save metadata now surfaced (read-only): from the icon.sys PS2-browser title
+  (Shift-JIS full-width, e.g. "Suikoden3 [01] Cpt.3 L41 / 28:39") we parse CHAPTER,
+  party LEVEL, and PLAYTIME. Plus story phase (0x14) and party leader (0x12).
+- Leader id -> name: 0x12 is the first entry of the party-member id list at 0x3216
+  (ids are the exe's list1 character-id space: 1=Hugo, 2=Chris, 3=Geddoe, 63=Hallec...).
+  Resolved via s3_names.json list1. Ids >= ~200 (203, 210-213) are guests/story NPCs
+  not in the recruitable roster -> shown as "id N (guest/NPC)".
+- Editable NAME fields (fixed 16-char ASCII, 0-terminated, 17-byte slots -> safe
+  in-place writes): Flame Champion 0xC9E0, Castle 0xC9F1, Suikoden I hero 0xCA13,
+  SI country 0xCA24, Suikoden II hero 0xCA35. Verified: edited Flame Champion name,
+  persisted, checksum sum stayed 0.
+- Per-party GOLD: investigated but NOT exposed. No confirmable gold field found, and no
+  3-value per-party structure is visible; all sample saves are post-merge (single party)
+  so it couldn't be validated. Needs a save with a known on-screen potch to locate.
