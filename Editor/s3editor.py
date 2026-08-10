@@ -576,37 +576,75 @@ class Handler(BaseHTTPRequestHandler):
 INDEX_HTML = r"""<!doctype html><html><head><meta charset=utf-8>
 <title>Suikoden III ISO Editor</title>
 <style>
-:root{--bg:#12141c;--panel:#1b1e2a;--ink:#e6e8ef;--mut:#8b90a3;--acc:#6ea8fe;--line:#2a2e3e;--ok:#4caf7d}
-*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
-header{padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center}
-header b{font-size:16px}header .iso{color:var(--mut);font-size:12px}
-nav{display:flex;gap:4px;padding:8px 18px;background:var(--panel);border-bottom:1px solid var(--line)}
-nav button{background:transparent;color:var(--mut);border:0;padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit}
+:root{--bg:#0f111a;--panel:#1b1e2a;--panel2:#20232f;--ink:#e6e8ef;--mut:#8b90a3;
+ --acc:#6ea8fe;--acc2:#8fc0ff;--line:#2a2e3e;--ok:#4caf7d;--warn:#ffd166;--warnbd:#c79a2e;
+ --hdr:64px;--navh:49px;--shadow:0 2px 8px rgba(0,0,0,.28)}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+ background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+/* sticky header + nav so Save/Revert and tabs stay in reach on long tables */
+header{position:sticky;top:0;z-index:30;padding:12px 18px;background:linear-gradient(180deg,#1e2230,#1b1e2a);
+ border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;box-shadow:var(--shadow)}
+header b{font-size:16px;letter-spacing:.01em}header .iso{color:var(--mut);font-size:12px}
+nav{position:sticky;top:var(--hdr);z-index:29;display:flex;gap:4px;padding:8px 18px;background:var(--panel);
+ border-bottom:1px solid var(--line)}
+nav button{background:transparent;color:var(--mut);border:0;padding:8px 14px;border-radius:8px;cursor:pointer;
+ font:inherit;transition:background .12s,color .12s}
+nav button:hover:not(:disabled):not(.on){background:var(--panel2);color:var(--ink)}
 nav button.on{background:var(--acc);color:#0b0d12;font-weight:600}
 nav button:disabled{opacity:.35;cursor:not-allowed}
-main{padding:18px;max-width:1100px;margin:0 auto}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
-th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-tr:hover td{background:#20232f}
-input,select{background:#0e1017;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
+main{padding:18px;max-width:1120px;margin:0 auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+/* sticky column headers within each scrolling card */
+thead th{position:sticky;top:calc(var(--hdr) + var(--navh));z-index:5;background:#191c27;
+ color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+tbody tr{transition:background .08s}
+tr:hover td{background:var(--panel2)}
+input,select{background:#0e1017;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+ padding:5px 8px;font:inherit;transition:border-color .12s,box-shadow .12s}
+input:focus,select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px rgba(110,168,254,.22)}
+input:hover:not(:focus),select:hover:not(:focus){border-color:#3a4055}
 input[type=number]{width:82px}
-button.act{background:var(--acc);color:#0b0d12;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:600}
-button.act:hover{filter:brightness(1.1)}
-.pill{padding:2px 8px;border-radius:999px;font-size:12px;background:#0e1017;border:1px solid var(--line)}
-.aoe{color:var(--acc)}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
-.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.row label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
-#toast{position:fixed;bottom:18px;right:18px;background:var(--ok);color:#04120b;padding:10px 16px;border-radius:8px;opacity:0;transition:.2s;font-weight:600}
-#toast.show{opacity:1}.hint{color:var(--mut);font-size:12px;margin:4px 0 14px}
-.search{width:240px}
+button.act{background:var(--acc);color:#0b0d12;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;
+ font-weight:600;transition:filter .12s,transform .04s}
+button.act:hover{filter:brightness(1.08)}button.act:active{transform:translateY(1px)}
+button.act:disabled{opacity:.45;cursor:default;filter:none}
+.pill{padding:2px 9px;border-radius:999px;font-size:12px;background:#0e1017;border:1px solid var(--line);white-space:nowrap}
+.aoe{color:var(--acc);border-color:#37527e}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;
+ box-shadow:var(--shadow)}
+.card h3{letter-spacing:.01em}
+.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.row label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+#toast{position:fixed;bottom:18px;right:18px;background:var(--ok);color:#04120b;padding:10px 16px;
+ border-radius:8px;opacity:0;transform:translateY(6px);transition:.2s;font-weight:600;box-shadow:var(--shadow);z-index:50}
+#toast.show{opacity:1;transform:translateY(0)}
+.hint{color:var(--mut);font-size:12px;margin:4px 0 14px}
+.search{width:260px}
 tr.descrow td{border-bottom:1px solid var(--line);padding-top:0}
-tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 8px 8px}
+tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 9px 8px}
 tr.mainrow td{border-bottom:0}
 /* changed-from-default field highlighting + restore button */
-input.changed,select.changed{color:#ffd166;border-color:#c79a2e;background:#211d10}
+input.changed,select.changed{color:var(--warn);border-color:var(--warnbd);background:#211d10}
 .restore{display:none;margin-left:4px;background:transparent;border:1px solid var(--line);color:var(--mut);
- border-radius:6px;padding:3px 7px;cursor:pointer;font:inherit;line-height:1;vertical-align:middle}
-.restore:hover{color:var(--ink);border-color:var(--acc)}
+ border-radius:6px;padding:3px 7px;cursor:pointer;font:inherit;line-height:1;vertical-align:middle;transition:.12s}
+.restore:hover{color:var(--ink);border-color:var(--acc);background:var(--panel2)}
 .restore.show{display:inline-block}
+/* unsaved-changes dot on the Save button */
+#pendingBadge{color:var(--warn)}
+/* loading spinner */
+.spin{display:inline-block;width:20px;height:20px;border:2px solid var(--line);border-top-color:var(--acc);
+ border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+.loading{display:flex;gap:10px;align-items:center;color:var(--mut);padding:24px 4px}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* element color dots for scannable spell/unite tables */
+.eldot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline;
+ border:1px solid rgba(255,255,255,.15)}
+.el1{background:#ff6b57}.el2{background:#4aa3ff}.el3{background:#57d6a0}
+.el4{background:#c9a06a}.el5{background:#e6d24a}.el0{background:#6b7080}
+kbd{background:#0e1017;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
+ padding:1px 5px;font:11px ui-monospace,monospace;color:var(--mut)}
 </style></head><body>
 <header><b>Suikoden III ISO Editor</b><span class=iso id=iso></span>
 <label class=hint style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer">
@@ -622,6 +660,10 @@ input.changed,select.changed{color:#ffd166;border-color:#c79a2e;background:#211d
 const $=s=>document.querySelector(s), api=(u,o)=>fetch(u,o).then(r=>r.json());
 let META={}, TAB="spells", DIRTY=false;
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
+function spinner(label){return `<div class=loading><span class=spin></span>${label||"loading…"}</div>`;}
+const ELNAME={0:"none",1:"Fire",2:"Water",3:"Wind",4:"Earth",5:"Lightning"};
+// small colored dot for an element id, for scannable tables
+function eldot(id){return `<span class="eldot el${id in ELNAME?id:0}" title="${ELNAME[id]||('el '+id)}"></span>`;}
 // Highlight fields whose value differs from their ISO default (data-def) and add a
 // ↺ "Restore to default" button. Restore sets the value back and re-fires the tab's
 // own change/blur save handler, so every editor gets this for free.
@@ -677,6 +719,12 @@ async function boot(){META=await api("/api/meta");
  $("#saveBtn").onclick=doSave; $("#revertBtn").onclick=doRevert;
  DIRTY=(META.pending||0)>0; updateSaveUI();
  window.addEventListener("beforeunload",e=>{if(DIRTY){e.preventDefault();e.returnValue="";}});
+ // keyboard shortcuts: Cmd/Ctrl+S = save, "/" = focus the filter box
+ document.addEventListener("keydown",e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="s"){e.preventDefault();if(DIRTY)doSave();return;}
+  if(e.key==="/"&&!/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)){
+   const q=$("#q");if(q){e.preventDefault();q.focus();q.select();}}
+ });
  if(META.loaded)render(); else pickIso();}
 
 function setTabsEnabled(on){document.querySelectorAll("#nav button").forEach(b=>{b.disabled=!on;});}
@@ -685,7 +733,7 @@ function renderIsoHeader(){
    (META.loaded?` · <b>${META.iso}</b>`:` <span class=hint>load an ISO to begin</span>`);
  $("#pick").onclick=pickIso;}
 
-async function pickIso(){setActive(true);const m=$("#main");m.innerHTML="scanning for ISO files…";
+async function pickIso(){setActive(true);const m=$("#main");m.innerHTML=spinner("scanning for ISO files…");
  const d=await api("/api/isos");
  const rows=d.isos.map(i=>`<tr><td>${i.name}</td><td class=hint>${i.gb} GB</td>
    <td class=hint>${i.path}</td><td><button class=act data-path="${encodeURIComponent(i.path)}">Open</button></td></tr>`).join("");
@@ -710,7 +758,7 @@ async function pickIso(){setActive(true);const m=$("#main");m.innerHTML="scannin
  $("#openpath").onclick=()=>open($("#isopath").value.trim());
  if($("#openlast"))$("#openlast").onclick=()=>open(META.lastIso);}
 function setActive(clear){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",!clear&&b.dataset.t===TAB));}
-async function render(){if(!META.loaded)return pickIso();setActive();const m=$("#main");m.innerHTML="loading…";
+async function render(){if(!META.loaded)return pickIso();setActive();const m=$("#main");m.innerHTML=spinner();
  if(TAB==="spells")return renderSpells(m);
  if(TAB==="runes")return renderRunes(m);
  if(TAB==="unites")return renderUnites(m);
@@ -777,7 +825,7 @@ async function renderSpells(m){const sp=await api("/api/spells");
    <td><input type=number data-i=${s.index} data-f=cast data-def="${d.cast}" value="${s.cast}"></td>
    <td><select data-i=${s.index} data-f=target data-def="${d.targetByte}">${tgOpts}</select></td>
    <td><select data-i=${s.index} data-f=status data-def="${dstat(d)}">${stOpts}</select></td>
-   <td><span class="pill ${s.aoe?'aoe':''}">${s.target}</span></td></tr>
+   <td><span class="pill ${s.aoe?'aoe':''}">${eldot(s.elementId)}${s.target}</span></td></tr>
    ${s.desc?`<tr class=descrow><td></td><td colspan=7 class=desc>${s.desc}</td></tr>`:""}`;}
 
  function draw(f=""){
@@ -805,11 +853,11 @@ async function renderSpells(m){const sp=await api("/api/spells");
     const r=await api("/api/spell",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({index:idx,fields})});
     if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
-    if(r.ok&&f==="target"){ // refresh the Shape pill + local cache
+    if(r.ok&&(f==="target"||f==="elementId")){ // refresh the Shape pill + local cache
      const fresh=(await api("/api/spells")).find(x=>x.index===idx);
      const s=sp.find(x=>x.index===idx);Object.assign(s,fresh);
      const pill=inp.closest("tr").querySelector(".pill");
-     if(pill){pill.textContent=fresh.target;pill.classList.toggle("aoe",fresh.aoe);}
+     if(pill){pill.innerHTML=eldot(fresh.elementId)+fresh.target;pill.classList.toggle("aoe",fresh.aoe);}
     }});});
   decorate($("#secs"));}
  function byName_i(el){const idx=+el.dataset.i;return sp.find(s=>s.index===idx);}
