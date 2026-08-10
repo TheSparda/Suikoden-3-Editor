@@ -755,6 +755,15 @@ const $=s=>document.querySelector(s), api=(u,o)=>fetch(u,o).then(r=>r.json());
 let META={}, TAB="spells", DIRTY=false;
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
 function spinner(label){return `<div class=loading><span class=spin></span>${label||"loading…"}</div>`;}
+// Set a <select> to a value, injecting a synthetic option if that value has no
+// matching <option> (raw ROM values outside our curated lists). Prevents a blank
+// render that would falsely trip the changed-from-default highlight.
+function setSel(el,val){
+ if(!el)return; val=String(val);
+ if(!Array.prototype.some.call(el.options,o=>o.value===val)){
+  const o=document.createElement("option");o.value=val;o.textContent=val+" (raw)";
+  o.dataset.synthetic="1";el.appendChild(o);}
+ el.value=val;}
 const ELNAME={0:"none",1:"Fire",2:"Water",3:"Wind",4:"Earth",5:"Lightning"};
 // small colored dot for an element id, for scannable tables
 function eldot(id){return `<span class="eldot el${id in ELNAME?id:0}" title="${ELNAME[id]||('el '+id)}"></span>`;}
@@ -765,6 +774,11 @@ function decorate(scope){
  (scope||document).querySelectorAll("[data-def]").forEach(inp=>{
   if(inp._decor)return; inp._decor=1;
   const def=inp.getAttribute("data-def");
+  // for selects, make sure the default value is a real option so comparison and
+  // restore work even when the default is a raw ROM value outside the curated list
+  if(inp.tagName==="SELECT"&&!Array.prototype.some.call(inp.options,o=>o.value===String(def))){
+   const o=document.createElement("option");o.value=String(def);o.textContent=def+" (raw)";
+   o.dataset.synthetic="1";inp.appendChild(o);}
   let btn=inp.nextElementSibling;
   if(!btn||!btn.classList||!btn.classList.contains("restore")){
    btn=document.createElement("button");btn.type="button";btn.className="restore";
@@ -937,9 +951,9 @@ async function renderSpells(m){const sp=await api("/api/spells");
    return `${divider}<div class=card><h3 style="margin:0 0 8px">${sec.title}${tag} <span class=hint>${rows.length} spell${rows.length>1?"s":""}</span></h3>
     <table>${head}<tbody>${rows.map(rowHTML).join("")}</tbody></table></div>`;}).join("");
   // set select values + wire saves
-  $("#secs").querySelectorAll("select[data-f=elementId]").forEach(el=>el.value=byName_i(el).elementId);
+  $("#secs").querySelectorAll("select[data-f=elementId]").forEach(el=>setSel(el,byName_i(el).elementId));
   $("#secs").querySelectorAll("select[data-f=status]").forEach(el=>{const s=byName_i(el);el.value=(META.statuses.includes(s.status)?s.status:"none");});
-  $("#secs").querySelectorAll("select[data-f=target]").forEach(el=>{el.value=String(byName_i(el).targetByte);});
+  $("#secs").querySelectorAll("select[data-f=target]").forEach(el=>setSel(el,byName_i(el).targetByte));
   $("#secs").querySelectorAll("[data-f]").forEach(inp=>{
    const ev=inp.tagName==="SELECT"?"change":"blur";
    inp.addEventListener(ev,async()=>{
@@ -975,7 +989,7 @@ async function renderUnites(m){const un=await api("/api/unites");
      <td><select data-i=${u.index} data-f=target data-def="${d.targetByte}">${tgOpts}</select></td>
      <td><span class="pill ${u.aoe?'aoe':''}">${u.target}</span></td>
      <td class=hint>${u.desc}</td></tr>`;}).join("");
-  $("#tb").querySelectorAll("select[data-f=target]").forEach(el=>{const u=un.find(x=>x.index===+el.dataset.i);el.value=String(u.targetByte);});
+  $("#tb").querySelectorAll("select[data-f=target]").forEach(el=>{const u=un.find(x=>x.index===+el.dataset.i);setSel(el,u.targetByte);});
   $("#tb").querySelectorAll("[data-f]").forEach(inp=>{
    inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",async()=>{
     const idx=+inp.dataset.i, fld=inp.dataset.f;
@@ -1045,9 +1059,9 @@ async function renderRunes(m){
     <td><select data-f=target data-def="${d.targetByte}">${tgOpts}</select></td>
     <td><select data-f=status data-def="${dstat(d)}">${stOpts}</select></td>
     <td><span class="pill ${s.aoe?'aoe':''}" data-tgt>${s.target}</span></td>`;
-   tr.querySelector("[data-f=elementId]").value=s.elementId;
+   setSel(tr.querySelector("[data-f=elementId]"),s.elementId);
    tr.querySelector("[data-f=status]").value=(META.statuses.includes(s.status)?s.status:"none");
-   tr.querySelector("[data-f=target]").value=String(s.targetByte);
+   setSel(tr.querySelector("[data-f=target]"),s.targetByte);
    tr.querySelectorAll("[data-f]").forEach(inp=>{
     inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",async()=>{
      const f=inp.dataset.f;
@@ -1103,9 +1117,9 @@ async function renderGear(m){const gear=await api("/api/gear");
     <table><tbody>${effs}</tbody></table></div>`;}).join("");
   // set dropdown values + show/hide skill selector
   gear.forEach(g=>g.effects.forEach(e=>{
-   const ts=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=type]`);if(ts)ts.value=String(e.type);
+   const ts=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=type]`);if(ts)setSel(ts,e.type);
    const sk=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=skill]`);
-   if(sk){sk.value=String(e.skill);sk.style.display=(e.type===5?"":"none");}
+   if(sk){setSel(sk,e.skill);sk.style.display=(e.type===5?"":"none");}
   }));
   $("#gl").querySelectorAll("[data-k]").forEach(inp=>{
    inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",()=>saveGear(inp));});
@@ -1146,7 +1160,7 @@ async function renderShop(m){const shop=await api("/api/shop");const items=await
   h+=`</tbody></table></div>`;}
  m.innerHTML=h;
  document.querySelectorAll(".itemsel").forEach(sel=>{
-  const row=shop[sel.dataset.tbl].rows[+sel.dataset.slot];sel.value=row.value;});
+  const row=shop[sel.dataset.tbl].rows[+sel.dataset.slot];setSel(sel,row.value);});
  decorate(m);
  m.querySelectorAll("[data-tbl]").forEach(inp=>{
   const ev=inp.tagName==="SELECT"?"change":"blur";
