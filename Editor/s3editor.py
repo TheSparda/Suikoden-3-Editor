@@ -1701,33 +1701,30 @@ function renderSaveSlots(r){
   const eqItemOpts=`<option value="0">— none —</option>`+SAVE_ITEMS.map(i=>
     `<option value="${i.id}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`).join("");
   function drawChars(f=""){
-   const head=`<thead><tr><th class=nm>Character</th><th>Lv</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
    const numIn=(c,k,val,stat)=>`<input type=number value="${val}" data-ri=${c.rosterIndex}`+
      (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
    const shown=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f);
-   const rows=shown.map(c=>
-     `<tr><td class=nm>${c.name}</td>
-      <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"curHP",c.curHP)}</td>
-      <td>${numIn(c,"maxHP",c.maxHP)}</td><td>${numIn(c,"expToNext",c.expToNext)}</td>
-      ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}</tr>`).join("");
-   // Equipment editor: a per-character card with 9 equip-slot dropdowns. Shows for the
-   // filtered set (usually you filter to one character to equip them).
-   const eqCards=shown.map(c=>`<div class=card style="margin:0 0 10px">
-      <div style="font-weight:600;margin-bottom:6px">${c.name} — equipped</div>
-      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr))">
-      ${EQ.map(([key,lbl])=>`<label class=hint style="flex-direction:column;gap:3px">${lbl}
+   // Per-character card: a compact stats table (Lv/HP/MaxHP/EXP + 8 stats) with the
+   // 9 equipment dropdowns shown inline directly beneath it — always visible.
+   const statHead=`<thead><tr><th>Lv</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+   const card=c=>`<div class=card style="margin:0 0 12px;padding:12px 14px">
+      <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px">${c.name}
+        <span class=hint style=font-weight:400>#${c.rosterIndex}</span></div>
+      <div class=tablewrap><table class=savetbl>${statHead}<tbody><tr>
+        <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"curHP",c.curHP)}</td>
+        <td>${numIn(c,"maxHP",c.maxHP)}</td><td>${numIn(c,"expToNext",c.expToNext)}</td>
+        ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}
+      </tr></tbody></table></div>
+      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px">
+      ${EQ.map(([key,lbl])=>`<label class=hint style="flex-direction:column;gap:3px;align-items:stretch">${lbl}
         <select data-eqri=${c.rosterIndex} data-eq=${key} data-def="${c.equip[key]||0}">${eqItemOpts}</select></label>`).join("")}
-      </div></div>`).join("");
-   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>${head}<tbody>${rows}</tbody></table></div>
-     <h4 style="margin:16px 4px 8px;color:var(--acc2)">Equipment ${shown.length>6?'<span class=hint>(filter to a character to edit their gear)</span>':''}</h4>
-     ${shown.length<=6?eqCards:'<div class=hint style="margin:0 4px">Showing '+shown.length+' characters — type a name in the filter to edit equipment.</div>'}`;
+      </div></div>`;
+   $("#subview").innerHTML=shown.map(card).join("")||`<div class=hint>no characters</div>`;
    decorate($("#subview"));
-   // wire stat/scalar inputs
    $("#subview").querySelectorAll("input[data-ri]").forEach(inp=>inp.addEventListener("change",()=>{
      const ri=+inp.dataset.ri,v=+inp.value;
      if(inp.dataset.stat)setEdit(ri,null,v,inp.dataset.stat);else setEdit(ri,inp.dataset.k,v);
      markSaveDirty();}));
-   // wire equip dropdowns
    $("#subview").querySelectorAll("select[data-eq]").forEach(sel=>{
      setSel(sel,+sel.dataset.def);
      sel.addEventListener("change",()=>{
@@ -1763,7 +1760,7 @@ function renderSaveSlots(r){
   function showSub(){
    $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.classList.toggle("on",b.dataset.sub===SUB));
    $("#sq").value="";
-   if(SUB==="chars"){$("#subhint").innerHTML=`Edit level / HP / EXP / stats. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.`;drawChars();}
+   if(SUB==="chars"){$("#subhint").innerHTML=`Each character shows stats plus equipped runes/armor inline. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.`;drawChars();}
    else{$("#subhint").innerHTML=`Party + storage items (id · quantity). Change an item or its count. Only non-empty slots are shown. A .bak is made first.`;drawItems();}}
   $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{SUB=b.dataset.sub;showSub();});
   $("#sq").oninput=e=>{const f=e.target.value.toLowerCase();SUB==="chars"?drawChars(f):drawItems(f);};
