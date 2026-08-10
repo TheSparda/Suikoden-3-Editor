@@ -694,3 +694,21 @@ structural search couldn't (enemy stats/drops, EXP, starting stats, shop):
   that those live in code/script, not editable flat data.
 CONCLUSION: external research confirms the editable-data boundary rather than
 extending it. Nothing new to add to the ISO editor from cheat codes.
+
+## Local cheat-PDF validation (2026-08-10)
+Checked the local "Sure Fire" Suikoden III cheat reference PDFs
+(Cheat files/Cheat info/*.pdf, from herrvillain.net). Used as an authoritative ID
+dictionary to validate our editor:
+- ITEM IDs: 12/12 spot-checks match exactly (Medicine D=0x1, Fire rune=0x13D,
+  Sword Of Rage=0x140, Double-Strike=0x1C7, Letter Fragment=0x264, ...).
+- SKILL IDs: match exactly, incl. 03=Damage 05=Counter Attack 06=Heavy Damage
+  0E=Fire Magic 1E=Healing 2B=Magic Rationing — confirms the gear stat/skill fix.
+- The PDF's "Party Modifier / Battle-Character digits" (Hugo=01..Emily=52, with
+  gaps at 0x0C/0x21/0x25-27/0x40/0x53) are a DIFFERENT index space than our list1
+  stat-record table. Verified via the weapon-class byte (list1 +9): Roland's data
+  is at OUR list1 index 12 (+9=5 = sword class, correct), NOT the PDF id 0x0D
+  (+9=7). So our list1 names are aligned to the stat table; the PDF ids are the
+  cheat/party-roster ids. No fix needed — cross-check confirms our indexing.
+- The PDF also documents Recruit digits + skill/item/weapon-level value caps
+  (skill 0-8, weapon level 1-16, item qty 0-9) — all consistent with our editor.
+Net: external reference corroborates our data; no corrections required.
