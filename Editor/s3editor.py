@@ -768,7 +768,8 @@ class Handler(BaseHTTPRequestHandler):
                                           make_backup=body.get("backup", True),
                                           inv_edits=body.get("invEdits", {}),
                                           name_edits=body.get("nameEdits", {}),
-                                          party_edits=body.get("partyEdits", {}))
+                                          party_edits=body.get("partyEdits", {}),
+                                          recruit_edits=body.get("recruitEdits", {}))
                 return self._send(200, res)
             return self._send(404, {"error": "not found"})
         except Exception as e:
@@ -1684,7 +1685,7 @@ function renderSaveSlots(r){
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
  // pending edits for the CURRENT slot
- let EDITS={}, INV={}, NAMES={}, PARTY={}, SUB="chars", HIDE_EMPTY=true;
+ let EDITS={}, INV={}, NAMES={}, PARTY={}, RECRUIT={}, SUB="chars", HIDE_EMPTY=true;
  function setEdit(ridx,key,val,stat){
   EDITS[ridx]=EDITS[ridx]||{};
   if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
@@ -1692,11 +1693,11 @@ function renderSaveSlots(r){
  function setSkill(ridx,slot,field,val){
   EDITS[ridx]=EDITS[ridx]||{};EDITS[ridx].skills=EDITS[ridx].skills||{};
   EDITS[ridx].skills[slot]=EDITS[ridx].skills[slot]||{};EDITS[ridx].skills[slot][field]=val;}
- function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length||Object.keys(PARTY).length;}
+ function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length||Object.keys(PARTY).length||Object.keys(RECRUIT).length;}
  function markSaveDirty(){const w=$("#savewrite");if(w){w.disabled=!dirty();w.textContent=dirty()?"● Write to card":"Write to card";}}
 
  function drawSlot(i){
-  const s=r.saves[i]; EDITS={}; INV={}; NAMES={}; PARTY={};
+  const s=r.saves[i]; EDITS={}; INV={}; NAMES={}; PARTY={}; RECRUIT={};
   body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
   const meta=s.meta||{};
   const leaderTxt=s.leaderName?`Leader ${s.leaderName}`:`Leader id ${s.global.partyLeader} (guest/NPC)`;
@@ -1708,7 +1709,9 @@ function renderSaveSlots(r){
     `story phase ${s.global.storyPhase}`,
   ].filter(Boolean).join(" · ");
   $("#slotmeta").innerHTML=`${s.folder} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
-  const live=s.characters.filter(c=>c.level>0||c.curHP>0||c.expToNext>0);
+  // "live" = actually recruited (real flag). Others are known but not yet joined.
+  const live=s.characters.filter(c=>c.recruited);
+  const recruitedCount=live.length;
   const inv=s.inventory||[];
   const invCount=inv.reduce((a,bg)=>a+bg.items.length,0);  // total items across all bags
   const nameInputs=(s.names||[]).map(nm=>`<label class=hint style="flex-direction:column;gap:3px;align-items:stretch">${nm.label}
@@ -1753,9 +1756,11 @@ function renderSaveSlots(r){
    // then the 8 skill slots — all inline and always visible.
    const statHead=`<thead><tr><th>Lv</th><th>Wpn</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
    const card=c=>`<div class=card style="margin:0 0 12px;padding:12px 14px">
-      <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px">${c.name}
-        <span class=hint style=font-weight:400>#${c.rosterIndex}</span>
-        ${(c.level>0||c.curHP>0)?'':'<span class=pill style=font-size:11px title="this roster slot has no character data">empty slot</span>'}</div>
+      <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px;display:flex;align-items:center;gap:10px">
+        <span>${c.name} <span class=hint style=font-weight:400>#${c.rosterIndex}</span></span>
+        ${c.recruited?'<span class="pill aoe" style=font-size:11px>recruited</span>':'<span class=pill style=font-size:11px>not recruited</span>'}
+        <label class=hint style="font-weight:400;display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type=checkbox data-recruit=${c.rosterIndex} ${c.recruited?'checked':''}> recruited</label></div>
       <div class=tablewrap><table class=savetbl>${statHead}<tbody><tr>
         <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"weaponLevel",c.weaponLevel)}</td>
         <td>${numIn(c,"curHP",c.curHP)}</td><td>${numIn(c,"maxHP",c.maxHP)}</td>
@@ -1789,7 +1794,9 @@ function renderSaveSlots(r){
    $("#subview").querySelectorAll("[data-skf]").forEach(el=>{
      if(el.tagName==="SELECT")setSel(el,+el.dataset.def);
      const ev=el.tagName==="SELECT"?"change":"change";
-     el.addEventListener(ev,()=>{setSkill(+el.dataset.skri,+el.dataset.skslot,el.dataset.skf,+el.value);markSaveDirty();});});}
+     el.addEventListener(ev,()=>{setSkill(+el.dataset.skri,+el.dataset.skslot,el.dataset.skf,+el.value);markSaveDirty();});});
+   $("#subview").querySelectorAll("input[data-recruit]").forEach(cb=>cb.addEventListener("change",()=>{
+     RECRUIT[+cb.dataset.recruit]=cb.checked;markSaveDirty();}));}
 
   let INVCAT="regular";  // "regular" (consumables+equipment) or "key"
   // inv is now an array of bags: [{region, base, items:[...]}]. Early game these are the
@@ -1863,8 +1870,8 @@ function renderSaveSlots(r){
    $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.classList.toggle("on",b.dataset.sub===SUB));
    $("#sq").value="";
    if(SUB==="chars"){
-    $("#subhint").innerHTML=`Each character shows stats, equipped runes/armor, and skill slots inline. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.
-     &nbsp;<label style="cursor:pointer" title="hide roster slots that have no character data"><input type=checkbox id=reconly ${HIDE_EMPTY?'checked':''}> hide empty slots</label>`;
+    $("#subhint").innerHTML=`Each character shows stats, equipped runes/armor, and skill slots inline. Tick <b>recruited</b> on a card to add a not-yet-joined character to your roster (or untick to remove). Stat labels are a best-effort decode. A .bak is made first; after writing, load the save in-game and resave.
+     &nbsp;<label style="cursor:pointer" title="show only recruited characters"><input type=checkbox id=reconly ${HIDE_EMPTY?'checked':''}> recruited only</label>`;
     drawChars();
     const rc=$("#reconly");if(rc)rc.onchange=()=>{HIDE_EMPTY=rc.checked;drawChars($("#sq").value.toLowerCase());};}
    else if(SUB==="party"){$("#subhint").innerHTML=`Active battle party (up to 6). Pick who fills each slot. Changing this swaps the in-field party; leave story-required leaders in place to avoid soft-locks. A .bak is made first.`;drawParty();}
@@ -1882,7 +1889,7 @@ function renderSaveSlots(r){
    if(!dirty()){toast("no edits");return;}
    $("#savemsg").textContent="writing…";
    const res=await api("/api/save-write",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,partyEdits:PARTY,backup:$("#savebak").checked})});
+     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,partyEdits:PARTY,recruitEdits:RECRUIT,backup:$("#savebak").checked})});
    if(res.ok){$("#savemsg").innerHTML=`wrote ${res.changed} field(s), ${res.clustersWritten} clusters · checksum 0x${res.checksum.toString(16).toUpperCase()}`;
     toast("saved to card");openCard(SAVE_CARD);}
    else{$("#savemsg").textContent="error: "+(res.error||"?");toast("write failed");}
