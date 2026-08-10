@@ -110,6 +110,29 @@ NAME_FIELDS = [
 def _read_str(data, off, n):
     return data[off:off+n].split(b"\x00")[0].decode("latin1", "replace")
 
+# Suikoden III seeds these carryover name fields with canonical DEFAULTS unless a real
+# Suikoden I / II memory-card save is loaded (which overwrites them with that save's
+# hero/country). So a value differing from the default is our signal that S1/S2 data was
+# actually carried over. (There's no separate boolean load-flag byte in this region.)
+S12_DEFAULTS = {"s1Hero": "McDohl", "s1Country": "Toran",
+                "s2Hero": "Genkaku Jr.", "s2Country": "Dunan"}
+
+def detect_carryover(gamedata):
+    """Report whether Suikoden I / II save data appears to have been loaded, based on
+    whether the carryover name fields differ from S3's built-in defaults."""
+    s1h = _read_str(gamedata, 0xCA13, 16)
+    s1c = _read_str(gamedata, 0xCA24, 16)
+    s2h = _read_str(gamedata, 0xCA35, 16)
+    s2c = _read_str(gamedata, 0xCA02, 16)   # "SII army/country" per the map
+    s1_loaded = (s1h != S12_DEFAULTS["s1Hero"] or s1c != S12_DEFAULTS["s1Country"])
+    s2_loaded = (s2h != S12_DEFAULTS["s2Hero"] or s2c != S12_DEFAULTS["s2Country"])
+    return {
+        "s1": {"loaded": s1_loaded, "hero": s1h, "country": s1c,
+               "note": "custom S1 data" if s1_loaded else "default (no S1 save detected)"},
+        "s2": {"loaded": s2_loaded, "hero": s2h, "country": s2c,
+               "note": "custom S2 data" if s2_loaded else "default (no S2 save detected)"},
+    }
+
 # --- Inventory ------------------------------------------------------------------
 # Entries are 8 bytes: item id (u16) + quantity (u16) + 4 reserved. Empty slot = id 0.
 # Early game, Hugo/Chris/Geddoe run THREE separate parties (Thomas has a 4th bag too);
@@ -364,7 +387,8 @@ def decode_save(gamedata):
     names = [{"key": key, "label": label, "value": _read_str(gamedata, off, n), "max": n}
              for key, off, n, label in NAME_FIELDS]
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
-            "global": g, "names": names, "characters": [
+            "global": g, "names": names, "carryover": detect_carryover(gamedata),
+            "characters": [
                 c for c in (decode_character(gamedata, i)
                             for i in range(min(CHAR_COUNT, len(ROSTER)))) if c],
             "inventory": decode_inventory(gamedata)}
