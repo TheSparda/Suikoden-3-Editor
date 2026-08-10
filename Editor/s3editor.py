@@ -796,11 +796,20 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
 const $=s=>document.querySelector(s), api=(u,o)=>fetch(u,o).then(r=>r.json());
 let META={}, TAB="spells", DIRTY=false;
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
-// theme: 'crimson' (default dark) or 'parchment' (light menu look), saved locally
+// theme: 'crimson' (default dark) or 'parchment' (light menu look). Persisted in
+// BOTH localStorage and a cookie (1yr) so it survives even when one is unavailable
+// (e.g. localStorage blocked in some private/embedded modes).
+function saveTheme(t){
+ try{localStorage.setItem("s3theme",t);}catch(e){}
+ try{document.cookie="s3theme="+t+";path=/;max-age=31536000;samesite=lax";}catch(e){}}
+function loadTheme(){
+ try{const v=localStorage.getItem("s3theme");if(v)return v;}catch(e){}
+ const m=document.cookie.match(/(?:^|;\s*)s3theme=([^;]+)/);
+ return m?decodeURIComponent(m[1]):"crimson";}
 function applyTheme(t){document.body.classList.toggle("theme-parchment",t==="parchment");
  document.querySelectorAll("#themebar .tb").forEach(b=>b.classList.toggle("on",b.dataset.theme===t));
- try{localStorage.setItem("s3theme",t);}catch(e){}}
-(function initTheme(){let t="crimson";try{t=localStorage.getItem("s3theme")||"crimson";}catch(e){}
+ saveTheme(t);}
+(function initTheme(){const t=loadTheme();
  // script runs at end of <body>, so body + footer already exist — apply now (no flash)
  applyTheme(t);
  document.querySelectorAll("#themebar .tb").forEach(b=>b.onclick=()=>applyTheme(b.dataset.theme));})();
