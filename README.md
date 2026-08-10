@@ -171,9 +171,16 @@ Things that are behavioral, not structural — worth knowing:
 
 ### Gear
 - Edit **DEF**, **price**, and up to **5 effect slots** per item.
-- Effect types include **HP regen per turn (auto-heal)**, SPD/PWR/MDF bonuses,
-  **grant skill** (pick the skill), status protect, elemental resist, and evade.
+- Effect types include **HP regen per turn (auto-heal)**, a **stat bonus** (pick which
+  stat — PWR/SKL/REP/SPD/…), **grant skill** (pick the skill), status protect,
+  elemental resist, evade, and more.
 - In-game item descriptions shown per item.
+
+### Weapons
+- Edit each weapon type's **ATK at all 16 sharpen levels** — this is Suikoden III's
+  "weapon power" (weapons grow via sharpening rather than having a single fixed stat).
+- Per-level editing plus a **scale ×** control to raise or lower a whole weapon's
+  curve at once. (Weapon "weight" is not a Suikoden III mechanic and doesn't exist.)
 
 ### Shop
 - Edit shop stock slots and the price ladder; item slots are name/description
