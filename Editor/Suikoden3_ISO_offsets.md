@@ -550,3 +550,31 @@ statName; write_gear accepts `param` (legacy `skill` still honored).
 Audit of the other editors (spells/unites/characters/shop) vs descriptions & ranges:
 0 power/desc mismatches (94 spells, 38 unites), all growth rates in 0..15, all 26
 shop item slots resolve — gear was the only mislabel.
+
+## Rebalance-capability investigation (2026-08-10)
+Investigated four rebalance requests. Results:
+
+1. WEAPON POWER — SUPPORTED (was hiding in plain sight). list4 (0x3DFA08, stride 28,
+   28 records) IS the weapon ATK growth/sharpen table: first 16 bytes = ATK at
+   sharpen levels 1..16 (clean monotonic curves, e.g. Axe 8..250, 1H Sword 6..180),
+   followed by a 5-byte tail (per-level sharpen cost/material amounts, unconfirmed
+   exact meaning). "Weight" is NOT a Suikoden III mechanic — does not exist.
+   ACTION: surface list4 as a proper "Weapons" editor (ATK-per-level) instead of raw
+   bytes.
+
+2. RUNE AFFINITY — NOT A SEPARATE FIELD. char list1 record is fully mapped except
+   +8 (a per-character sequential id / portrait or weapon-type link; Fubar=72
+   outlier) and +60 (constant 1, validity flag). No innate element/affinity byte.
+   In S3 "affinity" = the character's rune slots + fixed rune, which we already edit
+   (L/R/Head slots + rune levels). Nothing new to add.
+
+3. SHOP RARE-FIND / % APPEARANCE — NOT PRESENT. Shop item3 tables are flat u16
+   item-ID arrays; empty slots and surrounding bytes are zero, no interleaved or
+   adjacent rate/probability field. S3 shops are fixed inventories (stocked or not).
+   The original exe also only edited item IDs. Nothing to add.
+
+4. ENEMY DROP TABLES + RATES — BLOCKED (same as enemy HP). Known drops (Blade Bunny
+   Medicine D, Shadow Dog Double-Strike Rune 0x1C7, etc.) do not appear in the aux
+   table at 0x3E7CB0 in name-table order; drops live in the same un-located enemy
+   record structure that defeated the earlier HP spike. Not editable without deeper
+   RE / archive unpacking.
