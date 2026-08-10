@@ -513,3 +513,20 @@ damage/HP-init routine) or archive unpacking — not shipped.
 ALTERNATIVE that IS shippable with what we control: tune player-side knobs
 (reduce party spell/unite power, nerf healing runes) for a harder game without the
 enemy table. Not attempted yet.
+
+## Unpacking the .BIN archives (2026-08-09, DEAD END for stats)
+Attempted to unpack DATA/*.BIN looking for the enemy stat table.
+- FSECT.BIN (89KB): monotonic u32 array of EE RAM addresses (~0x0157xxxx) — a
+  pointer/relocation table, not a file sector index.
+- ETC.BIN (386MB): proprietary nested container. Header has a count + 12-byte
+  entries and a "PS2" tag; embedded named sub-assets like "imf_acee_000".
+  Asset-name tokens are ALL graphics/animation: face*, walk_*, run_*, cha_*,
+  imf_* (image format), ctx_*. Zero enemy/battle/stat-type tokens. => ETC.BIN is
+  a character graphics/model/animation archive.
+- *VI.BIN (KRVI/DKVI/TSVI/etc, 60-200MB each): headers look like streamed video.
+- SD.BIN: starts "IECSsreV" (SCEI VerS...) — Sony sound container.
+None of the archives are the enemy stat store; the readable one is graphics.
+Combined with the ELF spike, base enemy stats are most plausibly initialized by
+battle CODE (level -> HP via a growth curve) rather than a shippable flat table.
+Definitive next step would be disassembling the battle HP-init routine — a large
+task, deferred.
