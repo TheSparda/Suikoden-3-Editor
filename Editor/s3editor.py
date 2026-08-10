@@ -41,6 +41,39 @@ def save_config(**kw):
     except Exception:
         pass  # settings are best-effort; never block editing on a write failure
 
+
+def pick_file_dialog(kind="card"):
+    """Open a native OS file-open dialog on the server machine and return the chosen
+    path. The server runs locally, so this dialog appears on the user's own desktop.
+    macOS uses AppleScript (osascript); other platforms fall back to tkinter. Returns
+    {"path": "..."} on choose, {"cancelled": True} if dismissed, or {"error": ...}."""
+    is_card = kind == "card"
+    title = "Select a PS2 memory card" if is_card else "Select a file"
+    try:
+        if sys.platform == "darwin":
+            import subprocess
+            # of type {...} filters by extension; user can still pick "All" if they hold nothing.
+            types = '{"ps2","mcd","bin","mc2","psu","vmc"}' if is_card else "{}"
+            script = (f'set f to choose file with prompt "{title}"'
+                      + (f' of type {types}' if is_card else '')
+                      + '\nPOSIX path of f')
+            r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=300)
+            out = r.stdout.strip()
+            if r.returncode != 0 or not out:
+                return {"cancelled": True}
+            return {"path": out}
+        # Windows / Linux: tkinter's native file chooser
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+        ft = ([("PS2 memory cards", "*.ps2 *.mcd *.bin *.mc2 *.psu *.vmc"), ("All files", "*.*")]
+              if is_card else [("All files", "*.*")])
+        path = filedialog.askopenfilename(title=title, filetypes=ft)
+        root.update(); root.destroy()
+        return {"path": path} if path else {"cancelled": True}
+    except Exception as e:
+        return {"error": f"no native file dialog available: {e}"}
+
 # --- edit staging -----------------------------------------------------------
 # Writes do NOT touch the ISO. They accumulate here as {file_offset: byte}. Reads
 # overlay this buffer so the UI reflects staged (unsaved) values. /api/save flushes
@@ -749,6 +782,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/texts":
                 return self._send(200, read_texts())
             # --- Save editor (PS2 memory card) — independent of any ISO ----------
+            if p == "/api/pick-file":
+                # Open a native OS file dialog on the machine running the server so the
+                # user can browse to a memory card anywhere on disk (not just nearby).
+                return self._send(200, pick_file_dialog(q.get("kind", "card")))
             if p == "/api/savecards":
                 roots = {_scan_root, os.path.abspath(os.path.join(_scan_root, "..")),
                          os.path.abspath(os.path.join(_scan_root, "Saves")),
@@ -1752,14 +1789,21 @@ async function renderSaves(m){
    ${d.lastCard?`<div class=row style="margin-top:12px;align-items:center">
      <button class=act id=savelast>Reopen last card</button>
      <span class=hint style=word-break:break-all>${d.lastCard}</span></div>`:""}
-   <div class=row style=margin-top:12px><label style=flex:1>Or enter full path
+   <div class=row style=margin-top:12px;align-items:flex-end>
+     <button class=act id=cardbrowse>Browse…</button>
+     <label style=flex:1>Or enter full path
      <input id=cardpath style=width:100% placeholder="/path/to/Mcd001.ps2" value="${d.lastCard?String(d.lastCard).replace(/"/g,"&quot;"):""}"></label>
-     <button class=act id=cardopen>Open</button></label></div>
+     <button class=act id=cardopen>Open</button></div>
    <div id=carderr class=hint style=color:#e88></div></div>
    <div id=savebody></div>`;
  m.querySelectorAll("[data-card]").forEach(b=>b.onclick=()=>openCard(decodeURIComponent(b.dataset.card)));
  if($("#savelast"))$("#savelast").onclick=()=>openCard(d.lastCard);
  $("#cardopen").onclick=()=>openCard($("#cardpath").value.trim());
+ $("#cardbrowse").onclick=async()=>{
+   $("#carderr").textContent="";
+   const r=await api("/api/pick-file?kind=card");
+   if(r.path){$("#cardpath").value=r.path;openCard(r.path);}
+   else if(r.error)$("#carderr").textContent=r.error;};
  if(SAVE_CARD)openCard(SAVE_CARD);
 }
 async function openCard(path){
