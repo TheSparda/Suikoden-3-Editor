@@ -868,3 +868,19 @@ default-bearing saves available, this is a name-based heuristic, not a confirmed
   on) hides the ~4 empty roster slots.
 All verified end-to-end on card clones (600 skill dropdowns render, party + skill edits
 persist, ECC + checksum valid).
+
+## Save Editor v8: add-items, honest recruited/party UX (2026-08-10)
+- ADD ITEMS: each inventory bag now shows slot usage (used/capacity) with a "+ Add item"
+  button that opens the next free slot as an editable blank row, and a ✕ to remove an item
+  (sets id 0, zeroes qty + reserved bytes). New items with no qty default to 1. decode_inventory
+  now returns firstSlot/capacity/used/freeSlots per bag.
+- RECRUITED indicator was WRONG: the char block is pre-initialized with base stats/level for
+  every roster entry, so "level>0 or stat>0" flagged ~75/109 identically on ALL saves
+  (early AND late) — it measured "has a definition," not recruitment. Real recruit flag lives
+  in the 0x232 region but is a complex state word (e.g. active Viki reads 0x0000), not a clean
+  bit, and all sample saves are similar-state so it can't be isolated without an early save.
+  FIX: removed the false "recruited" badge; relabeled the filter to "hide empty slots" (truly
+  empty = level 0 AND HP 0), which is what it actually does.
+- PARTY empty on early saves is CORRECT, not a bug: 0x3216 (map's "current party") is genuinely
+  empty in the phase-2 save (early chapters set the field party via story events). Added a note
+  explaining this; later saves populate it correctly (u04: Hugo/Fubar/Chris/Geddoe/Cecile).
