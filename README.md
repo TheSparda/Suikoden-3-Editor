@@ -190,6 +190,51 @@ header) so it doesn't try to reopen a missing file.
 
 ---
 
+## Hard Mode in depth
+
+Hard Mode makes the game harder by **weakening your own party**, not by buffing
+enemies. Enemy HP/attack are computed by the battle engine and aren't stored in an
+editable table (confirmed by reverse-engineering — see
+`Editor/Suikoden3_ISO_offsets.md`), so the reliable lever is the party side.
+
+**How it works.** Every playable character has a per-stat **growth rate** byte
+(one each for HP, PWR/Attack, MAG/Magic, SKL, MDF, SPD, REP, LUK — values roughly
+2–6). That rate controls how much the stat rises on each level-up. Hard Mode
+multiplies those growth-rate bytes across the **whole 79-character roster** at once,
+so the party gets weaker gradually over all 99 levels. It can also scale spell and
+unite **power**.
+
+**Using it (Hard Mode tab):**
+1. Flip **Enable Hard Mode** (the controls stay disabled until you do).
+2. Pick a **preset**, or choose **Custom** and set per-stat multipliers by hand.
+3. Optionally set the **spell power** / **unite power** multipliers (leave at 1.00
+   to nerf via growth rates only — see the note below).
+4. Click **Apply to staged edits**, review the numbers, then **Save to ISO** in the
+   header. Nothing is written until you Save.
+
+**Presets** (multipliers applied to the ISO's default growth rate / power):
+
+| Preset  | HP   | Attack/Magic | Speed | Spell & Unite power | Feel |
+|---------|------|--------------|-------|---------------------|------|
+| Tougher | ×0.80 | ×0.85       | ×0.95 | ×0.90               | Gentle nerf |
+| Hard    | ×0.65 | ×0.70       | ×0.90 | ×0.75               | Fights need real thought |
+| Brutal  | ×0.50 | ×0.55       | ×0.85 | ×0.60               | Every battle is a threat |
+
+**Key behaviors:**
+- **Idempotent.** Multipliers scale the ISO's *default* value, never the current one,
+  so re-applying or switching presets won't compound. **Restore all to default**
+  cleanly reverts every touched byte.
+- **Gradual, not retroactive.** Lowering growth rates only affects levels gained
+  *after* the change — it won't shrink a character who's already high-level. Best
+  started on a fresh or early save.
+- **Shared spell records.** A spell's power record is shared between party and enemy
+  casts, so the *spell power* multiplier affects both. Leave it at 1.00 if you only
+  want to weaken the party through growth rates.
+- Review per-character results anytime in **Characters → Growth · Skill Max · Fixed
+  Skills** before saving.
+
+---
+
 ## Command-line patcher (advanced)
 
 `Editor/s3patch.py` is the underlying engine and also a standalone CLI for
