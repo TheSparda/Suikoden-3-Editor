@@ -96,6 +96,20 @@ GLOBAL = {
     "storyPhase":  (0x14, 1),
 }
 
+# Editable name fields (herrvillain map). Fixed 16-char ASCII, 0-terminated, 17-byte
+# slots — safe in-place edits. Cross-verified against real saves (Flame Champion name,
+# castle name, and the imported Suikoden I/II hero + country names).
+NAME_FIELDS = [
+    ("flameChampion", 0xC9E0, 16, "Flame Champion name"),
+    ("castle",        0xC9F1, 16, "Castle name"),
+    ("s1Hero",        0xCA13, 16, "Suikoden I hero name"),
+    ("s1Country",     0xCA24, 16, "Suikoden I country/castle"),
+    ("s2Hero",        0xCA35, 16, "Suikoden II hero name"),
+]
+
+def _read_str(data, off, n):
+    return data[off:off+n].split(b"\x00")[0].decode("latin1", "replace")
+
 # --- Inventory ------------------------------------------------------------------
 # Entries are 8 bytes: item id (u16) + quantity (u16) + 4 reserved. Empty slot = id 0.
 # Early game, Hugo/Chris/Geddoe run THREE separate parties (Thomas has a 4th bag too);
@@ -343,17 +357,17 @@ def decode_inventory(gamedata):
 
 
 def decode_save(gamedata):
-    """Decode one save's gamedata payload into globals + character list + inventory."""
+    """Decode one save's gamedata payload into globals + names + character list + inventory."""
     g = {}
     for k, (off, w) in GLOBAL.items():
         g[k] = gamedata[off] if w == 1 else struct.unpack_from("<H", gamedata, off)[0]
-    chars = []
-    for i in range(min(CHAR_COUNT, len(ROSTER))):
-        c = decode_character(gamedata, i)
-        if c:
-            chars.append(c)
+    names = [{"key": key, "label": label, "value": _read_str(gamedata, off, n), "max": n}
+             for key, off, n, label in NAME_FIELDS]
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
-            "global": g, "characters": chars, "inventory": decode_inventory(gamedata)}
+            "global": g, "names": names, "characters": [
+                c for c in (decode_character(gamedata, i)
+                            for i in range(min(CHAR_COUNT, len(ROSTER)))) if c],
+            "inventory": decode_inventory(gamedata)}
 
 
 # Editable per-character scalar fields -> (offset within the 140-byte block, byte width).
@@ -371,12 +385,22 @@ EQUIP_OFF = dict(EQUIP_SLOTS)
 def _clamp(v, width):
     return max(0, min((1 << (8*width)) - 1, int(v)))
 
-def apply_edits_to_gamedata(gamedata, edits, inv_edits=None):
+NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
+
+def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
+    name_edits: {nameKey: "new text"} for the editable name fields.
     Returns (new_gamedata_with_fixed_checksum, changed_field_count)."""
     b = bytearray(gamedata)
     changed = 0
+    for key, val in (name_edits or {}).items():
+        if key not in NAME_OFF:
+            continue
+        off, n = NAME_OFF[key]
+        enc = str(val).encode("latin1", "replace")[:n]
+        b[off:off + n] = enc + b"\x00" * (n - len(enc))   # fixed-width, null-padded
+        changed += 1
     for ridx, fields in (edits or {}).items():
         ridx = int(ridx)
         base = CHAR_BASE + ridx * CHAR_STRIDE
@@ -410,7 +434,7 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None):
             struct.pack_into("<H", b, off + 2, _clamp(ent["qty"], 2)); changed += 1
     return fix_gamedata_checksum(bytes(b)), changed
 
-def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None):
+def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None):
     """Apply edits to one save folder's gamedata on a memcard file, in place.
     Fixes the save checksum and per-page ECC. Backs up the card first by default.
     Returns a summary dict."""
@@ -425,7 +449,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None):
     gd = card.read_file(target["cluster"], target["length"], "gamedata")
     if gd is None:
         return {"error": "gamedata not found in save folder"}
-    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits)
+    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
@@ -444,6 +468,25 @@ def load_card(path):
         return MemCard(f.read())
 
 
+_FW_MAP = {chr(0xFF01 + i): chr(0x21 + i) for i in range(94)}
+_FW_MAP["　"] = " "
+def _title_from_icon_sys(ic):
+    """The PS2 browser title in icon.sys (Shift-JIS full-width) e.g.
+    'Suikoden3 [01] Cpt.3 L41 / 28:39' -> chapter/level/playtime. Returns raw + parsed."""
+    if not ic or len(ic) < 0xC0 + 4:
+        return {}
+    raw = ic[0xC0:0xC0 + 68].split(b"\x00")[0].decode("shift_jis", "replace")
+    norm = "".join(_FW_MAP.get(c, c) for c in raw)
+    out = {"title": norm}
+    import re
+    m = re.search(r"Cpt\.(\d+)", norm)
+    if m: out["chapter"] = int(m.group(1))
+    m = re.search(r"L(\d+)", norm)
+    if m: out["level"] = int(m.group(1))
+    m = re.search(r"(\d+:\d+)\s*$", norm)
+    if m: out["playtime"] = m.group(1)
+    return out
+
 def read_all_s3_saves(path):
     """Top-level: open a memcard file, decode every S3 save it contains."""
     card = load_card(path)
@@ -455,6 +498,8 @@ def read_all_s3_saves(path):
         dec = decode_save(gd)
         dec["folder"] = s["folder"]
         dec["label"] = slot_label(s["folder"])
+        ic = card.read_file(s["cluster"], s["length"], "icon.sys")
+        dec["meta"] = _title_from_icon_sys(ic)
         saves.append(dec)
     return saves
 
