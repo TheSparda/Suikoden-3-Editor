@@ -746,6 +746,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, apply_hard_mode(body))
             if self.path == "/api/weapon":
                 return self._send(200, write_weapon(int(body["index"]), body["levels"]))
+            if self.path == "/api/save-write":
+                # Save-editor writes go straight to the memcard file (with a .bak),
+                # independent of the ISO staging layer. body: {path, folder, edits, backup}
+                path = body.get("path", "")
+                if not os.path.isfile(path):
+                    return self._send(200, {"error": f"file not found: {path}"})
+                res = SV.write_save_edits(path, body.get("folder", ""),
+                                          body.get("edits", {}),
+                                          make_backup=body.get("backup", True))
+                return self._send(200, res)
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -1597,10 +1607,10 @@ async function renderSaves(m){
    <td>${c.hasS3?'<span class="pill aoe">Suikoden III</span>':'<span class=hint>no S3 save</span>'}</td>
    <td class=hint style=word-break:break-all>${c.path}</td>
    <td><button class=act data-card="${encodeURIComponent(c.path)}" ${c.hasS3?'':'disabled'}>Open</button></td></tr>`).join("");
- m.innerHTML=`<div class=card><h3 style=margin-top:0>Save Editor <span class=pill>memory card · read-only</span></h3>
-   <div class=hint>Opens an 8&nbsp;MB PS2 memory-card image (<b>.ps2</b>/.mcd) and reads its Suikoden III
-    save slots — no ISO needed, nothing is written. Cards found near ${d.root}.
-    Writing back isn't enabled yet (the save's checksum isn't cracked), so this is a viewer for now.</div>
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Save Editor <span class=pill aoe>memory card</span></h3>
+   <div class=hint>Opens an 8&nbsp;MB PS2 memory-card image (<b>.ps2</b>/.mcd) and edits its Suikoden III
+    save slots — no ISO needed. Edits write straight to the card file (a <b>.bak</b> is made first);
+    the save checksum and page ECC are recomputed automatically. Cards found near ${d.root}.</div>
    <table><thead><tr><th>File</th><th>Size</th><th>Contains</th><th>Path</th><th></th></tr></thead>
     <tbody>${rows||'<tr><td colspan=5 class=hint>no PS2 memory cards found nearby — enter a full path below</td></tr>'}</tbody></table>
    ${d.lastCard?`<div class=row style="margin-top:12px;align-items:center">
@@ -1633,23 +1643,56 @@ function renderSaveSlots(r){
     <b>Save slot:</b> ${slotTabs}
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
+ // pending edits for the CURRENT slot: {rosterIndex:{level,curHP,expToNext,stats:{}}}
+ let EDITS={};
+ function setEdit(ridx,key,val,stat){
+  EDITS[ridx]=EDITS[ridx]||{};
+  if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
+  else EDITS[ridx][key]=val;
+ }
  function drawSlot(i){
-  const s=r.saves[i];
+  const s=r.saves[i]; EDITS={};
   body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
   $("#slotmeta").innerHTML=`${s.folder} · leader id ${s.global.partyLeader} · story phase ${s.global.storyPhase} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
-  // only show characters that look recruited/active (nonzero level or HP)
   const live=s.characters.filter(c=>c.level>0||c.curHP>0||c.expToNext>0);
   const head=`<thead><tr><th>#</th><th>Character</th><th>Lv</th><th>HP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+  const numIn=(c,k,val,stat)=>`<input type=number style=width:70px value="${val}" data-ri=${c.rosterIndex}`+
+    (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
   const rowsHTML=c=>`<tr data-name="${c.name.toLowerCase()}"><td class=hint>${c.rosterIndex}</td>
-    <td>${c.name}</td><td>${c.level}</td><td>${c.curHP}</td><td class=hint>${c.expToNext}</td>
-    ${statCols.map(n=>`<td>${c.stats[n]}</td>`).join("")}</tr>`;
+    <td>${c.name}</td>
+    <td>${numIn(c,"level",c.level)}</td>
+    <td>${numIn(c,"curHP",c.curHP)}</td>
+    <td>${numIn(c,"expToNext",c.expToNext)}</td>
+    ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}</tr>`;
   $("#slotbody").innerHTML=`<div class=card>
-     <div class=row style="margin-bottom:8px"><input class=search id=sq placeholder="filter characters…">
-      <span class=hint>${live.length} recruited/active of ${s.characters.length} roster slots.
-       Stat columns are a best-effort decode of the record's stat block (slot 5 is unused in-game).</span></div>
+     <div class=row style="margin-bottom:8px;align-items:center">
+      <input class=search id=sq placeholder="filter characters…">
+      <label class=hint style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+       <input type=checkbox id=savebak checked> Back up card (.bak) before first write</label>
+      <button class=act id=savewrite style=margin-left:auto disabled>Write to card</button>
+      <span class=hint id=savemsg></span></div>
+     <div class=hint style="margin:-2px 0 8px">${live.length} recruited/active of ${s.characters.length} roster slots.
+      Edit level / HP / EXP / stats, then <b>Write to card</b>. A .bak is made first.
+      Stat labels are a best-effort decode (slot 5 is unused in-game).
+      Recommended: load the game, resave, and play from the new save.</div>
      <table>${head}<tbody id=sb></tbody></table></div>`;
-  function draw(f=""){$("#sb").innerHTML=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f).map(rowsHTML).join("");}
+  function draw(f=""){$("#sb").innerHTML=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f).map(rowsHTML).join("");
+   decorate($("#sb"));
+   $("#sb").querySelectorAll("input[data-ri]").forEach(inp=>inp.addEventListener("change",()=>{
+     const ri=+inp.dataset.ri, v=+inp.value;
+     if(inp.dataset.stat)setEdit(ri,null,v,inp.dataset.stat); else setEdit(ri,inp.dataset.k,v);
+     $("#savewrite").disabled=false;$("#savewrite").textContent="● Write to card";}));}
   draw();$("#sq").oninput=e=>draw(e.target.value.toLowerCase());
+  $("#savewrite").onclick=async()=>{
+   if(!Object.keys(EDITS).length){toast("no edits");return;}
+   $("#savemsg").textContent="writing…";
+   const res=await api("/api/save-write",{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,backup:$("#savebak").checked})});
+   if(res.ok){$("#savemsg").innerHTML=`wrote ${res.changed} field(s), ${res.clustersWritten} clusters · checksum 0x${res.checksum.toString(16).toUpperCase()}`;
+    toast("saved to card");$("#savewrite").disabled=true;$("#savewrite").textContent="Write to card";
+    openCard(SAVE_CARD);}  // reload to show persisted values as the new baseline
+   else{$("#savemsg").textContent="error: "+(res.error||"?");toast("write failed");}
+  };
  }
  body.querySelectorAll("[data-slot]").forEach(b=>b.onclick=()=>drawSlot(+b.dataset.slot));
  drawSlot(0);
