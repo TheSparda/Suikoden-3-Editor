@@ -1681,10 +1681,11 @@ function renderSaveSlots(r){
   $("#slotmeta").innerHTML=`${s.folder} · leader id ${s.global.partyLeader} · story phase ${s.global.storyPhase} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
   const live=s.characters.filter(c=>c.level>0||c.curHP>0||c.expToNext>0);
   const inv=s.inventory||[];
+  const invCount=inv.reduce((a,bg)=>a+bg.items.length,0);  // total items across all bags
   $("#slotbody").innerHTML=`<div class=card>
      <div class=subtabs>
       <button data-sub=chars class=on>Characters (${live.length})</button>
-      <button data-sub=items>Inventory (${inv.length})</button></div>
+      <button data-sub=items>Inventory (${invCount})</button></div>
      <div class=row style="margin-bottom:8px;align-items:center">
       <input class=search id=sq placeholder="filter…">
       <label class=hint style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
@@ -1732,24 +1733,34 @@ function renderSaveSlots(r){
        EDITS[ri].equip[sel.dataset.eq]=+sel.value;markSaveDirty();});});}
 
   let INVCAT="regular";  // "regular" (consumables+equipment) or "key"
+  // inv is now an array of bags: [{region, base, items:[...]}]. Early game these are the
+  // separate Hugo/Chris/Geddoe/Thomas parties; late game most items sit in one bag +
+  // Storage. Only bags that actually contain items are shown.
   function drawItems(f=""){
    const wantKey=INVCAT==="key";
-   const list=inv.filter(it=>{
-     const isKey=it.category==="key";
-     if(wantKey!==isKey)return false;
-     const nm=(ITEMNAME[it.id]||"").toLowerCase();
-     return nm.includes(f)||String(it.slot)===f||it.id.toString(16).includes(f);});
-   const rows=list.map(it=>
-     `<tr><td class=hint>${it.slot}</td>
-       <td><select data-invslot=${it.slot} data-k=id data-def="${it.id}">${itemOpts}</select></td>
-       <td><input type=number data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td>
-       <td class=hint>${it.category}</td></tr>`).join("");
-   const nKey=inv.filter(it=>it.category==="key").length, nReg=inv.length-nKey;
-   $("#subview").innerHTML=`<div class=subtabs style="margin-bottom:8px">
+   const bags=(inv||[]).map(bag=>{
+     const items=bag.items.filter(it=>{
+       if((it.category==="key")!==wantKey)return false;
+       const nm=(ITEMNAME[it.id]||"").toLowerCase();
+       return nm.includes(f)||String(it.slot)===f||it.id.toString(16).includes(f);});
+     return {region:bag.region,items};}).filter(bag=>bag.items.length);
+   const nKey=(inv||[]).reduce((a,bg)=>a+bg.items.filter(it=>it.category==="key").length,0);
+   const nReg=(inv||[]).reduce((a,bg)=>a+bg.items.length,0)-nKey;
+   const bagHTML=bag=>{
+     const rows=bag.items.map(it=>
+       `<tr><td class=hint>${it.slot}</td>
+         <td><select data-invslot=${it.slot} data-k=id data-def="${it.id}">${itemOpts}</select></td>
+         <td><input type=number data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td>
+         <td class=hint>${it.category}</td></tr>`).join("");
+     return `<div style="margin-bottom:14px">
+       <div style="font-weight:600;color:var(--acc2);margin:0 2px 6px">${bag.region} <span class=hint style=font-weight:400>${bag.items.length} item${bag.items.length>1?'s':''}</span></div>
+       <div class=tablewrap><table class=savetbl>
+       <thead><tr><th>Slot</th><th>Item</th><th>Qty</th><th>Type</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;};
+   $("#subview").innerHTML=`<div class=subtabs style="margin-bottom:10px">
       <button data-invcat=regular class="${wantKey?'':'on'}">Party Items (${nReg})</button>
       <button data-invcat=key class="${wantKey?'on':''}">Key / Valuables (${nKey})</button></div>
-     <div class=tablewrap><table class=savetbl>
-     <thead><tr><th>Slot</th><th>Item</th><th>Qty</th><th>Type</th></tr></thead><tbody>${rows||'<tr><td colspan=4 class=hint>none</td></tr>'}</tbody></table></div>`;
+     <div class=hint style="margin:-2px 2px 10px">Early game, Hugo / Chris / Geddoe carry separate bags (they merge after the Flame Champion is chosen). Each bag is editable on its own.</div>
+     ${bags.map(bagHTML).join("")||'<div class=hint>none</div>'}`;
    $("#subview").querySelectorAll("[data-invcat]").forEach(b=>b.onclick=()=>{INVCAT=b.dataset.invcat;drawItems($("#sq").value.toLowerCase());});
    $("#subview").querySelectorAll("select[data-invslot]").forEach(sel=>setSel(sel,+sel.dataset.def));
    decorate($("#subview"));

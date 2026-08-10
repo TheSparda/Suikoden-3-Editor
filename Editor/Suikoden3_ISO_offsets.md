@@ -816,3 +816,15 @@ plus maxHP. Item inventory is now split by category for editing:
   "Key / Valuables" sub-tabs.
 UI: overrode the global sticky-thead offset inside the save table (it was landing the
 header row mid-table); header now pins to the top of its own scroll container.
+
+## Save Editor v4: separate party inventories (2026-08-10)
+Early game, Hugo/Chris/Geddoe (and Thomas) each carry a SEPARATE item bag; they merge
+into one shared inventory + storage after the Flame Champion is chosen. The herrvillain
+map documents each bag; validated against real saves. 8-byte entries (id u16 + qty u16),
+30 slots each:
+  Hugo    0x7060, Chris 0x7150, Geddoe 0x7240, Thomas 0x7330, Storage 0x7420 (90 slots).
+Empty slots may hold a high-bit sentinel (e.g. 0x81xx) rather than 0, so we treat any id
+> 0x2FF as empty. Inventory is now decoded/edited per-bag (grouped in the UI as Hugo /
+Chris / Geddoe / Thomas / Storage), each with the Party-Items vs Key/Valuables split.
+Slots are addressed by absolute index from the first bag so writes round-trip. Verified:
+per-bag counts render, a Hugo-bag qty edit persisted, checksum sum stayed 0, ECC clean.
