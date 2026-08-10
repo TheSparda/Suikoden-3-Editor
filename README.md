@@ -120,6 +120,34 @@ header) so it doesn't try to reopen a missing file.
 
 ---
 
+## Will my edits load in an emulator?
+
+Yes — the fundamentals were verified against this exact release:
+
+- **No checksums to break.** The disc image is stored as plain 2048-byte ("cooked")
+  sectors, so there's **no per-sector EDC/ECC** to recompute — the usual reason a
+  hand-edited PS2 ISO fails to boot doesn't apply here. Editing bytes in place is safe.
+- **Edits land in the boot executable.** Every table this tool edits lives inside
+  `SLUS_203.87`, which the console loads whole into memory (uncompressed, no
+  relocation of that data). A byte changed on disk is the byte the game runs.
+- **Same bytes the original editor wrote.** Offsets were reverse-engineered from the
+  original Windows editor's own patch routines, so this tool writes the same values
+  to the same places a known-working tool did — nothing extra it did is missing here.
+
+Things that are behavioral, not structural — worth knowing:
+
+- **Actually hit Save to ISO.** Edits stay staged until you save; a fresh `.bak`
+  appearing (with the backup box on) confirms the write happened.
+- **Reload the ISO in the emulator.** PCSX2 caches disc reads — after editing, load
+  the ISO fresh (or restart PCSX2) so it re-reads from disk.
+- **Boot fresh, don't rely on a save state.** Starting stats/equipment apply at
+  recruitment and growth rates at level-up, so a mid-game **save state won't
+  retroactively change** values already baked into it. Start or continue a game
+  normally on the edited ISO. This is also why **Hard Mode** works best from an
+  early save (see below).
+
+---
+
 ## Features
 
 ### Spells
@@ -184,8 +212,13 @@ header) so it doesn't try to reopen a missing file.
 ### Quality-of-life
 - Batched save with **Save / Revert**, unsaved-changes indicator.
 - **Changed-from-default** highlighting + per-field restore.
+- Numeric inputs are clamped to each field's size, so an over-large or negative
+  value can't corrupt a record or crash a save.
 - Optional automatic `.bak` before first write.
 - Remembers and pre-fills your last-opened ISO.
+- Two **Suikoden III-inspired themes** — *Crimson & Gold* (dark) and *Parchment*
+  (light) — selectable from the toggle at the bottom of the page; your choice is
+  remembered (localStorage + cookie). Inspired styling only; no game art is used.
 - One-click launchers for macOS and Windows.
 
 ---
