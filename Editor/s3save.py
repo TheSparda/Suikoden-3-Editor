@@ -126,6 +126,14 @@ GLOBAL = {
     "partyLeader": (0x12, 1),
     "storyPhase":  (0x14, 1),
 }
+# Playtime, in seconds, at file 0x28 (u32). CONFIRMED: 1719 == "28:39", exact match to the
+# save title across all sample saves. Read-only (cosmetic).
+PLAYTIME_OFF = 0x28
+# Gold/potch candidate (u32 at 0x3210, just before the party list). LIKELY but UNVERIFIED:
+# values are money-shaped and vary like spendable gold across saves, but there's no
+# monotonic proof (gold is spent) and no save with a known on-screen potch to confirm.
+# Exposed as editable-but-flagged; a wrong value is low-risk and easily fixed in-game.
+GOLD_OFF = 0x3210
 
 # Editable name fields (herrvillain map). Fixed 16-char ASCII, 0-terminated, 17-byte
 # slots — safe in-place edits. Cross-verified against real saves (Flame Champion name,
@@ -441,6 +449,10 @@ def decode_save(gamedata):
         g[k] = gamedata[off] if w == 1 else struct.unpack_from("<H", gamedata, off)[0]
     names = [{"key": key, "label": label, "value": _read_str(gamedata, off, n), "max": n}
              for key, off, n, label in NAME_FIELDS]
+    pt = struct.unpack_from("<I", gamedata, PLAYTIME_OFF)[0]
+    g["playtimeSeconds"] = pt
+    g["playtime"] = f"{pt//3600}:{(pt%3600)//60:02d}:{pt%60:02d}"
+    g["gold"] = struct.unpack_from("<I", gamedata, GOLD_OFF)[0]
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
             "party": decode_party(gamedata),
@@ -469,7 +481,7 @@ def _clamp(v, width):
 NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
 
 def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
-                            party_edits=None, recruit_edits=None):
+                            party_edits=None, recruit_edits=None, gold=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
                              "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
@@ -557,10 +569,12 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         slot = int(slot)
         if 0 <= slot < PARTY_SLOTS:
             struct.pack_into("<H", b, PARTY_OFF + slot * 2, _clamp(cid, 2)); changed += 1
+    if gold is not None:
+        struct.pack_into("<I", b, GOLD_OFF, _clamp(gold, 4)); changed += 1
     return fix_gamedata_checksum(bytes(b)), changed
 
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
-                     party_edits=None, recruit_edits=None):
+                     party_edits=None, recruit_edits=None, gold=None):
     """Apply edits to one save folder's gamedata on a memcard file, in place.
     Fixes the save checksum and per-page ECC. Backs up the card first by default.
     Returns a summary dict."""
@@ -576,7 +590,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     if gd is None:
         return {"error": "gamedata not found in save folder"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits,
-                                              recruit_edits)
+                                              recruit_edits, gold)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
