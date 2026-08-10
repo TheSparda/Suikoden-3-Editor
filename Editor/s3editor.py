@@ -1756,11 +1756,16 @@ function renderSaveSlots(r){
    // then the 8 skill slots — all inline and always visible.
    const statHead=`<thead><tr><th>Lv</th><th>Wpn</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
    const card=c=>`<div class=card style="margin:0 0 12px;padding:12px 14px">
-      <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px;display:flex;align-items:center;gap:10px">
+      <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span>${c.name} <span class=hint style=font-weight:400>#${c.rosterIndex}</span></span>
         ${c.recruited?'<span class="pill aoe" style=font-size:11px>recruited</span>':'<span class=pill style=font-size:11px>not recruited</span>'}
         <label class=hint style="font-weight:400;display:flex;align-items:center;gap:5px;cursor:pointer">
-          <input type=checkbox data-recruit=${c.rosterIndex} ${c.recruited?'checked':''}> recruited</label></div>
+          <input type=checkbox data-recruit=${c.rosterIndex} ${c.recruited?'checked':''}> recruited</label>
+        <label class=hint style="font-weight:400;display:flex;align-items:center;gap:5px">recruited by
+          <select data-recruiter=${c.rosterIndex}>
+            <option value="">— shared / story —</option>
+            ${["Hugo","Chris","Geddoe","Thomas"].map(h=>`<option value="${h}" ${c.recruiter===h?"selected":""}>${h}</option>`).join("")}
+          </select></label></div>
       <div class=tablewrap><table class=savetbl>${statHead}<tbody><tr>
         <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"weaponLevel",c.weaponLevel)}</td>
         <td>${numIn(c,"curHP",c.curHP)}</td><td>${numIn(c,"maxHP",c.maxHP)}</td>
@@ -1795,8 +1800,15 @@ function renderSaveSlots(r){
      if(el.tagName==="SELECT")setSel(el,+el.dataset.def);
      const ev=el.tagName==="SELECT"?"change":"change";
      el.addEventListener(ev,()=>{setSkill(+el.dataset.skri,+el.dataset.skslot,el.dataset.skf,+el.value);markSaveDirty();});});
+   // recruit checkbox + "recruited by" dropdown -> RECRUIT[ridx]={recruited,recruiter}
+   const recEntry=ri=>{RECRUIT[ri]=RECRUIT[ri]||{};return RECRUIT[ri];};
    $("#subview").querySelectorAll("input[data-recruit]").forEach(cb=>cb.addEventListener("change",()=>{
-     RECRUIT[+cb.dataset.recruit]=cb.checked;markSaveDirty();}));}
+     recEntry(+cb.dataset.recruit).recruited=cb.checked;markSaveDirty();}));
+   $("#subview").querySelectorAll("select[data-recruiter]").forEach(sel=>sel.addEventListener("change",()=>{
+     const ri=+sel.dataset.recruiter;const e=recEntry(ri);e.recruiter=sel.value;
+     // choosing a recruiter implies recruited; tick the box for clarity
+     const cb=$(`input[data-recruit='${ri}']`);if(cb&&!cb.checked){cb.checked=true;e.recruited=true;}
+     markSaveDirty();}));}
 
   let INVCAT="regular";  // "regular" (consumables+equipment) or "key"
   // inv is now an array of bags: [{region, base, items:[...]}]. Early game these are the
