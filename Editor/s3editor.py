@@ -1684,7 +1684,7 @@ function renderSaveSlots(r){
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
  // pending edits for the CURRENT slot
- let EDITS={}, INV={}, NAMES={}, PARTY={}, SUB="chars", RECRUITED_ONLY=true;
+ let EDITS={}, INV={}, NAMES={}, PARTY={}, SUB="chars", HIDE_EMPTY=true;
  function setEdit(ridx,key,val,stat){
   EDITS[ridx]=EDITS[ridx]||{};
   if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
@@ -1747,7 +1747,7 @@ function renderSaveSlots(r){
   function drawChars(f=""){
    const numIn=(c,k,val,stat)=>`<input type=number value="${val}" data-ri=${c.rosterIndex}`+
      (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
-   const pool=RECRUITED_ONLY?live:s.characters;
+   const pool=HIDE_EMPTY?live:s.characters;
    const shown=pool.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f);
    // Per-character card: stats row (Lv/WpnLv/HP/MaxHP/EXP + 8 stats), then equipment,
    // then the 8 skill slots — all inline and always visible.
@@ -1755,7 +1755,7 @@ function renderSaveSlots(r){
    const card=c=>`<div class=card style="margin:0 0 12px;padding:12px 14px">
       <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px">${c.name}
         <span class=hint style=font-weight:400>#${c.rosterIndex}</span>
-        ${c.recruited?'<span class="pill aoe" style=font-size:11px>recruited</span>':'<span class=pill style=font-size:11px>not recruited</span>'}</div>
+        ${(c.level>0||c.curHP>0)?'':'<span class=pill style=font-size:11px title="this roster slot has no character data">empty slot</span>'}</div>
       <div class=tablewrap><table class=savetbl>${statHead}<tbody><tr>
         <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"weaponLevel",c.weaponLevel)}</td>
         <td>${numIn(c,"curHP",c.curHP)}</td><td>${numIn(c,"maxHP",c.maxHP)}</td>
@@ -1795,44 +1795,65 @@ function renderSaveSlots(r){
   // inv is now an array of bags: [{region, base, items:[...]}]. Early game these are the
   // separate Hugo/Chris/Geddoe/Thomas parties; late game most items sit in one bag +
   // Storage. Only bags that actually contain items are shown.
+  // ADDED[bagIndex] = [slotIndex, ...] extra empty slots the user opened for new items
+  let ADDED={};
   function drawItems(f=""){
    const wantKey=INVCAT==="key";
-   const bags=(inv||[]).map(bag=>{
+   // build rows per bag: matching existing items + any user-added blank slots
+   const bagViews=(inv||[]).map((bag,bi)=>{
      const items=bag.items.filter(it=>{
        if((it.category==="key")!==wantKey)return false;
        const nm=(ITEMNAME[it.id]||"").toLowerCase();
        return nm.includes(f)||String(it.slot)===f||it.id.toString(16).includes(f);});
-     return {region:bag.region,items};}).filter(bag=>bag.items.length);
+     const added=(ADDED[bi]||[]).map(sl=>({slot:sl,id:0,qty:0,category:wantKey?'key':'consumable',_new:true}));
+     return {bag,bi,items:items.concat(added)};});
    const nKey=(inv||[]).reduce((a,bg)=>a+bg.items.filter(it=>it.category==="key").length,0);
    const nReg=(inv||[]).reduce((a,bg)=>a+bg.items.length,0)-nKey;
-   const bagHTML=bag=>{
-     const rows=bag.items.map(it=>
-       `<tr><td class=hint>${it.slot}</td>
-         <td><select data-invslot=${it.slot} data-k=id data-def="${it.id}">${itemOpts}</select></td>
-         <td><input type=number data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td>
-         <td class=hint>${it.category}</td></tr>`).join("");
+   const rowHTML=it=>`<tr><td class=hint>${it.slot}</td>
+       <td><select data-invslot=${it.slot} data-k=id data-def="${it.id}">${itemOpts}</select></td>
+       <td><input type=number min=0 data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td>
+       <td class=hint>${it.category}</td>
+       <td><button class="restore" data-clearslot=${it.slot} title="remove item" style="display:inline-block">✕</button></td></tr>`;
+   const bagHTML=v=>{
+     const free=(v.bag.freeSlots||[]).filter(sl=>!(ADDED[v.bi]||[]).includes(sl));
+     const rows=v.items.map(rowHTML).join("");
      return `<div style="margin-bottom:14px">
-       <div style="font-weight:600;color:var(--acc2);margin:0 2px 6px">${bag.region} <span class=hint style=font-weight:400>${bag.items.length} item${bag.items.length>1?'s':''}</span></div>
+       <div style="font-weight:600;color:var(--acc2);margin:0 2px 6px">${v.bag.region}
+         <span class=hint style=font-weight:400>${v.bag.used}/${v.bag.capacity} slots used</span>
+         ${free.length?`<button class="act sec" style="padding:2px 10px;margin-left:8px" data-addbag=${v.bi} data-freeslot=${free[0]}>+ Add item</button>`:'<span class=hint style=margin-left:8px>bag full</span>'}</div>
        <div class=tablewrap><table class=savetbl>
-       <thead><tr><th>Slot</th><th>Item</th><th>Qty</th><th>Type</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;};
+       <thead><tr><th>Slot</th><th>Item</th><th>Qty</th><th>Type</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=5 class=hint>no items</td></tr>'}</tbody></table></div></div>`;};
    $("#subview").innerHTML=`<div class=subtabs style="margin-bottom:10px">
       <button data-invcat=regular class="${wantKey?'':'on'}">Party Items (${nReg})</button>
       <button data-invcat=key class="${wantKey?'on':''}">Key / Valuables (${nKey})</button></div>
-     <div class=hint style="margin:-2px 2px 10px">Early game, Hugo / Chris / Geddoe carry separate bags (they merge after the Flame Champion is chosen). Each bag is editable on its own.</div>
-     ${bags.map(bagHTML).join("")||'<div class=hint>none</div>'}`;
+     <div class=hint style="margin:-2px 2px 10px">Early game, Hugo / Chris / Geddoe carry separate bags (they merge after the Flame Champion is chosen). Use <b>+ Add item</b> to fill an empty slot, ✕ to remove. New items default to qty 1.</div>
+     ${bagViews.map(bagHTML).join("")||'<div class=hint>none</div>'}`;
    $("#subview").querySelectorAll("[data-invcat]").forEach(b=>b.onclick=()=>{INVCAT=b.dataset.invcat;drawItems($("#sq").value.toLowerCase());});
    $("#subview").querySelectorAll("select[data-invslot]").forEach(sel=>setSel(sel,+sel.dataset.def));
    decorate($("#subview"));
    $("#subview").querySelectorAll("[data-invslot]").forEach(inp=>{
      const ev=inp.tagName==="SELECT"?"change":"blur";
-     inp.addEventListener(ev,()=>{const sl=+inp.dataset.invslot;INV[sl]=INV[sl]||{};INV[sl][inp.dataset.k]=+inp.value;markSaveDirty();});});}
+     inp.addEventListener(ev,()=>{const sl=+inp.dataset.invslot;INV[sl]=INV[sl]||{};INV[sl][inp.dataset.k]=+inp.value;markSaveDirty();});});
+   // "+ Add item": open the next free slot in that bag as an editable blank row
+   $("#subview").querySelectorAll("[data-addbag]").forEach(btn=>btn.onclick=()=>{
+     const bi=+btn.dataset.addbag, sl=+btn.dataset.freeslot;
+     ADDED[bi]=(ADDED[bi]||[]).concat(sl);
+     drawItems($("#sq").value.toLowerCase());});
+   // ✕ remove: set the slot's item id to 0 (clears it) and re-render
+   $("#subview").querySelectorAll("[data-clearslot]").forEach(btn=>btn.onclick=()=>{
+     const sl=+btn.dataset.clearslot;INV[sl]={id:0,qty:0};markSaveDirty();
+     // drop it from ADDED if it was a freshly-added row
+     Object.keys(ADDED).forEach(bi=>ADDED[bi]=ADDED[bi].filter(x=>x!==sl));
+     drawItems($("#sq").value.toLowerCase());});}
 
   function drawParty(){
    const mem=s.party||[];
+   const anyFilled=mem.some(c=>c>0);
    const rows=mem.map((cid,slot)=>`<tr><td class=hint>Slot ${slot+1}</td>
      <td><select data-partyslot=${slot} data-def="${cid}">${charOpts}</select></td>
      <td class=hint>${CHARBY[cid]||(cid?('id '+cid+' (guest/NPC)'):'—')}</td></tr>`).join("");
-   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>
+   const emptyNote=anyFilled?"":`<div class=hint style="margin:0 2px 10px;color:var(--warn)">This save's active-party table is empty — common in early chapters, where the game sets the field party through story events rather than this list. You can assign members here, but on a very early save it may be overwritten when the next event loads.</div>`;
+   $("#subview").innerHTML=emptyNote+`<div class=tablewrap><table class=savetbl>
      <thead><tr><th>Party</th><th>Character</th><th>Current</th></tr></thead><tbody>${rows}</tbody></table></div>`;
    $("#subview").querySelectorAll("select[data-partyslot]").forEach(sel=>{
      setSel(sel,+sel.dataset.def);
@@ -1843,9 +1864,9 @@ function renderSaveSlots(r){
    $("#sq").value="";
    if(SUB==="chars"){
     $("#subhint").innerHTML=`Each character shows stats, equipped runes/armor, and skill slots inline. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.
-     &nbsp;<label style="cursor:pointer"><input type=checkbox id=reconly ${RECRUITED_ONLY?'checked':''}> recruited only</label>`;
+     &nbsp;<label style="cursor:pointer" title="hide roster slots that have no character data"><input type=checkbox id=reconly ${HIDE_EMPTY?'checked':''}> hide empty slots</label>`;
     drawChars();
-    const rc=$("#reconly");if(rc)rc.onchange=()=>{RECRUITED_ONLY=rc.checked;drawChars($("#sq").value.toLowerCase());};}
+    const rc=$("#reconly");if(rc)rc.onchange=()=>{HIDE_EMPTY=rc.checked;drawChars($("#sq").value.toLowerCase());};}
    else if(SUB==="party"){$("#subhint").innerHTML=`Active battle party (up to 6). Pick who fills each slot. Changing this swaps the in-field party; leave story-required leaders in place to avoid soft-locks. A .bak is made first.`;drawParty();}
    else{$("#subhint").innerHTML=`Party + storage items (id · quantity). Change an item or its count. Only non-empty slots are shown. A .bak is made first.`;drawItems();}}
   $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{SUB=b.dataset.sub;showSub();});

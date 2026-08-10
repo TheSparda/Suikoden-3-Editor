@@ -379,24 +379,30 @@ def item_category(iid):
 
 def decode_inventory(gamedata):
     """Decode the item inventory grouped by bag (Hugo/Chris/Geddoe/Thomas/Storage).
-    Returns [{region, base, items:[{slot, addr, id, qty, category}]}]. `slot` is the
-    absolute entry index from the start of the first bag, so it round-trips on write.
-    Only non-empty slots (real item id) are returned."""
+    Returns [{region, base, firstSlot, capacity, used, freeSlots, items:[...]}].
+    `slot` is the absolute entry index from the start of the first bag, so it
+    round-trips on write. Only non-empty slots appear in `items`; `freeSlots` lists the
+    absolute indices of empty slots in this bag (for adding new items)."""
+    base0 = INV_REGIONS[0][1]
     groups = []
     for name, base, count in INV_REGIONS:
-        items = []
+        items, free = [], []
+        first_slot = (base - base0) // INV_ENTRY
         for k in range(count):
             off = base + k * INV_ENTRY
             if off + 4 > len(gamedata):
                 break
+            slot = (off - base0) // INV_ENTRY
             iid = struct.unpack_from("<H", gamedata, off)[0]
             qty = struct.unpack_from("<H", gamedata, off + 2)[0]
             if iid == 0 or iid > ITEM_ID_MAX:      # empty or high-bit sentinel slot
+                free.append(slot)
                 continue
-            slot = (off - INV_REGIONS[0][1]) // INV_ENTRY
             items.append({"slot": slot, "addr": off, "id": iid, "qty": qty,
                           "category": item_category(iid)})
-        groups.append({"region": name, "base": base, "items": items})
+        groups.append({"region": name, "base": base, "firstSlot": first_slot,
+                       "capacity": count, "used": len(items),
+                       "freeSlots": free, "items": items})
     return groups
 
 
@@ -489,7 +495,14 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         if off + 4 > len(b):
             continue
         if "id" in ent:
-            struct.pack_into("<H", b, off, _clamp(ent["id"], 2)); changed += 1
+            new_id = _clamp(ent["id"], 2)
+            struct.pack_into("<H", b, off, new_id); changed += 1
+            # ensure the 4 reserved bytes are clean when (re)filling/clearing a slot
+            struct.pack_into("<I", b, off + 4, 0)
+            if new_id == 0:                     # clearing a slot -> zero its quantity too
+                struct.pack_into("<H", b, off + 2, 0)
+            elif "qty" not in ent and struct.unpack_from("<H", b, off + 2)[0] == 0:
+                struct.pack_into("<H", b, off + 2, 1)   # new item with no qty -> default 1
         if "qty" in ent:
             struct.pack_into("<H", b, off + 2, _clamp(ent["qty"], 2)); changed += 1
     for slot, cid in (party_edits or {}).items():
