@@ -790,7 +790,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 INDEX_HTML = r"""<!doctype html><html><head><meta charset=utf-8>
-<title>Suikoden III ISO Editor</title>
+<title>Suikoden III ISO & Save Editor</title>
 <style>
 /* ===== Suikoden III inspired themes =====
    All colors go through CSS variables. The default (:root) is the "Dark crimson &
@@ -920,7 +920,7 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  padding:6px 12px;cursor:pointer;font:inherit}
 .subtabs button.on{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
 </style></head><body>
-<header><b>Suikoden III ISO Editor</b><span class=iso id=iso></span>
+<header><b>Suikoden III ISO &amp; Save Editor</b><span class=iso id=iso></span>
 <label class=hint style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer">
  <input type=checkbox id=backupChk checked> Back up ISO before first save</label>
 <span class=hint id=backupState style="margin:0 14px"></span>

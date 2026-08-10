@@ -1,21 +1,27 @@
-# Suikoden III ISO Editor
+# Suikoden III ISO & Save Editor
 
-A cross-platform editor for the **Suikoden III** PlayStation 2 game disc. It runs
-as a local web app in your browser (plus a command-line patcher for power users),
-and lets you edit spells, runes, unite attacks, gear, shops, and character data
-directly in the ISO.
+A cross-platform editor for **Suikoden III** on PlayStation 2. It runs as a local
+web app in your browser (plus a command-line patcher for power users) and does two
+things:
+
+- **ISO editing** — change spells, runes, unite attacks, gear, weapons, shops, and
+  character data directly in the game disc image (permanent, applies to a new game).
+- **Save editing** — open a PS2 **memory card** (`.ps2`) and edit an existing
+  playthrough: character levels/stats/skills/equipment, party composition, per-party
+  inventories, and save names. No ISO required for this.
 
 Nothing is uploaded anywhere — the server runs on your own machine and only ever
-touches the ISO file you point it at.
+touches the ISO or memory-card file you point it at.
 
 ---
 
 ## What you need
 
-1. **Your own copy of the game as an ISO.**
-   Only the **USA release, `SLUS-20387`** is supported. The editor verifies this
+1. **Your own copy of the game as an ISO** (for ISO editing) **and/or a PS2 memory
+   card image** (for save editing).
+   Only the **USA release, `SLUS-20387`** is supported. The editor verifies the ISO
    on open and refuses anything else. This project does **not** include the game —
-   dump your own disc.
+   dump your own disc, and use your own memory-card file for save editing.
 2. **Python 3.8 or newer.** That's the only dependency; the app uses the Python
    standard library only (no `pip install` step).
    - macOS ships with Python 3.
@@ -216,6 +222,38 @@ Things that are behavioral, not structural — worth knowing:
 ### Reference
 - Searchable **Item** and **Skill** hex-ID lists for looking up values.
 
+### Save Editor (PS2 memory card)
+Edit an **existing playthrough** by opening a PS2 memory-card image — **no ISO
+needed**. Unlike ISO edits (which only affect a new game), these change a save you're
+already playing.
+
+- **Opens 8 MB PS2 memory cards** (`.ps2` / `.mcd`). The editor scans nearby folders,
+  flags which cards contain a Suikoden III save, and reads all four save slots.
+- **Per-save metadata** (read-only): **Chapter**, **party Level**, and **Playtime**
+  (parsed from the save's PS2-browser title), the current **party leader** resolved to
+  a character name, and the story phase.
+- **Suikoden I / II carryover indicator** — shows whether a linked S1/S2 save was
+  loaded, based on the transferred hero/country names (defaults = no linked save).
+- **Editable names** — Flame Champion, castle, and the imported Suikoden I/II hero and
+  country names.
+- **Characters** — for every recruited character (with a "recruited only" filter):
+  level, weapon level, current/max HP, EXP-to-next, the 8 stats, all **equipped gear**
+  (head/right/left rune, helm, armor, shield, boots, gloves, accessory) via item
+  dropdowns, and all **8 skill slots** (skill + rank).
+- **Party composition** — pick who fills each of the 6 active battle-party slots.
+- **Inventory** — items are grouped by bag. Early game, **Hugo / Chris / Geddoe**
+  (and Thomas) carry **separate inventories** before they merge; each bag is editable
+  on its own, split into **Party Items** vs **Key / Valuables**.
+- **Safe writes** — a `.bak` of the card is made before the first write, and the save
+  **checksum** and per-page **ECC** are recomputed automatically so the edited card
+  still loads. Best practice: after editing, load the save in-game and re-save, then
+  play from that.
+
+> **Note:** *gold/potch* editing isn't included yet — the field hasn't been reliably
+> located, and writing an unverified value could corrupt a save. Stat-column labels are
+> a best-effort decode (one slot is unused in-game); level/HP/EXP/skills/equipment are
+> confirmed.
+
 ### Quality-of-life
 - Batched save with **Save / Revert**, unsaved-changes indicator.
 - **Changed-from-default** highlighting + per-field restore.
@@ -311,6 +349,7 @@ only, and prints PCSX2 verification steps. Your original is never touched.
 |---|---|
 | `Editor/s3editor.py` | The web app (server + embedded UI) |
 | `Editor/s3patch.py` | Core ISO logic + command-line patcher |
+| `Editor/s3save.py` | PS2 memory-card save reader/writer (checksum + ECC) |
 | `Editor/s3fields.py` | Character record field schemas |
 | `Editor/s3_*.json` | Extracted names, descriptions, rune owners, unite casts |
 | `Editor/Suikoden3_ISO_offsets.md` | Reverse-engineering notes / offset reference |
