@@ -49,11 +49,17 @@ def pick_file_dialog(kind="card"):
     {"path": "..."} on choose, {"cancelled": True} if dismissed, or {"error": ...}."""
     is_card = kind == "card"
     title = "Select a PS2 memory card" if is_card else "Select a file"
+    CARD_EXTS = (".ps2", ".mcd", ".mc2", ".bin")   # the only formats scan_memcards accepts
+    def _guard(path):
+        # Defense in depth: even if the dialog filter is bypassed, reject a non-card path.
+        if is_card and path and not path.lower().endswith(CARD_EXTS):
+            return {"error": "not a PS2 memory-card file (.ps2/.mcd/.mc2/.bin)"}
+        return {"path": path}
     try:
         if sys.platform == "darwin":
             import subprocess
-            # of type {...} filters by extension; user can still pick "All" if they hold nothing.
-            types = '{"ps2","mcd","bin","mc2","psu","vmc"}' if is_card else "{}"
+            # of type {...} restricts the dialog to our supported PS2 card extensions.
+            types = '{"ps2","mcd","mc2","bin"}' if is_card else "{}"
             script = (f'set f to choose file with prompt "{title}"'
                       + (f' of type {types}' if is_card else '')
                       + '\nPOSIX path of f')
@@ -61,16 +67,16 @@ def pick_file_dialog(kind="card"):
             out = r.stdout.strip()
             if r.returncode != 0 or not out:
                 return {"cancelled": True}
-            return {"path": out}
+            return _guard(out)
         # Windows / Linux: tkinter's native file chooser
         import tkinter as tk
         from tkinter import filedialog
         root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-        ft = ([("PS2 memory cards", "*.ps2 *.mcd *.bin *.mc2 *.psu *.vmc"), ("All files", "*.*")]
+        ft = ([("PS2 memory cards", "*.ps2 *.mcd *.mc2 *.bin")]
               if is_card else [("All files", "*.*")])
         path = filedialog.askopenfilename(title=title, filetypes=ft)
         root.update(); root.destroy()
-        return {"path": path} if path else {"cancelled": True}
+        return _guard(path) if path else {"cancelled": True}
     except Exception as e:
         return {"error": f"no native file dialog available: {e}"}
 
