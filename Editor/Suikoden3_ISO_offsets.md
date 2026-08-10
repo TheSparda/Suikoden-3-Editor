@@ -796,3 +796,23 @@ load the save in-game and resave, then play from that.
   corrupting playthroughs.
 - UI: wide stat table wrapped in a horizontal-scroll container with a sticky name column
   and compact inputs, so it no longer overflows the card. Characters/Inventory sub-tabs.
+
+## Save Editor v3: equipped gear + item categories (2026-08-10)
+Used the herrvillain per-character RAM code page (codes/hugo.htm, Wayback) to confirm
+the in-block layout. NOTE the SAVE layout differs from the RAM layout for some scalars
+(save level is @0x0D, RAM level is a different offset), but the EQUIP slots share the
+RAM map's 8-byte spacing and were verified empirically against real saves:
+  Character block equip slots (u16 item id), offsets within the 140-byte record:
+    0x44 Head rune, 0x4C Right rune, 0x54 Left rune,
+    0x5C Helm, 0x64 Armor, 0x6C Shield,
+    0x74 Boots, 0x7C Gloves, 0x84 Accessory.
+  Each decodes to a real rune/armor/accessory name across all 4 sample saves
+  (e.g. Hugo: True Wind / True Fire / Champion's / Blessed Casque / Blessed Robe /
+  Winged Boots / Power Gloves / Fish Badge). Also confirmed: maxHP @0x30 (u16).
+Exposed in the Save Editor: per-character Equipment dropdowns (9 slots, item picker),
+plus maxHP. Item inventory is now split by category for editing:
+  item_category(id): id>=0x200 -> "key" (seeds/medals/recipes/trade goods/books/stones),
+  0xA0-0x1FF -> "equipment", else "consumable". UI shows "Party Items" vs
+  "Key / Valuables" sub-tabs.
+UI: overrode the global sticky-thead offset inside the save table (it was landing the
+header row mid-table); header now pins to the top of its own scroll container.
