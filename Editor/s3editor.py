@@ -399,6 +399,69 @@ def write_weapon(index, levels):
         iso.wr(off + li, bytes([max(0, min(255, int(v)))]))
     iso.close(); return {"ok": True}
 
+# --- Editable in-ELF text (UI / battle / menu / description strings) -----------
+# The boot ELF holds English text as null-terminated ASCII. We surface the clean,
+# meaningful strings (battle messages, menu labels, lottery/prize text, error prompts,
+# character blurbs) for in-place editing. Edits are capped to the ORIGINAL byte length
+# (can't grow a string without repointing, which is unsafe), null-padded on the tail.
+# NOTE: this does NOT include story dialogue — that lives in packed event files
+# elsewhere on the disc, outside the ELF, and isn't editable here.
+import re as _re
+_TEXT_ELF_LO = 0xA3800
+_TEXT_ELF_HI = 0x465DF0
+_text_cache = None
+
+def _looks_like_text(s):
+    if len(s) < 8 or " " not in s:
+        return False
+    if _re.search(r"[%$/\\]|0x|->|::|_|[A-Za-z]\d|\d[A-Za-z]", s):
+        return False
+    if not any(c.islower() for c in s):
+        return False
+    ok = sum(c.isalpha() or c in " ,.'!?-@()" for c in s)
+    return ok / len(s) > 0.9
+
+def read_texts():
+    """Scan the ELF for editable UI/text strings (disk bytes, not staged), returning
+    {offset, max, value} — value overlays any staged edit so the UI shows current text."""
+    global _text_cache
+    iso = _iso()
+    if _text_cache is None:
+        blob = iso.disk_rd(_TEXT_ELF_LO, _TEXT_ELF_HI - _TEXT_ELF_LO)
+        out = []
+        cur = bytearray(); st = 0
+        for i, b in enumerate(blob):
+            if 32 <= b < 127:
+                if not cur:
+                    st = i
+                cur.append(b)
+            else:
+                if cur:
+                    s = cur.decode("latin1")
+                    if _looks_like_text(s):
+                        out.append({"off": _TEXT_ELF_LO + st, "max": len(cur)})
+                    cur = bytearray()
+        _text_cache = out
+    # attach current (staged-overlaid) value for each string
+    res = []
+    for t in _text_cache:
+        cur = iso.rd(t["off"], t["max"]).split(b"\x00")[0].decode("latin1", "replace")
+        res.append({"off": t["off"], "max": t["max"], "value": cur})
+    iso.close()
+    return res
+
+def write_text(off, value):
+    """Write an edited string in place, capped to its original length, null-padded."""
+    iso = _iso(write=True)
+    # find the record to get its max length (from cache)
+    rec = next((t for t in (_text_cache or []) if t["off"] == off), None)
+    if rec is None:
+        iso.close(); return {"error": "unknown text offset"}
+    enc = str(value).encode("latin1", "replace")[:rec["max"]]
+    enc = enc + b"\x00" * (rec["max"] - len(enc))
+    iso.wr(off, enc)
+    iso.close(); return {"ok": True}
+
 def read_shop():
     iso = _iso(); items = S.load_item_ids(); out = {}
     for name, (off, cnt, w, note) in S.SHOP.items():
@@ -683,6 +746,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, read_weapons())
             if p == "/api/growth":
                 return self._send(200, read_growth())
+            if p == "/api/texts":
+                return self._send(200, read_texts())
             # --- Save editor (PS2 memory card) — independent of any ISO ----------
             if p == "/api/savecards":
                 roots = {_scan_root, os.path.abspath(os.path.join(_scan_root, "..")),
@@ -757,6 +822,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, apply_hard_mode(body))
             if self.path == "/api/weapon":
                 return self._send(200, write_weapon(int(body["index"]), body["levels"]))
+            if self.path == "/api/text":
+                return self._send(200, write_text(int(body["off"]), body["value"]))
             if self.path == "/api/save-write":
                 # Save-editor writes go straight to the memcard file (with a .bak),
                 # independent of the ISO staging layer. body: {path, folder, edits, backup}
@@ -1016,8 +1083,8 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const tabs=["spells","runes","unites","gear","weapons","shop","characters","hardmode","enemies","reference","saves"];
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
+ const tabs=["spells","runes","unites","gear","weapons","shop","characters","text","hardmode","enemies","reference","saves"];
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
  $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
  document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
  setTabsEnabled(META.loaded);
@@ -1088,6 +1155,7 @@ async function render(){
  if(TAB==="hardmode")return renderHardMode(m);
  if(TAB==="enemies")return renderEnemies(m);
  if(TAB==="reference")return renderRef(m);
+ if(TAB==="text")return renderText(m);
  if(TAB==="saves")return renderSaves(m);}
 
 const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
@@ -1625,6 +1693,31 @@ async function renderRef(m){const items=await api("/api/items");
    .forEach(i=>{ib.innerHTML+=`<tr><td class=pill>${i.id.toString(16).toUpperCase().padStart(3,'0')}</td><td>${i.name}</td></tr>`;});}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
+// ---- Text: edit UI / battle / menu / description strings in the ISO's boot ELF ----
+async function renderText(m){
+ m.innerHTML=spinner("scanning ISO for editable text…");
+ const texts=await api("/api/texts");
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter text…" style=width:340px>
+   <span class=hint>Editable UI / battle / menu / prize / error text and character blurbs from the game
+    executable. Each edit is capped to the original length (longer text is truncated). Story
+    <b>dialogue is not here</b> — it lives in packed event files outside the executable. Saves on change.</span></div>
+  <div class=hint style="margin:-6px 0 10px">${texts.length} strings</div>
+  <table><thead><tr><th style=width:90px>Offset</th><th style=width:52px>Max</th><th>Text</th></tr></thead><tbody id=tb></tbody></table>`;
+ function draw(f=""){
+  const rows=texts.filter(t=>t.value.toLowerCase().includes(f)).slice(0,600);
+  $("#tb").innerHTML=rows.map(t=>`<tr>
+    <td class=hint>0x${t.off.toString(16).toUpperCase()}</td>
+    <td class=hint>${t.max}</td>
+    <td><input type=text value="${t.value.replace(/"/g,'&quot;')}" maxlength=${t.max}
+        data-off=${t.off} data-def="${t.value.replace(/"/g,'&quot;')}" style=width:100%></td></tr>`).join("");
+  decorate($("#tb"));
+  $("#tb").querySelectorAll("input[data-off]").forEach(inp=>inp.addEventListener("change",async()=>{
+    const r=await api("/api/text",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({off:+inp.dataset.off,value:inp.value})});
+    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}));
+  if(texts.length>600&&!f)$("#tb").insertAdjacentHTML("beforeend",`<tr><td colspan=3 class=hint>… showing first 600; use the filter to narrow.</td></tr>`);}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
 // ---- Save Editor: reads a PS2 memory card (*.ps2) and decodes S3 save slots. ----
 // Read-only for now: writing needs the save's checksum algorithm, which isn't
 // solved yet. No ISO required — this is a separate subsystem (Editor/s3save.py).
@@ -1731,7 +1824,6 @@ function renderSaveSlots(r){
      <div class=row style="margin-top:10px;align-items:center;gap:8px">
        <label class=hint style="flex-direction:column;gap:3px;align-items:stretch">Gold / potch <span class=hint style=font-weight:400>(likely — unverified)</span>
          <input type=number min=0 max=999999 id=goldfld value="${s.global.gold||0}" data-def="${s.global.gold||0}" style=width:140px></label>
-       <span class=hint style="max-width:520px">Best-effort location; if editing gold doesn't take in-game, tell me the on-screen potch and I'll pin it exactly.</span>
      </div></div>
     <div class=card>
      <div class=subtabs>
@@ -1760,7 +1852,7 @@ function renderSaveSlots(r){
    const shown=pool.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f);
    // Per-character card: stats row (Lv/WpnLv/HP/MaxHP/EXP + 8 stats), then equipment,
    // then the 8 skill slots — all inline and always visible.
-   const statHead=`<thead><tr><th>Lv</th><th>Wpn</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+   const statHead=`<thead><tr><th>Lv</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
    const card=c=>`<div class=card style="margin:0 0 12px;padding:12px 14px">
       <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span>${c.name} <span class=hint style=font-weight:400>#${c.rosterIndex}</span></span>
@@ -1773,7 +1865,7 @@ function renderSaveSlots(r){
             ${["Hugo","Chris","Geddoe","Thomas"].map(h=>`<option value="${h}" ${c.recruiter===h?"selected":""}>${h}</option>`).join("")}
           </select></label></div>
       <div class=tablewrap><table class=savetbl>${statHead}<tbody><tr>
-        <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"weaponLevel",c.weaponLevel)}</td>
+        <td>${numIn(c,"level",c.level)}</td>
         <td>${numIn(c,"curHP",c.curHP)}</td><td>${numIn(c,"maxHP",c.maxHP)}</td>
         <td>${numIn(c,"expToNext",c.expToNext)}</td>
         ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}
