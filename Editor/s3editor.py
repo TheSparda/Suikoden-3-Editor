@@ -298,11 +298,19 @@ def read_gear():
         for i, eo in enumerate(S.GEAR_EFFECT_OFFS):
             t = struct.unpack_from("<H", rec, eo)[0]
             v = struct.unpack_from("<H", rec, eo + 2)[0]
-            sk = struct.unpack_from("<H", rec, eo + 4)[0]
-            effects.append({"slot": i, "off": eo, "type": t,
-                            "typeName": S.GEAR_EFFECT_TYPES.get(t, f"0x{t:X}"),
-                            "value": v, "skill": sk,
-                            "skillName": skills.get(sk, "") if t == 5 else ""})
+            param = struct.unpack_from("<H", rec, eo + 4)[0]   # 3rd u16: stat/skill/flag
+            role = S.GEAR_TYPE_PARAM.get(t)                     # "stat" | "skill" | None
+            effects.append({
+                "slot": i, "off": eo, "type": t,
+                "typeName": S.GEAR_EFFECT_TYPES.get(t, f"type {t}"),
+                "value": v,
+                "param": param,                                # raw 3rd field
+                "paramRole": role or "",
+                # skill kept for backwards compat with the write path (== param when type 5)
+                "skill": param,
+                "skillName": skills.get(param, "") if t == 5 else "",
+                "statName": S.GEAR_STAT_SELECTOR.get(param, "") if t == 2 else "",
+            })
         out.append({
             "id": iid, "name": items.get(iid, f"0x{iid:X}"),
             "desc": _desc_at(iso, struct.unpack_from("<I", rec, 0)[0]),
@@ -329,14 +337,16 @@ def write_gear(item_id, fields):
         iso.wr(off + S.GEAR_DEF_OFF, struct.pack("<H", int(fields["def"]) & 0xFFFF))
     if "price" in fields:
         iso.wr(off + S.GEAR_PRICE_OFF, struct.pack("<I", int(fields["price"]) & 0xFFFFFFFF))
-    # effects: list of {off, type, value, skill}
+    # effects: list of {off, type, value, param}. `param` is the 3rd u16 (stat index
+    # for a Stat bonus, skill id for Grant skill, else a flag). Accept legacy `skill`.
     for e in fields.get("effects", []):
         eo = int(e["off"])
         if eo not in S.GEAR_EFFECT_OFFS:
             iso.close(); return {"error": f"bad effect offset {eo}"}
+        param = e.get("param", e.get("skill", 0))
         iso.wr(off + eo,     struct.pack("<H", int(e.get("type", 0)) & 0xFFFF))
         iso.wr(off + eo + 2, struct.pack("<H", int(e.get("value", 0)) & 0xFFFF))
-        iso.wr(off + eo + 4, struct.pack("<H", int(e.get("skill", 0)) & 0xFFFF))
+        iso.wr(off + eo + 4, struct.pack("<H", int(param) & 0xFFFF))
     iso.close(); return {"ok": True}
 
 def read_shop():
@@ -599,6 +609,8 @@ class Handler(BaseHTTPRequestHandler):
                     "charNames": CHAR_NAMES,
                     "runeOwner": RUNE_OWNER,
                     "gearEffectTypes": S.GEAR_EFFECT_TYPES,
+                    "gearStatSelector": S.GEAR_STAT_SELECTOR,
+                    "gearTypeParam": S.GEAR_TYPE_PARAM,
                     "skills": [{"id": k, "name": v} for k, v in sorted(S.load_skill_ids().items())],
                 })
             if p == "/api/spells":  return self._send(200, read_spells())
@@ -1162,18 +1174,29 @@ async function renderRunes(m){
 async function renderGear(m){const gear=await api("/api/gear");
  const gearDef=await api("/api/gear?disk=1");const GDEF={};gearDef.forEach(g=>{GDEF[g.id]={def:g.def,price:g.price,eff:{}};g.effects.forEach(e=>GDEF[g.id].eff[e.off]=e);});
  const TYPES=META.gearEffectTypes||{};
- const typeOpts=Object.entries(TYPES).map(([v,n])=>`<option value="${v}">${n}</option>`).join("");
+ const STATSEL=META.gearStatSelector||{};      // {statIndex: "PWR"...}
+ const TYPEPARAM=META.gearTypeParam||{};        // {type: "stat"|"skill"}
+ const typeOpts=Object.entries(TYPES).map(([v,n])=>`<option value="${v}">${v} · ${n}</option>`).join("");
  const skillOpts=(META.skills||[]).map(s=>`<option value="${s.id}">${s.id.toString(16).toUpperCase().padStart(2,'0')} · ${s.name}</option>`).join("");
+ const statOpts=Object.entries(STATSEL).map(([v,n])=>`<option value="${v}">${n}</option>`).join("");
  m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter gear…">
-  <span class=hint>Edit DEF, price, and up to 5 effect slots per item. Type 1 = HP regen/turn, 5 = grant skill (pick skill). Saves on change.</span></div>
+  <span class=hint>Edit DEF, price, and up to 5 effect slots. Type 2 = Stat bonus (pick which stat), 5 = Grant skill (pick skill). Saves on change.</span></div>
   <div id=gl></div>`;
+ // param control depends on type: stat dropdown (type 2), skill dropdown (type 5), else hidden
  function slotEditor(g,e){
   const de=(GDEF[g.id]&&GDEF[g.id].eff[e.off])||e;
   return `<span style="white-space:nowrap">
     <select data-id=${g.id} data-off=${e.off} data-k=type data-def="${de.type}">${typeOpts}</select>
     <input type=number style=width:64px data-id=${g.id} data-off=${e.off} data-k=value data-def="${de.value}" value="${e.value}" title="amount">
-    <select data-id=${g.id} data-off=${e.off} data-k=skill data-def="${de.skill}">${skillOpts}</select></span>`;
+    <select data-id=${g.id} data-off=${e.off} data-k=stat data-def="${de.param}" title="which stat">${statOpts}</select>
+    <select data-id=${g.id} data-off=${e.off} data-k=skill data-def="${de.param}" title="which skill">${skillOpts}</select></span>`;
  }
+ function paramCtl(id,off){return {
+   stat:$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=stat]`),
+   skill:$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=skill]`)};}
+ function toggleParam(id,off,t){const {stat,skill}=paramCtl(id,off);
+   if(stat)stat.style.display=(TYPEPARAM[t]==="stat")?"":"none";
+   if(skill)skill.style.display=(TYPEPARAM[t]==="skill")?"":"none";}
  function draw(f=""){
   $("#gl").innerHTML=gear.filter(g=>g.name.toLowerCase().includes(f)||g.desc.toLowerCase().includes(f)).map(g=>{
    const gd=GDEF[g.id]||{def:g.def,price:g.price};
@@ -1183,11 +1206,13 @@ async function renderGear(m){const gear=await api("/api/gear");
      <label>DEF<input type=number style=width:80px data-id=${g.id} data-k=def data-def="${gd.def}" value="${g.def}"></label>
      <label>Price<input type=number style=width:110px data-id=${g.id} data-k=price data-def="${gd.price}" value="${g.price}"></label></div>
     <table><tbody>${effs}</tbody></table></div>`;}).join("");
-  // set dropdown values + show/hide skill selector
+  // set dropdown values + show the right param control (stat vs skill) per type
   gear.forEach(g=>g.effects.forEach(e=>{
    const ts=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=type]`);if(ts)setSel(ts,e.type);
-   const sk=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=skill]`);
-   if(sk){setSel(sk,e.skill);sk.style.display=(e.type===5?"":"none");}
+   const {stat,skill}=paramCtl(g.id,e.off);
+   if(stat)setSel(stat,e.param);
+   if(skill)setSel(skill,e.param);
+   toggleParam(g.id,e.off,e.type);
   }));
   $("#gl").querySelectorAll("[data-k]").forEach(inp=>{
    inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",()=>saveGear(inp));});
@@ -1196,14 +1221,16 @@ async function renderGear(m){const gear=await api("/api/gear");
   const id=+inp.dataset.id;const k=inp.dataset.k;const fields={};
   if(k==="def")fields.def=+inp.value;
   else if(k==="price")fields.price=+inp.value;
-  else{ // effect slot: gather the trio for this off
+  else{ // effect slot: gather type + value + the active param control for this off
    const off=+inp.dataset.off;
    const t=+$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=type]`).value;
    const v=+$(`#gl input[data-id="${id}"][data-off="${off}"][data-k=value]`).value;
-   const s=+$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=skill]`).value;
-   fields.effects=[{off,type:t,value:v,skill:s}];
-   // toggle skill visibility live
-   const sk=$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=skill]`);if(sk)sk.style.display=(t===5?"":"none");
+   const {stat,skill}=paramCtl(id,off);
+   let param=0;
+   if(TYPEPARAM[t]==="stat"&&stat)param=+stat.value;
+   else if(TYPEPARAM[t]==="skill"&&skill)param=+skill.value;
+   fields.effects=[{off,type:t,value:v,param}];
+   toggleParam(id,off,t);  // update which control shows after a type change
   }
   const r=await api("/api/gear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
   if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
