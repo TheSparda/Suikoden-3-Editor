@@ -1,0 +1,1130 @@
+#!/usr/bin/env python3
+"""
+Suikoden III ISO editor — cross-platform local web app.
+
+Stdlib only (http.server + json). Reuses all logic from s3patch.py.
+Run:  python3 s3editor.py "ISO/Suikoden III (USA).iso"
+Then open the printed http://127.0.0.1:PORT URL in any browser.
+
+Writes go straight to the ISO you pass. Use a clone for testing
+(Editor/make_test_iso.sh) — the app makes ONE backup on first write per session.
+"""
+import json, os, struct, sys, webbrowser, html
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import s3patch as S
+import s3fields as F
+
+ISO_PATH = None
+_backed_up = False
+_backup_enabled = True   # UI-controlled: make one .bak copy before the first edit
+_scan_root = os.getcwd()
+
+# --- persistent settings (last ISO path, backup pref) -----------------------
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".s3editor.json")
+
+def load_config():
+    try:
+        with open(CONFIG_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_config(**kw):
+    cfg = load_config()
+    cfg.update(kw)
+    try:
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass  # settings are best-effort; never block editing on a write failure
+
+# --- edit staging -----------------------------------------------------------
+# Writes do NOT touch the ISO. They accumulate here as {file_offset: byte}. Reads
+# overlay this buffer so the UI reflects staged (unsaved) values. /api/save flushes
+# to disk (honoring the backup toggle) and clears the buffer.
+PENDING = {}          # offset -> int (0..255)
+_READ_DISK = False    # when True, reads bypass PENDING (used to compute "defaults")
+
+class StagingIso:
+    """Wraps S.Iso for reads; captures writes into PENDING instead of the file."""
+    def __init__(self):
+        self._iso = S.Iso(ISO_PATH)   # read-only handle to the real file
+    def rd(self, off, n):
+        b = bytearray(self._iso.rd(off, n))
+        if not _READ_DISK:
+            for i in range(n):
+                v = PENDING.get(off + i)
+                if v is not None:
+                    b[i] = v
+        return bytes(b)
+    def u8(self, off):  return self.rd(off, 1)[0]
+    def u16(self, off): return struct.unpack("<H", self.rd(off, 2))[0]
+    def u32(self, off): return struct.unpack("<I", self.rd(off, 4))[0]
+    def wr(self, off, data):
+        # Self-cleaning: only keep bytes that actually differ from disk, so PENDING
+        # is exactly the set of "changed from default" bytes. A write that restores
+        # a byte to its on-disk value drops it from the staging buffer.
+        disk = self._iso.rd(off, len(data))
+        for i, byte in enumerate(data):
+            if byte == disk[i]:
+                PENDING.pop(off + i, None)
+            else:
+                PENDING[off + i] = byte
+    def disk_rd(self, off, n):
+        """Raw on-disk bytes, ignoring staged edits (the 'default')."""
+        return self._iso.rd(off, n)
+    def close(self):
+        self._iso.close()
+
+def restore_range(off, width):
+    """Drop staged edits in [off, off+width) -> those bytes revert to disk default."""
+    n = 0
+    for o in range(off, off + width):
+        if PENDING.pop(o, None) is not None:
+            n += 1
+    return n
+
+def stage_count():
+    # number of distinct records touched is hard; report byte count as a proxy
+    return len(PENDING)
+
+def flush_pending():
+    """Write all staged edits to the ISO at once. Returns bytes written."""
+    if not PENDING:
+        return 0
+    ensure_backup()
+    iso = S.Iso(ISO_PATH, write=True)
+    try:
+        # group contiguous offsets into runs for fewer writes
+        for off in sorted(PENDING):
+            iso.wr(off, bytes([PENDING[off]]))
+    finally:
+        iso.close()
+    n = len(PENDING)
+    PENDING.clear()
+    return n
+
+def _load_names():
+    p = os.path.join(os.path.dirname(__file__), "s3_names.json")
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return {}
+CHAR_NAMES = _load_names()   # {"list1": {"1":"Hugo",...}, ...} from the original exe
+
+def _load_skill_desc():
+    p = os.path.join(os.path.dirname(__file__), "s3_skill_desc.json")
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return {}
+SKILL_DESC = _load_skill_desc()   # {skill name: description} from Suikosource skills guide
+
+def _load_item_desc():
+    p = os.path.join(os.path.dirname(__file__), "s3_item_desc.json")
+    try:
+        return {int(k): v for k, v in json.load(open(p, encoding="utf-8")).items()}
+    except Exception:
+        return {}
+ITEM_DESC = _load_item_desc()   # {item id: description} from the ISO's equipment record table
+
+def _load_rune_owner():
+    p = os.path.join(os.path.dirname(__file__), "s3_rune_owner.json")
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return {}
+RUNE_OWNER = _load_rune_owner()   # {rune-attack spell name: owning character / weapon type}
+
+def _load_unite_chars():
+    p = os.path.join(os.path.dirname(__file__), "s3_unite_chars.json")
+    try:
+        return {int(k): v.get("chars", "") for k, v in json.load(open(p, encoding="utf-8")).items()}
+    except Exception:
+        return {}
+UNITE_CHARS = _load_unite_chars()   # {unite index: "char, char, char"} from Suikosource unite guide
+
+
+# ------------------------------------------------------------------ data model
+def _iso(write=False):
+    if not ISO_PATH:
+        raise RuntimeError("no ISO loaded")
+    # All reads and writes go through the staging layer: reads overlay PENDING,
+    # writes accumulate in PENDING (nothing hits disk until /api/save).
+    return StagingIso()
+
+def scan_isos(root):
+    """Find candidate .iso files the server can see, near the launch dir."""
+    found = []
+    roots = {os.path.abspath(root), os.path.abspath(os.path.join(root, "..")),
+             os.path.abspath(os.path.join(root, "ISO")),
+             os.path.abspath(os.path.dirname(__file__)),
+             os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ISO"))}
+    seen = set()
+    for r in roots:
+        if not os.path.isdir(r):
+            continue
+        try:
+            for dp, _, files in os.walk(r):
+                # keep the scan shallow so it stays fast
+                if dp.count(os.sep) - r.count(os.sep) > 2:
+                    continue
+                for fn in files:
+                    if fn.lower().endswith(".iso"):
+                        full = os.path.join(dp, fn)
+                        if full in seen:
+                            continue
+                        seen.add(full)
+                        try:
+                            sz = os.path.getsize(full)
+                        except OSError:
+                            continue
+                        found.append({"path": full, "name": fn,
+                                      "size": sz, "gb": round(sz/1e9, 2)})
+        except (OSError, PermissionError):
+            continue
+    found.sort(key=lambda x: x["name"].lower())
+    return found
+
+def open_iso(path):
+    """Validate + load an ISO. Returns (ok, message)."""
+    global ISO_PATH, _backed_up
+    if not path or not os.path.isfile(path):
+        return False, f"file not found: {path}"
+    try:
+        iso = S.Iso(path)
+        ok, raw, be = S.check_version(iso); iso.close()
+    except Exception as e:
+        return False, f"could not read: {e}"
+    if not ok:
+        return False, (f"version check failed (BE=0x{be:08X}); this is not the "
+                       f"USA SLUS-20387 release.")
+    ISO_PATH = path
+    _backed_up = False   # new ISO -> allow one fresh backup
+    save_config(lastIso=os.path.abspath(path))
+    return True, os.path.basename(path)
+
+def ensure_backup():
+    global _backed_up
+    if not _backup_enabled:
+        return
+    if not _backed_up:
+        S.backup(ISO_PATH)
+        _backed_up = True
+
+def read_spells():
+    iso = _iso(); out = []
+    for i in range(S.SPELL_COUNT):
+        off = S.SPELL_TABLE_FILE + i * S.SPELL_STRIDE
+        rec = iso.rd(off, S.SPELL_STRIDE)
+        kind = struct.unpack_from("<H", rec, 0x04)[0]
+        f14 = struct.unpack_from("<I", rec, 0x14)[0]
+        f18 = struct.unpack_from("<I", rec, 0x18)[0]
+        out.append({
+            "index": i, "name": S._spell_name(iso, rec),
+            "desc": _desc(iso, rec),
+            "element": S.decode_element(kind),
+            "elementId": kind & 0xFF,
+            "cast": struct.unpack_from("<I", rec, 0x10)[0],
+            "power": struct.unpack_from("<I", rec, 0x1C)[0],
+            "aoe": bool(f14 & S.AREA_BIT),
+            "target": S.decode_target(f14),
+            "targetByte": (f14 >> 8) & 0xFF,
+            "kind": S.KIND_LOW.get(f14 & 0xFF, "0x%02X" % (f14 & 0xFF)),
+            "status": S.decode_f18(f18),
+        })
+    iso.close(); return out
+
+def _desc(iso, rec):
+    try:
+        v = struct.unpack_from("<I", rec, 0x0C)[0]
+        return iso.rd(S.va2off(v), 64).split(b"\x00")[0].decode("latin1", "replace")
+    except Exception:
+        return ""
+
+def read_unites():
+    iso = _iso(); out = []
+    for i in range(S.UNITE_COUNT):
+        off = S.UNITE_TABLE_FILE + i * S.UNITE_STRIDE
+        rec = iso.rd(off, S.UNITE_STRIDE)
+        f14 = struct.unpack_from("<I", rec, 0x14)[0]
+        out.append({
+            "index": i, "name": S._spell_name(iso, rec), "desc": _desc(iso, rec),
+            "chars": UNITE_CHARS.get(i, ""),
+            "cast": struct.unpack_from("<I", rec, 0x10)[0],
+            "power": struct.unpack_from("<I", rec, 0x1C)[0],
+            "aoe": bool(f14 & S.AREA_BIT),
+            "target": S.decode_target(f14),
+            "targetByte": (f14 >> 8) & 0xFF,
+        })
+    iso.close(); return out
+
+def write_unite(index, fields):
+    iso = _iso(write=True)
+    off = S.UNITE_TABLE_FILE + index * S.UNITE_STRIDE
+    if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", int(fields["power"])))
+    if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", int(fields["cast"])))
+    if "target" in fields:
+        f14 = iso.u32(off + 0x14)
+        f14 = (f14 & 0xFFFF00FF) | ((int(fields["target"]) & 0xFF) << 8)
+        iso.wr(off + 0x14, struct.pack("<I", f14))
+    if "aoe" in fields:
+        f14 = iso.u32(off + 0x14)
+        f14 = (f14 | S.AREA_BIT) if fields["aoe"] else (f14 & ~S.AREA_BIT)
+        iso.wr(off + 0x14, struct.pack("<I", f14))
+    iso.close(); return {"ok": True}
+
+_gear_cache = None
+def _gear_offsets(iso):
+    global _gear_cache
+    if _gear_cache is None:
+        _gear_cache = S.find_gear_records(iso)
+    return _gear_cache
+
+def read_gear():
+    iso = _iso(); items = S.load_item_ids(); skills = S.load_skill_ids()
+    offs = _gear_offsets(iso); out = []
+    for iid, off in sorted(offs.items()):
+        rec = iso.rd(off, S.GEAR_STRIDE)
+        effects = []
+        for i, eo in enumerate(S.GEAR_EFFECT_OFFS):
+            t = struct.unpack_from("<H", rec, eo)[0]
+            v = struct.unpack_from("<H", rec, eo + 2)[0]
+            sk = struct.unpack_from("<H", rec, eo + 4)[0]
+            effects.append({"slot": i, "off": eo, "type": t,
+                            "typeName": S.GEAR_EFFECT_TYPES.get(t, f"0x{t:X}"),
+                            "value": v, "skill": sk,
+                            "skillName": skills.get(sk, "") if t == 5 else ""})
+        out.append({
+            "id": iid, "name": items.get(iid, f"0x{iid:X}"),
+            "desc": _desc_at(iso, struct.unpack_from("<I", rec, 0)[0]),
+            "addr": off,
+            "def": struct.unpack_from("<H", rec, S.GEAR_DEF_OFF)[0],
+            "price": struct.unpack_from("<I", rec, S.GEAR_PRICE_OFF)[0],
+            "effects": effects,
+        })
+    iso.close(); return out
+
+def _desc_at(iso, va):
+    try:
+        return iso.rd(S.va2off(va), 64).split(b"\x00")[0].decode("latin1", "replace")
+    except Exception:
+        return ""
+
+def write_gear(item_id, fields):
+    iso = _iso(write=True)
+    offs = _gear_offsets(iso)
+    if item_id not in offs:
+        iso.close(); return {"error": "no gear record for that item id"}
+    off = offs[item_id]
+    if "def" in fields:
+        iso.wr(off + S.GEAR_DEF_OFF, struct.pack("<H", int(fields["def"]) & 0xFFFF))
+    if "price" in fields:
+        iso.wr(off + S.GEAR_PRICE_OFF, struct.pack("<I", int(fields["price"]) & 0xFFFFFFFF))
+    # effects: list of {off, type, value, skill}
+    for e in fields.get("effects", []):
+        eo = int(e["off"])
+        if eo not in S.GEAR_EFFECT_OFFS:
+            iso.close(); return {"error": f"bad effect offset {eo}"}
+        iso.wr(off + eo,     struct.pack("<H", int(e.get("type", 0)) & 0xFFFF))
+        iso.wr(off + eo + 2, struct.pack("<H", int(e.get("value", 0)) & 0xFFFF))
+        iso.wr(off + eo + 4, struct.pack("<H", int(e.get("skill", 0)) & 0xFFFF))
+    iso.close(); return {"ok": True}
+
+def read_shop():
+    iso = _iso(); items = S.load_item_ids(); out = {}
+    for name, (off, cnt, w, note) in S.SHOP.items():
+        rows = []
+        for i in range(cnt):
+            v = iso.u32(off + i*w) if w == 4 else iso.u16(off + i*w)
+            rows.append({"slot": i, "value": v,
+                         "name": "" if w == 4 else items.get(v, "")})
+        out[name] = {"note": note, "width": w, "rows": rows}
+    iso.close(); return out
+
+def read_char(list_no, index):
+    iso = _iso()
+    base, stride, desc = S.TABLES[f"list{list_no}"]
+    rec = iso.rd(base + index*stride, stride)
+    iso.close()
+    return {"list": list_no, "index": index, "stride": stride, "desc": desc,
+            "bytes": list(rec), "addr": base + index*stride}
+
+def _read_val(iso, pos, width):
+    return iso.u16(pos) if width == 2 else iso.u8(pos)
+
+def read_charfields(list_no, index):
+    """Return labeled fields with current values for a list1/2/3 record."""
+    iso = _iso()
+    base, stride, desc = S.TABLES[f"list{list_no}"]
+    rec_off = base + index*stride
+    items = S.load_item_ids()
+    skills = S.load_skill_ids()
+    groups = []
+
+    def field(label, off, width, kind):
+        pos = rec_off + off
+        v = _read_val(iso, pos, width)
+        name = ""
+        if kind == "item":  name = items.get(v, "")
+        elif kind == "skill": name = skills.get(v, "")
+        return {"label": label, "off": off, "width": width, "kind": kind,
+                "value": v, "name": name}
+
+    if list_no == 1:
+        groups.append({"title": "Starting Stats / Equipment",
+                       "help": F.SKILL_RANK_HELP,
+                       "fields": [field(*f) for f in F.LIST1]})
+    elif list_no == 2:
+        groups.append({"title": "Growth Rates / Rune Levels", "help": "higher = faster growth",
+                       "fields": [field(*f) for f in F.LIST2_GROWTH]})
+        smax = []
+        for k in range(43):
+            sid = k + 1
+            smax.append(field(skills.get(sid, f"Skill 0x{sid:02X}") + " max",
+                              F.LIST2_SKILLMAX_START + k, 1, "num"))
+        groups.append({"title": "Skill Maximum Levels", "help": F.SKILL_MAX_HELP, "fields": smax})
+        groups.append({"title": "Fixed Skills / Free Skills / Starting Level",
+                       "help": F.SKILL_RANK_HELP,
+                       "fields": [field(*f) for f in F.LIST2_FIXED]})
+    elif list_no == 3:
+        groups.append({"title": "Support Character Skills", "help": F.SKILL_RANK_HELP,
+                       "fields": [field(*f) for f in F.LIST3]})
+    else:
+        rec = iso.rd(rec_off, stride)
+        groups.append({"title": "Raw Bytes", "help": "",
+                       "fields": [{"label": f"+{o}", "off": o, "width": 1, "kind": "num",
+                                   "value": b, "name": ""} for o, b in enumerate(rec)]})
+    iso.close()
+    return {"list": list_no, "index": index, "addr": rec_off, "stride": stride,
+            "desc": desc, "groups": groups}
+
+def write_spell(index, fields):
+    iso = _iso(write=True)
+    off = S.SPELL_TABLE_FILE + index * S.SPELL_STRIDE
+    if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", int(fields["power"])))
+    if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", int(fields["cast"])))
+    if "elementId" in fields:
+        kind = iso.u16(off + 0x04)
+        iso.wr(off + 0x04, struct.pack("<H", (kind & 0xFF00) | (int(fields["elementId"]) & 0xFF)))
+    if "aoe" in fields:
+        f14 = iso.u32(off + 0x14)
+        f14 = (f14 | S.AREA_BIT) if fields["aoe"] else (f14 & ~S.AREA_BIT)
+        iso.wr(off + 0x14, struct.pack("<I", f14))
+    if "target" in fields:
+        # target byte = bits 8..15 of flags14 (shape/size selector); keep low byte.
+        f14 = iso.u32(off + 0x14)
+        tb = int(fields["target"]) & 0xFF
+        f14 = (f14 & 0xFFFF00FF) | (tb << 8)
+        iso.wr(off + 0x14, struct.pack("<I", f14))
+    if "status" in fields:
+        rev = {v: (1 << b) for b, v in S.F18_BITS.items()}
+        val = 0 if fields["status"] in ("", "none", None) else rev.get(fields["status"])
+        if val is None:
+            iso.close(); return {"error": f"unknown status {fields['status']!r}"}
+        iso.wr(off + 0x18, struct.pack("<I", val))
+    iso.close()
+    return {"ok": True}
+
+def write_char_byte(list_no, index, boff, value, width):
+    iso = _iso(write=True)
+    base, stride, _ = S.TABLES[f"list{list_no}"]
+    if boff + width > stride:
+        iso.close(); return {"error": "offset past record"}
+    pos = base + index*stride + boff
+    iso.wr(pos, struct.pack("<H" if width == 2 else "<B", int(value)))
+    iso.close(); return {"ok": True}
+
+def write_shop(table, slot, value):
+    iso = _iso(write=True)
+    off, cnt, w, _ = S.SHOP[table]
+    if not (0 <= slot < cnt):
+        iso.close(); return {"error": "slot out of range"}
+    iso.wr(off + slot*w, struct.pack("<I" if w == 4 else "<H", int(value)))
+    iso.close(); return {"ok": True}
+
+
+# --------------------------------------------------------------------- HTTP
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def _send(self, code, body, ctype="application/json"):
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        global _READ_DISK
+        p = self.path.split("?")[0]
+        q = {}
+        if "?" in self.path:
+            for kv in self.path.split("?", 1)[1].split("&"):
+                if "=" in kv:
+                    k, v = kv.split("=", 1); q[k] = v
+        # ?disk=1 -> read the ISO's on-disk bytes, ignoring staged edits. Lets the
+        # client compute each field's "default" to detect changes + offer Restore.
+        _READ_DISK = q.get("disk") == "1"
+        try:
+            if p == "/" or p == "/index.html":
+                return self._send(200, INDEX_HTML.encode(), "text/html; charset=utf-8")
+            if p == "/api/isos":
+                return self._send(200, {"root": _scan_root, "isos": scan_isos(_scan_root)})
+            if p == "/api/meta":
+                return self._send(200, {
+                    "iso": os.path.basename(ISO_PATH) if ISO_PATH else None,
+                    "loaded": bool(ISO_PATH),
+                    "lastIso": load_config().get("lastIso"),
+                    "backupEnabled": _backup_enabled,
+                    "backedUp": _backed_up,
+                    "pending": stage_count(),
+                    "elements": S.ELEMENTS,
+                    "statuses": ["none"] + sorted(set(S.F18_BITS.values())),
+                    "runes": sorted(S.RUNE_SPELLS),
+                    "runeSpells": S.RUNE_SPELLS,
+                    "targets": [
+                        {"v": 0x0A, "label": "Single target"},
+                        {"v": 0x02, "label": "All foes"},
+                        {"v": 0x03, "label": "All foes + allies"},
+                        {"v": 0x12, "label": "Line / in front"},
+                        {"v": 0x82, "label": "Area — foes"},
+                        {"v": 0x83, "label": "Area — foes + allies"},
+                        {"v": 0x01, "label": "Self / ally (buff)"},
+                        {"v": 0x09, "label": "Heal — single ally"},
+                        {"v": 0x81, "label": "Heal — area allies"},
+                    ],
+                    "shopTables": {k: v[3] for k, v in S.SHOP.items()},
+                    "charNames": CHAR_NAMES,
+                    "runeOwner": RUNE_OWNER,
+                    "gearEffectTypes": S.GEAR_EFFECT_TYPES,
+                    "skills": [{"id": k, "name": v} for k, v in sorted(S.load_skill_ids().items())],
+                })
+            if p == "/api/spells":  return self._send(200, read_spells())
+            if p == "/api/unites":  return self._send(200, read_unites())
+            if p == "/api/gear":    return self._send(200, read_gear())
+            if p == "/api/shop":    return self._send(200, read_shop())
+            if p == "/api/items":   return self._send(200,
+                [{"id": k, "name": v, "desc": ITEM_DESC.get(k, "")}
+                 for k, v in sorted(S.load_item_ids().items())])
+            if p == "/api/skills":  return self._send(200,
+                [{"id": k, "name": v, "desc": SKILL_DESC.get(v, "")}
+                 for k, v in sorted(S.load_skill_ids().items())])
+            if p == "/api/char":
+                return self._send(200, read_char(int(q["list"]), int(q["index"])))
+            if p == "/api/charfields":
+                return self._send(200, read_charfields(int(q["list"]), int(q["index"])))
+            return self._send(404, {"error": "not found"})
+        except Exception as e:
+            return self._send(500, {"error": str(e)})
+        finally:
+            _READ_DISK = False
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(n) or b"{}")
+        try:
+            if self.path == "/api/open":
+                ok, msg = open_iso(body.get("path", ""))
+                return self._send(200, {"ok": ok, "iso": msg} if ok else {"error": msg})
+            if self.path == "/api/backup":
+                global _backup_enabled
+                _backup_enabled = bool(body.get("enabled", True))
+                return self._send(200, {"ok": True, "backupEnabled": _backup_enabled})
+            if self.path == "/api/save":
+                n = flush_pending()
+                return self._send(200, {"ok": True, "written": n, "pending": 0})
+            if self.path == "/api/revert":
+                PENDING.clear()
+                return self._send(200, {"ok": True, "pending": 0})
+            if self.path == "/api/spell":
+                return self._send(200, write_spell(int(body["index"]), body["fields"]))
+            if self.path == "/api/unite":
+                return self._send(200, write_unite(int(body["index"]), body["fields"]))
+            if self.path == "/api/gear":
+                return self._send(200, write_gear(int(body["id"]), body["fields"]))
+            if self.path == "/api/rune":
+                return self._send(200, self._rune(body))
+            if self.path == "/api/shop":
+                return self._send(200, write_shop(body["table"], int(body["slot"]), int(body["value"])))
+            if self.path == "/api/char":
+                return self._send(200, write_char_byte(int(body["list"]), int(body["index"]),
+                                                       int(body["off"]), int(body["value"]),
+                                                       int(body.get("width", 1))))
+            return self._send(404, {"error": "not found"})
+        except Exception as e:
+            return self._send(500, {"error": str(e)})
+
+    def _rune(self, body):
+        key = body["rune"].lower().replace(" ", "").replace("_", "")
+        names = S.RUNE_SPELLS.get(key)
+        if not names: return {"error": "unknown rune"}
+        iso = _iso(); n2i = {}
+        for i in range(S.SPELL_COUNT):
+            rec = iso.rd(S.SPELL_TABLE_FILE + i*S.SPELL_STRIDE, S.SPELL_STRIDE)
+            n2i.setdefault(S._spell_name(iso, rec), i)
+        iso.close()
+        idxs = [n2i[n] for n in names if n in n2i]
+        for idx in idxs:
+            write_spell(idx, body["fields"])
+        return {"ok": True, "spells": idxs}
+
+
+INDEX_HTML = r"""<!doctype html><html><head><meta charset=utf-8>
+<title>Suikoden III ISO Editor</title>
+<style>
+:root{--bg:#12141c;--panel:#1b1e2a;--ink:#e6e8ef;--mut:#8b90a3;--acc:#6ea8fe;--line:#2a2e3e;--ok:#4caf7d}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center}
+header b{font-size:16px}header .iso{color:var(--mut);font-size:12px}
+nav{display:flex;gap:4px;padding:8px 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+nav button{background:transparent;color:var(--mut);border:0;padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on{background:var(--acc);color:#0b0d12;font-weight:600}
+nav button:disabled{opacity:.35;cursor:not-allowed}
+main{padding:18px;max-width:1100px;margin:0 auto}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+tr:hover td{background:#20232f}
+input,select{background:#0e1017;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit}
+input[type=number]{width:82px}
+button.act{background:var(--acc);color:#0b0d12;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:600}
+button.act:hover{filter:brightness(1.1)}
+.pill{padding:2px 8px;border-radius:999px;font-size:12px;background:#0e1017;border:1px solid var(--line)}
+.aoe{color:var(--acc)}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.row label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+#toast{position:fixed;bottom:18px;right:18px;background:var(--ok);color:#04120b;padding:10px 16px;border-radius:8px;opacity:0;transition:.2s;font-weight:600}
+#toast.show{opacity:1}.hint{color:var(--mut);font-size:12px;margin:4px 0 14px}
+.search{width:240px}
+tr.descrow td{border-bottom:1px solid var(--line);padding-top:0}
+tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 8px 8px}
+tr.mainrow td{border-bottom:0}
+/* changed-from-default field highlighting + restore button */
+input.changed,select.changed{color:#ffd166;border-color:#c79a2e;background:#211d10}
+.restore{display:none;margin-left:4px;background:transparent;border:1px solid var(--line);color:var(--mut);
+ border-radius:6px;padding:3px 7px;cursor:pointer;font:inherit;line-height:1;vertical-align:middle}
+.restore:hover{color:var(--ink);border-color:var(--acc)}
+.restore.show{display:inline-block}
+</style></head><body>
+<header><b>Suikoden III ISO Editor</b><span class=iso id=iso></span>
+<label class=hint style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer">
+ <input type=checkbox id=backupChk checked> Back up ISO before first save</label>
+<span class=hint id=backupState style="margin:0 14px"></span>
+<span id=pendingBadge class=hint style="margin-right:8px"></span>
+<button class=act id=revertBtn style="background:#3a3f52;color:var(--ink);margin-right:6px;display:none">Revert</button>
+<button class=act id=saveBtn disabled>Save to ISO</button></header>
+<nav id=nav></nav>
+<main id=main></main>
+<div id=toast></div>
+<script>
+const $=s=>document.querySelector(s), api=(u,o)=>fetch(u,o).then(r=>r.json());
+let META={}, TAB="spells", DIRTY=false;
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
+// Highlight fields whose value differs from their ISO default (data-def) and add a
+// ↺ "Restore to default" button. Restore sets the value back and re-fires the tab's
+// own change/blur save handler, so every editor gets this for free.
+function decorate(scope){
+ (scope||document).querySelectorAll("[data-def]").forEach(inp=>{
+  if(inp._decor)return; inp._decor=1;
+  const def=inp.getAttribute("data-def");
+  let btn=inp.nextElementSibling;
+  if(!btn||!btn.classList||!btn.classList.contains("restore")){
+   btn=document.createElement("button");btn.type="button";btn.className="restore";
+   btn.textContent="↺";btn.title="Restore to default ("+def+")";inp.after(btn);}
+  const refresh=()=>{const ch=String(inp.value)!==String(def);
+   inp.classList.toggle("changed",ch);btn.classList.toggle("show",ch);};
+  inp.addEventListener("input",refresh);inp.addEventListener("change",refresh);
+  btn.onclick=()=>{inp.value=String(def);
+   inp.dispatchEvent(new Event(inp.tagName==="SELECT"?"change":"blur"));refresh();};
+  refresh();
+ });
+}
+// Call after any successful edit: marks unsaved changes and updates the Save UI.
+function markDirty(){DIRTY=true;updateSaveUI();}
+function updateSaveUI(){
+ const sb=$("#saveBtn"),rb=$("#revertBtn"),pb=$("#pendingBadge");
+ if(!sb)return;
+ sb.disabled=!DIRTY;
+ sb.textContent=DIRTY?"● Save to ISO":"Save to ISO";
+ rb.style.display=DIRTY?"":"none";
+ pb.textContent=DIRTY?"unsaved changes":"";
+}
+async function doSave(){
+ const r=await api("/api/save",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+ if(r.ok){DIRTY=false;updateSaveUI();toast(`saved ${r.written} byte(s) to ISO`);}
+ else toast("save failed: "+(r.error||"?"));
+}
+async function doRevert(){
+ await api("/api/revert",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+ DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
+}
+async function boot(){META=await api("/api/meta");
+ const tabs=["spells","runes","unites","gear","shop","characters","reference"];
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",shop:"Shop",characters:"Characters",reference:"Reference"};
+ $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
+ document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
+ setTabsEnabled(META.loaded);
+ renderIsoHeader();
+ const chk=$("#backupChk");chk.checked=(META.backupEnabled!==false);
+ function syncBackupLabel(){$("#backupState").textContent=chk.checked
+   ?"a .bak copy is made before your first edit":"editing in place — NO backup";}
+ syncBackupLabel();
+ chk.onchange=async()=>{await api("/api/backup",{method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({enabled:chk.checked})});syncBackupLabel();
+   toast(chk.checked?"backup on":"backup off — editing in place");};
+ $("#saveBtn").onclick=doSave; $("#revertBtn").onclick=doRevert;
+ DIRTY=(META.pending||0)>0; updateSaveUI();
+ window.addEventListener("beforeunload",e=>{if(DIRTY){e.preventDefault();e.returnValue="";}});
+ if(META.loaded)render(); else pickIso();}
+
+function setTabsEnabled(on){document.querySelectorAll("#nav button").forEach(b=>{b.disabled=!on;});}
+function renderIsoHeader(){
+ $("#iso").innerHTML=`<button class=act id=pick>${META.loaded?"Change ISO":"Select ISO…"}</button>`+
+   (META.loaded?` · <b>${META.iso}</b>`:` <span class=hint>load an ISO to begin</span>`);
+ $("#pick").onclick=pickIso;}
+
+async function pickIso(){setActive(true);const m=$("#main");m.innerHTML="scanning for ISO files…";
+ const d=await api("/api/isos");
+ const rows=d.isos.map(i=>`<tr><td>${i.name}</td><td class=hint>${i.gb} GB</td>
+   <td class=hint>${i.path}</td><td><button class=act data-path="${encodeURIComponent(i.path)}">Open</button></td></tr>`).join("");
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Select a Suikoden III ISO</h3>
+  <div class=hint>Files the editor found near ${d.root}. Only the USA SLUS-20387 release works.
+  A 4 GB file can't be uploaded through the browser, so the server opens it by path.</div>
+  <table><thead><tr><th>File</th><th>Size</th><th>Path</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=4 class=hint>none found nearby — enter a full path below</td></tr>'}</tbody></table>
+  ${META.lastIso?`<div class=row style="margin-top:14px;align-items:center">
+   <button class=act id=openlast>Reopen last ISO</button>
+   <span class=hint style=word-break:break-all>${META.lastIso}</span></div>`:""}
+  <div class=row style=margin-top:14px><label style=flex:1>Or enter full path
+   <input id=isopath style=width:100% placeholder="/full/path/to/Suikoden III (USA).iso" value="${META.lastIso?String(META.lastIso).replace(/"/g,"&quot;"):""}"></label>
+   <button class=act id=openpath>Open</button></div>
+  <div id=isoerr class=hint style=color:#e88></div></div>`;
+ async function open(path){const r=await api("/api/open",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({path})});
+  if(r.ok){META=await api("/api/meta");
+   setTabsEnabled(true);renderIsoHeader();
+   TAB="spells";render();toast("loaded "+r.iso);}
+  else{$("#isoerr").textContent=r.error;}}
+ m.querySelectorAll("[data-path]").forEach(b=>b.onclick=()=>open(decodeURIComponent(b.dataset.path)));
+ $("#openpath").onclick=()=>open($("#isopath").value.trim());
+ if($("#openlast"))$("#openlast").onclick=()=>open(META.lastIso);}
+function setActive(clear){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",!clear&&b.dataset.t===TAB));}
+async function render(){if(!META.loaded)return pickIso();setActive();const m=$("#main");m.innerHTML="loading…";
+ if(TAB==="spells")return renderSpells(m);
+ if(TAB==="runes")return renderRunes(m);
+ if(TAB==="unites")return renderUnites(m);
+ if(TAB==="gear")return renderGear(m);
+ if(TAB==="shop")return renderShop(m);
+ if(TAB==="characters")return renderChars(m);
+ if(TAB==="reference")return renderRef(m);}
+
+const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
+ lightning:"Lightning Rune",thunder:"Thunder Rune",truelightning:"True Lightning Rune",
+ wind:"Wind Rune",cyclone:"Cyclone Rune",truewind:"True Wind Rune",
+ water:"Water Rune",flowing:"Flowing Rune",truewater:"True Water Rune",earth:"Earth Rune",
+ motherearth:"Mother Earth Rune",trueearth:"True Earth Rune",shield:"Shield Rune",
+ blinking:"Blinking Rune",jongleur:"Jongleur Rune",palegate:"Pale Gate Rune",
+ swordofrage:"Sword of Rage Rune",swordofthunder:"Sword of Thunder Rune",
+ swordofcyclone:"Sword of Cyclone Rune"};
+
+async function renderSpells(m){const sp=await api("/api/spells");
+ const spDef=await api("/api/spells?disk=1");const DEF={};spDef.forEach(s=>DEF[s.index]=s);
+ const dstat=s=>META.statuses.includes(s.status)?s.status:"none";
+ const elOpts=Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
+ const stOpts=META.statuses.map(s=>`<option>${s}</option>`).join("");
+ const tgOpts=(META.targets||[]).map(t=>`<option value="${t.v}">${t.label}</option>`).join("")+`<option value="" disabled>(other/custom)</option>`;
+ const byName={};sp.forEach(s=>{if(!(s.name in byName))byName[s.name]=s;});
+ // order magic runes by element family (base -> upgrade -> true), not alphabetically
+ const FAM=["fire","rage","truefire","lightning","thunder","truelightning",
+   "wind","cyclone","truewind","water","flowing","truewater",
+   "earth","motherearth","trueearth","shield","blinking","jongleur","palegate",
+   "swordofrage","swordofthunder","swordofcyclone"];
+ const runeOrder=[...FAM.filter(r=>META.runes.includes(r)),
+                  ...META.runes.filter(r=>!FAM.includes(r))];
+ // 1) magic runes: show each rune's FULL spell set (runes share spells in S3, so a
+ //    spell can appear under several runes — that's correct; editing it updates the
+ //    single underlying record everywhere). 'covered' just tracks which spells belong
+ //    to a magic rune, so the attack/misc partition below excludes them.
+ const covered=new Set(); const mageSecs=[], attackSecs=[];
+ runeOrder.forEach(rk=>{
+  const names=META.runeSpells[rk]||[]; const rows=[];
+  names.forEach(nm=>{const s=byName[nm]; if(s){covered.add(s.index);rows.push(s);}});
+  if(rows.length)mageSecs.push({title:RUNE_TITLE[rk]||rk,rows});});
+ const assigned=covered;
+ // 2) remaining NAMED spells are attack-rune abilities: each is its own "<Name> Rune"
+ //    (Phoenix spell <-> Phoenix rune, etc). Blank/placeholder names -> Misc.
+ const misc=[];
+ sp.filter(s=>!assigned.has(s.index)).forEach(s=>{
+  const nm=(s.name||"").trim();
+  if(!nm||nm==="no"||/^no+n*$/.test(nm)){misc.push(s);return;}
+  const owner=(META.runeOwner||{})[nm];
+  const title=nm+" Rune"+(owner?` <span class=hint style=font-weight:400>— ${owner}</span>`:"");
+  attackSecs.push({title,rows:[s],attack:true});
+ });
+ const sections=[...mageSecs,...attackSecs];
+ if(misc.length)sections.push({title:"Unused / placeholder slots",rows:misc});
+
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter spells…">
+  <span class=hint>Grouped by rune. Edit power / cast / element / AOE / status — saves on change/blur.</span></div>
+  <div id=secs></div>`;
+ const head=`<thead><tr><th>#</th><th>Name</th><th>Element</th><th>Power</th><th>Cast</th><th>Target / Size</th><th>Status</th><th>Shape</th></tr></thead>`;
+
+ function rowHTML(s){const d=DEF[s.index]||s;return `<tr data-name="${s.name.toLowerCase()}" class=mainrow>
+   <td>${s.index}</td><td>${s.name}</td>
+   <td><select data-i=${s.index} data-f=elementId data-def="${d.elementId}">${elOpts}</select></td>
+   <td><input type=number data-i=${s.index} data-f=power data-def="${d.power}" value="${s.power}"></td>
+   <td><input type=number data-i=${s.index} data-f=cast data-def="${d.cast}" value="${s.cast}"></td>
+   <td><select data-i=${s.index} data-f=target data-def="${d.targetByte}">${tgOpts}</select></td>
+   <td><select data-i=${s.index} data-f=status data-def="${dstat(d)}">${stOpts}</select></td>
+   <td><span class="pill ${s.aoe?'aoe':''}">${s.target}</span></td></tr>
+   ${s.desc?`<tr class=descrow><td></td><td colspan=7 class=desc>${s.desc}</td></tr>`:""}`;}
+
+ function draw(f=""){
+  let firstAttackShown=false, anyMageShown=false;
+  $("#secs").innerHTML=sections.map(sec=>{
+   const rows=sec.rows.filter(s=>s.name.toLowerCase().includes(f));
+   if(!rows.length)return "";
+   let divider="";
+   if(!sec.attack)anyMageShown=true;
+   if(sec.attack && !firstAttackShown && anyMageShown){firstAttackShown=true;
+    divider=`<h2 style="margin:22px 4px 8px;color:var(--acc);font-size:15px">⚔ Attack Runes &amp; Other Abilities <span class=hint style=color:var(--mut)>(rune-attacks like Phoenix/Double Tusk, plus extra rune spells — one each)</span></h2>`;}
+   const tag=sec.attack?` <span class=pill style=font-size:11px>rune ability</span>`:"";
+   return `${divider}<div class=card><h3 style="margin:0 0 8px">${sec.title}${tag} <span class=hint>${rows.length} spell${rows.length>1?"s":""}</span></h3>
+    <table>${head}<tbody>${rows.map(rowHTML).join("")}</tbody></table></div>`;}).join("");
+  // set select values + wire saves
+  $("#secs").querySelectorAll("select[data-f=elementId]").forEach(el=>el.value=byName_i(el).elementId);
+  $("#secs").querySelectorAll("select[data-f=status]").forEach(el=>{const s=byName_i(el);el.value=(META.statuses.includes(s.status)?s.status:"none");});
+  $("#secs").querySelectorAll("select[data-f=target]").forEach(el=>{el.value=String(byName_i(el).targetByte);});
+  $("#secs").querySelectorAll("[data-f]").forEach(inp=>{
+   const ev=inp.tagName==="SELECT"?"change":"blur";
+   inp.addEventListener(ev,async()=>{
+    const idx=+inp.dataset.i, f=inp.dataset.f;
+    let v=inp.tagName==="SELECT"?inp.value:+inp.value;
+    const fields={};fields[f]=(f==="elementId"||f==="target")?+v:v;
+    const r=await api("/api/spell",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({index:idx,fields})});
+    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
+    if(r.ok&&f==="target"){ // refresh the Shape pill + local cache
+     const fresh=(await api("/api/spells")).find(x=>x.index===idx);
+     const s=sp.find(x=>x.index===idx);Object.assign(s,fresh);
+     const pill=inp.closest("tr").querySelector(".pill");
+     if(pill){pill.textContent=fresh.target;pill.classList.toggle("aoe",fresh.aoe);}
+    }});});
+  decorate($("#secs"));}
+ function byName_i(el){const idx=+el.dataset.i;return sp.find(s=>s.index===idx);}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+async function renderUnites(m){const un=await api("/api/unites");
+ const unDef=await api("/api/unites?disk=1");const UDEF={};unDef.forEach(u=>UDEF[u.index]=u);
+ const tgOpts=(META.targets||[]).map(t=>`<option value="${t.v}">${t.label}</option>`).join("");
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter unites…">
+  <span class=hint>Co-op unite attacks. Edit power (damage/multiplier) · cast time · target. Saves on change/blur.</span></div>
+  <table><thead><tr><th>#</th><th>Unite</th><th>Characters</th><th>Power</th><th>Cast</th><th>Target / Size</th><th>Shape</th><th>Effect</th></tr></thead>
+  <tbody id=tb></tbody></table>`;
+ function draw(f=""){
+  $("#tb").innerHTML=un.filter(u=>u.name.toLowerCase().includes(f)||u.desc.toLowerCase().includes(f)||(u.chars||"").toLowerCase().includes(f)).map(u=>{const d=UDEF[u.index]||u;return
+   `<tr><td>${u.index}</td><td>${u.name}</td>
+     <td class=hint style=min-width:150px>${u.chars||'—'}</td>
+     <td><input type=number data-i=${u.index} data-f=power data-def="${d.power}" value="${u.power}"></td>
+     <td><input type=number data-i=${u.index} data-f=cast data-def="${d.cast}" value="${u.cast}"></td>
+     <td><select data-i=${u.index} data-f=target data-def="${d.targetByte}">${tgOpts}</select></td>
+     <td><span class="pill ${u.aoe?'aoe':''}">${u.target}</span></td>
+     <td class=hint>${u.desc}</td></tr>`;}).join("");
+  $("#tb").querySelectorAll("select[data-f=target]").forEach(el=>{const u=un.find(x=>x.index===+el.dataset.i);el.value=String(u.targetByte);});
+  $("#tb").querySelectorAll("[data-f]").forEach(inp=>{
+   inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",async()=>{
+    const idx=+inp.dataset.i, fld=inp.dataset.f;
+    let v=inp.tagName==="SELECT"?+inp.value:+inp.value;
+    const fields={};fields[fld]=v;
+    const r=await api("/api/unite",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({index:idx,fields})});
+    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
+    if(r.ok&&fld==="target"){const fresh=(await api("/api/unites")).find(x=>x.index===idx);
+     const u=un.find(x=>x.index===idx);Object.assign(u,fresh);
+     const pill=inp.closest("tr").querySelector(".pill");pill.textContent=fresh.target;pill.classList.toggle("aoe",fresh.aoe);}
+   });});
+  decorate($("#tb"));}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+async function renderRunes(m){
+ const FAM=["fire","rage","truefire","lightning","thunder","truelightning",
+   "wind","cyclone","truewind","water","flowing","truewater",
+   "earth","motherearth","trueearth","shield","blinking",
+   "jongleur","palegate","swordofrage","swordofthunder","swordofcyclone"];
+ const runeOrder=[...FAM.filter(r=>META.runes.includes(r)),...META.runes.filter(r=>!FAM.includes(r))];
+ const rOpts=runeOrder.map(r=>`<option>${r}</option>`).join("");
+ const elOpts=Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
+ const stOpts=META.statuses.map(s=>`<option>${s}</option>`).join("");
+ const elOptsKeep=`<option value="">(keep)</option>`+elOpts;
+ const stOptsKeep=`<option value="">(keep)</option>`+stOpts;
+ m.innerHTML=`<div class=card>
+  <div class=row><label>Rune<select id=rune>${rOpts}</select></label>
+   <span class=hint>Edit each spell individually below, or use bulk-apply.</span></div></div>
+ <div class=card><h3 style=margin-top:0>This rune's spells</h3>
+  <table><thead><tr><th>Lv</th><th>#</th><th>Name</th><th>Element</th><th>Power</th><th>Cast</th><th>Target / Size</th><th>Status</th><th>Shape</th></tr></thead>
+  <tbody id=spellrows></tbody></table></div>
+ <div class=card><h3 style=margin-top:0>Bulk-edit all of this rune's spells</h3>
+  <div class=hint>Applies to every spell the rune grants at once. Blank fields left unchanged.</div>
+  <div class=row>
+   <label>Power<input type=number id=power placeholder=keep></label>
+   <label>Cast<input type=number id=cast placeholder=keep></label>
+   <label>Element<select id=element>${elOptsKeep}</select></label>
+   <label>AOE<select id=aoe><option value="">(keep)</option><option value=on>on</option><option value=off>off</option></select></label>
+   <label>Status<select id=status>${stOptsKeep}</select></label>
+   <button class=act id=go>Apply to all</button>
+  </div><div id=out class=hint></div></div>`;
+
+ async function saveSpell(index, field, value){
+  const fields={};fields[field]=value;
+  const r=await api("/api/spell",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({index,fields})});
+  if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));return r.ok;}
+
+ async function loadSpells(){
+  const rune=$("#rune").value;
+  const wanted=(META.runeSpells[rune]||[]);
+  const all=await api("/api/spells");
+  const dsk=await api("/api/spells?disk=1");
+  const byName={};all.forEach(s=>{if(!(s.name in byName))byName[s.name]=s;});
+  const defByIdx={};dsk.forEach(s=>defByIdx[s.index]=s);
+  const dstat=s=>META.statuses.includes(s.status)?s.status:"none";
+  const tb=$("#spellrows");tb.innerHTML="";
+  wanted.forEach((nm,lv)=>{
+   const s=byName[nm];if(!s)return;const d=defByIdx[s.index]||s;
+   const tr=document.createElement("tr");
+   const tgOpts=(META.targets||[]).map(t=>`<option value="${t.v}">${t.label}</option>`).join("");
+   tr.innerHTML=`<td>${lv+1}</td><td>${s.index}</td><td>${s.name}</td>
+    <td><select data-f=elementId data-def="${d.elementId}">${elOpts}</select></td>
+    <td><input type=number data-f=power data-def="${d.power}" value="${s.power}"></td>
+    <td><input type=number data-f=cast data-def="${d.cast}" value="${s.cast}"></td>
+    <td><select data-f=target data-def="${d.targetByte}">${tgOpts}</select></td>
+    <td><select data-f=status data-def="${dstat(d)}">${stOpts}</select></td>
+    <td><span class="pill ${s.aoe?'aoe':''}" data-tgt>${s.target}</span></td>`;
+   tr.querySelector("[data-f=elementId]").value=s.elementId;
+   tr.querySelector("[data-f=status]").value=(META.statuses.includes(s.status)?s.status:"none");
+   tr.querySelector("[data-f=target]").value=String(s.targetByte);
+   tr.querySelectorAll("[data-f]").forEach(inp=>{
+    inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",async()=>{
+     const f=inp.dataset.f;
+     let v=inp.tagName==="SELECT"?inp.value:+inp.value;
+     if(f==="elementId"||f==="target")v=+v;
+     const ok=await saveSpell(s.index,f,v);
+     if(ok&&f==="target")loadSpells(); // refresh shape text
+    });});
+   tb.appendChild(tr);
+   if(s.desc){const dr=document.createElement("tr");dr.className="descrow";
+    dr.innerHTML=`<td></td><td></td><td colspan=7 class=desc>${s.desc}</td>`;tb.appendChild(dr);}
+  });
+  decorate(tb);}
+
+ $("#rune").onchange=loadSpells;
+ $("#go").onclick=async()=>{const f={};
+  if($("#power").value!=="")f.power=+$("#power").value;
+  if($("#cast").value!=="")f.cast=+$("#cast").value;
+  if($("#element").value!=="")f.elementId=+$("#element").value;
+  if($("#aoe").value!=="")f.aoe=$("#aoe").value==="on";
+  if($("#status").value!=="")f.status=$("#status").value;
+  if(!Object.keys(f).length){toast("set at least one field");return;}
+  const r=await api("/api/rune",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({rune:$("#rune").value,fields:f})});
+  $("#out").textContent=r.ok?`applied to spell indices ${r.spells.join(", ")}`:"error: "+r.error;
+  if(r.ok)markDirty();toast(r.ok?"staged rune edits":"error");
+  if(r.ok)loadSpells();};
+ loadSpells();}
+
+async function renderGear(m){const gear=await api("/api/gear");
+ const gearDef=await api("/api/gear?disk=1");const GDEF={};gearDef.forEach(g=>{GDEF[g.id]={def:g.def,price:g.price,eff:{}};g.effects.forEach(e=>GDEF[g.id].eff[e.off]=e);});
+ const TYPES=META.gearEffectTypes||{};
+ const typeOpts=Object.entries(TYPES).map(([v,n])=>`<option value="${v}">${n}</option>`).join("");
+ const skillOpts=(META.skills||[]).map(s=>`<option value="${s.id}">${s.id.toString(16).toUpperCase().padStart(2,'0')} · ${s.name}</option>`).join("");
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter gear…">
+  <span class=hint>Edit DEF, price, and up to 5 effect slots per item. Type 1 = HP regen/turn, 5 = grant skill (pick skill). Saves on change.</span></div>
+  <div id=gl></div>`;
+ function slotEditor(g,e){
+  const de=(GDEF[g.id]&&GDEF[g.id].eff[e.off])||e;
+  return `<span style="white-space:nowrap">
+    <select data-id=${g.id} data-off=${e.off} data-k=type data-def="${de.type}">${typeOpts}</select>
+    <input type=number style=width:64px data-id=${g.id} data-off=${e.off} data-k=value data-def="${de.value}" value="${e.value}" title="amount">
+    <select data-id=${g.id} data-off=${e.off} data-k=skill data-def="${de.skill}">${skillOpts}</select></span>`;
+ }
+ function draw(f=""){
+  $("#gl").innerHTML=gear.filter(g=>g.name.toLowerCase().includes(f)||g.desc.toLowerCase().includes(f)).map(g=>{
+   const gd=GDEF[g.id]||{def:g.def,price:g.price};
+   const effs=g.effects.map(e=>`<tr><td class=hint style=width:60px>slot ${e.slot}</td><td>${slotEditor(g,e)}</td></tr>`).join("");
+   return `<div class=card><h3 style="margin:0 0 4px">${g.name} <span class=hint>${g.desc}</span></h3>
+    <div class=row style="margin-bottom:6px">
+     <label>DEF<input type=number style=width:80px data-id=${g.id} data-k=def data-def="${gd.def}" value="${g.def}"></label>
+     <label>Price<input type=number style=width:110px data-id=${g.id} data-k=price data-def="${gd.price}" value="${g.price}"></label></div>
+    <table><tbody>${effs}</tbody></table></div>`;}).join("");
+  // set dropdown values + show/hide skill selector
+  gear.forEach(g=>g.effects.forEach(e=>{
+   const ts=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=type]`);if(ts)ts.value=String(e.type);
+   const sk=$(`#gl select[data-id="${g.id}"][data-off="${e.off}"][data-k=skill]`);
+   if(sk){sk.value=String(e.skill);sk.style.display=(e.type===5?"":"none");}
+  }));
+  $("#gl").querySelectorAll("[data-k]").forEach(inp=>{
+   inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",()=>saveGear(inp));});
+  decorate($("#gl"));}
+ async function saveGear(inp){
+  const id=+inp.dataset.id;const k=inp.dataset.k;const fields={};
+  if(k==="def")fields.def=+inp.value;
+  else if(k==="price")fields.price=+inp.value;
+  else{ // effect slot: gather the trio for this off
+   const off=+inp.dataset.off;
+   const t=+$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=type]`).value;
+   const v=+$(`#gl input[data-id="${id}"][data-off="${off}"][data-k=value]`).value;
+   const s=+$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=skill]`).value;
+   fields.effects=[{off,type:t,value:v,skill:s}];
+   // toggle skill visibility live
+   const sk=$(`#gl select[data-id="${id}"][data-off="${off}"][data-k=skill]`);if(sk)sk.style.display=(t===5?"":"none");
+  }
+  const r=await api("/api/gear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
+  if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+async function renderShop(m){const shop=await api("/api/shop");const items=await api("/api/items");
+ const shopDef=await api("/api/shop?disk=1");
+ const SDEF={};for(const[tbl,info]of Object.entries(shopDef)){SDEF[tbl]={};info.rows.forEach(r=>SDEF[tbl][r.slot]=r.value);}
+ const IDESC={};items.forEach(i=>{IDESC[i.id]=i.desc||"";});
+ const itemOpts=items.map(i=>`<option value="${i.id}" title="${(i.desc||'').replace(/"/g,'&quot;')}">${i.id.toString(16).toUpperCase().padStart(3,'0')} ${i.name}</option>`).join("");
+ const SHOP_LABEL={item1:"Item Group 1",item2:"Price Ladder",item3_a:"Shop Slots 1–10",item3_b:"Shop Slots 21–36"};
+ let h="";
+ for(const [tbl,info] of Object.entries(shop)){
+  h+=`<div class=card><h3 style=margin-top:0>${SHOP_LABEL[tbl]||tbl} <span class=hint>${info.note}</span></h3><table><tbody>`;
+  info.rows.forEach(r=>{
+   const dv=(SDEF[tbl]&&SDEF[tbl][r.slot]!==undefined)?SDEF[tbl][r.slot]:r.value;
+   const editor=info.width===2
+    ? `<select data-tbl=${tbl} data-slot=${r.slot} class=itemsel data-def="${dv}">${itemOpts}</select>`
+    : `<input type=number data-tbl=${tbl} data-slot=${r.slot} data-def="${dv}" value="${r.value}">`;
+   const note=r.name?(r.name+(IDESC[r.value]?` — <i>${IDESC[r.value]}</i>`:"")):"";
+   h+=`<tr><td style=width:60px>[${r.slot}]</td><td>${editor}</td><td class=hint data-note=${tbl}_${r.slot}>${note}</td></tr>`;});
+  h+=`</tbody></table></div>`;}
+ m.innerHTML=h;
+ document.querySelectorAll(".itemsel").forEach(sel=>{
+  const row=shop[sel.dataset.tbl].rows[+sel.dataset.slot];sel.value=row.value;});
+ decorate(m);
+ m.querySelectorAll("[data-tbl]").forEach(inp=>{
+  const ev=inp.tagName==="SELECT"?"change":"blur";
+  inp.addEventListener(ev,async()=>{
+   const r=await api("/api/shop",{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({table:inp.dataset.tbl,slot:+inp.dataset.slot,value:+inp.value})});
+   if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
+   if(r.ok&&inp.tagName==="SELECT"){const it=items.find(x=>x.id===+inp.value);
+    const cell=$(`[data-note="${inp.dataset.tbl}_${inp.dataset.slot}"]`);
+    if(cell&&it)cell.innerHTML=it.name+(it.desc?` — <i>${it.desc}</i>`:"");}
+  });});}
+
+const LIST_NAMES={1:"Starting Stats / Equipment",2:"Growth · Skill Max · Fixed Skills",3:"Support Skills",4:"list4 (raw bytes)"};
+let ITEMS_CACHE=null, SKILLS_CACHE=null;
+async function renderChars(m){
+ if(!ITEMS_CACHE)ITEMS_CACHE=await api("/api/items");
+ if(!SKILLS_CACHE)SKILLS_CACHE=await api("/api/skills");
+ const itemOpts=`<option value="0">— none (0) —</option>`+ITEMS_CACHE.map(i=>`<option value="${i.id}" title="${(i.desc||'').replace(/"/g,'&quot;')}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`).join("");
+ const ITEMDESC={};ITEMS_CACHE.forEach(i=>{ITEMDESC[i.id]=i.desc||"";});
+ const skillOpts=`<option value="0">— none (0) —</option>`+SKILLS_CACHE.map(i=>`<option value="${i.id}" title="${(i.desc||'').replace(/"/g,'&quot;')}">${i.id.toString(16).toUpperCase().padStart(2,'0')} · ${i.name}</option>`).join("");
+ const SKILLDESC={};SKILLS_CACHE.forEach(i=>{SKILLDESC[i.id]=i.desc||"";});
+ const NAMES=META.charNames||{};
+ function nameOpts(listKey){
+  const map=NAMES[listKey]||{};
+  const entries=Object.entries(map).sort((a,b)=>(+a[0])-(+b[0]));
+  if(!entries.length)return `<option value="1">(index 1)</option>`;
+  return entries.map(([i,n])=>`<option value="${i}">${(+i).toString().padStart(3,'0')} — ${n}</option>`).join("");
+ }
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Character editor</h3>
+ <div class=hint>Names are from the original exe's list. list1 = Starting Stats, list2 = Growth (same roster),
+ list3 = Support characters, list4 = weapon attack types. Equipment/rune/skill fields are dropdowns. Saves on change.</div>
+ <div class=row>
+  <label>Data section<select id=list>${Object.entries(LIST_NAMES).map(([k,v])=>`<option value="${k}">${k} — ${v}</option>`).join("")}</select></label>
+  <label>Character<select id=idx style=min-width:200px>${nameOpts("list1")}</select></label>
+  <button class=act id=load>Reload</button>
+  <span class=hint id=addr></span>
+ </div><div id=rec></div></div>`;
+ // when the section changes: repopulate the name dropdown for that list AND reload
+ $("#list").onchange=()=>{$("#idx").innerHTML=nameOpts("list"+$("#list").value);load();};
+ function fieldEditor(f){
+  const dv=(f.def!==undefined?f.def:f.value);
+  if(f.kind==="item")  return `<select data-off=${f.off} data-w=${f.width} data-kind=item data-def="${dv}">${itemOpts}</select>`;
+  if(f.kind==="skill") return `<select data-off=${f.off} data-w=${f.width} data-kind=skill data-def="${dv}">${skillOpts}</select>`;
+  return `<input type=number min=0 value="${f.value}" data-off=${f.off} data-w=${f.width} data-def="${dv}">`;
+ }
+ async function load(){
+  const L=+$("#list").value, IX=+$("#idx").value;
+  const c=await api(`/api/charfields?list=${L}&index=${IX}`);
+  const cd=await api(`/api/charfields?list=${L}&index=${IX}&disk=1`);
+  const DEFOFF={};cd.groups.forEach(g=>g.fields.forEach(f=>DEFOFF[f.off]=f.value));
+  c.groups.forEach(g=>g.fields.forEach(f=>{if(DEFOFF[f.off]!==undefined)f.def=DEFOFF[f.off];}));
+  $("#addr").textContent=`addr 0x${c.addr.toString(16).toUpperCase()} · stride ${c.stride}`;
+  let h="";
+  c.groups.forEach(g=>{
+   h+=`<div class=card style="margin:14px 0"><h4 style="margin:0 0 4px">${g.title}</h4>`;
+   if(g.help)h+=`<div class=hint>${g.help}</div>`;
+   h+=`<table><tbody>`;
+   g.fields.forEach(f=>{
+    const note=f.kind==='num'?('= '+f.value):(f.kind==='skill'?(SKILLDESC[f.value]||''):(f.kind==='item'?(ITEMDESC[f.value]||''):''));
+    h+=`<tr><td style="width:230px">${f.label}</td><td>${fieldEditor(f)}</td>
+     <td class="hint" data-descfor="${f.off}">${note}</td></tr>`;});
+   h+=`</tbody></table></div>`;});
+  $("#rec").innerHTML=h;
+  // set dropdown current values
+  c.groups.forEach(g=>g.fields.forEach(f=>{
+   if(f.kind==="item"||f.kind==="skill"){
+    const el=$(`#rec [data-off="${f.off}"][data-kind]`);if(el)el.value=String(f.value);}}));
+  $("#rec").querySelectorAll("[data-off]").forEach(inp=>{
+   const ev=inp.tagName==="SELECT"?"change":"blur";
+   inp.addEventListener(ev,async()=>{
+    const r=await api("/api/char",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({list:L,index:IX,off:+inp.dataset.off,value:+inp.value,width:+inp.dataset.w})});
+    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
+    if(inp.dataset.kind){const cell=$(`#rec [data-descfor="${inp.dataset.off}"]`);
+     const map=inp.dataset.kind==="skill"?SKILLDESC:ITEMDESC;
+     if(cell)cell.textContent=map[+inp.value]||"";}});});
+  decorate($("#rec"));}
+ $("#load").onclick=load; $("#idx").onchange=load; load();}
+
+async function renderRef(m){const items=await api("/api/items");
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Hex reference (Items & Skills)</h3>
+ <div class=hint>The exe's "Item hex list" / "Skill hex list". Search to find an ID to type into equipment/skill fields.</div>
+ <input class=search id=q placeholder="search items/skills…" style=width:320px>
+ <div class=row style="margin-top:10px;align-items:flex-start">
+  <div style=flex:1><b>Items</b><table><tbody id=ib></tbody></table></div>
+ </div></div>`;
+ function draw(f=""){const ib=$("#ib");ib.innerHTML="";
+  items.filter(i=>i.name.toLowerCase().includes(f)||i.id.toString(16).includes(f)).slice(0,400)
+   .forEach(i=>{ib.innerHTML+=`<tr><td class=pill>${i.id.toString(16).toUpperCase().padStart(3,'0')}</td><td>${i.name}</td></tr>`;});}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+boot();
+</script></body></html>"""
+
+
+def main():
+    # Optional args: [iso_path] [port], both positional and order-flexible.
+    args = sys.argv[1:]
+    port = 8747
+    path = None
+    for a in args:
+        if a.isdigit():
+            port = int(a)
+        else:
+            path = a
+    if path:
+        ok, msg = open_iso(path)
+        if not ok:
+            print(f"warning: {msg}\nStart anyway — pick an ISO in the browser.", flush=True)
+    url = f"http://127.0.0.1:{port}/"
+    if ISO_PATH:
+        print(f"Suikoden III editor serving {os.path.basename(ISO_PATH)}", flush=True)
+    else:
+        print("Suikoden III editor started — select an ISO in the browser.", flush=True)
+    print(f"Open: {url}   (Ctrl+C to stop)", flush=True)
+    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    # open the browser from a background thread so a slow/hung opener can't
+    # block the server from accepting connections
+    if os.environ.get("S3_NO_BROWSER") != "1":
+        import threading
+        threading.Thread(target=lambda: webbrowser.open(url), daemon=True).start()
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

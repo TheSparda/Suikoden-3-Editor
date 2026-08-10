@@ -1,0 +1,719 @@
+
+
+
+Remote linking to avatars
+Do not link to Suikosource images on forums, webpages, or anyplace else. If you wish to use the images, place them in your own webspace. We do not allow you to use them from our server.
+Suikoden 3: Guides: Stat Growth Charts
+Each playable character's possible statistics with each level they gain is listed here.
+Suikoden 3: Guides: Stat Growth Charts by genso710, Kuromimi, and KoRnholio
+Stat Growth
+This list details the levels at which each person can increase their stats. Each level has a certain range. Extended information on growth rates can be found on the bottom of this page.
+
+This information was provided by genso710, with help from Kuromimi and KoRnholio.
+
+Ace	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	03	06	x	04	04	04	05
+Starting	13	13	12	13	x	12	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	3-4	x	2-3	2-3	2-3	8-10
+Level 22-61	1-2	1-2	1-2	2-3	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	90-188	150-248	x	90-188	90-188	90-188	493-689
+Aila	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	05	04	x	04	06	05	03
+Starting	12	13	13	12	x	12	13	13	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	2-3	7-8
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	91-189	90-188	x	90-188	150-248	91-189	426-603
+Alanis	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	03	04	05	x	04	05	05	02
+Starting	11	12	12	13	x	12	13	13	13
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	2-3	2-3	x	2-3	2-3	2-3	5-7
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	90-188	91-189	x	90-188	91-189	91-189	385-581
+Augustine	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	04	05	x	04	05	04	04
+Starting	12	13	12	13	x	12	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	90-188	91-189	x	90-188	91-189	90-188	470-626
+Ayame	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	06	05	07	x	02	07	03	03
+Starting	12	13	13	14	x	11	14	12	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	3-4	x	1-2	3-4	2-3	7-8
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	2-3	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	91-189	151-249	x	70-168	151-249	90-188	426-603
+Bazba	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	02	03	x	02	03	04	06
+Starting	13	13	11	12	x	11	12	12	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	1-2	2-3	x	1-2	2-3	2-3	10-12
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	70-168	90-188	x	70-168	90-188	90-188	533-729
+Beecham	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	04	04	x	05	04	04	05
+Starting	13	13	12	12	x	13	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	90-188	90-188	x	91-189	90-188	90-188	493-689
+Belle	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	06	05	03	x	04	05	06	03
+Starting	12	13	13	12	x	12	13	13	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	2-3	x	2-3	2-3	3-4	7-8
+Level 22-61	1-2	2-3	1-2	1-2	x	1-2	1-2	2-3	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	91-189	90-188	x	90-188	91-189	150-248	426-603
+Borus	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	05	02	03	x	03	04	05	05
+Starting	13	13	11	12	x	12	12	13	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	1-2	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	91-189	70-168	90-188	x	90-188	90-188	91-189	493-689
+Bright	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	07	04	04	03	05	05	04	04	07
+Starting	14	12	12	12	13	13	12	12	28
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	2-3	2-3	2-3	2-3	2-3	11-13
+Level 22-61	2-3	1-2	1-2	1-2	1-2	1-2	1-2	1-2	7-8
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	151-249	90-188	90-188	90-188	91-189	91-189	90-188	90-188	594-750
+Cecile	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	10	09	01	03	x	02	03	07	04
+Starting	14	12	11	12	x	11	12	14	20
+Level 01-02	1-2	2-3	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	6-7	5-6	1-2	2-3	x	1-2	2-3	3-4	7-9
+Level 22-61	1-2	1-2	0-1	1-2	x	1-2	1-2	2-3	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	144-242	129-236	30-128	90-188	x	70-168	90-188	151-249	470-626
+Chris	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	06	02	05	x	06	04	06	05
+Starting	13	13	11	13	x	13	12	13	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	1-2	2-3	x	3-4	2-3	3-4	8-10
+Level 22-61	1-2	2-3	1-2	1-2	x	2-3	1-2	2-3	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	150-248	70-168	91-189	x	150-248	90-188	150-248	493-689
+Connie	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	01	02	04	02	03	02	03	02	00
+Starting	11	11	12	11	12	11	12	11	10
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	1-2	1-2	2-3	1-2	2-3	1-2	2-3	1-2	3-4
+Level 22-61	0-1	1-2	1-2	1-2	1-2	1-2	1-2	1-2	4-5
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	30-128	70-168	90-188	70-168	90-188	70-168	90-188	70-168	304-441
+Duke	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	05	04	05	x	04	03	05	06
+Starting	13	13	12	13	x	12	12	13	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	2-3	x	2-3	2-3	2-3	10-12
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	91-189	90-188	91-189	x	90-188	90-188	91-189	533-729
+Dupa	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	04	01	03	x	02	04	05	06
+Starting	13	12	11	12	x	11	12	13	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	1-2	2-3	x	1-2	2-3	2-3	10-12
+Level 22-61	2-3	1-2	0-1	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	30-128	90-188	x	70-168	90-188	91-189	533-729
+Edge	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	06	05	06	x	05	05	02	05
+Starting	13	13	13	13	x	13	13	11	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	3-4	x	2-3	2-3	1-2	8-10
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	150-248	91-189	150-248	x	91-189	91-189	70-168	493-689
+Elaine	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	04	05	05	x	04	05	04	04
+Starting	12	12	13	13	x	12	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	91-189	91-189	x	90-188	91-189	90-188	470-626
+Emily	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	07	05	02	07	x	03	04	03	05
+Starting	14	13	11	14	x	12	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	1-2	3-4	x	2-3	2-3	2-3	8-10
+Level 22-61	2-3	1-2	1-2	2-3	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	151-249	91-189	70-168	151-249	x	90-188	90-188	90-188	493-689
+Estella	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	02	07	03	x	06	05	05	03
+Starting	12	11	14	12	x	13	13	13	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	1-2	3-4	2-3	x	3-4	2-3	2-3	7-8
+Level 22-61	1-2	1-2	2-3	1-2	x	2-3	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	70-168	151-249	90-188	x	150-248	91-189	91-189	426-603
+Franz	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	03	05	x	04	04	05	04
+Starting	13	13	12	13	x	12	12	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	90-188	91-189	x	90-188	90-188	91-189	470-626
+Fred	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	04	03	04	x	03	05	04	06
+Starting	13	12	12	12	x	12	13	12	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	2-3	x	2-3	2-3	2-3	10-12
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	90-188	90-188	x	90-188	91-189	90-188	533-729
+Fubar	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	07	03	05	04	03	06	05	05
+Starting	13	14	12	13	12	12	13	13	24
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	2-3	2-3	2-3	3-4	2-3	8-10
+Level 22-61	1-2	2-3	1-2	1-2	1-2	1-2	2-3	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	91-189	151-249	90-188	91-189	90-188	90-188	150-248	91-189	493-689
+Futch	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	03	04	x	04	06	04	05
+Starting	13	13	12	12	x	12	13	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	2-3	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	90-188	90-188	x	90-188	150-248	90-188	493-689
+Gadget Z	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	04	00	02	07	04	04	03	04
+Starting	12	12	10	11	14	12	12	12	20
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	0-1	1-2	3-4	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	0-1	1-2	2-3	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	10-108	70-168	151-249	90-188	90-188	90-188	470-626
+Gau	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	04	03	03	x	03	05	04	05
+Starting	13	12	12	12	x	12	13	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	90-188	90-188	x	90-188	91-189	90-188	493-689
+Geddoe	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	04	05	05	x	05	05	04	06
+Starting	13	12	13	13	x	13	13	12	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	2-3	x	2-3	2-3	2-3	10-12
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	91-189	91-189	x	91-189	91-189	90-188	533-729
+Hallec	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	08	04	01	00	x	03	03	05	07
+Starting	14	12	11	10	x	12	12	13	28
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	4-5	2-3	1-2	0-1	x	2-3	2-3	2-3	11-13
+Level 22-61	2-3	1-2	0-1	0-1	x	1-2	1-2	1-2	7-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	170-255	90-188	30-128	10-108	x	90-188	90-188	91-189	594-750
+Hugo	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	07	04	06	x	04	06	05	04
+Starting	12	14	12	13	x	12	13	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	3-4	x	2-3	3-4	2-3	7-9
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	2-3	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	151-249	90-188	150-248	x	90-188	150-248	91-189	470-626
+Jacques	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	03	03	x	04	07	04	05
+Starting	12	13	12	12	x	12	14	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	2-3	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	90-188	90-188	x	90-188	151-249	90-188	493-689
+Jimba	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	04	05	05	x	04	06	03	04
+Starting	13	12	13	13	x	12	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	90-188	91-189	91-189	x	90-188	150-248	90-188	470-626
+Joker	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	06	07	06	x	05	04	02	04
+Starting	12	13	14	13	x	13	12	11	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	3-4	3-4	x	2-3	2-3	1-2	7-9
+Level 22-61	1-2	2-3	2-3	2-3	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	151-249	150-248	x	91-189	90-188	70-168	470-626
+Juan	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	10	05	03	06	x	03	10	04	04
+Starting	14	13	12	13	x	12	14	12	20
+Level 01-02	1-2	0-1	0-1	0-1	x	0-1	1-2	0-1	1-3
+Level 03-21	6-7	2-3	2-3	3-4	x	2-3	6-7	2-3	7-9
+Level 22-61	1-2	1-2	1-2	2-3	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	144-242	91-189	90-188	150-248	x	90-188	144-242	90-188	470-626
+Kenji	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	08	02	08	x	02	03	03	04
+Starting	12	14	11	14	x	11	12	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	4-5	1-2	4-5	x	1-2	2-3	2-3	7-9
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	170-255	70-168	170-255	x	70-168	90-188	90-188	470-626
+Kogoro	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	03	02	02	03	02	04	00	01
+Starting	11	12	11	11	12	11	12	10	10
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	1-2	1-2	2-3	1-2	2-3	0-1	4-6
+Level 22-61	1-2	1-2	1-2	1-2	1-2	1-2	1-2	0-1	5-6
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	70-168	70-168	90-188	70-168	90-188	10-108	363-519
+Koichi	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	04	01	02	03	02	02	01	02
+Starting	11	12	11	11	12	11	11	11	13
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	1-2	1-2	2-3	1-2	1-2	1-2	5-7
+Level 22-61	1-2	1-2	0-1	1-2	1-2	1-2	1-2	0-1	5-7
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	30-128	70-168	90-188	70-168	70-168	30-128	385-581
+Koroku	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	03	02	02	03	02	03	00	02
+Starting	11	12	11	11	12	11	12	10	13
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	1-2	1-2	2-3	1-2	2-3	0-1	5-7
+Level 22-61	1-2	1-2	1-2	1-2	1-2	1-2	1-2	0-1	5-7
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	70-168	70-168	90-188	70-168	90-188	10-108	385-581
+Kosanji	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	02	01	01	04	00	03	01	03
+Starting	12	11	11	11	12	10	12	11	16
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	2-3	1-2	1-2	1-2	2-3	0-1	2-3	1-2	7-8
+Level 22-61	1-2	1-2	0-1	0-1	1-2	0-1	1-2	0-1	5-7
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	90-188	70-168	30-128	30-128	90-188	10-108	90-188	30-128	426-603
+Landis	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	04	03	03	x	06	07	02	04
+Starting	12	12	12	12	x	13	14	11	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	3-4	3-4	1-2	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	2-3	2-3	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	90-188	90-188	x	150-248	151-249	70-168	470-626
+Leo	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	07	05	01	02	x	02	03	05	06
+Starting	14	13	11	11	x	11	12	13	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	1-2	1-2	x	1-2	2-3	2-3	10-12
+Level 22-61	2-3	1-2	0-1	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	151-249	91-189	30-128	70-168	x	70-168	90-188	91-189	533-729
+Lilly	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	06	04	05	x	04	05	04	04
+Starting	12	13	12	13	x	12	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	2-3	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	90-188	91-189	x	90-188	91-189	90-188	470-626
+Luc	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	00	05	08	05	x	08	04	03	03
+Starting	10	13	14	13	x	14	12	12	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	0-1	2-3	4-5	2-3	x	4-5	2-3	2-3	7-8
+Level 22-61	0-1	1-2	2-3	1-2	x	2-3	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	10-108	91-189	170-255	91-189	x	170-255	90-188	90-188	426-603
+Lucia	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	06	05	x	06	04	03	05
+Starting	13	13	13	13	x	13	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	3-4	2-3	x	3-4	2-3	2-3	8-10
+Level 22-61	1-2	1-2	2-3	1-2	x	2-3	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	150-248	91-189	x	150-248	90-188	90-188	493-689
+Lulu	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	04	05	05	x	04	06	03	04
+Starting	12	12	13	13	x	12	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	91-189	91-189	x	90-188	150-248	90-188	470-626
+Mel	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	04	04	04	x	05	04	06	04
+Starting	12	12	12	12	x	13	12	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	3-4	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	2-3	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	90-188	90-188	x	91-189	90-188	150-248	470-626
+Melville	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	04	02	04	x	03	04	05	03
+Starting	12	12	11	12	x	12	12	13	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	1-2	2-3	x	2-3	2-3	2-3	7-8
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	70-168	90-188	x	90-188	90-188	91-189	426-603
+Mua	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	04	05	03	x	05	04	05	04
+Starting	13	12	13	12	x	13	12	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	90-188	91-189	90-188	x	91-189	90-188	91-189	470-626
+Nash	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	07	04	06	x	05	05	01	04
+Starting	13	14	12	13	x	13	13	11	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	3-4	x	2-3	2-3	1-2	7-9
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	1-2	0-1	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	151-249	90-188	150-248	x	91-189	91-189	30-128	470-626
+Nei	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	05	05	05	x	04	05	04	04
+Starting	12	13	13	13	x	12	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	91-189	91-189	x	90-188	91-189	90-188	470-626
+Nicolas	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	04	04	02	x	05	03	04	06
+Starting	13	12	12	11	x	13	12	12	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	1-2	x	2-3	2-3	2-3	10-12
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	90-188	70-168	x	91-189	90-188	90-188	533-729
+Percival	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	06	04	05	x	05	05	03	04
+Starting	13	13	12	13	x	13	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	2-3	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	150-248	90-188	91-189	x	91-189	91-189	90-188	470-626
+Piccolo	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	03	10	03	x	09	03	05	02
+Starting	11	12	14	12	x	12	12	13	13
+Level 01-02	0-1	0-1	1-2	0-1	x	2-3	0-1	0-1	1-3
+Level 03-21	1-2	2-3	6-7	2-3	x	5-6	2-3	2-3	5-7
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	144-242	90-188	x	129-236	90-188	91-189	385-581
+Queen	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	06	06	04	x	05	04	03	04
+Starting	12	13	13	12	x	13	12	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	3-4	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	2-3	2-3	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	150-248	90-188	x	91-189	90-188	90-188	470-626
+Reed	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	04	03	03	x	04	04	03	05
+Starting	13	12	12	12	x	12	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	2-3	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	90-188	90-188	x	90-188	90-188	90-188	493-689
+Rhett	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	03	03	03	x	03	06	06	04
+Starting	13	12	12	12	x	12	13	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	3-4	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	2-3	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	90-188	90-188	90-188	x	90-188	150-248	150-248	470-626
+Rico	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	03	04	02	x	03	03	07	05
+Starting	12	12	12	11	x	12	12	14	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	1-2	x	2-3	2-3	3-4	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	2-3	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	90-188	70-168	x	90-188	90-188	151-249	493-689
+Rody	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	04	06	04	x	05	06	02	03
+Starting	11	12	13	12	x	13	13	11	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	3-4	2-3	x	2-3	3-4	1-2	7-8
+Level 22-61	1-2	1-2	2-3	1-2	x	1-2	2-3	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	150-248	90-188	x	91-189	150-248	70-168	426-603
+Roland	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	04	03	x	06	04	03	05
+Starting	13	13	12	12	x	13	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	3-4	2-3	2-3	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	2-3	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	90-188	90-188	x	150-248	90-188	90-188	493-689
+Ruby	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	05	02	06	06	05	03	06
+Starting	13	13	13	11	13	13	13	12	26
+Level 01-02	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	1-2	3-4	3-4	2-3	2-3	10-12
+Level 22-61	1-2	1-2	1-2	1-2	2-3	2-3	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	0-1	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	91-189	70-168	150-248	150-248	91-189	90-188	533-729
+Salome	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	05	03	x	05	04	04	05
+Starting	12	13	13	12	x	13	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	91-189	90-188	x	91-189	90-188	90-188	493-689
+Samus	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	04	04	x	04	04	04	04
+Starting	13	13	12	12	x	12	12	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	90-188	90-188	x	90-188	90-188	90-188	470-626
+Sanae Y	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	04	04	x	04	05	05	04
+Starting	12	13	12	12	x	12	13	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	90-188	90-188	x	90-188	91-189	91-189	470-626
+Sarah	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	04	08	04	x	06	05	04	03
+Starting	11	12	14	12	x	13	13	12	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	4-5	2-3	x	3-4	2-3	2-3	7-8
+Level 22-61	1-2	1-2	2-3	1-2	x	2-3	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	70-168	90-188	170-255	90-188	x	150-248	91-189	90-188	426-603
+Sasarai	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	01	03	07	04	x	06	05	04	03
+Starting	11	12	14	12	x	13	13	12	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	3-4	2-3	x	3-4	2-3	2-3	7-8
+Level 22-61	0-1	1-2	2-3	1-2	x	2-3	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	30-128	90-188	151-249	90-188	x	150-248	91-189	90-188	426-603
+Sergeant Joe	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	06	04	04	x	04	04	06	04
+Starting	13	13	12	12	x	12	12	13	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	2-3	x	2-3	2-3	3-4	7-9
+Level 22-61	1-2	2-3	1-2	1-2	x	1-2	1-2	2-3	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	150-248	90-188	90-188	x	90-188	90-188	150-248	470-626
+Shabon	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	06	03	07	x	03	05	06	02
+Starting	12	13	12	14	x	12	13	13	13
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	3-4	x	2-3	2-3	3-4	5-7
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	1-2	2-3	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	90-188	151-249	x	90-188	91-189	150-248	385-581
+Sharon	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	03	04	x	05	06	04	04
+Starting	12	13	12	12	x	13	13	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	3-4	2-3	7-9
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	2-3	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	90-188	90-188	x	91-189	150-248	90-188	470-626
+Shiba	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	07	04	00	02	x	01	03	04	07
+Starting	14	12	10	11	x	11	12	12	28
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	0-1	1-2	x	1-2	2-3	2-3	11-13
+Level 22-61	2-3	1-2	0-1	1-2	x	0-1	1-2	1-2	7-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	151-249	90-188	10-108	70-168	x	30-128	90-188	90-188	594-750
+Thomas	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	03	10	02	05	x	03	04	06	03
+Starting	12	14	11	13	x	12	12	13	16
+Level 01-02	0-1	1-2	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	6-7	1-2	2-3	x	2-3	2-3	3-4	7-8
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	2-3	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	144-242	70-168	91-189	x	90-188	90-188	150-248	426-603
+Toppo	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	05	04	04	x	03	04	04	05
+Starting	12	13	12	12	x	12	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	91-189	90-188	90-188	x	90-188	90-188	90-188	493-689
+Twaikin	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	03	02	02	x	06	03	04	08
+Starting	13	12	11	11	x	13	12	12	30
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	1-2	1-2	x	3-4	2-3	2-3	13-14
+Level 22-61	2-3	1-2	1-2	1-2	x	2-3	1-2	1-2	7-9
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	70-168	70-168	x	150-248	90-188	90-188	634-811
+Viki	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	02	05	06	04	x	05	02	08	03
+Starting	11	13	13	12	x	13	11	14	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	3-4	2-3	x	2-3	1-2	4-5	7-8
+Level 22-61	1-2	1-2	2-3	1-2	x	1-2	1-2	2-3	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	70-168	91-189	150-248	90-188	x	91-189	70-168	170-255	426-603
+Viki (small)	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	01	05	06	04	x	05	03	06	03
+Starting	11	13	13	12	x	13	12	13	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	1-2	2-3	3-4	2-3	x	2-3	2-3	3-4	7-8
+Level 22-61	0-1	1-2	2-3	1-2	x	1-2	1-2	2-3	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	30-128	91-189	150-248	90-188	x	91-189	90-188	150-248	426-603
+Wan Fu	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	06	03	02	03	x	03	03	04	05
+Starting	13	12	11	12	x	12	12	12	24
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	3-4	2-3	1-2	2-3	x	2-3	2-3	2-3	8-10
+Level 22-61	2-3	1-2	1-2	1-2	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	150-248	90-188	70-168	90-188	x	90-188	90-188	90-188	493-689
+Watari	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	06	04	08	x	03	06	03	03
+Starting	12	13	12	14	x	12	13	12	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	2-3	4-5	x	2-3	3-4	2-3	7-8
+Level 22-61	1-2	2-3	1-2	2-3	x	1-2	2-3	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	90-188	170-255	x	90-188	150-248	90-188	426-603
+Wilder	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	04	04	04	x	04	05	05	03
+Starting	12	12	12	12	x	12	13	13	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	2-3	2-3	x	2-3	2-3	2-3	7-8
+Level 22-61	1-2	1-2	1-2	1-2	x	1-2	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	90-188	90-188	90-188	x	90-188	91-189	91-189	426-603
+Yuber	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	08	06	06	07	x	05	04	02	06
+Starting	14	13	13	14	x	13	12	11	26
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	4-5	3-4	3-4	3-4	x	2-3	2-3	1-2	10-12
+Level 22-61	2-3	2-3	2-3	2-3	x	1-2	1-2	1-2	6-8
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	170-255	150-248	150-248	151-249	x	91-189	90-188	70-168	533-729
+Yuiri	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	04	06	07	04	x	05	04	04	03
+Starting	12	13	14	12	x	13	12	12	16
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	3-4	3-4	2-3	x	2-3	2-3	2-3	7-8
+Level 22-61	1-2	2-3	2-3	1-2	x	1-2	1-2	1-2	5-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	90-188	150-248	151-249	90-188	x	91-189	90-188	90-188	426-603
+Yumi	PWR	SKL	MAG	REP	PDF	MDF	SPD	LUK	HP
+Growth Rate	05	05	06	03	x	05	03	04	04
+Starting	13	13	13	12	x	13	12	12	20
+Level 01-02	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	1-3
+Level 03-21	2-3	2-3	3-4	2-3	x	2-3	2-3	2-3	7-9
+Level 22-61	1-2	1-2	2-3	1-2	x	1-2	1-2	1-2	6-7
+Level 62-99	0-1	0-1	0-1	0-1	x	0-1	0-1	0-1	2-4
+Ending	91-189	91-189	150-248	90-188	x	91-189	90-188	90-188	470-626
+
+
+
+INFORMATION ON
+Growth Rate
+
+00
+Starting stat is 10
+Level 01-02: 0-1
+Level 03-21: 0-1 Usually increases by the higher amount; approximately 90%
+Level 22-61: 0-1 Usually increases by the higher amount; approximately 60%
+Level 62-99: 0-1
+
+01
+Starting stat is 11
+Level 01-02: 0-1
+Level 03-21: 1-2 Usually increases by the lower amount; approximately 75%
+Level 22-61: 0-1 Usually increases by the higher amount; approximately 75%
+Level 62-99: 0-1
+
+02
+Starting stat is 11
+Level 01-02: 0-1
+Level 03-21: 1-2 Usually increases by the higher amount; approximately 60%
+Level 22-61: 1-2 Usually increases by the lower amount; approximately 90%
+Level 62-99: 0-1
+
+03
+Starting stat is 12
+Level 01-02: 0-1
+Level 03-21: 2-3 Usually increases by the lower amount; approximately 90%
+Level 22-61: 1-2 Usually increases by the lower amount; approximately 75%
+Level 62-99: 0-1
+
+04
+Starting stat is 12
+Level 01-02: 0-1
+Level 03-21: 2-3 Usually increases by the higher amount; approximately 75%
+Level 22-61: 1-2 Usually increases by the higher amount; approximately 75%
+Level 62-99: 0-1
+
+05
+Starting stat is 13
+Level 01-02: 0-1
+Level 03-21: 2-3 Usually increases by the higher amount; approximately 90%
+Level 22-61: 1-2 Usually increases by the higher amount; approximately 90%
+Level 62-99: 0-1
+
+06
+Starting stat is 13
+Level 01-02: 0-1
+Level 03-21: 3-4 Usually increases by the lower amount; approximately 75%
+Level 22-61: 2-3 Usually increases by the lower amount; approximately 75%
+Level 62-99: 0-1
+
+07
+Starting stat is 14
+Level 01-02: 0-1
+Level 03-21: 3-4 Usually increases by the higher amount; approximately 60%
+Level 22-61: 2-3 Usually increases by the higher amount; approximately 60%
+Level 62-99: 0-1
+
+08
+Starting stat is 14
+Level 01-02: 0-1
+Level 03-21: 4-5 Usually increases by the lower amount; approximately 60%
+Level 22-61: 2-3 Usually increases by the higher amount; approximately 90%
+Level 62-99: 0-1
+
+09
+Starting stat is 12
+Level 01-02: 2-3
+Level 03-16: 5-6 Usually increases by the lower amount; approximately 60%
+Level 17-61: 1-2 Usually increases by the lower amount; approximately 90%
+Level 62-99: 0-1
+
+10
+Starting stat is 14
+Level 01-02: 1-2
+Level 03-16: 6-7 Usually increases by the higher amount; approximately 75%
+Level 17-61: 1-2 Usually increases by the lower amount; approximately 75%
+Level 62-99: 0-1
