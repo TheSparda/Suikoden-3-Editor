@@ -76,9 +76,19 @@ OFF_EXP     = 0x00            # u32 EXP toward next level (resets on level-up)
 OFF_CURHP   = 0x08            # u16 current HP
 OFF_ID      = 0x0C            # u8 character id
 OFF_LEVEL   = 0x0D            # u8 level
+OFF_MAXHP   = 0x30            # u16 max HP
 OFF_STATS   = 0x20            # u16[8] stat block
-# stat order mirrors the ISO growth-rate order used elsewhere in the editor
+# stat order confirmed against herrvillain per-character RAM codes (relative spacing)
 STAT_NAMES  = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"]
+
+# Equipped-gear slots (u16 item ids), located empirically in the save block and matching
+# the herrvillain RAM map's 8-byte spacing. Verified: each decodes to a real rune/armor/
+# accessory name across all sample saves.
+EQUIP_SLOTS = [
+    ("headRune",  0x44), ("rightRune", 0x4C), ("leftRune", 0x54),
+    ("helm",      0x5C), ("armor",     0x64), ("shield",   0x6C),
+    ("boots",     0x74), ("gloves",    0x7C), ("accessory", 0x84),
+]
 
 # global (whole-save) fields, from the herrvillain save-offset map
 GLOBAL = {
@@ -276,6 +286,7 @@ def decode_character(gamedata, roster_index):
     if len(rec) < CHAR_STRIDE:
         return None
     stats = list(struct.unpack_from("<8H", rec, OFF_STATS))
+    equip = {name: struct.unpack_from("<H", rec, eo)[0] for name, eo in EQUIP_SLOTS}
     return {
         "rosterIndex": roster_index,
         "name": ROSTER[roster_index] if roster_index < len(ROSTER) else f"#{roster_index}",
@@ -283,15 +294,28 @@ def decode_character(gamedata, roster_index):
         "id": rec[OFF_ID],
         "level": rec[OFF_LEVEL],
         "curHP": struct.unpack_from("<H", rec, OFF_CURHP)[0],
+        "maxHP": struct.unpack_from("<H", rec, OFF_MAXHP)[0],
         "expToNext": struct.unpack_from("<I", rec, OFF_EXP)[0],
         "stats": dict(zip(STAT_NAMES, stats)),
+        "equip": equip,
         "raw": list(rec),
     }
 
 
+# Item-id category boundaries (from the herrvillain "Item Digits" grouping + the ISO's
+# own item table): consumables/curatives < 0xA0, wearable equipment 0xA0-0x1FF, and
+# 0x200+ are the "key/valuable" goods — seeds, medals, recipes, trade items, old books,
+# stat/spell stones, etc. Used only to sort key items apart from regular party items.
+def item_category(iid):
+    if iid >= 0x200:
+        return "key"
+    if 0xA0 <= iid < 0x200:
+        return "equipment"
+    return "consumable"
+
 def decode_inventory(gamedata):
-    """Decode the flat item inventory: list of {slot, addr, id, qty}. Only non-empty
-    slots are returned (id != 0)."""
+    """Decode the flat item inventory: list of {slot, addr, id, qty, category}.
+    Only non-empty slots are returned (id != 0)."""
     out = []
     for s in range(INV_SLOTS):
         off = INV_BASE + s * INV_ENTRY
@@ -301,7 +325,8 @@ def decode_inventory(gamedata):
         qty = struct.unpack_from("<H", gamedata, off + 2)[0]
         if iid == 0:
             continue
-        out.append({"slot": s, "addr": off, "id": iid, "qty": qty})
+        out.append({"slot": s, "addr": off, "id": iid, "qty": qty,
+                    "category": item_category(iid)})
     return out
 
 
@@ -319,15 +344,17 @@ def decode_save(gamedata):
             "global": g, "characters": chars, "inventory": decode_inventory(gamedata)}
 
 
-# Editable per-character fields -> (offset within the 140-byte block, byte width).
-# Kept deliberately small and safe: the values we've decoded and validated.
+# Editable per-character scalar fields -> (offset within the 140-byte block, byte width).
 CHAR_FIELDS = {
     "level":     (OFF_LEVEL, 1),
     "curHP":     (OFF_CURHP, 2),
+    "maxHP":     (OFF_MAXHP, 2),
     "expToNext": (OFF_EXP,   4),
 }
 # stat block: 8 u16 at OFF_STATS, addressed by stat name
 STAT_INDEX = {n: i for i, n in enumerate(STAT_NAMES)}
+# equip slots addressable by name -> offset
+EQUIP_OFF = dict(EQUIP_SLOTS)
 
 def _clamp(v, width):
     return max(0, min((1 << (8*width)) - 1, int(v)))
@@ -349,6 +376,11 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None):
                     if sname in STAT_INDEX:
                         struct.pack_into("<H", b, base + OFF_STATS + STAT_INDEX[sname]*2,
                                          _clamp(sval, 2))
+                        changed += 1
+            elif k == "equip":
+                for ename, eval_ in (v or {}).items():
+                    if ename in EQUIP_OFF:
+                        struct.pack_into("<H", b, base + EQUIP_OFF[ename], _clamp(eval_, 2))
                         changed += 1
             elif k in CHAR_FIELDS:
                 off, w = CHAR_FIELDS[k]
