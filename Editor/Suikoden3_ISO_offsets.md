@@ -752,3 +752,27 @@ CONCLUSION: All three sources are live-RAM / save-file oriented. They independen
 VALIDATE our skill IDs, character ordering, and 140-byte stat-record stride, but expose
 no new static ISO tables (enemy HP/drops, EXP curve, shop inventory remain code/script).
 No editor changes required.
+
+## Save-file write support: checksum + ECC solved (2026-08-10)
+Turned the read-only Save Editor into a full editor. Two pieces were needed to
+write a modified PS2 memory-card save that the game will accept:
+
+1) gamedata checksum (word@0): the sum of ALL little-endian u32 words in the
+   53264-byte gamedata == 0 (mod 2^32). So word@0 = (-(sum of words[1:])) & 0xFFFFFFFF.
+   Verified across 4 real saves; edit any byte, recompute word@0, sum returns to 0.
+
+2) PS2 memory-card page ECC: cards store 528-byte pages (512 data + 16 spare;
+   12 ECC bytes + 4 zero). ECC is the mymc Hamming code (Ross Ridge, public domain,
+   ps2dev/mymc ps2mc_ecc.py): per 128-byte chunk -> [column_parity, lp0, lp1] with
+   column_parity_masks built from bit-parity masks [0x55,0x33,0x0F,0x00,0xAA,0xCC,0xF0],
+   inits cp=0x77/lp0=0x7F/lp1=0x7F, lp0^=~i and lp1^=i for odd-parity bytes, return
+   [cp, lp0&0x7F, lp1]. Validated against a real card: 0 mismatches on all data pages
+   (only erased 0xFF pages differ, which is expected/ignored).
+
+Implementation (Editor/s3save.py): apply field edits into a gamedata clone, fix the
+checksum, repack the file into its FAT cluster chain, recompute ECC for every touched
+page, and write the whole card back (a .bak is made first). Editable fields exposed in
+the web "Save Editor" tab: per-character level, current HP, EXP-to-next, and the 8-stat
+block. Tested end-to-end on card clones (never the originals): edits persist, gamedata
+u32 sum stays 0, and page ECC re-validates. Best practice for players: after editing,
+load the save in-game and resave, then play from that.

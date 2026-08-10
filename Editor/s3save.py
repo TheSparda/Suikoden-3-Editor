@@ -21,10 +21,52 @@ WRITING is intentionally not implemented yet: gamedata word@0 is a checksum whos
 algorithm is not yet cracked, so writing a modified save could make it fail to load.
 This module is the read-only foundation; write support is gated on solving that.
 """
-import struct, os, glob
+import struct, os, glob, shutil
 
 MAGIC = b"Sony PS2 Memory Card Format"
 S3_PREFIX = "BASLUS-20387"     # USA Suikoden III save-folder prefix on the memcard
+
+# --- PS2 memory-card ECC (Hamming) — verbatim from mymc (Ross Ridge, public domain).
+# Validated against every non-erased data page of a real card (0 mismatches). Each
+# 128-byte chunk -> 3 bytes: [column_parity, line_parity_0, line_parity_1].
+def _parityb(a):
+    a ^= a >> 1; a ^= a >> 2; a ^= a >> 4
+    return a & 1
+_PARITY = [_parityb(b) for b in range(256)]
+_CPM = [0] * 256
+for _b in range(256):
+    _m = 0
+    for _i, _msk in enumerate([0x55, 0x33, 0x0F, 0x00, 0xAA, 0xCC, 0xF0]):
+        _m |= _PARITY[_b & _msk] << _i
+    _CPM[_b] = _m
+
+def ecc_chunk(chunk):
+    """Hamming code for a 128-byte chunk -> bytes([col, lp0, lp1])."""
+    cp = 0x77; lp0 = 0x7F; lp1 = 0x7F
+    for i in range(len(chunk)):
+        b = chunk[i]
+        cp ^= _CPM[b]
+        if _PARITY[b]:
+            lp0 ^= ~i
+            lp1 ^= i
+    return bytes([cp & 0xFF, lp0 & 0x7F, lp1 & 0xFF])
+
+def ecc_page(page512):
+    """16-byte spare (12 ECC + 4 zero) for a 512-byte page."""
+    out = b"".join(ecc_chunk(page512[i*128:(i+1)*128]) for i in range(4))
+    return out + b"\x00\x00\x00\x00"
+
+# --- gamedata checksum: the sum of all little-endian u32 words == 0 (mod 2^32).
+# Verified across 4 real saves. word@0 stores the value that makes the sum zero.
+def gamedata_checksum(data):
+    words = struct.unpack_from("<%dI" % ((len(data) // 4) - 1), data, 4)
+    return (-sum(words)) & 0xFFFFFFFF
+
+def fix_gamedata_checksum(data):
+    """Return a copy of gamedata with word@0 recomputed so all u32 sum to 0."""
+    b = bytearray(data)
+    struct.pack_into("<I", b, 0, gamedata_checksum(bytes(b)))
+    return bytes(b)
 
 # --- character record layout (offsets within the 140-byte block) ---------------
 CHAR_BASE   = 0x33AC
@@ -69,7 +111,7 @@ class MemCard:
     def __init__(self, data):
         if data[:len(MAGIC)] != MAGIC:
             raise ValueError("not a PS2 memory-card image")
-        self.data = data
+        self.data = bytearray(data)   # mutable so write-back can patch pages in place
         self.page_len = struct.unpack_from("<H", data, 0x28)[0]           # 512
         self.pages_per_cluster = struct.unpack_from("<H", data, 0x2A)[0]  # 2
         self.pages_per_block = struct.unpack_from("<H", data, 0x2C)[0]    # 16
@@ -154,6 +196,58 @@ class MemCard:
                 return self._chain(e["cluster"], e["length"])[:e["length"]]
         return None
 
+    # ---- write support -----------------------------------------------------
+    def _chain_clusters(self, first, size):
+        """The ordered list of physical cluster numbers backing a file/dir."""
+        clusters, c = [], first
+        while size > 0 and (c & 0x7FFFFFFF) != 0x7FFFFFFF and c != 0xFFFFFFFF:
+            clusters.append((c & 0x7FFFFFFF) + self.alloc_offset)
+            nxt = self._fat(c & 0x7FFFFFFF)
+            if nxt == 0xFFFFFFFF:
+                break
+            c = nxt
+            size -= self.cluster_size
+        return clusters
+
+    def _write_page(self, page_num, data512):
+        """Overwrite one 512-byte page in self.data and recompute its ECC spare."""
+        off = page_num * self.raw_page
+        self.data[off:off + self.page_len] = data512
+        if self.raw_page >= self.page_len + 16:      # card has a spare area
+            spare = ecc_page(data512)
+            self.data[off + self.page_len:off + self.page_len + 16] = spare
+
+    def _write_cluster(self, cluster_num, data):
+        base = cluster_num * self.pages_per_cluster
+        for i in range(self.pages_per_cluster):
+            seg = data[i*self.page_len:(i+1)*self.page_len]
+            if len(seg) < self.page_len:
+                seg = seg + b"\x00" * (self.page_len - len(seg))
+            self._write_page(base + i, seg)
+
+    def write_file(self, dir_cluster, dir_len, filename, new_content):
+        """Replace a file's bytes in place (same length) and refresh ECC.
+        Returns number of clusters written. Raises if length differs."""
+        ent = None
+        for e in self._listdir(dir_cluster, dir_len):
+            if e["name"] == filename and not e["is_dir"]:
+                ent = e; break
+        if ent is None:
+            raise KeyError(f"{filename} not found")
+        if len(new_content) != ent["length"]:
+            raise ValueError(f"length changed ({len(new_content)} != {ent['length']}); "
+                             "in-place write only")
+        clusters = self._chain_clusters(ent["cluster"], ent["length"])
+        for i, cnum in enumerate(clusters):
+            seg = new_content[i*self.cluster_size:(i+1)*self.cluster_size]
+            if not seg:
+                break
+            self._write_cluster(cnum, seg)
+        return len(clusters)
+
+    def to_bytes(self):
+        return bytes(self.data)
+
 
 def slot_label(folder):
     """'BASLUS-20387sui3_u01' -> 'Slot 1'. Falls back to the raw folder name."""
@@ -194,6 +288,72 @@ def decode_save(gamedata):
             chars.append(c)
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "characters": chars}
+
+
+# Editable per-character fields -> (offset within the 140-byte block, byte width).
+# Kept deliberately small and safe: the values we've decoded and validated.
+CHAR_FIELDS = {
+    "level":     (OFF_LEVEL, 1),
+    "curHP":     (OFF_CURHP, 2),
+    "expToNext": (OFF_EXP,   4),
+}
+# stat block: 8 u16 at OFF_STATS, addressed by stat name
+STAT_INDEX = {n: i for i, n in enumerate(STAT_NAMES)}
+
+def _clamp(v, width):
+    return max(0, min((1 << (8*width)) - 1, int(v)))
+
+def apply_edits_to_gamedata(gamedata, edits):
+    """edits: {rosterIndex(str/int): {field: value, "stats": {STAT: value}}}.
+    Returns (new_gamedata_with_fixed_checksum, changed_field_count)."""
+    b = bytearray(gamedata)
+    changed = 0
+    for ridx, fields in edits.items():
+        ridx = int(ridx)
+        base = CHAR_BASE + ridx * CHAR_STRIDE
+        if base + CHAR_STRIDE > len(b):
+            continue
+        for k, v in fields.items():
+            if k == "stats":
+                for sname, sval in (v or {}).items():
+                    if sname in STAT_INDEX:
+                        struct.pack_into("<H", b, base + OFF_STATS + STAT_INDEX[sname]*2,
+                                         _clamp(sval, 2))
+                        changed += 1
+            elif k in CHAR_FIELDS:
+                off, w = CHAR_FIELDS[k]
+                fmt = {1: "<B", 2: "<H", 4: "<I"}[w]
+                struct.pack_into(fmt, b, base + off, _clamp(v, w))
+                changed += 1
+    return fix_gamedata_checksum(bytes(b)), changed
+
+def write_save_edits(path, folder, edits, make_backup=True):
+    """Apply edits to one save folder's gamedata on a memcard file, in place.
+    Fixes the save checksum and per-page ECC. Backs up the card first by default.
+    Returns a summary dict."""
+    card = load_card(path)
+    # locate the folder + its gamedata
+    target = None
+    for e in card.root_entries():
+        if e["is_dir"] and e["name"] == folder:
+            target = e; break
+    if target is None:
+        return {"error": f"save folder {folder} not found"}
+    gd = card.read_file(target["cluster"], target["length"], "gamedata")
+    if gd is None:
+        return {"error": "gamedata not found in save folder"}
+    new_gd, changed = apply_edits_to_gamedata(gd, edits)
+    if changed == 0:
+        return {"ok": True, "changed": 0, "note": "no editable fields in request"}
+    if make_backup:
+        bak = path + ".bak"
+        if not os.path.exists(bak):
+            shutil.copy2(path, bak)
+    clusters = card.write_file(target["cluster"], target["length"], "gamedata", new_gd)
+    with open(path, "wb") as f:
+        f.write(card.to_bytes())
+    return {"ok": True, "changed": changed, "clustersWritten": clusters,
+            "checksum": struct.unpack_from("<I", new_gd, 0)[0]}
 
 
 def load_card(path):
