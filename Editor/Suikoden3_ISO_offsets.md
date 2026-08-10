@@ -586,3 +586,13 @@ plus a scale-x control per weapon. Bytes 16..27 (sharpen cost/material tail,
 meaning unconfirmed) are preserved untouched on save. Endpoints /api/weapons (GET,
 includes atkDefault) + /api/weapon (POST {index, levels:{lvIdx:atk}}). The old
 "list4 (raw bytes)" section in the character editor still exists for hex access.
+
+## Weapons: layout + character grouping (2026-08-10)
+- Weapons tab ATK fields now use a wrapping CSS grid (8/row, 4 on narrow) instead
+  of a single overflowing row.
+- Character->weapon link: list1 byte +9 groups the roster into 14 weapon-growth
+  classes (verified: +9=5 = Chris/Geddoe/Borus/Queen; +9=3 = Hugo). It is NOT a 1:1
+  index into the 28 list4 curves (e.g. +9=5 mixes sword users and Aila=bow), so the
+  editor shows the class->members table as a REFERENCE panel and only labels a
+  specific curve with a character when the record name says so explicitly
+  ("Thomas Weapon", "(Chris)"). A precise per-curve character map would need more RE.
