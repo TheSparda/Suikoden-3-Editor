@@ -706,8 +706,15 @@ class Handler(BaseHTTPRequestHandler):
                 # item id->name so the UI can label inventory + offer an item picker
                 items = [{"id": k, "name": v, "desc": ITEM_DESC.get(k, "")}
                          for k, v in sorted(S.load_item_ids().items())]
+                # character-id -> name (list1 from the exe) to resolve leader / party ids
+                charById = CHAR_NAMES.get("list1", {})
+                # resolve the leader name for each save (ids >= ~200 are guests/NPCs)
+                for sv in saves:
+                    lid = sv.get("global", {}).get("partyLeader")
+                    sv["leaderName"] = charById.get(str(lid), "")
                 return self._send(200, {"path": path, "statNames": SV.STAT_NAMES,
-                                        "saves": saves, "items": items})
+                                        "saves": saves, "items": items,
+                                        "charById": charById})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -758,7 +765,8 @@ class Handler(BaseHTTPRequestHandler):
                 res = SV.write_save_edits(path, body.get("folder", ""),
                                           body.get("edits", {}),
                                           make_backup=body.get("backup", True),
-                                          inv_edits=body.get("invEdits", {}))
+                                          inv_edits=body.get("invEdits", {}),
+                                          name_edits=body.get("nameEdits", {}))
                 return self._send(200, res)
             return self._send(404, {"error": "not found"})
         except Exception as e:
@@ -1667,22 +1675,37 @@ function renderSaveSlots(r){
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
  // pending edits for the CURRENT slot
- let EDITS={}, INV={}, SUB="chars";
+ let EDITS={}, INV={}, NAMES={}, SUB="chars";
  function setEdit(ridx,key,val,stat){
   EDITS[ridx]=EDITS[ridx]||{};
   if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
   else EDITS[ridx][key]=val;}
- function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length;}
+ function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length;}
  function markSaveDirty(){const w=$("#savewrite");if(w){w.disabled=!dirty();w.textContent=dirty()?"● Write to card":"Write to card";}}
 
  function drawSlot(i){
-  const s=r.saves[i]; EDITS={}; INV={};
+  const s=r.saves[i]; EDITS={}; INV={}; NAMES={};
   body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
-  $("#slotmeta").innerHTML=`${s.folder} · leader id ${s.global.partyLeader} · story phase ${s.global.storyPhase} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
+  const meta=s.meta||{};
+  const leaderTxt=s.leaderName?`Leader ${s.leaderName}`:`Leader id ${s.global.partyLeader} (guest/NPC)`;
+  const metaBits=[
+    meta.chapter!=null?`Chapter ${meta.chapter}`:null,
+    meta.level!=null?`Party Lv ${meta.level}`:null,
+    meta.playtime?`Playtime ${meta.playtime}`:null,
+    leaderTxt,
+    `story phase ${s.global.storyPhase}`,
+  ].filter(Boolean).join(" · ");
+  $("#slotmeta").innerHTML=`${s.folder} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
   const live=s.characters.filter(c=>c.level>0||c.curHP>0||c.expToNext>0);
   const inv=s.inventory||[];
   const invCount=inv.reduce((a,bg)=>a+bg.items.length,0);  // total items across all bags
+  const nameInputs=(s.names||[]).map(nm=>`<label class=hint style="flex-direction:column;gap:3px;align-items:stretch">${nm.label}
+     <input type=text maxlength=${nm.max} value="${(nm.value||'').replace(/"/g,'&quot;')}" data-name=${nm.key} data-def="${(nm.value||'').replace(/"/g,'&quot;')}"></label>`).join("");
   $("#slotbody").innerHTML=`<div class=card>
+     <div class=hint style="margin:-2px 0 8px">${metaBits}</div>
+     <div style="font-weight:600;color:var(--acc2);margin:0 0 6px">Names</div>
+     <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:4px">${nameInputs}</div></div>
+    <div class=card>
      <div class=subtabs>
       <button data-sub=chars class=on>Characters (${live.length})</button>
       <button data-sub=items>Inventory (${invCount})</button></div>
@@ -1775,13 +1798,17 @@ function renderSaveSlots(r){
    else{$("#subhint").innerHTML=`Party + storage items (id · quantity). Change an item or its count. Only non-empty slots are shown. A .bak is made first.`;drawItems();}}
   $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{SUB=b.dataset.sub;showSub();});
   $("#sq").oninput=e=>{const f=e.target.value.toLowerCase();SUB==="chars"?drawChars(f):drawItems(f);};
+  // editable name fields (in the meta card, not #subview — decorate + wire directly)
+  decorate($("#slotbody"));
+  $("#slotbody").querySelectorAll("input[data-name]").forEach(inp=>inp.addEventListener("change",()=>{
+    NAMES[inp.dataset.name]=inp.value;markSaveDirty();}));
   showSub();
 
   $("#savewrite").onclick=async()=>{
    if(!dirty()){toast("no edits");return;}
    $("#savemsg").textContent="writing…";
    const res=await api("/api/save-write",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,backup:$("#savebak").checked})});
+     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,backup:$("#savebak").checked})});
    if(res.ok){$("#savemsg").innerHTML=`wrote ${res.changed} field(s), ${res.clustersWritten} clusters · checksum 0x${res.checksum.toString(16).toUpperCase()}`;
     toast("saved to card");openCard(SAVE_CARD);}
    else{$("#savemsg").textContent="error: "+(res.error||"?");toast("write failed");}
