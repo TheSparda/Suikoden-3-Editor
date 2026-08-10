@@ -670,48 +670,77 @@ class Handler(BaseHTTPRequestHandler):
 INDEX_HTML = r"""<!doctype html><html><head><meta charset=utf-8>
 <title>Suikoden III ISO Editor</title>
 <style>
-:root{--bg:#0f111a;--panel:#1b1e2a;--panel2:#20232f;--ink:#e6e8ef;--mut:#8b90a3;
- --acc:#6ea8fe;--acc2:#8fc0ff;--line:#2a2e3e;--ok:#4caf7d;--warn:#ffd166;--warnbd:#c79a2e;
- --hdr:64px;--navh:49px;--shadow:0 2px 8px rgba(0,0,0,.28)}
+/* ===== Suikoden III inspired themes =====
+   All colors go through CSS variables. The default (:root) is the "Dark crimson &
+   gold" theme (S3 at night); body.theme-parchment overrides to the light, menu-
+   authentic parchment look. Inspired-by only — no game assets/fonts are used. */
+:root{
+ --bg:#17110d;--panel:#211812;--panel2:#2d2018;--headbg:linear-gradient(180deg,#2a1e14,#211812);
+ --ink:#efe4d0;--mut:#a6947a;--line:#3c2c1e;
+ --acc:#c39a3f;--acc2:#e0bd63;--accink:#1c1206;      /* antique gold buttons/tabs */
+ --crimson:#a5282a;                                   /* section titles / dividers */
+ --input-bg:#140e09;--thead-bg:#281c13;
+ --ok:#5a7d3c;--toastink:#f3ecda;
+ --warn:#e0a92c;--warnbd:#8a6a1c;--changed-bg:#2a2010;
+ --dotborder:rgba(255,255,255,.15);
+ --titlefont:"Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
+ --focusring:rgba(195,154,63,.28);
+ --hdr:64px;--navh:49px;--shadow:0 2px 10px rgba(0,0,0,.38)}
+body.theme-parchment{
+ --bg:#cdbb95;--panel:#f3ead3;--panel2:#e8dabb;--headbg:linear-gradient(180deg,#f6eed8,#efe4c8);
+ --ink:#3a2a17;--mut:#7c6845;--line:#c3ac80;
+ --acc:#9c2b26;--acc2:#b83f39;--accink:#f6ecd6;       /* crimson buttons/tabs, cream text */
+ --crimson:#8f2420;
+ --input-bg:#fcf6e7;--thead-bg:#e3d3ac;
+ --ok:#5a7d3c;--toastink:#f3ecda;
+ --warn:#8a5a10;--warnbd:#b98a2e;--changed-bg:#f3e5bf;
+ --dotborder:rgba(0,0,0,.22);
+ --focusring:rgba(156,43,38,.25);
+ --shadow:0 2px 8px rgba(90,60,20,.22)}
 *{box-sizing:border-box}
 body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
  background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
 /* sticky header + nav so Save/Revert and tabs stay in reach on long tables */
-header{position:sticky;top:0;z-index:30;padding:12px 18px;background:linear-gradient(180deg,#1e2230,#1b1e2a);
- border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;box-shadow:var(--shadow)}
-header b{font-size:16px;letter-spacing:.01em}header .iso{color:var(--mut);font-size:12px}
+header{position:sticky;top:0;z-index:30;padding:12px 18px;background:var(--headbg);
+ border-bottom:2px solid var(--acc);display:flex;gap:14px;align-items:center;box-shadow:var(--shadow)}
+header b{font-size:17px;letter-spacing:.02em;font-family:var(--titlefont);color:var(--acc2)}
+header .iso{color:var(--mut);font-size:12px}
 nav{position:sticky;top:var(--hdr);z-index:29;display:flex;gap:4px;padding:8px 18px;background:var(--panel);
  border-bottom:1px solid var(--line)}
 nav button{background:transparent;color:var(--mut);border:0;padding:8px 14px;border-radius:8px;cursor:pointer;
  font:inherit;transition:background .12s,color .12s}
 nav button:hover:not(:disabled):not(.on){background:var(--panel2);color:var(--ink)}
-nav button.on{background:var(--acc);color:#0b0d12;font-weight:600}
+nav button.on{background:var(--acc);color:var(--accink);font-weight:600}
 nav button:disabled{opacity:.35;cursor:not-allowed}
 main{padding:18px;max-width:1120px;margin:0 auto}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
 /* sticky column headers within each scrolling card */
-thead th{position:sticky;top:calc(var(--hdr) + var(--navh));z-index:5;background:#191c27;
+thead th{position:sticky;top:calc(var(--hdr) + var(--navh));z-index:5;background:var(--thead-bg);
  color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 tbody tr{transition:background .08s}
 tr:hover td{background:var(--panel2)}
-input,select{background:#0e1017;color:var(--ink);border:1px solid var(--line);border-radius:6px;
+input,select{background:var(--input-bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;
  padding:5px 8px;font:inherit;transition:border-color .12s,box-shadow .12s}
-input:focus,select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px rgba(110,168,254,.22)}
-input:hover:not(:focus),select:hover:not(:focus){border-color:#3a4055}
+input:focus,select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px var(--focusring)}
+input:hover:not(:focus),select:hover:not(:focus){border-color:var(--acc)}
 input[type=number]{width:82px}
-button.act{background:var(--acc);color:#0b0d12;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;
+button.act{background:var(--acc);color:var(--accink);border:0;border-radius:6px;padding:6px 12px;cursor:pointer;
  font-weight:600;transition:filter .12s,transform .04s}
 button.act:hover{filter:brightness(1.08)}button.act:active{transform:translateY(1px)}
 button.act:disabled{opacity:.45;cursor:default;filter:none}
-.pill{padding:2px 9px;border-radius:999px;font-size:12px;background:#0e1017;border:1px solid var(--line);white-space:nowrap}
-.aoe{color:var(--acc);border-color:#37527e}
+button.act.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+button.act.sec:hover{border-color:var(--acc);filter:none}
+.pill{padding:2px 9px;border-radius:999px;font-size:12px;background:var(--input-bg);border:1px solid var(--line);white-space:nowrap}
+.aoe{color:var(--acc2);border-color:var(--acc)}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;
  box-shadow:var(--shadow)}
-.card h3{letter-spacing:.01em}
+.card h3,.card h4,.card h2{font-family:var(--titlefont);letter-spacing:.01em}
+h2{color:var(--crimson)!important}
+.card h3{color:var(--acc2)}
 .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
 .row label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
-#toast{position:fixed;bottom:18px;right:18px;background:var(--ok);color:#04120b;padding:10px 16px;
+#toast{position:fixed;bottom:18px;right:18px;background:var(--ok);color:var(--toastink);padding:10px 16px;
  border-radius:8px;opacity:0;transform:translateY(6px);transition:.2s;font-weight:600;box-shadow:var(--shadow);z-index:50}
 #toast.show{opacity:1;transform:translateY(0)}
 .hint{color:var(--mut);font-size:12px;margin:4px 0 14px}
@@ -720,7 +749,7 @@ tr.descrow td{border-bottom:1px solid var(--line);padding-top:0}
 tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 9px 8px}
 tr.mainrow td{border-bottom:0}
 /* changed-from-default field highlighting + restore button */
-input.changed,select.changed{color:var(--warn);border-color:var(--warnbd);background:#211d10}
+input.changed,select.changed{color:var(--warn);border-color:var(--warnbd);background:var(--changed-bg)}
 .restore{display:none;margin-left:4px;background:transparent;border:1px solid var(--line);color:var(--mut);
  border-radius:6px;padding:3px 7px;cursor:pointer;font:inherit;line-height:1;vertical-align:middle;transition:.12s}
 .restore:hover{color:var(--ink);border-color:var(--acc);background:var(--panel2)}
@@ -734,26 +763,47 @@ input.changed,select.changed{color:var(--warn);border-color:var(--warnbd);backgr
 @keyframes spin{to{transform:rotate(360deg)}}
 /* element color dots for scannable spell/unite tables */
 .eldot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline;
- border:1px solid rgba(255,255,255,.15)}
+ border:1px solid var(--dotborder)}
 .el1{background:#ff6b57}.el2{background:#4aa3ff}.el3{background:#57d6a0}
-.el4{background:#c9a06a}.el5{background:#e6d24a}.el0{background:#6b7080}
-kbd{background:#0e1017;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
+.el4{background:#c9a06a}.el5{background:#e6d24a}.el0{background:#8a7f6a}
+kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
  padding:1px 5px;font:11px ui-monospace,monospace;color:var(--mut)}
+/* theme switcher footer */
+#themebar{max-width:1120px;margin:8px auto 28px;padding:10px 18px;display:flex;gap:10px;align-items:center;
+ color:var(--mut);font-size:12px}
+#themebar .tb{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:999px;
+ padding:5px 14px;cursor:pointer;font:inherit;transition:.12s}
+#themebar .tb:hover{color:var(--ink);border-color:var(--acc)}
+#themebar .tb.on{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
 </style></head><body>
 <header><b>Suikoden III ISO Editor</b><span class=iso id=iso></span>
 <label class=hint style="margin-left:auto;display:flex;gap:6px;align-items:center;cursor:pointer">
  <input type=checkbox id=backupChk checked> Back up ISO before first save</label>
 <span class=hint id=backupState style="margin:0 14px"></span>
 <span id=pendingBadge class=hint style="margin-right:8px"></span>
-<button class=act id=revertBtn style="background:#3a3f52;color:var(--ink);margin-right:6px;display:none">Revert</button>
+<button class="act sec" id=revertBtn style="margin-right:6px;display:none">Revert</button>
 <button class=act id=saveBtn disabled>Save to ISO</button></header>
 <nav id=nav></nav>
 <main id=main></main>
+<footer id=themebar>
+ <span>Theme:</span>
+ <button class=tb data-theme=crimson>Crimson &amp; Gold</button>
+ <button class=tb data-theme=parchment>Parchment</button>
+ <span class=hint style="margin:0 0 0 6px">Suikoden III-inspired styling (not official art).</span>
+</footer>
 <div id=toast></div>
 <script>
 const $=s=>document.querySelector(s), api=(u,o)=>fetch(u,o).then(r=>r.json());
 let META={}, TAB="spells", DIRTY=false;
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
+// theme: 'crimson' (default dark) or 'parchment' (light menu look), saved locally
+function applyTheme(t){document.body.classList.toggle("theme-parchment",t==="parchment");
+ document.querySelectorAll("#themebar .tb").forEach(b=>b.classList.toggle("on",b.dataset.theme===t));
+ try{localStorage.setItem("s3theme",t);}catch(e){}}
+(function initTheme(){let t="crimson";try{t=localStorage.getItem("s3theme")||"crimson";}catch(e){}
+ // script runs at end of <body>, so body + footer already exist — apply now (no flash)
+ applyTheme(t);
+ document.querySelectorAll("#themebar .tb").forEach(b=>b.onclick=()=>applyTheme(b.dataset.theme));})();
 function spinner(label){return `<div class=loading><span class=spin></span>${label||"loading…"}</div>`;}
 // Set a <select> to a value, injecting a synthetic option if that value has no
 // matching <option> (raw ROM values outside our curated lists). Prevents a blank
@@ -1282,7 +1332,7 @@ async function renderHardMode(m){
      enemy casts, so scaling spell power affects both — leave at 1.00 to only nerf via growth rates.</div></div>
    <div class=card><div class=row style="align-items:center">
      <button class=act id=hmApply>Apply to staged edits</button>
-     <button class=act id=hmReset style="background:#3a3f52;color:var(--ink)">Restore all to default</button>
+     <button class="act sec" id=hmReset>Restore all to default</button>
      <span class=hint id=hmOut style=margin:0></span></div>
     <div class=hint style=margin-top:8px>Tip: after applying, review the Characters tab (Growth section) to
      see per-character values, then Save.</div></div>
@@ -1302,8 +1352,8 @@ async function renderHardMode(m){
    cell.innerHTML=`${st.avgDisk.toFixed(2)} → <b style="color:${proj<st.avgDisk?'var(--warn)':'var(--ink)'}">${proj.toFixed(2)}</b>${st.changed?` · ${st.changed} staged`:""}`;});}
  drawStats();
  // preset buttons
- $("#hmPresets").innerHTML=Object.entries(HM_PRESETS).map(([k,p])=>`<button class=act data-p="${k}" style="background:var(--panel2);color:var(--ink);border:1px solid var(--line)">${p.label}</button>`).join("")+
-   `<button class=act data-p="custom" style="background:var(--panel2);color:var(--ink);border:1px solid var(--line)">Custom</button>`;
+ $("#hmPresets").innerHTML=Object.entries(HM_PRESETS).map(([k,p])=>`<button class="act sec" data-p="${k}">${p.label}</button>`).join("")+
+   `<button class="act sec" data-p="custom">Custom</button>`;
  function applyPreset(k){
   if(k==="custom"){$("#hmPresetDesc").textContent="Set your own multipliers below.";return;}
   const p=HM_PRESETS[k];HM_STATS.forEach(s=>cur[s]=p.growth[s]!==undefined?p.growth[s]:1);
