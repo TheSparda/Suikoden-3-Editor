@@ -349,6 +349,42 @@ def write_gear(item_id, fields):
         iso.wr(off + eo + 4, struct.pack("<H", int(param) & 0xFFFF))
     iso.close(); return {"ok": True}
 
+# --- Weapons (list4 = weapon ATK sharpen table) --------------------------------
+# Each record (stride 28): bytes 0..15 = ATK at sharpen levels 1..16 (u8 each);
+# bytes 16..27 = a 12-byte tail (sharpen cost/material data, meaning unconfirmed).
+# We edit only the 16 ATK levels; the tail is preserved untouched on save.
+WEAPON_LEVELS = 16
+
+def read_weapons():
+    iso = _iso()
+    base, stride, _ = S.TABLES["list4"]
+    names = CHAR_NAMES.get("list4", {})
+    n = max((int(k) for k in names), default=27) + 1
+    out = []
+    for i in range(n):
+        rec = iso.rd(base + i*stride, stride)
+        drec = iso.disk_rd(base + i*stride, stride)
+        out.append({
+            "index": i,
+            "name": names.get(str(i), f"Weapon {i}"),
+            "atk": list(rec[:WEAPON_LEVELS]),
+            "atkDefault": list(drec[:WEAPON_LEVELS]),
+        })
+    iso.close()
+    return out
+
+def write_weapon(index, levels):
+    """levels: {levelIndex(0..15): atkValue}. Clamped to u8; tail untouched."""
+    iso = _iso(write=True)
+    base, stride, _ = S.TABLES["list4"]
+    off = base + index*stride
+    for k, v in levels.items():
+        li = int(k)
+        if not (0 <= li < WEAPON_LEVELS):
+            iso.close(); return {"error": f"level index {li} out of range"}
+        iso.wr(off + li, bytes([max(0, min(255, int(v)))]))
+    iso.close(); return {"ok": True}
+
 def read_shop():
     iso = _iso(); items = S.load_item_ids(); out = {}
     for name, (off, cnt, w, note) in S.SHOP.items():
@@ -629,6 +665,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, read_charfields(int(q["list"]), int(q["index"])))
             if p == "/api/enemies":
                 return self._send(200, S.read_enemy_names(_iso()))
+            if p == "/api/weapons":
+                return self._send(200, read_weapons())
             if p == "/api/growth":
                 return self._send(200, read_growth())
             return self._send(404, {"error": "not found"})
@@ -670,6 +708,8 @@ class Handler(BaseHTTPRequestHandler):
                                                        int(body.get("width", 1))))
             if self.path == "/api/hardmode":
                 return self._send(200, apply_hard_mode(body))
+            if self.path == "/api/weapon":
+                return self._send(200, write_weapon(int(body["index"]), body["levels"]))
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -892,8 +932,8 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const tabs=["spells","runes","unites","gear","shop","characters","hardmode","enemies","reference"];
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",shop:"Shop",characters:"Characters",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference"};
+ const tabs=["spells","runes","unites","gear","weapons","shop","characters","hardmode","enemies","reference"];
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference"};
  $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
  document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
  setTabsEnabled(META.loaded);
@@ -952,6 +992,7 @@ async function render(){if(!META.loaded)return pickIso();setActive();const m=$("
  if(TAB==="runes")return renderRunes(m);
  if(TAB==="unites")return renderUnites(m);
  if(TAB==="gear")return renderGear(m);
+ if(TAB==="weapons")return renderWeapons(m);
  if(TAB==="shop")return renderShop(m);
  if(TAB==="characters")return renderChars(m);
  if(TAB==="hardmode")return renderHardMode(m);
@@ -1234,6 +1275,46 @@ async function renderGear(m){const gear=await api("/api/gear");
   }
   const r=await api("/api/gear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
   if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+async function renderWeapons(m){const wpn=await api("/api/weapons");
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter weapons…">
+  <span class=hint>Each weapon type's ATK at sharpen levels 1–16. This is Suikoden III's
+   "weapon power." Edit a level directly, or scale a whole weapon's curve. Saves on change.
+   (Sharpen cost data is left untouched.)</span></div>
+  <div id=wl></div>`;
+ function draw(f=""){
+  $("#wl").innerHTML=wpn.filter(w=>w.name.toLowerCase().includes(f)).map(w=>{
+   const cells=w.atk.map((a,li)=>
+     `<td style="text-align:center"><div class=hint style="margin:0 0 2px">${li+1}</div>
+       <input type=number style="width:56px;text-align:center" data-i=${w.index} data-lv=${li}
+        data-def="${w.atkDefault[li]}" value="${a}"></td>`).join("");
+   return `<div class=card><div class=row style="justify-content:space-between;align-items:center;margin-bottom:8px">
+     <h3 style="margin:0">${w.name} <span class=hint>ATK ${w.atk[0]} → ${w.atk[15]}</span></h3>
+     <label class=hint style="flex-direction:row;align-items:center;gap:6px">scale ATK ×
+      <input type=number step=0.05 min=0 value=1 style=width:70px data-scale=${w.index}>
+      <button class="act sec" data-scalego=${w.index}>Apply</button></label></div>
+    <table><tbody><tr>${cells}</tr></tbody></table></div>`;}).join("");
+  // per-level edits
+  $("#wl").querySelectorAll("input[data-lv]").forEach(inp=>{
+   inp.addEventListener("blur",async()=>{
+    const r=await api("/api/weapon",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({index:+inp.dataset.i,levels:{[inp.dataset.lv]:+inp.value}})});
+    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));});});
+  // bulk scale one weapon's whole curve (relative to current shown values)
+  $("#wl").querySelectorAll("[data-scalego]").forEach(btn=>btn.onclick=async()=>{
+   const idx=+btn.dataset.scalego;
+   const mult=+$(`input[data-scale="${idx}"]`).value;
+   const w=wpn.find(x=>x.index===idx);
+   const levels={};
+   $(`#wl input[data-i="${idx}"][data-lv]`).forEach(inp=>{
+    const nv=Math.max(0,Math.min(255,Math.round(+inp.value*mult)));
+    inp.value=nv; levels[inp.dataset.lv]=nv;
+    inp.dispatchEvent(new Event("change"));});   // refresh changed-highlight
+   const r=await api("/api/weapon",{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({index:idx,levels})});
+   if(r.ok){markDirty();toast(`scaled ${w.name} ATK ×${mult}`);}else toast("error");});
+  decorate($("#wl"));}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
 async function renderShop(m){const shop=await api("/api/shop");const items=await api("/api/items");
