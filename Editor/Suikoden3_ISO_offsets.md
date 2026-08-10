@@ -844,3 +844,13 @@ per-bag counts render, a Hugo-bag qty edit persisted, checksum sum stayed 0, ECC
 - Per-party GOLD: investigated but NOT exposed. No confirmable gold field found, and no
   3-value per-party structure is visible; all sample saves are post-merge (single party)
   so it couldn't be validated. Needs a save with a known on-screen potch to locate.
+
+## Save Editor v6: Suikoden I/II carryover indicator (2026-08-10)
+S3 seeds the carryover name fields (SI hero 0xCA13 / SI country 0xCA24 / SII hero 0xCA35
+/ SII army-country 0xCA02) with canonical DEFAULTS — McDohl/Toran (S1), Genkaku Jr./Dunan
+(S2) — unless a real Suikoden I/II memory-card save is loaded, which overwrites them with
+that save's hero/country. There is NO separate boolean load-flag byte in the region (all 4
+sample saves are byte-identical here and hold the defaults). So detect_carryover() infers
+"S1/S2 data loaded" when those names differ from the defaults, else reports "not detected".
+Surfaced as read-only pills in the Save Editor meta card. Honest limitation: with only
+default-bearing saves available, this is a name-based heuristic, not a confirmed flag.

@@ -1701,8 +1701,15 @@ function renderSaveSlots(r){
   const invCount=inv.reduce((a,bg)=>a+bg.items.length,0);  // total items across all bags
   const nameInputs=(s.names||[]).map(nm=>`<label class=hint style="flex-direction:column;gap:3px;align-items:stretch">${nm.label}
      <input type=text maxlength=${nm.max} value="${(nm.value||'').replace(/"/g,'&quot;')}" data-name=${nm.key} data-def="${(nm.value||'').replace(/"/g,'&quot;')}"></label>`).join("");
+  // Suikoden I/II carryover indicator
+  const co=s.carryover||{};
+  const coPill=(g,label)=>g?`<span class="pill ${g.loaded?'aoe':''}" title="${g.hero}${g.country?' · '+g.country:''}">${label}: ${g.loaded?'loaded ('+g.hero+')':'not detected'}</span>`:'';
+  const carryLine=`<div style="margin:2px 0 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+     <span class=hint>Carryover:</span>${coPill(co.s1,'Suikoden I')}${coPill(co.s2,'Suikoden II')}
+     <span class=hint>(detected from the transferred hero/country names; defaults mean no linked save)</span></div>`;
   $("#slotbody").innerHTML=`<div class=card>
      <div class=hint style="margin:-2px 0 8px">${metaBits}</div>
+     ${carryLine}
      <div style="font-weight:600;color:var(--acc2);margin:0 0 6px">Names</div>
      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:4px">${nameInputs}</div></div>
     <div class=card>
