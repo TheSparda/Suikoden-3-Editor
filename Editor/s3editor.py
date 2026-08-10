@@ -446,6 +446,94 @@ def write_shop(table, slot, value):
     iso.close(); return {"ok": True}
 
 
+# ------------------------------------------------------------- Hard Mode / bulk
+# The 8 player growth-rate bytes live in list2 at +4..+11 (PWR SKL MAG REP MDF SPD
+# LUK HP). Growth rate drives how much each stat rises per level (typical 2..6), so
+# scaling it down weakens the whole party across all 99 levels — a clean, reversible
+# difficulty lever. All bulk edits scale the ISO's *disk* value (not the staged one)
+# so re-applying a preset is idempotent instead of compounding.
+GROWTH_OFFS = {"PWR": 4, "SKL": 5, "MAG": 6, "REP": 7, "MDF": 8, "SPD": 9, "LUK": 10, "HP": 11}
+# list2 holds the growth records; roster is the named characters (79 from the exe).
+CHAR_COUNT_L2 = max((int(k) for k in CHAR_NAMES.get("list2", {})), default=78) + 1
+
+def _disk_u8(iso, off):
+    return iso.disk_rd(off, 1)[0]
+
+def scale_player_growth(mult_by_stat, clamp_min=0, clamp_max=15):
+    """Scale each character's growth-rate bytes. mult_by_stat: {stat: float}.
+    Returns count of bytes changed."""
+    iso = _iso(write=True)
+    base, stride, _ = S.TABLES["list2"]
+    n = 0
+    for i in range(CHAR_COUNT_L2):
+        rec_off = base + i*stride
+        for stat, off in GROWTH_OFFS.items():
+            m = mult_by_stat.get(stat)
+            if m is None:
+                continue
+            dv = _disk_u8(iso, rec_off + off)
+            nv = max(clamp_min, min(clamp_max, round(dv * m)))
+            if nv != dv:
+                n += 1
+            iso.wr(rec_off + off, bytes([nv]))   # StagingIso self-cleans no-ops
+    iso.close()
+    return n
+
+def scale_table_power(table, mult, off_in_rec, width=4):
+    """Scale the power field of every record in a spell/unite table by `mult`,
+    relative to the disk default. table: 'spell'|'unite'."""
+    iso = _iso(write=True)
+    if table == "spell":
+        base, cnt, stride = S.SPELL_TABLE_FILE, S.SPELL_COUNT, S.SPELL_STRIDE
+    else:
+        base, cnt, stride = S.UNITE_TABLE_FILE, S.UNITE_COUNT, S.UNITE_STRIDE
+    fmt = "<I" if width == 4 else "<H"
+    cap = 0xFFFFFFFF if width == 4 else 0xFFFF
+    n = 0
+    for i in range(cnt):
+        pos = base + i*stride + off_in_rec
+        dv = struct.unpack(fmt, iso.disk_rd(pos, width))[0]
+        nv = max(0, min(cap, round(dv * mult)))
+        if nv != dv:
+            n += 1
+        iso.wr(pos, struct.pack(fmt, nv))
+    iso.close()
+    return n
+
+def read_growth():
+    """Per-stat roster summary: average current (staged) vs disk growth rate, so the
+    Hard Mode UI can show the effect. Also returns counts staged."""
+    iso = _iso()
+    base, stride, _ = S.TABLES["list2"]
+    stats = {}
+    for stat, off in GROWTH_OFFS.items():
+        cur = dsk = chg = 0
+        for i in range(CHAR_COUNT_L2):
+            pos = base + i*stride + off
+            c = iso.rd(pos, 1)[0]; d = iso.disk_rd(pos, 1)[0]
+            cur += c; dsk += d; chg += (c != d)
+        stats[stat] = {"avgCurrent": round(cur / CHAR_COUNT_L2, 2),
+                       "avgDisk": round(dsk / CHAR_COUNT_L2, 2), "changed": chg}
+    iso.close()
+    return {"count": CHAR_COUNT_L2, "stats": stats}
+
+def apply_hard_mode(cfg):
+    """cfg: {growth:{stat:mult,...}, partyPower:mult|None, unitePower:mult|None}.
+    Stages all edits; returns per-section change counts."""
+    res = {"growthBytes": 0, "spellPower": 0, "unitePower": 0}
+    g = cfg.get("growth") or {}
+    if g:
+        res["growthBytes"] = scale_player_growth({k: float(v) for k, v in g.items()})
+    pp = cfg.get("partyPower")
+    if pp is not None:
+        # party's own attack spells share the spell table; scale power @+0x1C
+        res["spellPower"] = scale_table_power("spell", float(pp), 0x1C, 4)
+    up = cfg.get("unitePower")
+    if up is not None:
+        res["unitePower"] = scale_table_power("unite", float(up), 0x1C, 4)
+    return {"ok": True, **res}
+
+
 # --------------------------------------------------------------------- HTTP
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -517,6 +605,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, read_char(int(q["list"]), int(q["index"])))
             if p == "/api/charfields":
                 return self._send(200, read_charfields(int(q["list"]), int(q["index"])))
+            if p == "/api/enemies":
+                return self._send(200, S.read_enemy_names(_iso()))
+            if p == "/api/growth":
+                return self._send(200, read_growth())
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -554,6 +646,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, write_char_byte(int(body["list"]), int(body["index"]),
                                                        int(body["off"]), int(body["value"]),
                                                        int(body.get("width", 1))))
+            if self.path == "/api/hardmode":
+                return self._send(200, apply_hard_mode(body))
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -703,8 +797,8 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const tabs=["spells","runes","unites","gear","shop","characters","reference"];
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",shop:"Shop",characters:"Characters",reference:"Reference"};
+ const tabs=["spells","runes","unites","gear","shop","characters","hardmode","enemies","reference"];
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",shop:"Shop",characters:"Characters",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference"};
  $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
  document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
  setTabsEnabled(META.loaded);
@@ -765,6 +859,8 @@ async function render(){if(!META.loaded)return pickIso();setActive();const m=$("
  if(TAB==="gear")return renderGear(m);
  if(TAB==="shop")return renderShop(m);
  if(TAB==="characters")return renderChars(m);
+ if(TAB==="hardmode")return renderHardMode(m);
+ if(TAB==="enemies")return renderEnemies(m);
  if(TAB==="reference")return renderRef(m);}
 
 const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
@@ -1129,6 +1225,110 @@ async function renderChars(m){
      if(cell)cell.textContent=map[+inp.value]||"";}});});
   decorate($("#rec"));}
  $("#load").onclick=load; $("#idx").onchange=load; load();}
+
+// Difficulty presets. Each multiplier scales the ISO's DEFAULT growth rate / power,
+// so presets are idempotent (re-applying doesn't compound). Stats: PWR SKL MAG REP
+// MDF SPD LUK HP. Grounded in S3's per-stat growth-rate mechanic (values ~2-6).
+const HM_STATS=["HP","PWR","MAG","SKL","MDF","SPD","REP","LUK"];
+const HM_STATLABEL={HP:"HP",PWR:"Attack (PWR)",MAG:"Magic (MAG)",SKL:"Skill (SKL)",
+ MDF:"Magic Def (MDF)",SPD:"Speed (SPD)",REP:"Repel (REP)",LUK:"Luck (LUK)"};
+const HM_PRESETS={
+ tougher:{label:"Tougher",desc:"A gentle nerf — the party grows a bit slower.",
+   growth:{HP:0.8,PWR:0.85,MAG:0.85,SKL:0.9,MDF:0.9,SPD:0.95,REP:1,LUK:1},partyPower:0.9,unitePower:0.9},
+ hard:{label:"Hard",desc:"Noticeably weaker party. Fights take real thought.",
+   growth:{HP:0.65,PWR:0.7,MAG:0.7,SKL:0.8,MDF:0.8,SPD:0.9,REP:0.9,LUK:1},partyPower:0.75,unitePower:0.75},
+ brutal:{label:"Brutal",desc:"Punishing. Low HP, weak hits — every battle is a threat.",
+   growth:{HP:0.5,PWR:0.55,MAG:0.55,SKL:0.7,MDF:0.7,SPD:0.85,REP:0.85,LUK:1},partyPower:0.6,unitePower:0.6}};
+
+async function renderHardMode(m){
+ const g=await api("/api/growth");
+ const cur={}; HM_STATS.forEach(s=>cur[s]=1); // slider state (multipliers)
+ m.innerHTML=`<div class=card>
+   <div class=row style="justify-content:space-between;align-items:center">
+    <div><h3 style="margin:0 0 4px">Hard Mode <span class=pill>player nerf</span></h3>
+     <div class=hint style=margin:0>Makes YOUR party weaker across the whole game by scaling each
+      character's stat <b>growth rate</b> (and, optionally, spell/unite power). Enemies can't be
+      buffed directly (their stats aren't in an editable table — see the Enemies tab), so difficulty
+      comes from a weaker party. Edits are staged — hit <b>Save to ISO</b> to write.</div></div>
+    <label class=hint style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+     <input type=checkbox id=hmMaster> <b>Enable Hard Mode</b></label>
+   </div></div>
+  <div id=hmBody style="opacity:.45;pointer-events:none">
+   <div class=card><h3 style="margin:0 0 8px">Difficulty preset</h3>
+    <div class=row id=hmPresets></div>
+    <div class=hint id=hmPresetDesc style=margin-top:8px></div></div>
+   <div class=card><h3 style="margin:0 0 4px">Fine-tune multipliers</h3>
+    <div class=hint>1.00 = unchanged (default). Lower = weaker. Applies to all ${g.count} party growth records.</div>
+    <table><thead><tr><th>Stat</th><th>Multiplier</th><th>Avg growth (def → new)</th></tr></thead>
+     <tbody id=hmStats></tbody></table>
+    <div class=row style="margin-top:12px">
+     <label>Spell power ×<input type=number id=hmSpell step=0.05 min=0 value=1 style=width:80px></label>
+     <label>Unite power ×<input type=number id=hmUnite step=0.05 min=0 value=1 style=width:80px></label>
+    </div>
+    <div class=hint style=margin-top:6px>Note: spell records are shared between party and
+     enemy casts, so scaling spell power affects both — leave at 1.00 to only nerf via growth rates.</div></div>
+   <div class=card><div class=row style="align-items:center">
+     <button class=act id=hmApply>Apply to staged edits</button>
+     <button class=act id=hmReset style="background:#3a3f52;color:var(--ink)">Restore all to default</button>
+     <span class=hint id=hmOut style=margin:0></span></div>
+    <div class=hint style=margin-top:8px>Tip: after applying, review the Characters tab (Growth section) to
+     see per-character values, then Save.</div></div>
+  </div>`;
+ const gd={}; HM_STATS.forEach(s=>gd[s]=g.stats[s]);
+ function drawStats(){
+  $("#hmStats").innerHTML=HM_STATS.map(s=>{
+   const st=g.stats[s]; const proj=(st.avgDisk*cur[s]);
+   return `<tr><td>${HM_STATLABEL[s]}</td>
+    <td><input type=range min=0.3 max=1.2 step=0.05 data-s="${s}" value="${cur[s]}" style=width:180px>
+        <span data-mv="${s}" style="display:inline-block;width:42px;text-align:right">${cur[s].toFixed(2)}</span></td>
+    <td class=hint>${st.avgDisk.toFixed(2)} → <b style="color:${proj<st.avgDisk?'var(--warn)':'var(--ink)'}">${proj.toFixed(2)}</b>${st.changed?` · ${st.changed} staged`:""}</td></tr>`;}).join("");
+  $("#hmStats").querySelectorAll("input[type=range]").forEach(r=>r.oninput=()=>{
+   cur[r.dataset.s]=+r.value; $(`[data-mv="${r.dataset.s}"]`).textContent=(+r.value).toFixed(2);
+   const st=g.stats[r.dataset.s]; const cell=r.closest("tr").querySelector("td.hint");
+   const proj=st.avgDisk*(+r.value);
+   cell.innerHTML=`${st.avgDisk.toFixed(2)} → <b style="color:${proj<st.avgDisk?'var(--warn)':'var(--ink)'}">${proj.toFixed(2)}</b>${st.changed?` · ${st.changed} staged`:""}`;});}
+ drawStats();
+ // preset buttons
+ $("#hmPresets").innerHTML=Object.entries(HM_PRESETS).map(([k,p])=>`<button class=act data-p="${k}" style="background:var(--panel2);color:var(--ink);border:1px solid var(--line)">${p.label}</button>`).join("")+
+   `<button class=act data-p="custom" style="background:var(--panel2);color:var(--ink);border:1px solid var(--line)">Custom</button>`;
+ function applyPreset(k){
+  if(k==="custom"){$("#hmPresetDesc").textContent="Set your own multipliers below.";return;}
+  const p=HM_PRESETS[k];HM_STATS.forEach(s=>cur[s]=p.growth[s]!==undefined?p.growth[s]:1);
+  $("#hmSpell").value=p.partyPower;$("#hmUnite").value=p.unitePower;
+  $("#hmPresetDesc").textContent=p.desc;drawStats();}
+ $("#hmPresets").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+  $("#hmPresets").querySelectorAll("[data-p]").forEach(x=>x.style.outline="");
+  b.style.outline="2px solid var(--acc)";applyPreset(b.dataset.p);});
+ // master toggle enables/disables the body
+ $("#hmMaster").onchange=()=>{const on=$("#hmMaster").checked;
+  $("#hmBody").style.opacity=on?"1":".45";$("#hmBody").style.pointerEvents=on?"":"none";
+  if(on&&!$("#hmPresetDesc").textContent){$("#hmPresets [data-p=hard]").click();}};
+ $("#hmApply").onclick=async()=>{
+  const growth={};HM_STATS.forEach(s=>growth[s]=cur[s]);
+  const body={growth};const sp=+$("#hmSpell").value,up=+$("#hmUnite").value;
+  if(sp!==1)body.partyPower=sp; if(up!==1)body.unitePower=up;
+  const r=await api("/api/hardmode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(r.ok){markDirty();$("#hmOut").innerHTML=`staged: ${r.growthBytes} growth bytes${r.spellPower?`, ${r.spellPower} spell powers`:""}${r.unitePower?`, ${r.unitePower} unite powers`:""}`;
+   toast("hard mode staged — hit Save to ISO");render();}
+  else{$("#hmOut").textContent="error: "+(r.error||"?");}};
+ $("#hmReset").onclick=async()=>{
+  // multipliers of 1.0 rewrite disk defaults -> StagingIso self-cleans those bytes
+  const growth={};HM_STATS.forEach(s=>growth[s]=1);
+  await api("/api/hardmode",{method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({growth,partyPower:1,unitePower:1})});
+  toast("player stats restored to default (staged)");markDirty();render();};}
+
+async function renderEnemies(m){const en=await api("/api/enemies");
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Enemies <span class=pill>reference</span></h3>
+  <div class=hint>All ${en.length} entries from the game's enemy name table (index-keyed).
+   <b>Read-only:</b> enemy HP/attack are not stored in an editable table — they're set by the
+   battle engine — so they can't be scaled here. Use <b>Hard Mode</b> to raise difficulty by
+   weakening your party instead. Names are truncated to 10 characters in the ROM.</div>
+  <input class=search id=q placeholder="filter enemies…" style=margin-bottom:10px>
+  <table><thead><tr><th style=width:70px>Index</th><th>Name</th></tr></thead><tbody id=eb></tbody></table></div>`;
+ function draw(f=""){$("#eb").innerHTML=en.filter(e=>e.name.toLowerCase().includes(f)||String(e.index)===f)
+   .map(e=>`<tr><td class=hint>${e.index}</td><td>${e.name||'<span class=hint>(blank)</span>'}</td></tr>`).join("");}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
 async function renderRef(m){const items=await api("/api/items");
  m.innerHTML=`<div class=card><h3 style=margin-top:0>Hex reference (Items & Skills)</h3>
