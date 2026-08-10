@@ -776,3 +776,23 @@ the web "Save Editor" tab: per-character level, current HP, EXP-to-next, and the
 block. Tested end-to-end on card clones (never the originals): edits persist, gamedata
 u32 sum stays 0, and page ECC re-validates. Best practice for players: after editing,
 load the save in-game and resave, then play from that.
+
+## Save Editor v2: roster off-by-one fix + inventory (2026-08-10)
+- OFF-BY-ONE FIX: CHAR_BASE 0x33AC is HUGO, not the Flame Champion. The real story
+  Flame Champion record is the (all-zero, non-recruitable) block one stride earlier at
+  0x3320. Earlier code prepended "Flame Champion" to the roster, shifting every name
+  down one (what displayed as Flame Champion was Hugo's data, etc.). Removed it;
+  ROSTER[0]=Hugo. Verified: leveled slots 0-6 now read Hugo,Chris,Geddoe,Lucia,Fred,
+  Rico,Viki in the map's order. (Note: the per-record +0x0C "id" byte is a global
+  character id, e.g. Fubar=72, NOT the slot index — so id==index only for the first 7.)
+- INVENTORY: party + storage items start at file offset 0x7060 (herrvillain map),
+  8-byte entries = item id (u16) + quantity (u16) + 4 reserved (0). Empty slot id=0.
+  ~400 slots span party inventories + storage. Consumables show real stack counts;
+  validated by editing qty and reading back. Exposed as an editable Inventory sub-tab
+  (item-id dropdown + qty), writing through the same checksum+ECC path.
+- NOT exposed (decoded but not trustworthy enough to write): equipped weapon/armor/rune
+  ids in the char block's 0x10-0x1F region don't cleanly map to item ids, and the potch
+  (money) u32 candidate (~0x1E4) is unconfirmed. Left read-safe rather than risk
+  corrupting playthroughs.
+- UI: wide stat table wrapped in a horizontal-scroll container with a sticky name column
+  and compact inputs, so it no longer overflows the card. Characters/Inventory sub-tabs.
