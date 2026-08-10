@@ -596,3 +596,22 @@ includes atkDefault) + /api/weapon (POST {index, levels:{lvIdx:atk}}). The old
   editor shows the class->members table as a REFERENCE panel and only labels a
   specific curve with a character when the record name says so explicitly
   ("Thomas Weapon", "(Chris)"). A precise per-curve character map would need more RE.
+
+## Weapon -> character mapping VERIFIED (2026-08-10)
+Matched all 28 list4 ATK curves to Suikosource's Weapon Growth Guide by EXACT
+ATK-value comparison (wpngrowth.php, fetched past Anubis). 27/28 matched a weapon
+family directly; idx19 = Thomas' unique weapon. Each family lists the fighters that
+use it + their 3 weapon names (First/Second/Third). Saved to s3_weapon_chars.json
+{byIndex:{i:{family,fighters:[{name,weapons}]}}, families:{...}}. Weapons tab now
+shows "Used by: Name (Wpn1 / Wpn2 / Wpn3), ..." inline per curve; search matches
+character + weapon names too. Note: multiple sub-variant curves share one family
+(Axe 1/2/3, Halberd 1-5) so the same fighter roster shows on each variant — that's
+the family grouping, accurate per the guide.
+
+## Sharpen COST — not in list4 (2026-08-10)
+Requested: edit per-upgrade sharpen cost. The 12-byte list4 tail (bytes 16..27) is
+NOT a per-level cost table: +16..+20 are small per-weapon values (unclear), and the
+only round-number field (+26 u16) is 2000/1000 on just 2 of 28 weapons. No 16-value
+cost curve fits 12 bytes. The Suikosource guide has no cost data. Conclusion:
+sharpen cost is formula-driven or in a separate global table (not located). Not
+exposed rather than ship a wrong field. Would need dedicated RE.

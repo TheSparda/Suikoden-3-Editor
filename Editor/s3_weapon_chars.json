@@ -1,0 +1,2250 @@
+{
+ "byIndex": {
+  "0": {
+   "family": "Axe",
+   "fighters": [
+    {
+     "name": "Bazba",
+     "weapons": [
+      "Anura",
+      "Yu Anura Naha",
+      "U Alma Naha"
+     ]
+    },
+    {
+     "name": "Dupa",
+     "weapons": [
+      "U Naha",
+      "U Lana Naha",
+      "Harvest How"
+     ]
+    },
+    {
+     "name": "Hallec",
+     "weapons": [
+      "Brother",
+      "My Brother",
+      "My Dear Brother"
+     ]
+    },
+    {
+     "name": "Leo",
+     "weapons": [
+      "Schnabel",
+      "Schutoszahn",
+      "Horn"
+     ]
+    },
+    {
+     "name": "Nicolas",
+     "weapons": [
+      "Mumei I",
+      "Mumei II",
+      "Mumei III"
+     ]
+    },
+    {
+     "name": "Rico",
+     "weapons": [
+      "Hammer",
+      "Iron Hammer",
+      "Punishing Hammer"
+     ]
+    },
+    {
+     "name": "Shiba",
+     "weapons": [
+      "Erran Lo",
+      "Erram Lo",
+      "Erla Loha"
+     ]
+    }
+   ]
+  },
+  "1": {
+   "family": "Spear",
+   "fighters": [
+    {
+     "name": "Cecile",
+     "weapons": [
+      "Guard Spear",
+      "Guardian",
+      "Angel Guard"
+     ]
+    },
+    {
+     "name": "Franz",
+     "weapons": [
+      "Rodo Kwan",
+      "Rudol Kwan",
+      "Galo Kwan"
+     ]
+    },
+    {
+     "name": "Gau",
+     "weapons": [
+      "Orla Teachings",
+      "Oral Teachings II",
+      "Oral Teachings III"
+     ]
+    },
+    {
+     "name": "Sharon",
+     "weapons": [
+      "Verserk",
+      "Sigmund",
+      "Sigrut"
+     ]
+    }
+   ]
+  },
+  "2": {
+   "family": "Bow",
+   "fighters": [
+    {
+     "name": "Aila",
+     "weapons": [
+      "Da Tar",
+      "Dana Da Tar",
+      "Lata Da Tar"
+     ]
+    },
+    {
+     "name": "Jacques",
+     "weapons": [
+      "Bow Gun",
+      "Iron Bow Gun",
+      "Great Bow Gun"
+     ]
+    },
+    {
+     "name": "Roland",
+     "weapons": [
+      "Night Bow",
+      "Moon Bow",
+      "Elfin Bow"
+     ]
+    },
+    {
+     "name": "Salome",
+     "weapons": [
+      "Mace",
+      "Blessed Mace",
+      "Holy Mace"
+     ]
+    },
+    {
+     "name": "Yuiri",
+     "weapons": [
+      "Sil",
+      "Yuka Sil",
+      "Coola Sil"
+     ]
+    },
+    {
+     "name": "Yumi",
+     "weapons": [
+      "Sil",
+      "Yuka Sil",
+      "Coola Sil"
+     ]
+    }
+   ]
+  },
+  "3": {
+   "family": "Two-handed Sword",
+   "fighters": [
+    {
+     "name": "Ace",
+     "weapons": [
+      "Julia",
+      "Milan",
+      "Eisha"
+     ]
+    },
+    {
+     "name": "Duke",
+     "weapons": [
+      "Denta",
+      "Odenta",
+      "Kamui"
+     ]
+    },
+    {
+     "name": "Futch",
+     "weapons": [
+      "Masamune",
+      "Murasame",
+      "Muramasa"
+     ]
+    },
+    {
+     "name": "Yuber",
+     "weapons": [
+      "Crimson",
+      "Death Crimson",
+      "King Crimson"
+     ]
+    }
+   ]
+  },
+  "4": {
+   "family": "One-handed Sword",
+   "fighters": [
+    {
+     "name": "Augustine",
+     "weapons": [
+      "Margrit",
+      "Manyola",
+      "Orchide"
+     ]
+    },
+    {
+     "name": "Beechum",
+     "weapons": [
+      "Sulaga",
+      "Sulagan",
+      "Khion Sulagan"
+     ]
+    },
+    {
+     "name": "Borus",
+     "weapons": [
+      "Eins",
+      "Zwei",
+      "Drei"
+     ]
+    },
+    {
+     "name": "Elaine",
+     "weapons": [
+      "Myoken",
+      "Doku Myoken",
+      "Zetsu Myoken"
+     ]
+    },
+    {
+     "name": "Fred",
+     "weapons": [
+      "Knight Heart",
+      "Big Knight Heart",
+      "Top Knight Heart"
+     ]
+    },
+    {
+     "name": "Hugo",
+     "weapons": [
+      "Kwan",
+      "Gwanga",
+      "Luft"
+     ]
+    },
+    {
+     "name": "Jimba",
+     "weapons": [
+      "Tugra",
+      "Mundaki",
+      "Matahari"
+     ]
+    },
+    {
+     "name": "Lilly",
+     "weapons": [
+      "Argent",
+      "Auro",
+      "Platino"
+     ]
+    },
+    {
+     "name": "Lulu",
+     "weapons": [
+      "Sut",
+      "Sutra",
+      "Alma Sutra"
+     ]
+    },
+    {
+     "name": "Melville",
+     "weapons": [
+      "Father's Sword",
+      "Treasure Sword",
+      "Sword of Memory"
+     ]
+    },
+    {
+     "name": "Mua",
+     "weapons": [
+      "Sword of Honor",
+      "Sword of Trust",
+      "Sword of Loyalty"
+     ]
+    },
+    {
+     "name": "Percival",
+     "weapons": [
+      "Einst",
+      "Ghegenwelt",
+      "Zukenft"
+     ]
+    },
+    {
+     "name": "Queen",
+     "weapons": [
+      "Noir Luna",
+      "Luna Cressier",
+      "Luna Llena"
+     ]
+    },
+    {
+     "name": "Reed",
+     "weapons": [
+      "Vent",
+      "Brezza",
+      "Tempesta"
+     ]
+    },
+    {
+     "name": "Samus",
+     "weapons": [
+      "Forco",
+      "Scintilla",
+      "Fiamma"
+     ]
+    },
+    {
+     "name": "Wan Fu",
+     "weapons": [
+      "Yogi's Cane",
+      "Descent 666 Cane",
+      "Lucky Charm Cane"
+     ]
+    }
+   ]
+  },
+  "5": {
+   "family": "Darts",
+   "fighters": [
+    {
+     "name": "Ayame",
+     "weapons": [
+      "Spring Breeze",
+      "Spring Zephyr",
+      "Spring Gale"
+     ]
+    },
+    {
+     "name": "Nash",
+     "weapons": [
+      "Leenier",
+      "Gerarde",
+      "Courve"
+     ]
+    },
+    {
+     "name": "Toppo",
+     "weapons": [
+      "Solo",
+      "Duet",
+      "Quartet"
+     ]
+    },
+    {
+     "name": "Watari",
+     "weapons": [
+      "Wolf",
+      "Blue Wolf",
+      "Heavenly Wolf"
+     ]
+    }
+   ]
+  },
+  "6": {
+   "family": "Claws",
+   "fighters": [
+    {
+     "name": "Emily",
+     "weapons": [
+      "Crow",
+      "Tiger Crow",
+      "Dragon Crow"
+     ]
+    },
+    {
+     "name": "Joker",
+     "weapons": [
+      "Iron",
+      "Black Gold",
+      "Steel"
+     ]
+    },
+    {
+     "name": "Juan",
+     "weapons": [
+      "Min",
+      "Shunmin",
+      "Choya"
+     ]
+    },
+    {
+     "name": "Kenji",
+     "weapons": [
+      "Extend Arms",
+      "In Circles",
+      "Good Exercise"
+     ]
+    },
+    {
+     "name": "Mel",
+     "weapons": [
+      "Branky",
+      "Branky II",
+      "Branky III"
+     ]
+    },
+    {
+     "name": "Nei",
+     "weapons": [
+      "Sonata",
+      "Serenade",
+      "Nocturne"
+     ]
+    },
+    {
+     "name": "Shabon",
+     "weapons": [
+      "Rhythm",
+      "Melody",
+      "Harmony"
+     ]
+    }
+   ]
+  },
+  "7": {
+   "family": "Rod",
+   "fighters": [
+    {
+     "name": "Alanis",
+     "weapons": [
+      "Wood Wand",
+      "Oak Wand",
+      "Sapphire Wand"
+     ]
+    },
+    {
+     "name": "Piccolo",
+     "weapons": [
+      "Nova Wand",
+      "Super Nova",
+      "Hyper Nova"
+     ]
+    },
+    {
+     "name": "Rody",
+     "weapons": [
+      "Fly Rod",
+      "Bird Rod",
+      "Air Rod"
+     ]
+    },
+    {
+     "name": "Sarah",
+     "weapons": [
+      "Shade",
+      "Illusion",
+      "Mirage"
+     ]
+    },
+    {
+     "name": "Viki(adult)",
+     "weapons": [
+      "Wand",
+      "Wow Wand",
+      "Wow Wow Wand"
+     ]
+    },
+    {
+     "name": "Viki(young)",
+     "weapons": [
+      "Wand",
+      "D-Wand",
+      "D5 Wand"
+     ]
+    }
+   ]
+  },
+  "8": {
+   "family": "Axe",
+   "fighters": [
+    {
+     "name": "Bazba",
+     "weapons": [
+      "Anura",
+      "Yu Anura Naha",
+      "U Alma Naha"
+     ]
+    },
+    {
+     "name": "Dupa",
+     "weapons": [
+      "U Naha",
+      "U Lana Naha",
+      "Harvest How"
+     ]
+    },
+    {
+     "name": "Hallec",
+     "weapons": [
+      "Brother",
+      "My Brother",
+      "My Dear Brother"
+     ]
+    },
+    {
+     "name": "Leo",
+     "weapons": [
+      "Schnabel",
+      "Schutoszahn",
+      "Horn"
+     ]
+    },
+    {
+     "name": "Nicolas",
+     "weapons": [
+      "Mumei I",
+      "Mumei II",
+      "Mumei III"
+     ]
+    },
+    {
+     "name": "Rico",
+     "weapons": [
+      "Hammer",
+      "Iron Hammer",
+      "Punishing Hammer"
+     ]
+    },
+    {
+     "name": "Shiba",
+     "weapons": [
+      "Erran Lo",
+      "Erram Lo",
+      "Erla Loha"
+     ]
+    }
+   ]
+  },
+  "9": {
+   "family": "Axe",
+   "fighters": [
+    {
+     "name": "Bazba",
+     "weapons": [
+      "Anura",
+      "Yu Anura Naha",
+      "U Alma Naha"
+     ]
+    },
+    {
+     "name": "Dupa",
+     "weapons": [
+      "U Naha",
+      "U Lana Naha",
+      "Harvest How"
+     ]
+    },
+    {
+     "name": "Hallec",
+     "weapons": [
+      "Brother",
+      "My Brother",
+      "My Dear Brother"
+     ]
+    },
+    {
+     "name": "Leo",
+     "weapons": [
+      "Schnabel",
+      "Schutoszahn",
+      "Horn"
+     ]
+    },
+    {
+     "name": "Nicolas",
+     "weapons": [
+      "Mumei I",
+      "Mumei II",
+      "Mumei III"
+     ]
+    },
+    {
+     "name": "Rico",
+     "weapons": [
+      "Hammer",
+      "Iron Hammer",
+      "Punishing Hammer"
+     ]
+    },
+    {
+     "name": "Shiba",
+     "weapons": [
+      "Erran Lo",
+      "Erram Lo",
+      "Erla Loha"
+     ]
+    }
+   ]
+  },
+  "10": {
+   "family": "Halberd",
+   "fighters": [
+    {
+     "name": "Belle",
+     "weapons": [
+      "Dengeki Hammer",
+      "Eleki Hammer",
+      "Thunder Hammer"
+     ]
+    },
+    {
+     "name": "Edge",
+     "weapons": [
+      "StarDragon Sword",
+      "StarDragon Sword",
+      "StarDragon Sword"
+     ]
+    },
+    {
+     "name": "Landis",
+     "weapons": [
+      "Bad Luck",
+      "Calamity",
+      "Fatal Calamity"
+     ]
+    },
+    {
+     "name": "Rhett",
+     "weapons": [
+      "Makan",
+      "Makanan",
+      "Luan Makan"
+     ]
+    },
+    {
+     "name": "Sgt. Joe",
+     "weapons": [
+      "Prajuri",
+      "Rati Prajuri",
+      "Myste Prajuri"
+     ]
+    },
+    {
+     "name": "Twaikin",
+     "weapons": [
+      "First Dig",
+      "Second Dig",
+      "Big Dig"
+     ]
+    },
+    {
+     "name": "Wilder",
+     "weapons": [
+      "Awa",
+      "Alila Awa",
+      "Hita Awa"
+     ]
+    }
+   ]
+  },
+  "11": {
+   "family": "Halberd",
+   "fighters": [
+    {
+     "name": "Belle",
+     "weapons": [
+      "Dengeki Hammer",
+      "Eleki Hammer",
+      "Thunder Hammer"
+     ]
+    },
+    {
+     "name": "Edge",
+     "weapons": [
+      "StarDragon Sword",
+      "StarDragon Sword",
+      "StarDragon Sword"
+     ]
+    },
+    {
+     "name": "Landis",
+     "weapons": [
+      "Bad Luck",
+      "Calamity",
+      "Fatal Calamity"
+     ]
+    },
+    {
+     "name": "Rhett",
+     "weapons": [
+      "Makan",
+      "Makanan",
+      "Luan Makan"
+     ]
+    },
+    {
+     "name": "Sgt. Joe",
+     "weapons": [
+      "Prajuri",
+      "Rati Prajuri",
+      "Myste Prajuri"
+     ]
+    },
+    {
+     "name": "Twaikin",
+     "weapons": [
+      "First Dig",
+      "Second Dig",
+      "Big Dig"
+     ]
+    },
+    {
+     "name": "Wilder",
+     "weapons": [
+      "Awa",
+      "Alila Awa",
+      "Hita Awa"
+     ]
+    }
+   ]
+  },
+  "12": {
+   "family": "Halberd",
+   "fighters": [
+    {
+     "name": "Belle",
+     "weapons": [
+      "Dengeki Hammer",
+      "Eleki Hammer",
+      "Thunder Hammer"
+     ]
+    },
+    {
+     "name": "Edge",
+     "weapons": [
+      "StarDragon Sword",
+      "StarDragon Sword",
+      "StarDragon Sword"
+     ]
+    },
+    {
+     "name": "Landis",
+     "weapons": [
+      "Bad Luck",
+      "Calamity",
+      "Fatal Calamity"
+     ]
+    },
+    {
+     "name": "Rhett",
+     "weapons": [
+      "Makan",
+      "Makanan",
+      "Luan Makan"
+     ]
+    },
+    {
+     "name": "Sgt. Joe",
+     "weapons": [
+      "Prajuri",
+      "Rati Prajuri",
+      "Myste Prajuri"
+     ]
+    },
+    {
+     "name": "Twaikin",
+     "weapons": [
+      "First Dig",
+      "Second Dig",
+      "Big Dig"
+     ]
+    },
+    {
+     "name": "Wilder",
+     "weapons": [
+      "Awa",
+      "Alila Awa",
+      "Hita Awa"
+     ]
+    }
+   ]
+  },
+  "13": {
+   "family": "Halberd",
+   "fighters": [
+    {
+     "name": "Belle",
+     "weapons": [
+      "Dengeki Hammer",
+      "Eleki Hammer",
+      "Thunder Hammer"
+     ]
+    },
+    {
+     "name": "Edge",
+     "weapons": [
+      "StarDragon Sword",
+      "StarDragon Sword",
+      "StarDragon Sword"
+     ]
+    },
+    {
+     "name": "Landis",
+     "weapons": [
+      "Bad Luck",
+      "Calamity",
+      "Fatal Calamity"
+     ]
+    },
+    {
+     "name": "Rhett",
+     "weapons": [
+      "Makan",
+      "Makanan",
+      "Luan Makan"
+     ]
+    },
+    {
+     "name": "Sgt. Joe",
+     "weapons": [
+      "Prajuri",
+      "Rati Prajuri",
+      "Myste Prajuri"
+     ]
+    },
+    {
+     "name": "Twaikin",
+     "weapons": [
+      "First Dig",
+      "Second Dig",
+      "Big Dig"
+     ]
+    },
+    {
+     "name": "Wilder",
+     "weapons": [
+      "Awa",
+      "Alila Awa",
+      "Hita Awa"
+     ]
+    }
+   ]
+  },
+  "14": {
+   "family": "Halberd",
+   "fighters": [
+    {
+     "name": "Belle",
+     "weapons": [
+      "Dengeki Hammer",
+      "Eleki Hammer",
+      "Thunder Hammer"
+     ]
+    },
+    {
+     "name": "Edge",
+     "weapons": [
+      "StarDragon Sword",
+      "StarDragon Sword",
+      "StarDragon Sword"
+     ]
+    },
+    {
+     "name": "Landis",
+     "weapons": [
+      "Bad Luck",
+      "Calamity",
+      "Fatal Calamity"
+     ]
+    },
+    {
+     "name": "Rhett",
+     "weapons": [
+      "Makan",
+      "Makanan",
+      "Luan Makan"
+     ]
+    },
+    {
+     "name": "Sgt. Joe",
+     "weapons": [
+      "Prajuri",
+      "Rati Prajuri",
+      "Myste Prajuri"
+     ]
+    },
+    {
+     "name": "Twaikin",
+     "weapons": [
+      "First Dig",
+      "Second Dig",
+      "Big Dig"
+     ]
+    },
+    {
+     "name": "Wilder",
+     "weapons": [
+      "Awa",
+      "Alila Awa",
+      "Hita Awa"
+     ]
+    }
+   ]
+  },
+  "15": {
+   "family": "Bow",
+   "fighters": [
+    {
+     "name": "Aila",
+     "weapons": [
+      "Da Tar",
+      "Dana Da Tar",
+      "Lata Da Tar"
+     ]
+    },
+    {
+     "name": "Jacques",
+     "weapons": [
+      "Bow Gun",
+      "Iron Bow Gun",
+      "Great Bow Gun"
+     ]
+    },
+    {
+     "name": "Roland",
+     "weapons": [
+      "Night Bow",
+      "Moon Bow",
+      "Elfin Bow"
+     ]
+    },
+    {
+     "name": "Salome",
+     "weapons": [
+      "Mace",
+      "Blessed Mace",
+      "Holy Mace"
+     ]
+    },
+    {
+     "name": "Yuiri",
+     "weapons": [
+      "Sil",
+      "Yuka Sil",
+      "Coola Sil"
+     ]
+    },
+    {
+     "name": "Yumi",
+     "weapons": [
+      "Sil",
+      "Yuka Sil",
+      "Coola Sil"
+     ]
+    }
+   ]
+  },
+  "16": {
+   "family": "Other 2",
+   "fighters": [
+    {
+     "name": "Geddoe",
+     "weapons": [
+      "Crow",
+      "Geese",
+      "Wild Geese"
+     ]
+    },
+    {
+     "name": "Sanae Y",
+     "weapons": [
+      "Naginata",
+      "Long Naginata",
+      "Great Naginata"
+     ]
+    }
+   ]
+  },
+  "17": {
+   "family": "Other 2",
+   "fighters": [
+    {
+     "name": "Geddoe",
+     "weapons": [
+      "Crow",
+      "Geese",
+      "Wild Geese"
+     ]
+    },
+    {
+     "name": "Sanae Y",
+     "weapons": [
+      "Naginata",
+      "Long Naginata",
+      "Great Naginata"
+     ]
+    }
+   ]
+  },
+  "18": {
+   "family": "Two-handed Sword",
+   "fighters": [
+    {
+     "name": "Ace",
+     "weapons": [
+      "Julia",
+      "Milan",
+      "Eisha"
+     ]
+    },
+    {
+     "name": "Duke",
+     "weapons": [
+      "Denta",
+      "Odenta",
+      "Kamui"
+     ]
+    },
+    {
+     "name": "Futch",
+     "weapons": [
+      "Masamune",
+      "Murasame",
+      "Muramasa"
+     ]
+    },
+    {
+     "name": "Yuber",
+     "weapons": [
+      "Crimson",
+      "Death Crimson",
+      "King Crimson"
+     ]
+    }
+   ]
+  },
+  "19": {
+   "family": "Thomas' Weapon",
+   "fighters": [
+    {
+     "name": "Thomas",
+     "weapons": []
+    }
+   ]
+  },
+  "20": {
+   "family": "Two-handed Sword",
+   "fighters": [
+    {
+     "name": "Ace",
+     "weapons": [
+      "Julia",
+      "Milan",
+      "Eisha"
+     ]
+    },
+    {
+     "name": "Duke",
+     "weapons": [
+      "Denta",
+      "Odenta",
+      "Kamui"
+     ]
+    },
+    {
+     "name": "Futch",
+     "weapons": [
+      "Masamune",
+      "Murasame",
+      "Muramasa"
+     ]
+    },
+    {
+     "name": "Yuber",
+     "weapons": [
+      "Crimson",
+      "Death Crimson",
+      "King Crimson"
+     ]
+    }
+   ]
+  },
+  "21": {
+   "family": "Other 1",
+   "fighters": [
+    {
+     "name": "Chris",
+     "weapons": [
+      "Letzt",
+      "Stendich",
+      "Ervich"
+     ]
+    },
+    {
+     "name": "Estella",
+     "weapons": [
+      "Ruby Ring",
+      "Ruby Ring II",
+      "Ruby Ring IV"
+     ]
+    },
+    {
+     "name": "Luc",
+     "weapons": [
+      "Guardian's Eye",
+      "Guardian's Eye",
+      "Guardian's Eye"
+     ]
+    },
+    {
+     "name": "Lucia",
+     "weapons": [
+      "Uranne",
+      "Uranne Galo",
+      "Uranne Galor"
+     ]
+    },
+    {
+     "name": "Sasarai",
+     "weapons": [
+      "Guardian's Eye",
+      "Guardian's Eye",
+      "Guardian's Eye"
+     ]
+    }
+   ]
+  },
+  "22": {
+   "family": "Other 1",
+   "fighters": [
+    {
+     "name": "Chris",
+     "weapons": [
+      "Letzt",
+      "Stendich",
+      "Ervich"
+     ]
+    },
+    {
+     "name": "Estella",
+     "weapons": [
+      "Ruby Ring",
+      "Ruby Ring II",
+      "Ruby Ring IV"
+     ]
+    },
+    {
+     "name": "Luc",
+     "weapons": [
+      "Guardian's Eye",
+      "Guardian's Eye",
+      "Guardian's Eye"
+     ]
+    },
+    {
+     "name": "Lucia",
+     "weapons": [
+      "Uranne",
+      "Uranne Galo",
+      "Uranne Galor"
+     ]
+    },
+    {
+     "name": "Sasarai",
+     "weapons": [
+      "Guardian's Eye",
+      "Guardian's Eye",
+      "Guardian's Eye"
+     ]
+    }
+   ]
+  },
+  "23": {
+   "family": "Other 1",
+   "fighters": [
+    {
+     "name": "Chris",
+     "weapons": [
+      "Letzt",
+      "Stendich",
+      "Ervich"
+     ]
+    },
+    {
+     "name": "Estella",
+     "weapons": [
+      "Ruby Ring",
+      "Ruby Ring II",
+      "Ruby Ring IV"
+     ]
+    },
+    {
+     "name": "Luc",
+     "weapons": [
+      "Guardian's Eye",
+      "Guardian's Eye",
+      "Guardian's Eye"
+     ]
+    },
+    {
+     "name": "Lucia",
+     "weapons": [
+      "Uranne",
+      "Uranne Galo",
+      "Uranne Galor"
+     ]
+    },
+    {
+     "name": "Sasarai",
+     "weapons": [
+      "Guardian's Eye",
+      "Guardian's Eye",
+      "Guardian's Eye"
+     ]
+    }
+   ]
+  },
+  "24": {
+   "family": "One-handed Sword",
+   "fighters": [
+    {
+     "name": "Augustine",
+     "weapons": [
+      "Margrit",
+      "Manyola",
+      "Orchide"
+     ]
+    },
+    {
+     "name": "Beechum",
+     "weapons": [
+      "Sulaga",
+      "Sulagan",
+      "Khion Sulagan"
+     ]
+    },
+    {
+     "name": "Borus",
+     "weapons": [
+      "Eins",
+      "Zwei",
+      "Drei"
+     ]
+    },
+    {
+     "name": "Elaine",
+     "weapons": [
+      "Myoken",
+      "Doku Myoken",
+      "Zetsu Myoken"
+     ]
+    },
+    {
+     "name": "Fred",
+     "weapons": [
+      "Knight Heart",
+      "Big Knight Heart",
+      "Top Knight Heart"
+     ]
+    },
+    {
+     "name": "Hugo",
+     "weapons": [
+      "Kwan",
+      "Gwanga",
+      "Luft"
+     ]
+    },
+    {
+     "name": "Jimba",
+     "weapons": [
+      "Tugra",
+      "Mundaki",
+      "Matahari"
+     ]
+    },
+    {
+     "name": "Lilly",
+     "weapons": [
+      "Argent",
+      "Auro",
+      "Platino"
+     ]
+    },
+    {
+     "name": "Lulu",
+     "weapons": [
+      "Sut",
+      "Sutra",
+      "Alma Sutra"
+     ]
+    },
+    {
+     "name": "Melville",
+     "weapons": [
+      "Father's Sword",
+      "Treasure Sword",
+      "Sword of Memory"
+     ]
+    },
+    {
+     "name": "Mua",
+     "weapons": [
+      "Sword of Honor",
+      "Sword of Trust",
+      "Sword of Loyalty"
+     ]
+    },
+    {
+     "name": "Percival",
+     "weapons": [
+      "Einst",
+      "Ghegenwelt",
+      "Zukenft"
+     ]
+    },
+    {
+     "name": "Queen",
+     "weapons": [
+      "Noir Luna",
+      "Luna Cressier",
+      "Luna Llena"
+     ]
+    },
+    {
+     "name": "Reed",
+     "weapons": [
+      "Vent",
+      "Brezza",
+      "Tempesta"
+     ]
+    },
+    {
+     "name": "Samus",
+     "weapons": [
+      "Forco",
+      "Scintilla",
+      "Fiamma"
+     ]
+    },
+    {
+     "name": "Wan Fu",
+     "weapons": [
+      "Yogi's Cane",
+      "Descent 666 Cane",
+      "Lucky Charm Cane"
+     ]
+    }
+   ]
+  },
+  "25": {
+   "family": "One-handed Sword",
+   "fighters": [
+    {
+     "name": "Augustine",
+     "weapons": [
+      "Margrit",
+      "Manyola",
+      "Orchide"
+     ]
+    },
+    {
+     "name": "Beechum",
+     "weapons": [
+      "Sulaga",
+      "Sulagan",
+      "Khion Sulagan"
+     ]
+    },
+    {
+     "name": "Borus",
+     "weapons": [
+      "Eins",
+      "Zwei",
+      "Drei"
+     ]
+    },
+    {
+     "name": "Elaine",
+     "weapons": [
+      "Myoken",
+      "Doku Myoken",
+      "Zetsu Myoken"
+     ]
+    },
+    {
+     "name": "Fred",
+     "weapons": [
+      "Knight Heart",
+      "Big Knight Heart",
+      "Top Knight Heart"
+     ]
+    },
+    {
+     "name": "Hugo",
+     "weapons": [
+      "Kwan",
+      "Gwanga",
+      "Luft"
+     ]
+    },
+    {
+     "name": "Jimba",
+     "weapons": [
+      "Tugra",
+      "Mundaki",
+      "Matahari"
+     ]
+    },
+    {
+     "name": "Lilly",
+     "weapons": [
+      "Argent",
+      "Auro",
+      "Platino"
+     ]
+    },
+    {
+     "name": "Lulu",
+     "weapons": [
+      "Sut",
+      "Sutra",
+      "Alma Sutra"
+     ]
+    },
+    {
+     "name": "Melville",
+     "weapons": [
+      "Father's Sword",
+      "Treasure Sword",
+      "Sword of Memory"
+     ]
+    },
+    {
+     "name": "Mua",
+     "weapons": [
+      "Sword of Honor",
+      "Sword of Trust",
+      "Sword of Loyalty"
+     ]
+    },
+    {
+     "name": "Percival",
+     "weapons": [
+      "Einst",
+      "Ghegenwelt",
+      "Zukenft"
+     ]
+    },
+    {
+     "name": "Queen",
+     "weapons": [
+      "Noir Luna",
+      "Luna Cressier",
+      "Luna Llena"
+     ]
+    },
+    {
+     "name": "Reed",
+     "weapons": [
+      "Vent",
+      "Brezza",
+      "Tempesta"
+     ]
+    },
+    {
+     "name": "Samus",
+     "weapons": [
+      "Forco",
+      "Scintilla",
+      "Fiamma"
+     ]
+    },
+    {
+     "name": "Wan Fu",
+     "weapons": [
+      "Yogi's Cane",
+      "Descent 666 Cane",
+      "Lucky Charm Cane"
+     ]
+    }
+   ]
+  },
+  "26": {
+   "family": "One-handed Sword",
+   "fighters": [
+    {
+     "name": "Augustine",
+     "weapons": [
+      "Margrit",
+      "Manyola",
+      "Orchide"
+     ]
+    },
+    {
+     "name": "Beechum",
+     "weapons": [
+      "Sulaga",
+      "Sulagan",
+      "Khion Sulagan"
+     ]
+    },
+    {
+     "name": "Borus",
+     "weapons": [
+      "Eins",
+      "Zwei",
+      "Drei"
+     ]
+    },
+    {
+     "name": "Elaine",
+     "weapons": [
+      "Myoken",
+      "Doku Myoken",
+      "Zetsu Myoken"
+     ]
+    },
+    {
+     "name": "Fred",
+     "weapons": [
+      "Knight Heart",
+      "Big Knight Heart",
+      "Top Knight Heart"
+     ]
+    },
+    {
+     "name": "Hugo",
+     "weapons": [
+      "Kwan",
+      "Gwanga",
+      "Luft"
+     ]
+    },
+    {
+     "name": "Jimba",
+     "weapons": [
+      "Tugra",
+      "Mundaki",
+      "Matahari"
+     ]
+    },
+    {
+     "name": "Lilly",
+     "weapons": [
+      "Argent",
+      "Auro",
+      "Platino"
+     ]
+    },
+    {
+     "name": "Lulu",
+     "weapons": [
+      "Sut",
+      "Sutra",
+      "Alma Sutra"
+     ]
+    },
+    {
+     "name": "Melville",
+     "weapons": [
+      "Father's Sword",
+      "Treasure Sword",
+      "Sword of Memory"
+     ]
+    },
+    {
+     "name": "Mua",
+     "weapons": [
+      "Sword of Honor",
+      "Sword of Trust",
+      "Sword of Loyalty"
+     ]
+    },
+    {
+     "name": "Percival",
+     "weapons": [
+      "Einst",
+      "Ghegenwelt",
+      "Zukenft"
+     ]
+    },
+    {
+     "name": "Queen",
+     "weapons": [
+      "Noir Luna",
+      "Luna Cressier",
+      "Luna Llena"
+     ]
+    },
+    {
+     "name": "Reed",
+     "weapons": [
+      "Vent",
+      "Brezza",
+      "Tempesta"
+     ]
+    },
+    {
+     "name": "Samus",
+     "weapons": [
+      "Forco",
+      "Scintilla",
+      "Fiamma"
+     ]
+    },
+    {
+     "name": "Wan Fu",
+     "weapons": [
+      "Yogi's Cane",
+      "Descent 666 Cane",
+      "Lucky Charm Cane"
+     ]
+    }
+   ]
+  },
+  "27": {
+   "family": "Claws",
+   "fighters": [
+    {
+     "name": "Emily",
+     "weapons": [
+      "Crow",
+      "Tiger Crow",
+      "Dragon Crow"
+     ]
+    },
+    {
+     "name": "Joker",
+     "weapons": [
+      "Iron",
+      "Black Gold",
+      "Steel"
+     ]
+    },
+    {
+     "name": "Juan",
+     "weapons": [
+      "Min",
+      "Shunmin",
+      "Choya"
+     ]
+    },
+    {
+     "name": "Kenji",
+     "weapons": [
+      "Extend Arms",
+      "In Circles",
+      "Good Exercise"
+     ]
+    },
+    {
+     "name": "Mel",
+     "weapons": [
+      "Branky",
+      "Branky II",
+      "Branky III"
+     ]
+    },
+    {
+     "name": "Nei",
+     "weapons": [
+      "Sonata",
+      "Serenade",
+      "Nocturne"
+     ]
+    },
+    {
+     "name": "Shabon",
+     "weapons": [
+      "Rhythm",
+      "Melody",
+      "Harmony"
+     ]
+    }
+   ]
+  }
+ },
+ "families": {
+  "Bow": [
+   {
+    "name": "Aila",
+    "weapons": [
+     "Da Tar",
+     "Dana Da Tar",
+     "Lata Da Tar"
+    ]
+   },
+   {
+    "name": "Jacques",
+    "weapons": [
+     "Bow Gun",
+     "Iron Bow Gun",
+     "Great Bow Gun"
+    ]
+   },
+   {
+    "name": "Roland",
+    "weapons": [
+     "Night Bow",
+     "Moon Bow",
+     "Elfin Bow"
+    ]
+   },
+   {
+    "name": "Salome",
+    "weapons": [
+     "Mace",
+     "Blessed Mace",
+     "Holy Mace"
+    ]
+   },
+   {
+    "name": "Yuiri",
+    "weapons": [
+     "Sil",
+     "Yuka Sil",
+     "Coola Sil"
+    ]
+   },
+   {
+    "name": "Yumi",
+    "weapons": [
+     "Sil",
+     "Yuka Sil",
+     "Coola Sil"
+    ]
+   }
+  ],
+  "Axe": [
+   {
+    "name": "Bazba",
+    "weapons": [
+     "Anura",
+     "Yu Anura Naha",
+     "U Alma Naha"
+    ]
+   },
+   {
+    "name": "Dupa",
+    "weapons": [
+     "U Naha",
+     "U Lana Naha",
+     "Harvest How"
+    ]
+   },
+   {
+    "name": "Hallec",
+    "weapons": [
+     "Brother",
+     "My Brother",
+     "My Dear Brother"
+    ]
+   },
+   {
+    "name": "Leo",
+    "weapons": [
+     "Schnabel",
+     "Schutoszahn",
+     "Horn"
+    ]
+   },
+   {
+    "name": "Nicolas",
+    "weapons": [
+     "Mumei I",
+     "Mumei II",
+     "Mumei III"
+    ]
+   },
+   {
+    "name": "Rico",
+    "weapons": [
+     "Hammer",
+     "Iron Hammer",
+     "Punishing Hammer"
+    ]
+   },
+   {
+    "name": "Shiba",
+    "weapons": [
+     "Erran Lo",
+     "Erram Lo",
+     "Erla Loha"
+    ]
+   }
+  ],
+  "Darts": [
+   {
+    "name": "Ayame",
+    "weapons": [
+     "Spring Breeze",
+     "Spring Zephyr",
+     "Spring Gale"
+    ]
+   },
+   {
+    "name": "Nash",
+    "weapons": [
+     "Leenier",
+     "Gerarde",
+     "Courve"
+    ]
+   },
+   {
+    "name": "Toppo",
+    "weapons": [
+     "Solo",
+     "Duet",
+     "Quartet"
+    ]
+   },
+   {
+    "name": "Watari",
+    "weapons": [
+     "Wolf",
+     "Blue Wolf",
+     "Heavenly Wolf"
+    ]
+   }
+  ],
+  "Claws": [
+   {
+    "name": "Emily",
+    "weapons": [
+     "Crow",
+     "Tiger Crow",
+     "Dragon Crow"
+    ]
+   },
+   {
+    "name": "Joker",
+    "weapons": [
+     "Iron",
+     "Black Gold",
+     "Steel"
+    ]
+   },
+   {
+    "name": "Juan",
+    "weapons": [
+     "Min",
+     "Shunmin",
+     "Choya"
+    ]
+   },
+   {
+    "name": "Kenji",
+    "weapons": [
+     "Extend Arms",
+     "In Circles",
+     "Good Exercise"
+    ]
+   },
+   {
+    "name": "Mel",
+    "weapons": [
+     "Branky",
+     "Branky II",
+     "Branky III"
+    ]
+   },
+   {
+    "name": "Nei",
+    "weapons": [
+     "Sonata",
+     "Serenade",
+     "Nocturne"
+    ]
+   },
+   {
+    "name": "Shabon",
+    "weapons": [
+     "Rhythm",
+     "Melody",
+     "Harmony"
+    ]
+   }
+  ],
+  "Two-handed Sword": [
+   {
+    "name": "Ace",
+    "weapons": [
+     "Julia",
+     "Milan",
+     "Eisha"
+    ]
+   },
+   {
+    "name": "Duke",
+    "weapons": [
+     "Denta",
+     "Odenta",
+     "Kamui"
+    ]
+   },
+   {
+    "name": "Futch",
+    "weapons": [
+     "Masamune",
+     "Murasame",
+     "Muramasa"
+    ]
+   },
+   {
+    "name": "Yuber",
+    "weapons": [
+     "Crimson",
+     "Death Crimson",
+     "King Crimson"
+    ]
+   }
+  ],
+  "Spear": [
+   {
+    "name": "Cecile",
+    "weapons": [
+     "Guard Spear",
+     "Guardian",
+     "Angel Guard"
+    ]
+   },
+   {
+    "name": "Franz",
+    "weapons": [
+     "Rodo Kwan",
+     "Rudol Kwan",
+     "Galo Kwan"
+    ]
+   },
+   {
+    "name": "Gau",
+    "weapons": [
+     "Orla Teachings",
+     "Oral Teachings II",
+     "Oral Teachings III"
+    ]
+   },
+   {
+    "name": "Sharon",
+    "weapons": [
+     "Verserk",
+     "Sigmund",
+     "Sigrut"
+    ]
+   }
+  ],
+  "Rod": [
+   {
+    "name": "Alanis",
+    "weapons": [
+     "Wood Wand",
+     "Oak Wand",
+     "Sapphire Wand"
+    ]
+   },
+   {
+    "name": "Piccolo",
+    "weapons": [
+     "Nova Wand",
+     "Super Nova",
+     "Hyper Nova"
+    ]
+   },
+   {
+    "name": "Rody",
+    "weapons": [
+     "Fly Rod",
+     "Bird Rod",
+     "Air Rod"
+    ]
+   },
+   {
+    "name": "Sarah",
+    "weapons": [
+     "Shade",
+     "Illusion",
+     "Mirage"
+    ]
+   },
+   {
+    "name": "Viki(adult)",
+    "weapons": [
+     "Wand",
+     "Wow Wand",
+     "Wow Wow Wand"
+    ]
+   },
+   {
+    "name": "Viki(young)",
+    "weapons": [
+     "Wand",
+     "D-Wand",
+     "D5 Wand"
+    ]
+   }
+  ],
+  "One-handed Sword": [
+   {
+    "name": "Augustine",
+    "weapons": [
+     "Margrit",
+     "Manyola",
+     "Orchide"
+    ]
+   },
+   {
+    "name": "Beechum",
+    "weapons": [
+     "Sulaga",
+     "Sulagan",
+     "Khion Sulagan"
+    ]
+   },
+   {
+    "name": "Borus",
+    "weapons": [
+     "Eins",
+     "Zwei",
+     "Drei"
+    ]
+   },
+   {
+    "name": "Elaine",
+    "weapons": [
+     "Myoken",
+     "Doku Myoken",
+     "Zetsu Myoken"
+    ]
+   },
+   {
+    "name": "Fred",
+    "weapons": [
+     "Knight Heart",
+     "Big Knight Heart",
+     "Top Knight Heart"
+    ]
+   },
+   {
+    "name": "Hugo",
+    "weapons": [
+     "Kwan",
+     "Gwanga",
+     "Luft"
+    ]
+   },
+   {
+    "name": "Jimba",
+    "weapons": [
+     "Tugra",
+     "Mundaki",
+     "Matahari"
+    ]
+   },
+   {
+    "name": "Lilly",
+    "weapons": [
+     "Argent",
+     "Auro",
+     "Platino"
+    ]
+   },
+   {
+    "name": "Lulu",
+    "weapons": [
+     "Sut",
+     "Sutra",
+     "Alma Sutra"
+    ]
+   },
+   {
+    "name": "Melville",
+    "weapons": [
+     "Father's Sword",
+     "Treasure Sword",
+     "Sword of Memory"
+    ]
+   },
+   {
+    "name": "Mua",
+    "weapons": [
+     "Sword of Honor",
+     "Sword of Trust",
+     "Sword of Loyalty"
+    ]
+   },
+   {
+    "name": "Percival",
+    "weapons": [
+     "Einst",
+     "Ghegenwelt",
+     "Zukenft"
+    ]
+   },
+   {
+    "name": "Queen",
+    "weapons": [
+     "Noir Luna",
+     "Luna Cressier",
+     "Luna Llena"
+    ]
+   },
+   {
+    "name": "Reed",
+    "weapons": [
+     "Vent",
+     "Brezza",
+     "Tempesta"
+    ]
+   },
+   {
+    "name": "Samus",
+    "weapons": [
+     "Forco",
+     "Scintilla",
+     "Fiamma"
+    ]
+   },
+   {
+    "name": "Wan Fu",
+    "weapons": [
+     "Yogi's Cane",
+     "Descent 666 Cane",
+     "Lucky Charm Cane"
+    ]
+   }
+  ],
+  "Halberd": [
+   {
+    "name": "Belle",
+    "weapons": [
+     "Dengeki Hammer",
+     "Eleki Hammer",
+     "Thunder Hammer"
+    ]
+   },
+   {
+    "name": "Edge",
+    "weapons": [
+     "StarDragon Sword",
+     "StarDragon Sword",
+     "StarDragon Sword"
+    ]
+   },
+   {
+    "name": "Landis",
+    "weapons": [
+     "Bad Luck",
+     "Calamity",
+     "Fatal Calamity"
+    ]
+   },
+   {
+    "name": "Rhett",
+    "weapons": [
+     "Makan",
+     "Makanan",
+     "Luan Makan"
+    ]
+   },
+   {
+    "name": "Sgt. Joe",
+    "weapons": [
+     "Prajuri",
+     "Rati Prajuri",
+     "Myste Prajuri"
+    ]
+   },
+   {
+    "name": "Twaikin",
+    "weapons": [
+     "First Dig",
+     "Second Dig",
+     "Big Dig"
+    ]
+   },
+   {
+    "name": "Wilder",
+    "weapons": [
+     "Awa",
+     "Alila Awa",
+     "Hita Awa"
+    ]
+   }
+  ],
+  "Other 1": [
+   {
+    "name": "Chris",
+    "weapons": [
+     "Letzt",
+     "Stendich",
+     "Ervich"
+    ]
+   },
+   {
+    "name": "Estella",
+    "weapons": [
+     "Ruby Ring",
+     "Ruby Ring II",
+     "Ruby Ring IV"
+    ]
+   },
+   {
+    "name": "Luc",
+    "weapons": [
+     "Guardian's Eye",
+     "Guardian's Eye",
+     "Guardian's Eye"
+    ]
+   },
+   {
+    "name": "Lucia",
+    "weapons": [
+     "Uranne",
+     "Uranne Galo",
+     "Uranne Galor"
+    ]
+   },
+   {
+    "name": "Sasarai",
+    "weapons": [
+     "Guardian's Eye",
+     "Guardian's Eye",
+     "Guardian's Eye"
+    ]
+   }
+  ],
+  "Other 2": [
+   {
+    "name": "Geddoe",
+    "weapons": [
+     "Crow",
+     "Geese",
+     "Wild Geese"
+    ]
+   },
+   {
+    "name": "Sanae Y",
+    "weapons": [
+     "Naginata",
+     "Long Naginata",
+     "Great Naginata"
+    ]
+   }
+  ],
+  "Thomas' Weapon": [
+   {
+    "name": "Thomas",
+    "weapons": []
+   }
+  ]
+ }
+}
