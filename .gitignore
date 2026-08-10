@@ -24,3 +24,6 @@ Editor/Suikoden3EditorV12b.exe
 
 # third-party decompiled source — not distributed
 Editor/Suikoden3Editor_decompiled.cs
+
+# editor/session config — not part of the project
+.claude/
