@@ -632,3 +632,17 @@ Investigated mapping every shop by location + full inventory. Findings:
 - Our existing 3 SHOP tables (item1/item3_a/item3_b) remain valid flat editable
   slots (they sit in the same region and edit fine); they're a subset, not the whole
   shop system. Not expanding shop editing to avoid corrupting script data.
+
+## Starting stats + EXP curve spike (2026-08-10, both NOT flat tables)
+Requested: edit character starting stats + the EXP/level curve.
+- STARTING STATS: parsed all 78 chars' starting PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK/HP
+  from suikosource/statgrowth.txt. Searched the ELF for these as consecutive u8 and
+  u16 (PWR-REP signatures, 7-stat sequences) and inside each char's own list1/list2
+  record: 0 matches anywhere. The displayed "Starting" values are computed (base +
+  level-1 growth), not stored literally -> no editable starting-stat table.
+- EXP CURVE: searched for a monotonic ~90-99 entry table (u32 and u16) starting
+  small and ending large. Only false positives (a +9 pointer ramp; a linear +25
+  math table). No XP-per-level table -> the level curve is formula-driven in code.
+Both would require ASM/formula patching, not data edits. Not shipped.
+What list2 DOES hold and we already edit: per-stat GROWTH RATES (how fast stats
+rise per level) — that remains the lever for stat rebalancing (see Hard Mode).
