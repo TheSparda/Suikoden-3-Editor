@@ -201,8 +201,29 @@ only, and prints PCSX2 verification steps. Your original is never touched.
 
 ---
 
+## Credits & acknowledgements
+
+This project stands on community research and would not exist without it.
+
+- **[Suikosource](https://suikosource.com/)** and its community gameplay guides,
+  used to identify characters, skills, and unite line-ups:
+  - *Skills List* by **Blue Moon** — skill names and descriptions.
+  - *Initial Equipment / Rune Slot List* by **wataru14 / genso710** — starting
+    equipment, rune slots, and character data.
+  - Unite-attack guides — the characters involved in each unite.
+- **`Suikoden3EditorV12b.exe`** — the original Windows editor by its author, whose
+  embedded name/label lists were the source for the character-name dropdowns and
+  field mappings. Reverse-engineered here for reference and reimplemented
+  cross-platform.
+- Item descriptions and offset tables were extracted directly from the game's own
+  data by this project's reverse-engineering (see `Editor/Suikoden3_ISO_offsets.md`).
+
+If any attribution is missing or incorrect, please open an issue — credit is owed
+and will be fixed.
+
 ## Legal
 
 This tool contains **no game data or copyrighted game code**. You must supply your
 own legally-obtained ISO of Suikoden III. Editing your own game files for personal
-use only. Suikoden III is © Konami.
+use only. Suikoden III is © Konami. All referenced guides and their text remain the
+property of their respective authors and Suikosource.
