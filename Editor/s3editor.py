@@ -900,6 +900,9 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
 .savetbl{width:auto;min-width:100%}
 .savetbl th,.savetbl td{padding:6px 8px;white-space:nowrap}
 .savetbl input[type=number]{width:58px;text-align:center}
+/* override the global sticky thead (offset for the page header/nav) — inside a card
+   that offset lands the header mid-table, so pin it to the top of its own scroller */
+.savetbl thead th{position:sticky;top:0;z-index:4}
 .savetbl .nm{position:sticky;left:0;background:var(--panel);z-index:2;font-weight:600}
 .savetbl thead th.nm{background:var(--thead-bg);z-index:6}
 .subtabs{display:flex;gap:6px;margin-bottom:10px}
@@ -1691,30 +1694,66 @@ function renderSaveSlots(r){
      <div class=hint id=subhint style="margin:-2px 0 8px"></div>
      <div id=subview></div></div>`;
 
+  // equip slot labels (order matches s3save EQUIP_SLOTS)
+  const EQ=[["headRune","Head Rune"],["rightRune","Right Rune"],["leftRune","Left Rune"],
+            ["helm","Helm"],["armor","Armor"],["shield","Shield"],
+            ["boots","Boots"],["gloves","Gloves"],["accessory","Accessory"]];
+  const eqItemOpts=`<option value="0">— none —</option>`+SAVE_ITEMS.map(i=>
+    `<option value="${i.id}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`).join("");
   function drawChars(f=""){
-   const head=`<thead><tr><th class=nm>Character</th><th>Lv</th><th>HP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+   const head=`<thead><tr><th class=nm>Character</th><th>Lv</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
    const numIn=(c,k,val,stat)=>`<input type=number value="${val}" data-ri=${c.rosterIndex}`+
      (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
-   const rows=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f).map(c=>
+   const shown=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f);
+   const rows=shown.map(c=>
      `<tr><td class=nm>${c.name}</td>
       <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"curHP",c.curHP)}</td>
-      <td>${numIn(c,"expToNext",c.expToNext)}</td>
+      <td>${numIn(c,"maxHP",c.maxHP)}</td><td>${numIn(c,"expToNext",c.expToNext)}</td>
       ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}</tr>`).join("");
-   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>${head}<tbody>${rows}</tbody></table></div>`;
+   // Equipment editor: a per-character card with 9 equip-slot dropdowns. Shows for the
+   // filtered set (usually you filter to one character to equip them).
+   const eqCards=shown.map(c=>`<div class=card style="margin:0 0 10px">
+      <div style="font-weight:600;margin-bottom:6px">${c.name} — equipped</div>
+      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      ${EQ.map(([key,lbl])=>`<label class=hint style="flex-direction:column;gap:3px">${lbl}
+        <select data-eqri=${c.rosterIndex} data-eq=${key} data-def="${c.equip[key]||0}">${eqItemOpts}</select></label>`).join("")}
+      </div></div>`).join("");
+   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>${head}<tbody>${rows}</tbody></table></div>
+     <h4 style="margin:16px 4px 8px;color:var(--acc2)">Equipment ${shown.length>6?'<span class=hint>(filter to a character to edit their gear)</span>':''}</h4>
+     ${shown.length<=6?eqCards:'<div class=hint style="margin:0 4px">Showing '+shown.length+' characters — type a name in the filter to edit equipment.</div>'}`;
    decorate($("#subview"));
+   // wire stat/scalar inputs
    $("#subview").querySelectorAll("input[data-ri]").forEach(inp=>inp.addEventListener("change",()=>{
      const ri=+inp.dataset.ri,v=+inp.value;
      if(inp.dataset.stat)setEdit(ri,null,v,inp.dataset.stat);else setEdit(ri,inp.dataset.k,v);
-     markSaveDirty();}));}
+     markSaveDirty();}));
+   // wire equip dropdowns
+   $("#subview").querySelectorAll("select[data-eq]").forEach(sel=>{
+     setSel(sel,+sel.dataset.def);
+     sel.addEventListener("change",()=>{
+       const ri=+sel.dataset.eqri;EDITS[ri]=EDITS[ri]||{};EDITS[ri].equip=EDITS[ri].equip||{};
+       EDITS[ri].equip[sel.dataset.eq]=+sel.value;markSaveDirty();});});}
 
+  let INVCAT="regular";  // "regular" (consumables+equipment) or "key"
   function drawItems(f=""){
-   const rows=inv.filter(it=>{const nm=(ITEMNAME[it.id]||"").toLowerCase();
-     return nm.includes(f)||String(it.slot)===f||it.id.toString(16).includes(f);}).map(it=>
+   const wantKey=INVCAT==="key";
+   const list=inv.filter(it=>{
+     const isKey=it.category==="key";
+     if(wantKey!==isKey)return false;
+     const nm=(ITEMNAME[it.id]||"").toLowerCase();
+     return nm.includes(f)||String(it.slot)===f||it.id.toString(16).includes(f);});
+   const rows=list.map(it=>
      `<tr><td class=hint>${it.slot}</td>
        <td><select data-invslot=${it.slot} data-k=id data-def="${it.id}">${itemOpts}</select></td>
-       <td><input type=number data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td></tr>`).join("");
-   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>
-     <thead><tr><th>Slot</th><th>Item</th><th>Qty</th></tr></thead><tbody>${rows||'<tr><td colspan=3 class=hint>no items</td></tr>'}</tbody></table></div>`;
+       <td><input type=number data-invslot=${it.slot} data-k=qty data-def="${it.qty}" value="${it.qty}" style=width:70px></td>
+       <td class=hint>${it.category}</td></tr>`).join("");
+   const nKey=inv.filter(it=>it.category==="key").length, nReg=inv.length-nKey;
+   $("#subview").innerHTML=`<div class=subtabs style="margin-bottom:8px">
+      <button data-invcat=regular class="${wantKey?'':'on'}">Party Items (${nReg})</button>
+      <button data-invcat=key class="${wantKey?'on':''}">Key / Valuables (${nKey})</button></div>
+     <div class=tablewrap><table class=savetbl>
+     <thead><tr><th>Slot</th><th>Item</th><th>Qty</th><th>Type</th></tr></thead><tbody>${rows||'<tr><td colspan=4 class=hint>none</td></tr>'}</tbody></table></div>`;
+   $("#subview").querySelectorAll("[data-invcat]").forEach(b=>b.onclick=()=>{INVCAT=b.dataset.invcat;drawItems($("#sq").value.toLowerCase());});
    $("#subview").querySelectorAll("select[data-invslot]").forEach(sel=>setSel(sel,+sel.dataset.def));
    decorate($("#subview"));
    $("#subview").querySelectorAll("[data-invslot]").forEach(inp=>{
