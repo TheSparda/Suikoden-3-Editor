@@ -530,3 +530,23 @@ Combined with the ELF spike, base enemy stats are most plausibly initialized by
 battle CODE (level -> HP via a growth curve) rather than a shippable flat table.
 Definitive next step would be disassembling the battle HP-init routine — a large
 task, deferred.
+
+## Gear effect-type correction (2026-08-10, bug fix)
+A tester reported gear effects "off by 1" (e.g. Worn-Out Helm slot showing SPD when
+its description says PWR+15). Root cause: the effect-type map hard-coded types 2/3/4
+as SPD/PWR/MDF and treated the 3rd u16 as a skill id. Re-derived vs descriptions:
+- Effect slot = (type u16, value u16, PARAM u16, pad u16) @ 0x14/0x1C/0x24/0x2C/0x34.
+- type 2 = generic STAT BONUS; PARAM selects the stat by S3 stat index
+  (0=PWR 1=SKL 2=MAG 3=REP 4=PDF 5=MDF 6=SPD 7=LUK). Only 0/1/3/6 occur in gear
+  (PWR/SKL/REP/SPD), verified vs single-stat item descriptions and the
+  "PWR+SPD+SKL+REP(+20)" armor.
+- type 5 = Grant skill; PARAM = skill id (unchanged).
+- Newly identified: 3=Accuracy+% (1 sample), 9=Weak-vs-thrust/mobility,
+  10=Lowers ATK effect %, 11=Chance to reflect MGC, 12=Counter-attack rate +%.
+  type 4 has ZERO occurrences in this ROM -> left "unverified".
+Editor now: relabels type 2 as "Stat bonus" with a stat dropdown, keeps the skill
+dropdown for type 5, toggling which shows per type. read_gear returns param/paramRole/
+statName; write_gear accepts `param` (legacy `skill` still honored).
+Audit of the other editors (spells/unites/characters/shop) vs descriptions & ranges:
+0 power/desc mismatches (94 spells, 38 unites), all growth rates in 0..15, all 26
+shop item slots resolve — gear was the only mislabel.
