@@ -900,3 +900,16 @@ pre-initialized for all 109 slots -> flagged ~75 identically on every save).
   specific value encodes join type/orderability per character (0x1C/0x1D/0x21/0x09/...).
   Verified: unlocking Viki (0x00 -> 0x1D) persists, checksum sum stays 0.
 Also: playtime (HH:MM) is now shown in the save metadata line alongside chapter/level.
+
+## Save Editor v10: "recruited by" (pre-merge party owner) (2026-08-10)
+The recruit word (0x232 + ridx*2) also encodes WHICH protagonist recruited a character in
+bits 2..5 — before the Flame Champion is chosen, S3 runs three separate parties and a unit
+is only usable by the hero who recruited them. Decoded by grouping the early save's recruits:
+  Hugo 0x04, Chris 0x08, Geddoe 0x10, Thomas 0x20  (bit0 0x01 = recruited; 0x40/0x80 status).
+Verified anchors: Hugo=0x205, Chris=0x209, Geddoe=0x211, Thomas=0x221; and the groupings
+match lore (Chris -> Zexen knights, Geddoe -> mercenaries, Thomas -> Chisha crew, Hugo ->
+Grasslands allies; Duke/Gau/etc = shared/story = no recruiter bit).
+- READ: decode_character returns recruiter (Hugo/Chris/Geddoe/Thomas or "").
+- WRITE: a "recruited by" dropdown per character rewrites bits 2..5 (RECRUITER_MASK 0x3C),
+  preserving the other bits. Choosing a recruiter also sets recruited. Verified: moving
+  Fubar Hugo->Chris flips word 0x85 -> 0x89, persists, checksum stays 0.
