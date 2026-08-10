@@ -884,3 +884,19 @@ persist, ECC + checksum valid).
 - PARTY empty on early saves is CORRECT, not a bug: 0x3216 (map's "current party") is genuinely
   empty in the phase-2 save (early chapters set the field party via story events). Added a note
   explaining this; later saves populate it correctly (u04: Hugo/Fubar/Chris/Geddoe/Cecile).
+
+## Save Editor v9: REAL recruit flag cracked + editable (2026-08-10)
+Cracked the recruit flag by diffing the 4 sample saves in PLAYTIME order (not chapter #,
+which is a per-protagonist label): 28:39 < 37:31 < 38:32 < 40:33. The recruit-table word
+at 0x232 + rosterIndex*2 is nonzero exactly when recruited, and the nonzero COUNT is
+strictly monotonic in playtime (80 -> 97 -> 100 -> 100) — the signature of a true recruit
+flag. Characters going 0 -> nonzero across saves are all sensible late recruits (Sasarai,
+Luc, Yuber, Sarah, Albert...). Earlier "level>0/stat>0" heuristic was wrong (blocks are
+pre-initialized for all 109 slots -> flagged ~75 identically on every save).
+- READ: decode_character now returns recruited=(word!=0) + recruitWord. UI shows a real
+  "recruited"/"not recruited" badge; "recruited only" filter uses it.
+- WRITE: a per-character "recruited" checkbox sets the flag. Recruit keeps an existing
+  nonzero value or writes 0x1D (common fresh-recruit value); un-recruit writes 0. The
+  specific value encodes join type/orderability per character (0x1C/0x1D/0x21/0x09/...).
+  Verified: unlocking Viki (0x00 -> 0x1D) persists, checksum sum stays 0.
+Also: playtime (HH:MM) is now shown in the save metadata line alongside chapter/level.

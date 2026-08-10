@@ -89,6 +89,15 @@ STAT_NAMES  = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"]
 PARTY_OFF   = 0x3216
 PARTY_SLOTS = 6
 
+# Recruitment table (herrvillain "Recruit Modifiers" region): one u16 per roster slot at
+# 0x232 + rosterIndex*2. Nonzero = recruited; 0 = not recruited. Verified by diffing 4
+# saves in PLAYTIME order — the count of nonzero words is strictly monotonic (85 -> 105 ->
+# 109), the hallmark of a real recruit flag. The specific nonzero value encodes join
+# type/orderability per character (0x1C/0x1D/0x21/...), so to recruit we keep an existing
+# nonzero value or default to 0x1D (the common fresh-story-recruit value); un-recruit = 0.
+RECRUIT_OFF     = 0x232
+RECRUIT_DEFAULT = 0x1D
+
 # Equipped-gear slots (u16 item ids), located empirically in the save block and matching
 # the herrvillain RAM map's 8-byte spacing. Verified: each decodes to a real rune/armor/
 # accessory name across all sample saves.
@@ -341,7 +350,10 @@ def decode_character(gamedata, roster_index):
     skills = [{"slot": k, "id": rec[OFF_SKILLS + k*2], "rank": rec[OFF_SKILLS + k*2 + 1]}
               for k in range(SKILL_SLOTS)]
     lvl = rec[OFF_LEVEL]
-    stat_sum = sum(stats)
+    # Real recruit flag from the recruit table (nonzero = recruited); verified monotonic
+    # across saves in playtime order. This is the authoritative "have I got them" signal,
+    # unlike the character block which is pre-initialized for every roster slot.
+    recruit_word = struct.unpack_from("<H", gamedata, RECRUIT_OFF + roster_index * 2)[0]
     return {
         "rosterIndex": roster_index,
         "name": ROSTER[roster_index] if roster_index < len(ROSTER) else f"#{roster_index}",
@@ -355,8 +367,9 @@ def decode_character(gamedata, roster_index):
         "stats": dict(zip(STAT_NAMES, stats)),
         "equip": equip,
         "skills": skills,
-        # "recruited": the block is initialized (has a level or any stat) vs all-zero.
-        "recruited": lvl > 0 or stat_sum > 0,
+        "recruited": recruit_word != 0,
+        "recruitWord": recruit_word,
+        "hasData": lvl > 0 or sum(stats) > 0,
         "raw": list(rec),
     }
 
@@ -441,15 +454,28 @@ def _clamp(v, width):
 NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
 
 def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
-                            party_edits=None):
+                            party_edits=None, recruit_edits=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
                              "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
     party_edits: {partySlot(0..5): charId} for the active-party composition.
+    recruit_edits: {rosterIndex: bool} to recruit/un-recruit a character.
     Returns (new_gamedata_with_fixed_checksum, changed_field_count)."""
     b = bytearray(gamedata)
     changed = 0
+    for ridx, want in (recruit_edits or {}).items():
+        ridx = int(ridx)
+        ro = RECRUIT_OFF + ridx * 2
+        if ro + 2 > len(b):
+            continue
+        cur = struct.unpack_from("<H", b, ro)[0]
+        if want:
+            # keep an existing nonzero flag; otherwise use the common fresh-recruit value
+            struct.pack_into("<H", b, ro, cur if cur != 0 else RECRUIT_DEFAULT)
+        else:
+            struct.pack_into("<H", b, ro, 0)
+        changed += 1
     for key, val in (name_edits or {}).items():
         if key not in NAME_OFF:
             continue
@@ -512,7 +538,7 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
     return fix_gamedata_checksum(bytes(b)), changed
 
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
-                     party_edits=None):
+                     party_edits=None, recruit_edits=None):
     """Apply edits to one save folder's gamedata on a memcard file, in place.
     Fixes the save checksum and per-page ECC. Backs up the card first by default.
     Returns a summary dict."""
@@ -527,7 +553,8 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     gd = card.read_file(target["cluster"], target["length"], "gamedata")
     if gd is None:
         return {"error": "gamedata not found in save folder"}
-    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits)
+    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits,
+                                              recruit_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
