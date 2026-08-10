@@ -86,10 +86,23 @@ GLOBAL = {
     "storyPhase":  (0x14, 1),
 }
 
-# Roster order for the character blocks (index 0 = the fixed Flame Champion record).
-# Matches the herrvillain map + our list ordering exactly.
+# --- Inventory ------------------------------------------------------------------
+# Party + storage inventory begins at file offset 0x7060 (herrvillain map: Party
+# Inventory Hugo 0x7060, then Chris/Geddoe/Thomas, then Storage 0x7420). Entries are
+# 8 bytes: item id (u16) + quantity (u16) + 4 reserved bytes (0). Empty slot = id 0.
+# Validated against real saves (consumables show real stack counts). We treat the whole
+# span as one flat editable list, which is what a player wants (change ids/quantities).
+INV_BASE   = 0x7060
+INV_ENTRY  = 8
+INV_SLOTS  = 400          # covers the party inventories + storage per the map
+INV_END    = INV_BASE + INV_SLOTS * INV_ENTRY   # 0x7CE0
+
+# Roster order for the character blocks. CHAR_BASE (0x33AC) is HUGO — the real
+# story "Flame Champion" record lives one block earlier (0x3320) and is not a
+# recruitable party member, so it is intentionally NOT in this list (its inclusion
+# was an earlier off-by-one that mislabeled every character).
 ROSTER = [
-    "Flame Champion", "Hugo", "Chris", "Geddoe", "Lucia", "Fred", "Rico", "Viki",
+    "Hugo", "Chris", "Geddoe", "Lucia", "Fred", "Rico", "Viki",
     "Fubar", "Sgt. Joe", "Lulu", "Aila", "Roland", "Lilly", "Reed", "Samus", "Ace",
     "Leo", "Beecham", "Percival", "Borus", "Queen", "Jacques", "Joker", "Duke",
     "Gau", "Elaine", "Nicolas", "Thomas", "Cecile", "Futch", "Bright", "Dupa",
@@ -276,8 +289,24 @@ def decode_character(gamedata, roster_index):
     }
 
 
+def decode_inventory(gamedata):
+    """Decode the flat item inventory: list of {slot, addr, id, qty}. Only non-empty
+    slots are returned (id != 0)."""
+    out = []
+    for s in range(INV_SLOTS):
+        off = INV_BASE + s * INV_ENTRY
+        if off + 4 > len(gamedata):
+            break
+        iid = struct.unpack_from("<H", gamedata, off)[0]
+        qty = struct.unpack_from("<H", gamedata, off + 2)[0]
+        if iid == 0:
+            continue
+        out.append({"slot": s, "addr": off, "id": iid, "qty": qty})
+    return out
+
+
 def decode_save(gamedata):
-    """Decode one save's gamedata payload into globals + character list."""
+    """Decode one save's gamedata payload into globals + character list + inventory."""
     g = {}
     for k, (off, w) in GLOBAL.items():
         g[k] = gamedata[off] if w == 1 else struct.unpack_from("<H", gamedata, off)[0]
@@ -287,7 +316,7 @@ def decode_save(gamedata):
         if c:
             chars.append(c)
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
-            "global": g, "characters": chars}
+            "global": g, "characters": chars, "inventory": decode_inventory(gamedata)}
 
 
 # Editable per-character fields -> (offset within the 140-byte block, byte width).
@@ -303,12 +332,13 @@ STAT_INDEX = {n: i for i, n in enumerate(STAT_NAMES)}
 def _clamp(v, width):
     return max(0, min((1 << (8*width)) - 1, int(v)))
 
-def apply_edits_to_gamedata(gamedata, edits):
-    """edits: {rosterIndex(str/int): {field: value, "stats": {STAT: value}}}.
+def apply_edits_to_gamedata(gamedata, edits, inv_edits=None):
+    """edits: {rosterIndex: {field: value, "stats": {STAT: value}}}.
+    inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     Returns (new_gamedata_with_fixed_checksum, changed_field_count)."""
     b = bytearray(gamedata)
     changed = 0
-    for ridx, fields in edits.items():
+    for ridx, fields in (edits or {}).items():
         ridx = int(ridx)
         base = CHAR_BASE + ridx * CHAR_STRIDE
         if base + CHAR_STRIDE > len(b):
@@ -325,9 +355,18 @@ def apply_edits_to_gamedata(gamedata, edits):
                 fmt = {1: "<B", 2: "<H", 4: "<I"}[w]
                 struct.pack_into(fmt, b, base + off, _clamp(v, w))
                 changed += 1
+    for slot, ent in (inv_edits or {}).items():
+        slot = int(slot)
+        off = INV_BASE + slot * INV_ENTRY
+        if off + 4 > len(b):
+            continue
+        if "id" in ent:
+            struct.pack_into("<H", b, off, _clamp(ent["id"], 2)); changed += 1
+        if "qty" in ent:
+            struct.pack_into("<H", b, off + 2, _clamp(ent["qty"], 2)); changed += 1
     return fix_gamedata_checksum(bytes(b)), changed
 
-def write_save_edits(path, folder, edits, make_backup=True):
+def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None):
     """Apply edits to one save folder's gamedata on a memcard file, in place.
     Fixes the save checksum and per-page ECC. Backs up the card first by default.
     Returns a summary dict."""
@@ -342,7 +381,7 @@ def write_save_edits(path, folder, edits, make_backup=True):
     gd = card.read_file(target["cluster"], target["length"], "gamedata")
     if gd is None:
         return {"error": "gamedata not found in save folder"}
-    new_gd, changed = apply_edits_to_gamedata(gd, edits)
+    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
