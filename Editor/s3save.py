@@ -78,7 +78,9 @@ OFF_ID      = 0x0C            # u8 character id
 OFF_LEVEL   = 0x0D            # u8 level
 OFF_MAXHP   = 0x30            # u16 max HP
 OFF_STATS   = 0x20            # u16[8] stat block
-OFF_WEPLV   = 0x0D            # u8 weapon (sharpen) level 1..16
+# NOTE: per-character weapon (sharpen) level is intentionally NOT exposed. Its offset was
+# never confirmed on real saves — 0x0D aliases the level byte and 0x0E/0x0F read as 0 — so
+# writing it risked clobbering level. Left out per the "never write unverified fields" rule.
 OFF_SKILLS  = 0x10            # 8 x (skill id u8, rank u8) — verified vs skill-id table
 SKILL_SLOTS = 8
 # stat order confirmed against herrvillain per-character RAM codes (relative spacing)
@@ -382,7 +384,6 @@ def decode_character(gamedata, roster_index):
         "addr": off,
         "id": rec[OFF_ID],
         "level": lvl,
-        "weaponLevel": rec[OFF_WEPLV],
         "curHP": struct.unpack_from("<H", rec, OFF_CURHP)[0],
         "maxHP": struct.unpack_from("<H", rec, OFF_MAXHP)[0],
         "expToNext": struct.unpack_from("<I", rec, OFF_EXP)[0],
@@ -465,7 +466,6 @@ def decode_save(gamedata):
 # Editable per-character scalar fields -> (offset within the 140-byte block, byte width).
 CHAR_FIELDS = {
     "level":       (OFF_LEVEL, 1),
-    "weaponLevel": (OFF_WEPLV, 1),
     "curHP":       (OFF_CURHP, 2),
     "maxHP":       (OFF_MAXHP, 2),
     "expToNext":   (OFF_EXP,   4),
