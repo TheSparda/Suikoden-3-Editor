@@ -130,6 +130,16 @@ def _load_item_desc():
         return {}
 ITEM_DESC = _load_item_desc()   # {item id: description} from the ISO's equipment record table
 
+def _load_weapon_chars():
+    p = os.path.join(os.path.dirname(__file__), "s3_weapon_chars.json")
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return {"byIndex": {}, "families": {}}
+# {weaponIndex: {family, fighters:[...]}} — mapped by matching each list4 ATK curve
+# to Suikosource's weapon-growth guide (exact ATK-value match; 28/28 confirmed).
+WEAPON_CHARS = _load_weapon_chars()
+
 def _load_rune_owner():
     p = os.path.join(os.path.dirname(__file__), "s3_rune_owner.json")
     try:
@@ -354,50 +364,27 @@ def write_gear(item_id, fields):
 # bytes 16..27 = a 12-byte tail (sharpen cost/material data, meaning unconfirmed).
 # We edit only the 16 ATK levels; the tail is preserved untouched on save.
 WEAPON_LEVELS = 16
-# Character -> weapon-growth-class link: list1 byte +9 groups characters into 14
-# weapon-growth classes. Verified reliable as a grouping (e.g. value 5 = Chris,
-# Geddoe, Borus, Queen). It is NOT a 1:1 index into the 28 list4 curves, so we
-# expose the class members honestly as "who shares this weapon-growth class" rather
-# than fabricating a per-curve character mapping.
-CHAR_WEAPON_CLASS_OFF = 9
-
-def _char_weapon_classes(iso):
-    """Return {classValue(int): [charName,...]} from list1 +9 across the roster."""
-    base, stride, _ = S.TABLES["list1"]
-    names = CHAR_NAMES.get("list1", {})
-    n = max((int(k) for k in names), default=0) + 1
-    groups = {}
-    for i in range(1, n):
-        v = iso.rd(base + i*stride + CHAR_WEAPON_CLASS_OFF, 1)[0]
-        nm = names.get(str(i))
-        if nm:
-            groups.setdefault(str(v), []).append(nm)
-    return groups
 
 def read_weapons():
     iso = _iso()
     base, stride, _ = S.TABLES["list4"]
     names = CHAR_NAMES.get("list4", {})
     n = max((int(k) for k in names), default=27) + 1
+    by = WEAPON_CHARS.get("byIndex", {})
     out = []
     for i in range(n):
         rec = iso.rd(base + i*stride, stride)
         drec = iso.disk_rd(base + i*stride, stride)
-        rname = names.get(str(i), f"Weapon {i}")
-        # explicit character hint embedded in the record name, e.g. "(Chris)"
-        explicit = ""
-        if "(" in rname and rname.rstrip().endswith(")"):
-            inside = rname[rname.rfind("(")+1:-1].strip()
-            if inside and not inside.isdigit():
-                explicit = inside
+        info = by.get(str(i), {})
         out.append({
-            "index": i, "name": rname, "explicitChar": explicit,
+            "index": i, "name": names.get(str(i), f"Weapon {i}"),
+            "family": info.get("family", ""),
+            "fighters": info.get("fighters", []),   # verified vs Suikosource weapon guide
             "atk": list(rec[:WEAPON_LEVELS]),
             "atkDefault": list(drec[:WEAPON_LEVELS]),
         })
-    classes = _char_weapon_classes(iso)
     iso.close()
-    return {"weapons": out, "charClasses": classes}
+    return out
 
 def write_weapon(index, levels):
     """levels: {levelIndex(0..15): atkValue}. Clamped to u8; tail untouched."""
@@ -1311,32 +1298,28 @@ async function renderGear(m){const gear=await api("/api/gear");
   if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
-async function renderWeapons(m){const data=await api("/api/weapons");
- const wpn=data.weapons||[]; const CLASSES=data.charClasses||{};
- // reference: weapon-growth classes (list1 +9) -> members. Sorted by class value.
- const classRows=Object.keys(CLASSES).sort((a,b)=>(+a)-(+b))
-   .map(k=>`<tr><td class=hint style=width:80px>class ${k}</td><td>${CLASSES[k].join(", ")}</td></tr>`).join("");
- m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter weapons…">
+async function renderWeapons(m){const wpn=await api("/api/weapons");
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter weapons / characters…">
   <span class=hint>Each weapon type's ATK at sharpen levels 1–16 — Suikoden III's "weapon power."
-   Edit a level directly, or scale a whole curve. Saves on change. (Sharpen cost data untouched.)</span></div>
- <details class=card style="margin-bottom:16px"><summary style="cursor:pointer;color:var(--acc2);font-family:var(--titlefont)">Which characters share each weapon-growth class</summary>
-  <div class=hint style="margin-top:8px">Characters are grouped into 14 weapon-growth classes by the game (list1 +9).
-   These classes don't map 1:1 to the individual curves below, so they're shown here as a reference.
-   Where a curve names a specific character (e.g. "Thomas Weapon", "(Chris)"), that's noted on the card.</div>
-  <table><tbody>${classRows}</tbody></table></details>
+   Characters who use each weapon (and their weapon names) are listed on the card. Edit a level
+   directly or scale a whole curve. Saves on change. (Sharpen cost data untouched.)</span></div>
   <div id=wl></div>`;
+ const fighterText=w=>(w.fighters||[]).map(fr=>{
+   const wns=(fr.weapons||[]).filter(Boolean);
+   return wns.length?`${fr.name} (${wns.join(" / ")})`:fr.name;}).join(", ");
  function draw(f=""){
-  $("#wl").innerHTML=wpn.filter(w=>w.name.toLowerCase().includes(f)||(w.explicitChar||"").toLowerCase().includes(f)).map(w=>{
+  $("#wl").innerHTML=wpn.filter(w=>w.name.toLowerCase().includes(f)||fighterText(w).toLowerCase().includes(f)).map(w=>{
    const cells=w.atk.map((a,li)=>
      `<div class=lvcell><div class=lvnum>${li+1}</div>
        <input type=number data-i=${w.index} data-lv=${li} data-def="${w.atkDefault[li]}" value="${a}"></div>`).join("");
-   const who=w.explicitChar?` <span class=pill style=font-size:11px>${w.explicitChar}</span>`:"";
-   return `<div class=card><div class=row style="justify-content:space-between;align-items:center;margin-bottom:10px">
-     <h3 style="margin:0">${w.name}${who} <span class=hint>ATK ${w.atk[0]} → ${w.atk[15]}</span></h3>
+   const fam=w.family?` <span class=pill style=font-size:11px>${w.family}</span>`:"";
+   const who=fighterText(w)?`<div class=hint style="margin:2px 0 10px"><b>Used by:</b> ${fighterText(w)}</div>`:"";
+   return `<div class=card><div class=row style="justify-content:space-between;align-items:center;margin-bottom:4px">
+     <h3 style="margin:0">${w.name}${fam} <span class=hint>ATK ${w.atk[0]} → ${w.atk[15]}</span></h3>
      <label class=hint style="flex-direction:row;align-items:center;gap:6px">scale ATK ×
       <input type=number step=0.05 min=0 value=1 style=width:70px data-scale=${w.index}>
       <button class="act sec" data-scalego=${w.index}>Apply</button></label></div>
-    <div class=lvgrid>${cells}</div></div>`;}).join("");
+    ${who}<div class=lvgrid>${cells}</div></div>`;}).join("");
   $("#wl").querySelectorAll("input[data-lv]").forEach(inp=>{
    inp.addEventListener("blur",async()=>{
     const r=await api("/api/weapon",{method:"POST",headers:{"Content-Type":"application/json"},
