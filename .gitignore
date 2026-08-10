@@ -1,0 +1,20 @@
+# Game images — never commit (large, copyrighted)
+*.iso
+*.bin
+*.img
+ISO/
+
+# Backups the editor makes before writing
+*.bak
+*.TEST.iso
+*.webtest.iso
+
+# Editor local state
+Editor/.s3editor.json
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

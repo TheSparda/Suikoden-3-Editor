@@ -1,0 +1,1170 @@
+Suikoden III: Gameplay Guides: Skills List
+This is a list and description of all the skills in the game. It also details who can learn which skills, and how far they can advance with them.
+Suikoden III: Gameplay Guides: Skills List by Blue Moon
+Suikoden III: Gameplay Guides: Skills List by Blue Moon
+Skill Progression Chart
+
+This chart details how many skill points are required to move on to the next level. This can be useful for figuring out which characters are best with which skills.
+
+ 	Genius	Slow	Excellent	Fast	Good	Normal	Useless
+Rank	S	A+	A	B+	B+	B	C
+E	20	60	30	20	40	50	60
+D	40	100	50	40	60	75	100
+C	65	150	80	65	95	115	150
+B	90	200	120	120	140	170	-
+B+	135	250	170	190	205	-	-
+A	180	300	220	-	-	-	-
+A+	250	350	-	-	-	-	-
+S	350	-	-	-	-	-	-
+Totals	1130	1410	670	435	549	410	310
+
+Skill Descriptions
+
+The following charts details what the skills actually do. The effects for each level are listed, as well as the basic uses of the skill. Mundane skills are the ones taught by the teachers, unique skills are skills that a character learns on their own
+
+Swing	Mundane Skill
+Allows multiple attacks in one round. Proficiency in this skill along with the weight of the weapon influences how many times a character can attack/round. What this skill actually does is decrease the "freeze time" after a weapon is used, and also to decrease the amount of time between each attack.
+ 	E	D	C	B	B+	A	A+	S
+Freeze Time (%)	-5	-10	-17	-25	-36	-50	-70	-100
+Attack Time (%)	-3	-5	-7	-10	-15	-20	-35	-50
+ 
+Accuracy	Mundane Skill
+Increases the chance to connect hits and also disrupts the enemy's evade skill.
+ 	E	D	C	B	B+	A	A+	S
+Hit (%)	+5	+8	+12	+16	+20	+25	+30	+40
+Enemy Evade (%)	+5	+7	+10	+13	+17	+21	+25	+30
+ 
+Damage	Mundane Skill
+Increases the amount of damage dealt when attacking with one's weapon.
+ 	E	D	C	B	B+	A	A+	S
+Damage (%)	+3	+5	+7	+10	+15	+20	+35	+50
+ 
+Sharpshoot	Unique Skill
+Increases the range of long range weaponry as well as the critial rate. The critical rate increase is added onto whatever bonus gained from the character's Critical skill.
+ 	E	D	C	B	B+	A	A+	S
+Range (%)	+5	+10	+15	+25	+35	+50	+70	+100
+Critical Rate (%)	+3	+5	+7	+9	+11	+13	+15	+18
+ 
+Counter-Attack	Unique Skill
+Increases the chance of counter attacks. Also adds to the chance of counter attacks after successful execution of Shield Defense and Parry skills.
+ 	E	D	C	B	B+	A	A+	S
+Counter Rate (%)	+5	+10	+15	+20	+25	+30	+40	+50
+Parry/Shield Counter (%)	+10	+20	+30	+50	+75	+100	+150	+200
+ 
+Heavy Damage	Unique Skill
+Increases the chance of critial hits (Double Damage). Once above Skill rank B+, characters gain a chance for triple damage.
+ 	E	D	C	B	B+	A	A+	S
+Critical Rate (%)	+5	+7	+9	+12	+14	+17	+20	+25
+Triple Critical Chance (%)	-	-	-	-	+10	+20	+30	+50
+ 
+Continual Attack	Unique Skill
+While the Swing Skill increases the speed of attack, this skill increases the number of separate actions a character can do per round. Thus, a character can attack separate enemies in one round, or perform two separate attack sequence against one enemy.
+ 	E	D	C	B	B+	A	A+	S
+Multi Attack Chance (%)	+5	+10	+20	+30	+50	+70	+80	+90
+ 
+Freeze	Unique Skill
+Allows character to inflict the Stun status on enemies (stops all movement for few rounds) when attacking with weapons. Once progressed beyond Rank B, the character also acquired the chance to paralyze the enemy (stops movement for entire combat).
+ 	E	D	C	B	B+	A	A+	S
+Stun (%)	2	4	6	8	13	18	25	35
+Paralyze (%)	-	-	-	3	7	11	15	30
+ 
+Thief	Unique Skill
+Allows character to steal money from enemies when an attack connects. Proficiency in this skill increases both the chance of the actual theft occuring as well as the amount of potch stolen.
+ 	E	D	C	B	B+	A	A+	S
+Theft (%)	2	4	6	10	15	20	30	45
+Potch Stolen (%)	+10	+15	+20	+30	+35	+40	+45	+50
+ 
+Repel	Mundane Skill
+Increases the chance a character evades enemy physical attacks.
+ 	E	D	C	B	B+	A	A+	S
+Evade Increase (%)	+2	+4	+7	+13	+22	+35	+50	+70
+ 
+Parry	Unique Skill
+When evade fails, the character attempts to deflect physical attacks with their weapon. Also increases the chance of counter attacks.
+ 	E	D	C	B	B+	A	A+	S
+Parry Rate (%)	+2	+4	+8	+13	+20	+30	+50	+75
+Counter Attack (%)	-	-	+20	+30	+40	+50	+60	+80
+ 
+Shield Protect	Unique Skill
+Increases the chance attacks are deflected by a character's shield. Also increases the chance of counter attacks beyond skill rank C.
+ 	E	D	C	B	B+	A	A+	S
+Success (%)	+10	+15	+20	+30	+45	+65	+100	+150
+Counter (%)	-	-	+3	+6	+10	+15	+25	+35
+ 
+Armor Protect	Mundane Skill
+Increases the defense value of the armor worn by the character. Also increaes the chance of "Critical Guard," where physical attacks are completely nullified.
+ 	E	D	C	B	B+	A	A+	S
+Defense (%)	+5	+7	+10	+15	+20	+25	+35	+50
+0 Damage (%)	+5	+7	+9	+12	+14	+17	+20	+25
+ 
+Holy Dash	Mundane Skill
+Allows a character to move longer distances/round in combat. This allows characters to attack even after moving long distances.
+ 	E	D	C	B	B+	A	A+	S
+Movement Increase (%)	+5	+10	+15	+20	+30	+45	+70	+100
+ 
+Adrenaline Power	Unique Skill
+Allows characters to regain a certain amount of HP after a character sustains enough damage to go under 0 HP. Proficiency in this skill increases the chance of the Death's Door actually being triggered as well as the amount of HP regained.
+ 	E	D	C	B	B+	A	A+	S
+Success (%)	3	5	7	10	15	25	35	50
+Healed (% of Max)	+5	+10	+15	+20	+25	+30	+40	+50
+ 
+Fighting Spirit	Unique Skill
+Resists Stun and Unbalance status when such statuses are inclicted by enemy physical/magic attacks or from unite attacks with allies.
+ 	E	D	C	B	B+	A	A+	S
+Cancellation (%)	+20	+30	+40	+50	+65	+75	+85	+95
+ 
+Fire Magic	Mundane Skill
+Reduces the time used to cast fire element spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Water Magic	Mundane Skill
+Reduces the time used to cast water element spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Wind Magic	Mundane Skill
+Reduces the time used to cast wind element spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Earth Magic	Mundane Skill
+Reduces the time used to cast earth element spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Lightning Magic	Mundane Skill
+Reduces the time used to cast lightning element spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Shield Magic	Unique Skill
+Reduces the time used to cast shield rune spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Pale Gate Magic	Unique Skill
+Reduces the time used to cast pale gate rune spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Blinking Magic	Unique Skill
+Reduces the time used to cast blinking rune spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Sword of Magic	Mundane Skill
+Reduces the time used to cast magic sword spells as well as the effectiveness of each spell.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-10	-25	-40	-55	-65	-70	-75	-85
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Magic Repel	Unique Skill
+Allows character to reflect and completely negate magic spells cast by enemies.
+ 	E	D	C	B	B+	A	A+	S
+Reflect Rate (%)	5	7	10	15	20	30	50	80
+ 
+Magic Resistance	Mundane Skill
+Reduces the damage received from enemy magic spells.
+ 	E	D	C	B	B+	A	A+	S
+Damage Reduced (%)	5%	7%	10%	15%	20%	25%	35%	50%
+ 
+Focus	Unique Skill
+Reduces the cancellation rate of spells when a character is attacked while casting a spell.
+ 	E	D	C	B	B+	A	A+	S
+Cancellation Rate (%)	-10	-25	-40	-50	-60	-70	-80	-90
+ 
+Chanting Volume	Unique Skill
+Reduces the cancellation rate of spells when attacked during a song. The effect of this skill is added onto the focus skill.
+ 	E	D	C	B	B+	A	A+	S
+Cancellation Rate (%)	-10	-25	-40	-50	-60	-70	-80	-90
+ 
+Chanting Purity	Unique Skill
+Increases the effect of Minsterl Rune spells. This skill doesn't reduce the casting time like other magic skills.
+ 	E	D	C	B	B+	A	A+	S
+Magic Effect (%)	+3	+7	+12	+19	+26	+35	+50	+70
+ 
+Precision	Unique Skill
+When casting area effect spells, this skill reduces the chance of such spells cuasing harm to allies.
+ 	E	D	C	B	B+	A	A+	S
+Ally Evade Bonus (%)	10	20	30	45	60	80	90	100
+ 
+Magic Rationing	Unique Skill
+When magic is used, this skill increases the number of lower tier magic usable. For example, if a level 2 magic is used in combat, the character gains one level 1 magic slot (but not beyond established max).
+ 	E	D	C	B	B+	A	A+	S
+Rate (%)	5	10	15	20	25	30	40	50
+ 
+Potch Finder
+Increases the amount of money gained when enemies are defeated.
+ 	E	D	C	B	B+	A	A+	S
+Money Found (%)	+20	+35	+50	+65	+80	+100	+120	+150
+ 
+Treasure Hunt
+Increases the chance for items being found from enemies after battle.
+ 	E	D	C	B	B+	A	A+	S
+Item Chance (%)	+5	+10	+15	+20	+25	+30	+40	+50
+ 
+Healing
+Heals a certain amount of HP after battle.
+ 	E	D	C	B	B+	A	A+	S
+Healed (% of Max)	+5	+8	+12	+17	+23	+30	+40	+50
+ 
+Cook
+Increases the chance for food items to be found from enemies.
+ 	E	D	C	B	B+	A	A+	S
+Food Chance (%)	+2	+3	+4	+6	+8	+10	+15	+20
+ 
+Appraisal
+Adds a chance for items to be automatically identified when a "?" item is found.
+ 	E	D	C	B	B+	A	A+	S
+Rate (%)	20	30	40	50	65	75	90	100
+ 
+Discount
+Reduces the price of items sold at shops.
+ 	E	D	C	B	B+	A	A+	S
+Price (%)	-3	-5	-7	-9	-13	-15	-20	-30
+ 
+Bujutsu Teacher
+Allows the party to receive combat training anywhere. This skill also increases physical damage done by the entire party.
+ 	E	D	C	B	B+	A	A+	S
+Damage (%)	+2	+3	+4	+6	+8	+10	+12	+15
+ 
+Tutor
+Allows the party to receive magic instruction anywhere. This skill also increases magic damage done by the entire party.
+ 	E	D	C	B	B+	A	A+	S
+Damage (%)	+2	+3	+4	+6	+8	+10	+12	+15
+ 
+Rune Sage
+This skill allows the party to remove/attach runes anywhere. It also reduces the spell casting time for the entire party.
+ 	E	D	C	B	B+	A	A+	S
+Cast Time (%)	-1	-2	-3	-4	-5	-6	-8	-10
+ 
+Trade In
+Allows the party to gain some money when items are thrown away.
+ 	E	D	C	B	B+	A	A+	S
+Money Gained (% of Price)	20	30	40	45	50	55	60	75
+ 
+Bath
+Heals all negatuive status and a certain amount of HP after each battle.
+ 	E	D	C	B	B+	A	A+	S
+HP Healed	+20	+40	+60	+90	+120	+150	+170	+200
+
+Combat Characters
+
+This lists the skills each Combat Character can use in the game and the maximum level they can raise these skills up to.
+Skills are divided into three types: Combat Skills, Magic Skills and Support Skills. Combat Skills must be raised at a Training Centre, Magic Skills at an Education Centre, and Support Skills cannot be raised. Not many Combat characters have Support Skills.
+Characters have a set number of slots for skills that does vary from character to character. These come in two types: Fixed Skills which cannot be changed, and Free Skills that can; Free Skills can only be changed to one of the Mundane set that everyone can use. Fixed Skills are often from the Unique set, but may include some Mundane ones as well depending on character. Extra Fixed Skills are often gained as the character gains levels. Combat Character Support Skills are always of the Fixed type.
+
+Ace
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Thief	 
+Initial	-	E(1)	-	D(1)	-	-	E(27)	 
+Max	B+	B+	B	B	B	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	B	B	B+	B	B	 
+Support Skills
+Discount: C (1)
+ 
+Aila
+Free Skill Slots: 3	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	-	D(1)	-	D(1)	-	-	E(37)	 
+Max	B+	B+	B+	B+	C	B	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	 
+Initial	-	-	-	C(1)	-	-	-	C(1)	 
+Max	B+	B	B	A	C	B+	B	B+	 
+ 
+Alanis
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	D(1)	-	-	 
+Max	C	B	C	B+	C	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	P-Gate	Prec.
+Initial	E(1)	E(1)	-	-	-	-	-	E(8)	E(47)	E(23)
+Max	B+	A	B	B+	B+	B+	B	B+	A	B+
+ 
+Augustine
+Free Skill Slots: 3	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Parry	 
+Initial	-	C(1)	D(1)	D(1)	-	-	C(1)	 
+Max	B	B+	B	B+	B+	B	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	B	B+	B+	B+	B+	B+	 
+ 
+Ayame
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	 
+Initial	B(1)	-	-	C(1)	-	C(1)	B(1)	 
+Max	B+	B	B	S	C	S	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	B+	B+	C	C	C	B	 
+ 
+Bazba
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	-	A(1)	-	C(1)	-	-	C(1)	 
+Max	B	A	B+	B	B+	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	C(1)	-	-	-	-	 
+Max	B	B+	B	B+	B	B	B+	 
+ 
+Beecham
+Free Skill Slots: 7	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Cont Atk	 
+Initial	C(1)	C(1)	D(1)	C(1)	-	-	C(1)	 
+Max	B	B+	B	B+	B	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	B(1)	-	-	-	-	-	 
+Max	B	B+	B	B	B	B+	B	 
+ 
+Belle
+Free Skill Slots: 6	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	D(1)	C(1)	-	C(1)	-	-	 
+Max	B+	B+	B	B+	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	 
+Initial	C(1)	-	-	-	-	-	-	E(35)	 
+Max	A	B	B	A	B	B+	B	B+	 
+ 
+Borus
+Free Skill Slots: 2	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	 
+Initial	-	E(1)	E(1)	D(1)	D(1)	-	E(27)	 
+Max	B	B+	A	B	A	C	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	C	C	C	C	B	B+	 
+ 
+Bright
+Free Skill Slots: 3	Fixed Skill Slots: 0
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	C(1)	-	-	-	 
+Max	B	B	B+	B	B	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	B	B+	B	C	B	C	 
+ 
+Cecile
+Free Skill Slots: 3	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Shield	Fi-Sprt	 
+Initial	-	E(1)	E(1)	-	E(1)	-	D(1)	E(29)	 
+Max	B	B	A+	B+	B+	A+	A+	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	B	C	B	C	B	B	 
+ 
+Chris
+Free Skill Slots: 2	Fixed Skill Slots: 6
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Parry	 
+Initial	D(1)	D(1)	D(1)	D(1)	D(1)	-	E(25)	D(1)	 
+Max	B	B+	A	B	B+	C	A	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	B+	C	C	C	B	A	 
+ 
+Connie
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	C(1)	-	-	 
+Max	B	B+	C	B+	C	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	 
+Initial	-	-	-	-	-	-	-	E(53)	 
+Max	C	A+	C	C	C	B	C	A+	 
+ 
+Duke
+Free Skill Slots: 3	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Counter	 
+Initial	-	C(1)	B(1)	-	-	-	B+(1)	B(-)	 
+Max	B	B+	B+	B+	B	B+	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	C(1)	-	-	 
+Max	B+	B	C	B	C	B	B	 
+ 
+Dupa
+Free Skill Slots: 4	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	-	C(1)	B(1)	-	-	-	B(1)	 
+Max	B	B+	A	B	B+	C	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	B	C	B+	B	B	B+	 
+ 
+Edge
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	 
+Initial	C(1)	C(1)	-	B(1)	-	-	B(1)	 
+Max	B	B+	B	B+	B+	B	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	C(1)	-	-	 
+Max	B	B+	B+	B	B+	B+	B+	 
+ 
+Elaine
+Free Skill Slots: 4	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	B(1)	C(1)	-	-	-	-	 
+Max	B+	B+	B	B+	C	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Prec.	Ration	 
+Initial	B(1)	C(1)	-	-	-	-	-	B+(1)	C(1)	 
+Max	B+	B	B+	B+	A	B+	B+	B+	B+	 
+ 
+Emily
+Free Skill Slots: 4	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	 
+Initial	D(1)	-	-	B(1)	-	-	C(1)	 
+Max	S	B+	B	A	C	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	C	C	B	C	B	B	 
+ 
+Estella
+Free Skill Slots: 4	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	-	-	-	 
+Max	C	B	C	B	C	C	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	M-Repel	Focus
+Initial	A(1)	-	B(1)	-	B(1)	C(1)	-	E(47)	B(1)	B(1)
+Max	S	B+	B+	B	A	B+	B	A	B+	B+
+ 
+Franz
+Free Skill Slots: 4	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Adr-Pwr	 
+Initial	-	B(1)	C(1)	-	-	-	B(1)	 
+Max	B	B+	B	B+	B	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	C(1)	-	-	 
+Max	B	C	B	B	B+	B+	B	 
+ 
+Fred
+Free Skill Slots: 3	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Shield	Adr-Pwr	 
+Initial	-	-	D(1)	E(1)	E(1)	-	D(1)	E(40)	 
+Max	B	B+	A	B	B+	B	S	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	E(1)	 
+Max	B	C	C	B	B	B	B+	 
+ 
+Fubar
+Free Skill Slots: 4	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	-	E(1)	D(1)	-	-	-	E(35)	 
+Max	B	B+	B+	B+	B	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	B	B	C	B	B	C	 
+ 
+Futch
+Free Skill Slots: 3	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Parry	 
+Initial	-	B(1)	-	-	C(1)	-	B(1)	 
+Max	B	B+	B	B	B+	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	C(1)	-	-	 
+Max	B+	B	C	B	B+	B+	B	 
+ 
+Gadget Z
+Free Skill Slots: 7	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Fi-Sprt	 
+Initial	D(1)	D(1)	D(1)	D(1)	-	D(1)	E(40)	 
+Max	B	B+	B+	B	B+	B	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	B	B	B	B	B	B	 
+ 
+Gau
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Parry	 
+Initial	-	C(1)	B(1)	-	-	-	C(1)	 
+Max	B+	B	B+	B	B	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	C	B	C	C	C	B	 
+ 
+Geddoe
+Free Skill Slots: 4	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	Parry	 
+Initial	-	E(1)	D(1)	-	-	-	E(35)	D(1)	 
+Max	B+	B+	B+	B+	B+	B	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	M-Repel
+Initial	-	-	-	-	D(1)	-	-	E(40)	 
+Max	B+	B	B+	B+	A	B+	B+	B	 
+ 
+Hallec
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Adr-Pwr	 
+Initial	-	-	C(1)	-	-	-	C(1)	E(44)	 
+Max	S	B	A	B	B+	B+	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	C	C	C	C	C	B+	 
+ 
+Hugo
+Free Skill Slots: 4	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	Heavy-D	Cont Atk	Parry
+Initial	E(1)	E(1)	-	-	-	-	E(1)	D(1)	E(20)	E(40)
+Max	A	A	B	S	C	B+	B+	A	B+	B+
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	E(1)	-	-	-	-	 
+Max	B	C	B+	B+	B	B	B	 
+ 
+Jacques
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	S-Shoot	 
+Initial	-	D(1)	D(1)	E(1)	-	-	D(1)	 
+Max	C	B+	B+	B	B	B	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	C	B	B+	B	B+	C	 
+ 
+Jimba
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Parry	 
+Initial	-	B(1)	C(1)	-	-	-	B(1)	 
+Max	B	B+	B	B+	C	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	A(1)	-	-	-	-	-	 
+Max	C	A	B+	B	C	B+	B	 
+ 
+Joker
+Free Skill Slots: 4	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	Cont Atk	 
+Initial	-	E(1)	-	D(1)	-	-	E(24)	E(35)	 
+Max	B	B	B	A	B+	B	A	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	Focus	 
+Initial	C(1)	-	-	-	-	-	-	E(45)	E(38)	 
+Max	A	B+	B+	B+	B	B	C	B	A	 
+ 
+Juan
+Free Skill Slots: 4	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Cont Atk	 
+Initial	-	E(1)	-	E(1)	-	-	E(24)	E(35)	 
+Max	A	B+	B	B+	B	B+	S	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	A+	B	B	B	B	B+	C	 
+Support Skills
+Bujutsu Teacher: B+(1)
+ 
+Kenji
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Cont Atk	 
+Initial	-	D(1)	-	D(1)	-	-	E(45)	 
+Max	B+	B+	B	B+	B	S	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ch. Vol	Ch. Qual	 
+Initial	-	-	-	-	-	-	-	E(1)	D(1)	 
+Max	B+	B	B+	A	B+	B	B	B+	A	 
+ 
+Kogoro
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	D(1)	-	-	-	-	-	E(30)	 
+Max	B	B	B	B	B	B	A+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	B	C	C	B	C	 
+ 
+Koichi
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Cont Atk	 
+Initial	-	-	-	E(1)	-	-	E(13)	 
+Max	B+	B	C	B+	C	B+	A+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	C	C	B	B	C	 
+ 
+Koroku
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	E(1)	-	D(1)	-	-	 
+Max	B+	B	C	B+	C	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	C	C	C	C	B	C	 
+Support Skills
+Treasure Hunt: E(45)
+ 
+Kosanji
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Adr-Pwr	 
+Initial	-	-	D(1)	C(1)	-	-	E(35)	 
+Max	C	B	B+	B+	C	C	A+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	C	C	C	B	C	 
+ 
+Landis
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	Thief	 
+Initial	-	-	C(1)	D(1)	-	-	C(1)	D(1)	 
+Max	B	B	B+	B	B	B+	S	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	B+	B+	B+	B+	S	B	 
+ 
+Leo
+Free Skill Slots: 1	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Adr-Pwr	Fi-Sprt	 
+Initial	-	-	D(1)	-	D(1)	-	E(42)	E(35)	 
+Max	C	B	S	B	S	B	S	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	C	C	C	C	C	 
+ 
+Lilly
+Free Skill Slots: 3	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Parry	 
+Initial	-	E(1)	-	D(1)	-	-	E(35)	D(1)	 
+Max	B+	A	B+	B+	B	B+	A	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	D(1)	 
+Max	B+	C	B	C	B+	B+	B	 
+ 
+Luc
+Free Skill Slots: 6	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	B+(1)	-	-	 
+Max	C	C	C	B+	C	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	Focus	 
+Initial	-	B(1)	A+(1)	-	-	A(1)	-	A(1)	S(1)	 
+Max	A	A	S	B+	A	A	B	A	S	 
+ 
+Lucia
+Free Skill Slots: 2	Fixed Skill Slots: 5
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Cont Atk	 
+Initial	C(1)	C(1)	E(1)	-	-	-	B(1)	 
+Max	B+	B+	B+	A	B	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	M-Repel	 
+Initial	B+(1)	-	-	-	-	-	-	B(1)	 
+Max	A	B+	B+	B+	B	B	B+	B+	 
+ 
+Lulu
+Free Skill Slots: 4	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Cont Atk	 
+Initial	D(1)	-	-	D(1)	-	-	E(15)	 
+Max	B+	B	B	B+	C	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	B	B	C	B+	B	 
+ 
+Mel
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	C(1)	-	-	C(1)	-	-	 
+Max	A	B	C	A	B+	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Blink	P-Gate	 
+Initial	-	-	-	-	-	-	-	E(45)	E(52)	 
+Max	B+	B	B+	B	S	B+	B+	B+	B+	 
+ 
+Melville
+Free Skill Slots: 6	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	 
+Initial	-	E(1)	E(1)	D(1)	-	-	E(15)	 
+Max	B+	B	B	B+	B	B+	A+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	B+	B+	B+	B	B	B+	 
+ 
+Mua
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Shield	 
+Initial	-	-	C(1)	-	B(1)	-	C(1)	 
+Max	B	B+	B+	B	A	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	E(1)	 
+Max	C	C	C	C	C	B	B	 
+ 
+Nash
+Free Skill Slots: 6	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Cont Atk	 
+Initial	-	C(1)	-	B(1)	-	-	E(39)	E(43)	 
+Max	B+	B+	B+	A	B	A	B	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	C(1)	-	-	-	-	-	 
+Max	B	C	B+	B	B	B	C	 
+ 
+Nei
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	E(1)	-	C(1)	-	-	 
+Max	B+	B	B	B+	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	Ch. Vol	Ch. Qual
+Initial	-	-	-	-	-	D(1)	-	E(20)	D(1)	D(1)
+Max	B+	A	B+	A	B+	S	C	B+	A	S
+ 
+Nicolas
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Shield	 
+Initial	-	A(1)	B(1)	-	A(1)	-	A(1)	 
+Max	C	B	B	C	A	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	C	C	C	B+	C	 
+ 
+Percival
+Free Skill Slots: 2	Fixed Skill Slots: 5
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	Parry	 
+Initial	D(1)	E(1)	-	D(1)	-	-	E(35)	C(1)	 
+Max	B+	A	B+	B	B+	B+	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	 
+Initial	-	-	-	-	-	-	-	E(53)	 
+Max	B	B+	B	B	B+	B+	B	B	 
+ 
+Piccolo
+Free Skill Slots: 5	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	E(1)	-	-	 
+Max	C	B	C	C	C	C	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	Focus	 
+Initial	-	-	-	-	E(1)	E(1)	-	E(40)	E(23)	 
+Max	B+	B	B	B+	A+	B+	B	A+	A	 
+ 
+Queen
+Free Skill Slots: 3	Fixed Skill Slots: 5
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	 
+Initial	D(1)	D(1)	-	C(1)	-	-	E(33)	 
+Max	B+	B+	B	B+	C	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	 
+Initial	-	-	-	-	-	-	-	E(52)	 
+Max	B	B	B+	B	B	B	B+	B	 
+ 
+Reed
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	-	D(1)	-	D(1)	-	-	E(42)	 
+Max	B+	B+	B	B+	B	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	B	B+	B	B	B	B+	 
+ 
+Rhett
+Free Skill Slots: 4	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	C(1)	B(1)	D(1)	-	-	 
+Max	A+	B	A	B	B	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	M-Repel	 
+Initial	-	-	-	-	-	-	-	C(1)	 
+Max	B	B+	B+	B	C	B+	B+	B	 
+ 
+Rico
+Free Skill Slots: 3	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Fi-Sprt	 
+Initial	E(1)	-	D(1)	-	-	-	E(37)	 
+Max	C	B	B+	B	B+	C	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	 
+Initial	-	D(1)	-	-	-	-	-	E(33)	 
+Max	B	B+	B	B	B	B+	B	B	 
+ 
+Rody
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	-	-	-	 
+Max	B+	C	B	B	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Blink	Prec.	Ration
+Initial	C(1)	B(1)	C(1)	B(1)	B(1)	-	-	A(1)	C(1)	E(50)
+Max	B+	A	B	B+	B+	B+	S	A	A	S
+ 
+Roland
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	S-Shoot	 
+Initial	-	D(1)	E(1)	E(1)	-	-	D(1)	 
+Max	B	B+	B	B+	B+	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	B	B+	B	B	B+	C	 
+ 
+Ruby
+Free Skill Slots: 3	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Freeze	 
+Initial	-	C(1)	-	-	-	-	B(1)	 
+Max	B+	B	B	B	C	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shld-Mag	 
+Initial	-	-	-	-	-	-	-	E(55)	 
+Max	B	B	B+	B	B	A	C	B	 
+ 
+Salome
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	D(1)	D(1)	-	-	-	 
+Max	C	B	B	B	B+	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	M-Repel	 
+Initial	-	C(1)	-	-	-	-	-	D(1)	E(37)	 
+Max	B+	A	B+	B+	B	B+	B+	A	B+	 
+ 
+Samus
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Fi-Sprt	 
+Initial	-	-	D(1)	-	E(1)	-	E(42)	 
+Max	B	B	A	B	B+	C	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	D(1)	-	-	-	-	 
+Max	B	C	C	B	B	B+	B	 
+ 
+Sanae Y
+Free Skill Slots: 4	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	 
+Initial	-	-	C(1)	B(1)	-	-	E(35)	 
+Max	B+	B	B+	A	B+	B	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	 
+Initial	-	-	-	-	-	-	-	E(44)	 
+Max	B	B+	B	B+	B+	B+	A	B+	 
+Support Skills
+Healing: D(1)
+ 
+Sarah
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	B(1)	-	-	 
+Max	C	B	C	B	C	C	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	Prec.	 
+Initial	A(1)	A+(1)	-	-	-	A(1)	-	A+(1)	A(1)	 
+Max	A	S	B+	A	A	A	C	S	A	 
+ 
+Sasarai
+Free Skill Slots: 3	Fixed Skill Slots: 4
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	D(1)	-	-	 
+Max	C	C	B	C	C	C	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	P-Gate	M-Repel	Prec.
+Initial	-	B(1)	-	A(1)	-	-	-	B(1)	B(1)	C(1)
+Max	B+	A	B	S	B+	A	B	A	A	B+
+ 
+Sgt. Joe
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	 
+Initial	-	E(1)	D(1)	-	-	-	E(30)	 
+Max	B+	B	B+	B+	B	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ch. Vol	 
+Initial	-	C(1)	-	-	-	-	-	E(25)	 
+Max	B	B+	B+	B	C	B+	B	B+	 
+ 
+Shabon
+Free Skill Slots: 5	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	D(1)	-	E(1)	 
+Max	A	B+	C	A	C	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ch. Vol	Ch. Qual	 
+Initial	-	-	C(1)	-	-	-	-	C(1)	D(1)	 
+Max	A	B+	B+	B	B+	B+	C	A	A	 
+ 
+Sharon
+Free Skill Slots: 3	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Parry	Shield	 
+Initial	-	-	-	-	C(1)	-	D(1)	D(1)	 
+Max	B+	B	B	B+	B+	B+	B+	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ration	 
+Initial	-	-	D(1)	-	-	-	-	E(40)	 
+Max	B+	B	B+	B	C	B+	B+	C	 
+ 
+Shiba
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Fi-Sprt	 
+Initial	-	B(1)	A(1)	-	-	-	B(1)	 
+Max	B	B+	A	C	B+	C	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	B	C	B+	B	B	B+	 
+ 
+Thomas
+Free Skill Slots: 7	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Parry	 
+Initial	E(1)	E(1)	-	-	-	-	E(30)	 
+Max	B+	A+	B	A+	B	B+	A+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B	C	A+	B	C	B+	C	 
+ 
+Toppo
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	D(1)	C(1)	-	-	 
+Max	B	B+	B+	B+	B	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ch. Vol	Ch. Qual	 
+Initial	-	-	-	-	-	-	-	E(1)	D(1)	 
+Max	B+	B	B	B+	B+	A+	B	S	B+	 
+ 
+Twaikin
+Free Skill Slots: 6	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Shield	Adr-Pwr	 
+Initial	-	C(1)	C(1)	-	-	-	E(1)	C(1)	 
+Max	C	B+	B+	C	B+	B	B+	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	B	B+	A	B+	B	B	 
+ 
+Viki (Adult)
+Free Skill Slots: 4	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	D(1)	-	-	 
+Max	C	C	B	B+	B	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	Blink	P-Gate
+Initial	-	-	-	-	-	C(1)	-	C(1)	B(1)	C(1)
+Max	B+	A	A	B+	B+	A	B	B+	S	B+
+ 
+Viki (Child)
+Free Skill Slots: 4	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	-	-	D(1)	-	-	 
+Max	C	C	B	B+	B	B	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Shd-Mag	Blink	P-Gate
+Initial	-	-	-	-	-	C(1)	-	C(1)	B(1)	C(1)
+Max	B+	A	A	B+	B+	A	B	B+	S	B+
+ 
+Wan Fu
+Free Skill Slots: 4	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	Adr-Pwr	 
+Initial	-	C(1)	D(1)	-	-	-	E(25)	C(1)	 
+Max	C	B+	B+	B	B+	C	B+	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	C	C	B	B	C	B	B+	 
+ 
+Watari
+Free Skill Slots: 3	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Counter	 
+Initial	C(1)	D(1)	-	-	-	-	E(35)	 
+Max	A	B+	C	A	C	A	S	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	-	-	-	 
+Max	B+	C	B+	C	C	C	B	 
+ 
+Wilder
+Free Skill Slots: 3	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	 
+Initial	-	D(1)	C(1)	C(1)	-	-	 
+Max	B+	B	B+	B+	B	B+	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	M-Repel	 
+Initial	-	-	-	-	-	-	-	C(1)	 
+Max	B	B+	B+	B	C	B+	C	B+	 
+ 
+Yuber
+Free Skill Slots: 5	Fixed Skill Slots: 1
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	Heavy-D	 
+Initial	A(1)	A+(1)	B+(1)	A(1)	-	-	A(1)	 
+Max	A	S	B+	A	B	B	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	 
+Initial	-	-	-	-	B(1)	-	-	 
+Max	B+	B	C	C	B+	B+	A	 
+ 
+Yuiri
+Free Skill Slots: 5	Fixed Skill Slots: 3
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	S-Shoot	Heavy-D	 
+Initial	-	B(1)	-	B(1)	-	-	E(45)	B(1)	 
+Max	B+	A	B	B+	B	B+	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ration	 
+Initial	-	-	B(1)	-	-	-	-	E(50)	 
+Max	B	B+	A	B+	B	B+	B	B+	 
+ 
+Yumi
+Free Skill Slots: 5	Fixed Skill Slots: 2
+Combat Skills
+ 	Swing	Accur.	Damage	Repel	Armor	H-Dash	S-Shoot	 
+Initial	-	B(1)	-	-	-	-	C(1)	 
+Max	B+	B+	B+	B	B	B+	A	 
+Magic Skills
+ 	Fire	Water	Wind	Earth	Ltning	Resist	M-Sword	Ration	 
+Initial	-	-	-	B(1)	-	-	-	E(1)	 
+Max	B	B+	B	A	B+	B+	C	A	 
+
+Support Characters
+
+Support characters do not participate in battle, rather they have support skills that affect the party after each battle ends; however, only one support character can be taken with a party at any one time.
+Support characters do not gain skill points so their skill level is fixed and cannot be trained further.
+
+Name	Skills
+Albert	Tutor: C	 
+Anne	Healing: D	Cooking: D	 
+Arthur	Find Treasure: E	Appraise: B	 
+Billy	Cooking: D	Trade In: D	 
+Barts	Discount: C	Bath: C	 
+Dios	Discount: C	 
+Dominic	None	 
+Eike	Appraise: C	 
+Elliot	Find Money: C	Find Treasure: D	 
+Ernie	Tutor: B+	 
+Gordon	Discount: C	Trade In: D	 
+Goro	Bath: A+	 
+Guillame	Find Money: E	Find Treasure: E	Appraise: A
+Hortez VII	Tutor: C	 
+Iku	Healing: C	Tutor: C	 
+Jeane	Healing: E	Runemastery: A	 
+Jefferson	Bujutsu Teacher: D	 
+Kathy	Trade In: E	 
+Kidd	Find Treasure: C	 
+Louis	Healing: E	Cooking: D	 
+Luce	Healing: E	Discount: D	 
+Martha	Discount: B	 
+Mamie	Cooking: A	 
+Mike	Runemastery: C	Trade In: C	 
+Mio	Healing B+	Appraise: E	 
+Muto	Appraise: D	 
+Nadir	Trade In: D	Tutor: D	 
+Peggi	None	 
+Scott	Discount: E	 
+Sebastian	Find Money: E	 
+Shizu	None	 
+Tuta	Healing: A+	 
+Yun	Healing: C	 

@@ -1,0 +1,130 @@
+Suikoden III: Gameplay Guides: Initial Equipment / Rune Slot List
+A list covering starting levels for all characters on recruitment, initial equipment, runes and items right from the start, as well as rune slot info.
+Suikoden III: Gameplay Guides: Initial Equipment / Rune Slot List by wataru14 / genso710
+Suikoden III: Gameplay Guides: Initial Equipment / Rune Slot List by wataru14 / genso710
+Index
+
+Legend
+Character List
+
+Notes
+
+Legend
+
+Lv.
+	Character joins at a level relative to the recruiter.
+ 	Empty slot.
+ 	Blocked slot. Cannot be opened under any circumstances.
+Rune / Item	Removable, initial equipped rune / item.
+Rune / Item	Fixed rune / item.
+<#>	Level at which the rune slot opens.
+Lv. / WLv. / Item	Level / Weapon Level / Item may differ based on Suikoden II Import Data.
+
+Character List
+
+ 	Lv.	WLv.	Rune Head	Rune R.Hand	Rune L.Hand	Helmet	Armor	Shield	Other 1	Other 2	Other 3
+	Ace	19	5	 	Double Tusk	<32>	Damaged Casque	New Leather	 	Boots	Pork Bun x9	 
+	Aila	23	5	 	Shield	Earth	Feather Band	New Leather	 	Boots	Medicine C x6	 
+	Alanis	5	2	<53>	Fire	<32>	Bandana	Old Tunic	 	Gloves	Wooden Shoes	Medicine D x6
+	Augustine	+3	9	 	Red Rose	<44>	Feathered Hat	Custom Tunic	 	Star Piece	Leather Pumps	 
+	Ayame	+1	7	 	Shrike	<46>	Feather Band	Ninja Suit	 	Gauntlet	Boots	Berserk Blow x3
+	Bazba	44	11	 	Cyclone	<57>	Blessed Casque	Blessed Chain Mail	 	Power Gloves	Iron Boots	Teriyaki Chicken x4
+	Beecham	42	8	 	Water	<45>	Feathered Hat	Blessed Leather	 	Power Gloves	Iron Boots	 
+	Belle	-2	7	 	<37>	Comet	Feathered Hat	Old Lightning Leather	 	Star Piece	Boots	Kimchi x4
+	Borus	20	5
+	 	 	Sword of Rage	New Helm	New Armor	 	Boots	Flame Amulet	Medicine A x6
+		44	 	 	 		Blessed Helm	Blessed Armor	 	 	 	 	Ch.4 Upgrade
+	Bright	42	 	Spreading Flame	<55>	 	 	 	 	 	 	 
+	Cecile	1	1	 	War Horse	 	Worn-Out Helm	Worn-Out Armor	Iron Shield	Fish Badge	Mole Gloves	Fire Cake x6
+	Chris	20	5	 	<30> / (*1)	Phoenix	New Helm	New Armor	 	Gauntlet	Boots	Medicine A x6
+		 	 	 	 	 	Feathered Hat	Fine Chain Mail	 	Gloves of Destiny	Winged Boots	Medicine A x6	Ch.2 Upgrade
+		 	 	 	 	 	Blessed Helm	Armor of Rage	 	Engraved Gauntlet	Iron Heel Shoes	 	Ch.4 Upgrade
+	Connie	6	 	<45>	 	 	 	 	 	 	 	 
+	Duke	55	13	 	Lightning	<32>	Premier Casque	True Byakko Chain Mail	 	Power Gloves	Iron Boots	Mega Medicine B x4
+	Dupa	47	12	 	Fury	 	Chief's Hat	Blessed Chain Mail	 	Power Gloves	Iron Boots	Skewered Chicken x4
+	Edge	42	11	 	Lightning	<43>	Guardian Casque	Thunderbolt Leather	 	Power Gloves	Winged Boots	Medicine B x6
+	Elaine	54	14	 	Water	Fire	Prosperity Hat	Blessed Leather	 	Wind Amulet	Leather Pumps	Mega Medicine B x4
+	Emily	36	9	 	<25>	Haziness	Silver Hat	Blessed Tunic	 	Belt of Strength	Sandals	Tomato Salad x4
+	Estella	+3	7	<20>	Rage	<45>	Prosperity Hat	Robe of Destiny	 	Lightning Magic Ring	Leather Pumps	 
+	Franz	52	13	 	Lightning	<56>	Fine Casque	Blessed Leather	 	Winged Boots	Beef and Potatoes x4	 
+	Fred	28	7	 	Sword of Thunder	 	Fine Casque	Fine Chain Mail	Kite Shield	Gauntlet	Boots	 
+	Fubar	11	 	Shining Wind	<30>	 	 	 	 	 	 	 
+	Futch	47	12	 	Lightning	<37>	Guardian Casque	Premier Chain Mail	 	Gloves of Destiny	Winged Boots	Mega Medicine B x4
+	Gadget Z	-2	 	 	Gadget	 	 	 	 	 	 	 
+	Gau	54	12	 	Counter	<40>	Blessed Casque	Blessed Chain Mail	 	Gloves of Destiny	Iron Boots	Chicken Cartilage x3
+	Geddoe	20	5	<35>	(*2)	Lightning	New Casque	Damaged Chain Mail	 	Boots	Medicine C x6	 
+	Hallec	34	9	Wrath	 	 	Fine Casque	Earth Chain Mail	 	Belt of Strength	Crab Rice Bowl x1	 
+	Hugo	12	3	 	<35> / (*3)	Wind	Feather Band	Damaged Leather	 	Sandals	Lunch Box x4	 
+	Jacques	18	4	 	Boronda Hawk	<40>	Damaged Casque	New Leather	 	Boots	Tomato Juice x6	 
+	Jimba	33	9	 	 	 	Feather Band	Fine Leate	 	Gauntlet	Sandals	Medicine C x6
+	Joker	22	5	<55>	Isshin	Fire	Damaged Casque	New Tunic	 	Belt of Strength	Sandals	Takoyaki x5
+	Juan	7	2	 	<17>	Waking	Bandana	Damaged Tunic	 	Gloves	Sandals	 
+	Kenji	-2	4	Full Moon	<40>	 	Bandana	Turtle Tunic	 	Belt of strength	Pork Bun x9	 
+	Kogoro	5	 	 	 	<44>	 	 	 	 	 	 
+	Koichi	7	 	 	<38>	 	 	 	 	 	 	 
+	Koroku	5	 	 	<40>	 	 	 	 	 	 	 
+	Kosanji	6	 	 	<47>	 	 	 	 	 	 	 
+	Landis	42	10	 	Drain	<42>	Pale Moon Casque	Blood Armor	 	Gauntlet	Boots	Dark Hot Pot x4
+	Leo	27	7	 	 	<30>	Fine Helm	New Armor	 	Gauntlet	Boots	Belt of Strength
+		45	 	 	 	 	Blessed Helm	Blessed Armor	 	 	 	 	Ch.4 Upgrade
+	Lilly	24	7	 	Sword of Rage	<30>	Feathered Hat	Lightning Leather	 	Gloves	Boots	Medicine B x6
+		44	 	 	 	 	Wind Hat	Thunderbolt Leather	 	 	 	 	Ch.4 Upgrade
+	Luc	40	12	Pale Gate	True Wind	 	Wind Hat	Dream Robe	 	Wind Magic Ring	Wind Amulet	Mega Medicine B x4
+	Lucia	46	9	<50>	Fire	 	Feathered Hat	Thunderbolt Leather	 	Leather Pumps	Feather Earrings	 
+	Lulu	10	2	 	Sword of Cyclone	<35>	Feather Band	Damaged Leather	 	Sandals	Lunch Box x4	 
+	Mel	32	8	<40>	Devil's Doll	<28>	Wind Hat	Turtle Tunic	 	Blue Ribbon	Boots	Maple Syrup x4
+	Melville	6	3	 	<27>	<39>	Old Casque	Patched Leather	 	Wooden Shoes	Sun Badge	Medicine D x6
+	Mua	35	9	 	Sword of Thunder	<36>	Fine Helm	Fine Armor	Guardian Shield	Power Gloves	Boots	Mega Medicine B x4
+	Nash	35	9	 	Water	<40>	Feather Band	Fine Leather	 	Power Gloves	Medicine B x6	Dancing Flames x4
+	Nei	15	4	<45>	<32>	Jongleur	Feather Band	Damaged Tunic	 	Gloves	Wooden Shoes	 
+	Nicolas	56	13	 	 	 	Blessed Helm	Blessed Armor	Earth Shield	Gauntlet	Iron Boots	Cheesecake x6
+	Percival
+	28	7	 	Water	 	Fine Helm	New Armor	 	Boots	Water Amulet	Medicine A x6
+		44	 	 	 	 	Blessed Helm	Blessed Armor	 	 	 	 	Ch.4 Upgrade
+	Piccolo	8	1	<40>	Lightning	Mallet	Pointed Hat	Worn-Out Robe	 	Sacrificial Jizo	Thunder Runner x2	Wind of Sleep x2
+	Queen	19	5	 	<27>	Ripple	Silver Hat	New Leather	 	Gloves	Boots	Medicine C x6
+	Reed	26	6	 	<35>	 	New Casque	New Leather	 	Gloves	Boots	Shortcake x6
+		43	 	 	 	 	 	 	 	 	 	 	Ch.4 Upgrade
+	Rhett	40	9	 	<53>	 	Fine Helm	Fine Leather	 	Fried Ice Cream x6	Mashed Potatoes x4	Butter Cake x6
+	Rico	26	6	 	Water	<45>	Damaged Casque	Fine Leather	 	Boots	Medicine C x6	Thick Egg Roll x4
+	Rody	-2	6	<40>	Firefly	Wall	Bandana	Old Robe	 	Fish Badge	Wooden Shoes	Super Pickles x4
+	Roland	19	5	 	<40>	Great Hawk	New Casque	New Chain Mail	 	Boots	Gloves	Medicine A x6
+		44	 	 	 	 	Blessed Casque	Blessed Chain Mail	 	 	 	 	Ch.4 Upgrade
+	Ruby	50	 	Shining wing	 	<44>	 	 	 	 	 	 
+	Salome	22	6	<50>	Water	<32>	New Casque	New Chain Mail	 	Gloves	Boots	Medicine A x6
+		46	 	 	 	 	Blessed Casque	Blessed Chain Mail	 	 	 	 	Ch.4 Upgrade
+	Samus	25	6	 	 	<15>	New Casque	New Chain Mail	 	Gloves	Boots	Ice Cream x6
+		43	 	 	 	 	 	 	 	 	 	 	Ch.4 Upgrade
+	Sanae Y	-1	7	 	Sickle-Weasel	<36>	New Casque	New Leather	 	Gloves	Water Amulet	 
+	Sarah	39	10	Flowing	Rage	 	Crown of Destiny	Premier Robe	 	Water Magic Ring	Blue Ribbon	Lunch Box x4
+	Sasarai	57	14	 	True Earth	Flowing	Crown of Destiny	Silver White Robe	 	Earth Magic Ring	Reflect Ring	Mega Medicine B x4
+	Sgt. Joe	15	5	 	<25>	Water	Damaged Helm	Damaged Chain mail	 	Power Gloves	Medicine C x6	 
+	Shabon	10	4	<50>	<37>	Wind	Pointed Hat	Old Tunic	 	Fish Badge	Wooden Shoes	Eggs Sunny Side Up x4
+	Sharon	40	11	 	Wind	<48>	Blessed Casque	Blessed Chain Mail	Silver Shield	Gauntlet	Winged Boots	Ice Cream x6
+	Shiba	26	11	 	Warrior	 	New Casque	New Chain Mail	 	Gauntlet	Boots	Minced Chicken x4
+		45	 	 	 	 	Blessed Casque	Blessed Chain Mail	 	Power Gloves	Iron Boots	Minced Chicken x4	Ch.4 Upgrade
+	Thomas	1	1	 	 	<32>	 	Old Tunic	 	Wooden Shoes	Medicine D x6	 
+	Toppo	13	3	 	Earth	<40>	Tulip Hat	Damaged Tunic	 	Mole Gloves	Wooden Shoes	 
+	Twaikin	-1	8	 	 	Warrior	New Helm	Earth Chain Mail	Mole Shield	Gauntlet	 	 
+	Viki	-2	6	<45>	Blinking	<35>	Wizard Hat	New Robe	 	Okonomiyaki x4	Resistance Ring	 
+	Viki	50	12	<45>	Blinking	<35>	Wizard Hat	Robe of Mist	 	Sun Badge	Reflect Ring	Mega Medicine C x4
+	Wan Fu	+1	9	 	<32>	 	Damaged Casque	New Chain Mail	 	Belt of Strength	Boots	 
+	Watari	+3	8	<37>	 	Haziness	Feathered Hat	Ninja Suit	 	Yellow Scarf	Boots	Medicine A x6
+	Wilder	42	10	 	<49>	 	Fine Helm	Fine Leather	 	Silver Beak	Power Gloves	 
+	Yuber	42	13	<45>	Thunder	Eight Devil	Guardian Casque	Premier Chain Mail	 	Engraved Gauntlet	Evasion Ring	Flaming Arrows x4
+	Yuiri	42	12	<50>	Wind	Killer	Guardian Casque	Blessed Leather	 	Gauntlet	Winged Boots	Wind of Sleep x4
+		47	 	 	 	 	 	 	 	 	 	 	Ch.5 Upgrade
+	Yumi	37	12	<50>	Earth	Great Hawk	Fine Casque	Fine Leather	 	Gauntlet	Boots	Mega Medicine B x4
+		45	 	 	 	 	Guardian Casque	Blessed Leather	 	Gauntlet	Winged Boots	Mega Medicine B x4	Ch.5 Upgrade
+
+Notes
+
+1: In Chapter 4 either the True Fire Rune or the True Water Rune will be permanently equipped here. Any rune equipped prior to that will be placed back in the inventory.
+
+2: In Chapter 4 either the True Fire Rune or the True Lightning Rune will be permanently equipped here.
+
+3: In Chapter 4 either the True Fire Rune, the True Lightning Rune or the True Water Rune will be permanently equipped here. Any rune equipped prior to that will be placed back in the inventory.
+
+4: Characters that recieve level upgrades in later chapters refer to minimum levels only. If they're already above that level they will retain that level rather than get reduced.
+
+Compiled by Raww Le Klueze / CelesDestiny

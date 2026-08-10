@@ -1,0 +1,284 @@
+L---------------------* Curatives *------------------------
+001	Medicine D	002	Medicine C
+003	Medicine B	004	Medicine A
+005	Mega Medicine D	006	Mega Medicine C
+007	Mega Medicine B	008	Mega Medicine A
+009	Antitoxin	00A	Throat Drops
+09E	Sacrificial Jizo	09F	Dragon Incense
+--------------------* Stat Stones *-----------------------
+00B	Stone Of Power	00C	Stone Of Skill
+00D	Stone Of Magic	00E	Stone Of Evasion
+00F	Stone Of Mag-Def	010	Stone Of Speed
+011	Stone Of Luck	 
+-------------------* Spell Scrolls *----------------------
+012	Flaming Arrows	013	Dancing Flames
+014	Blazing Wall	016	Thunder Runner
+017	Berserk Blow	018	Soaring Bolt
+01A	Wind Of Sleep	01E	Kindness Drops
+022	Clay Guardian	023	Vengeful Child
+0A0	Escape Scroll	 
+--------------------* Food Items *------------------------
+026	Egg Roll	027	Thick Egg Roll
+028	Scrambled Eggs	029	EggsSunnySideUp
+02A	Mayo Egg	02B	Crab Rice Bowl
+02C	Nukazuke Pickles	02D	Carrot Cake
+02E	Pickled Cucumber	02F	Pickled Cabbage
+030	Super Pickles	031	Kimchi
+032	Tomato Soup	033	Tomato Juice
+034	Cherry Tomato	035	Tomato Miso Soup
+036	Tomato Salad	037	Ripe Tomato
+038	Pork Bun	039	Peach Bun
+03A	Salty Bun	03B	Mapo Bun
+03C	Takoyaki	03D	Pizza Bun
+03E	ButterSautedClam	03F	Clam Chowder
+040	Baked Scallops	041	Steamed Clams
+042	Mayo Shell Fish	043	Spicy Clam Soup
+044	Fried Noodles	045	Kid's Meal
+046	Veggie Noodles	047	Thin Noodles
+048	Okonomiyaki	049	Yakisoba
+04A	Skewered Chicken	04B	Minced Chicken
+04C	ChickenCartilage	04D	Teriyaki Chicken
+04E	Chicken Salad	04F	Karaya Chicken
+050	Ice Cream	051	Shaved Ice
+052	Tomato Ice Cream	053	IceCreamTempura
+054	Fried Ice Cream	055	Grenade Ice
+056	Beef & Potatoes	057	Soy Locusts
+058	Mashed Potatoes	059	Sukiyaki
+05A	Surprise Stew	05B	Spicy Pot Dish
+05C	Cake	05D	Shortcake
+05E	Butter Cake	05F	Black Cake
+060	Cheesecake	061	Fire Cake
+062	Grilled Fish	063	Taiyaki
+064	PreservdMackerel	065	Dried Fish
+066	Muniere	067	RedHotGrilldFish
+068	Gratin	069	Apple Gratin
+06A	Salty Gratin	06B	Crispy Gratin
+06C	Creamed Gratin	06D	Hot Gratin
+06E	Lunch Box	06F	Ladies' Lunch
+070	Rice Meal	071	Sashimi Meal
+072	Fried-Prawn Meal	073	Chili Prawn Meal
+074	Hashed Beef&Rice	075	Royal Tot Meal
+076	Salted Beef	077	Peppered Beef
+078	Mayo Beef	079	Curry Rice
+07A	Fried Rice	07B	Shrimp Pilaf
+07C	Rice With Beans	07D	Mushroom Rice
+07E	Heavy Pilaf	07F	Paella
+080	Ramen	081	Cold Ramen
+082	Salty Ramen	083	Soy Sauce Ramen
+084	Gourmet Ramen	085	Spicy Ramen
+086	Tofu Hot Pot	087	Almond Tofu
+088	Mixed Hot Pot	089	Shabu-Shabu
+08A	Dark Hot Pot	08B	HotBeefTripeStew
+08C	Full Course	08D	Elf's Course
+08E	Kobold's Course	08F	Zexen's Course
+090	Lizard's Course	091	Karayan Special
+092	Special Stew	093	Maple Syrup
+094	Adult Stew	095	Clear Soup
+096	Mild Stew	097	Spicy Stew
+098	Chinese Banquet	099	Candy House
+09A	Salty Creation	09B	Tea Ceremony Set
+09C	Salad Platter	09D	Flaming Ocean SP
+----------------------* Headgear *------------------------
+0A1	Worn-Out Casque	0A2	Old Casque
+0A3	Damaged Casque	0A4	New Casque
+0A5	Fine Casque	0A6	Blessed Casque
+0A7	Guardian Casque	0A8	Premier Casque
+0A9	Pale Moon Casque	0AA	Custom Casque
+0AB	Flame Casque	0AC	Worn-Out Helm
+0AD	Mole Helm	0AE	Old Helm
+0AF	Damaged Helm	0B0	New Helm
+0B1	Fine Helm	0B2	Blessed Helm
+0B3	Premier Helm	0B4	Custom Helm
+0B5	Horned Helm	0B6	Bandana
+0B7	Pointed Hat	0B8	Tulip Hat
+0B9	Feather Band	0BA	Silver Hat
+0BB	Feathered Hat	0BC	Wizard Hat
+0BD	Prosperity Hat	0BE	Crown Of Destiny
+0BF	Chief's Hat	0C0	Wind Hat
+-----------------------* Armor *--------------------------
+0C1	Worn-Out Armor	0C2	Mole Armor
+0C3	Old Armor	0C4	Old Flame Armor
+0C5	Damaged Armor	0C6	New Armor
+0C7	Flame Armor	0C8	Fine Armor
+0C9	Blood Armor	0CA	Blessed Armor
+0CB	Armor Of Rage	0CC	Premier Armor
+0CD	Custom Armor	0CE	Windspun Armor
+0CF	Wrn-OutChainMail	0D0	Old Chain Mail
+0D1	OldByakkoChnMl	0D2	DamagedChainMail
+0D3	New Chain Mail	0D4	Byakko Chain Mail
+0D5	Earth Chain Mail	0D6	Fine Chain Mail
+0D7	GuardianChnMl	0D8	BlessedChainMail
+0D9	TrueByakkoChnMl	0DA	PremierChainMail
+0DB	CustomChainMail	0DC	Dragon Scale
+0DD	Patched Leather	0DE	Old Leather
+0DF	OldLgtngLeather	0E0	Damaged Leather
+0E1	New Leather	0E2	Lightning Leather
+0E3	Fine Leather	0E4	Master Garb
+0E5	Blessed Leather	0E6	ThndrboltLeather
+0E7	Pale Moon Leather	0E8	Premier Leather
+0E9	Custom Leather	0EA	TrueThndrbltLthr
+0EB	Worn-Out Robe	0EC	Old Robe
+0ED	Old Silver Robe	0EE	Damaged Robe
+0EF	New Robe	0F0	Silver Robe
+0F1	Fine Robe	0F2	Robe Of Destiny
+0F3	Blessed Robe	0F4	Silver White Robe
+0F5	Robe Of Mist	0F6	Premier Robe
+0F7	Custom Robe	0F8	Dream Robe
+0F9	Worn-Out Tunic	0FA	Old Tunic
+0FB	OldTurtleTunic	0FC	Damaged Tunic
+0FD	New Tunic	0FE	Turtle Tunic
+0FF	Fine Tunic	100	Ninja Suit
+101	Blessed Tunic	102	BlckWarriorTunic
+103	TunicOfProsprty	104	Premier Tunic
+105	Custom Tunic	106	Taikyoku Tunic
+-----------------------* Shields *------------------------
+107	Wooden Shield	108	Iron Shield
+109	Mole Shield	10A	Kite Shield
+10B	Mangosh	10C	Guardian Shield
+10D	Silver Shield	10E	Chaos Shield
+10F	Earth Shield	 
+----------------------* Footwear *------------------------
+110	Wooden Shoes	111	Sandals
+112	Boots	113	Leather Pumps
+114	Winged Boots	115	Iron Boots
+116	Iron Heel Shoes	 
+------------------------* Rings *-------------------------
+117	Evasion Ring	118	Resistance Ring
+119	Counter Ring	11A	Fire Magic Ring
+11B	Water Magic Ring	11C	LgtngMagicRing
+11D	Wind Magic Ring	11E	Earth Magic Ring
+11F	Prosperity Ring	120	Chain Attack Ring
+121	Reflection Ring	136	Lion God Ring
+-----------------------* Gloves *-------------------------
+122	Gloves	123	Mole Gloves
+124	Gauntlet	125	Power Gloves
+126	Gloves Of Destiny	127	Engraved Gauntlet
+128	Iron Fist	 
+----------------------* Misc Gear *-----------------------
+129	Star Pierce	12A	Sun Badge
+12B	Belt Of Strength	12C	Feather Earrings
+12D	Fish Badge	12E	Water Amulet
+12F	Gold Emblem	130	Wind Amulet
+131	Lightning Amulet	132	PaleMoonNecklace
+133	Flame Amulet	134	Blue Ribbon
+135	Yellow Scarf	137	Silver Beak
+138	Gold Beak	139	BladeTailOrnmt
+13A	DragonTailOrnmt	13B	Rose Brooch
+13C	WhiteRoseBrooch	 
+------------------------* Runes *-------------------------
+13D	Fire	13E	Rage
+13F	True Fire	140	Sword Of Rage
+141	Lightning	142	Thunder
+143	True Lightning	144	Sword Of Thunder
+145	Wind	146	Cyclone
+147	True Wind	148	Sword Of Cyclone
+149	Water	14A	Flowing
+14B	True Water	14C	Earth
+14D	Mother Earth	14E	True Earth
+14F	Blinking	150	Shield
+151	Pale Gate	152	Jongleur
+153	Phoenix	154	Shining Wind
+155	Double Tusk	156	Eight-Devil
+157	Ripple	158	Boronda Hawk
+159	Isshin	15A	War Horse
+15B	Mallet	15C	Shining Wing
+15D	Watari Special	15E	Gadget
+15F	Comet	160	Devil's Doll
+161	Shrike	162	Spreading Flame
+163	Wrath	164	Red Rose
+165	Sickle-Weasel	166	Full Moon
+167	Viper	168	Titan
+169	Unicorn	16A	Goss
+16B	Lion	16C	Great Hawk
+16D	Kite	1B8	Fortune
+1B9	Champion's	1BA	Killer
+1BB	Counter	1BC	Gale
+1BD	Sunbeam	1BE	Wall
+1BF	Haziness	1C0	Drain
+1C1	Barrier	1C2	Balance
+1C3	Fire Sealing	1C4	Skunk
+1C5	Firefly	1C6	Medicine
+1C7	Double-Strike	1C8	Wizard
+1C9	Warrior	1CA	Waking
+1CB	Alertness	1CC	Fury
+1CD	Violence	1CE	Hunter
+----------------------* Decorating *----------------------
+1CF	Dragon Statue S	1D0	Goddess Statue S
+1D1	Knight Statue S	1D2	Hex Doll S
+1D3	Goddess Statue	1D4	Knight Statue
+1D5	Peeing Boy	1D6	Hex Doll
+1D7	Painting: Sunset	1D8	Painting: Ruins
+1D9	Painting: Knight	1DA	Painting: Lady
+1DB	Graffiti	1DC	Scroll Picture
+1DD	Painting: SkyOwl	1DE	Calerian Urn
+1DF	Wu-Ts'ai Urn	1E0	Karayan Urn
+1E1	Celadon Urn	1E2	Failure Urn
+1E3	Gold Urn	1E4	Wht. Porc. Vase
+1E5	Gentian Vase	1E6	Potted Cactus
+1E7	Pine Bonsai	1E8	Plant Vase
+1E9	Rose Vase	1EA	Plum Bonsai
+1EB	Mini-Cactus	 
+-----------------------* Trading *-----------------------
+1EC	Sugar	1ED	Salt
+1EE	Soy Sauce	1EF	Mayonnaise
+1F0	Red Pepper	1F1	Candle
+1F2	Fur	1F3	Flute
+1F4	Wooden Amulet	1F5	Native Clothing
+1F6	Holly Berry	1F7	Wine
+1F8	Deer Antler	1F9	Book
+1FA	Musk	1FB	Crystal Ball
+1FC	Pearls	1FD	Ancient Text
+1FE	Gold Bar	1FF	Asian Herbs
+200	Tomato	201	Melon
+202	Grape	 
+-----------------------* Hammers *-----------------------
+203	Iron Hammer	204	Copper Hammer
+205	Silver Hammer	206	Golden Hammer
+------------------------* Seeds *------------------------
+207	Herb Seeds	208	Tomatoe Seeds
+209	Melon Seeds	20A	Grape Seeds
+----------------------* Medal Sets *---------------------
+20B	Medal Set #1	20C	Medal Set #2
+20D	Medal Set #3	20E	Medal Set #4
+20F	Medal Set #5	 
+----------------------* Recipes *-----------------------
+210	Recipe #1	211	Recipe #2
+212	Recipe #3	213	Recipe #4
+214	Recipe #5	215	Recipe #6
+216	Recipe #7	217	Recipe #8
+218	Recipe #9	219	Recipe #10
+21A	Recipe #11	21B	Recipe #12
+21C	Recipe #13	21D	Recipe #14
+21E	Recipe #15	21F	Recipe #16
+220	Recipe #17	221	Recipe #18
+222	Recipe #19	223	Recipe #20
+---------------------* Old Books *-----------------------
+238	Old Book Vol. 1	239	Old Book Vol. 2
+23A	Old Book Vol. 3	23B	Old Book Vol. 4
+23C	Old Book Vol. 5	23D	Old Book Vol. 6
+23E	Old Book Vol. 7	23F	Old Book Vol. 8
+240	Old Book Vol. 9	241	Old Book Vol. 10
+242	Old Book Vol. 11	243	Old Book Vol. 12
+----------------------* Scripts *------------------------
+244	Script #1	245	Script #2
+246	Script #3	247	Script #4
+248	Script #5	249	Script #6
+-----------------------* Kennels *-----------------------
+24A	Yellow Kennel	24B	Arabian Kennel
+24C	Blue Kennel	24D	Orange Kennel
+24E	Castle Kennel	24F	Beautiful Kennel
+----------------------* Bath Items *---------------------
+250	Devil Beads	251	Kuzzler Beads
+252	Moonlight Beads	253	Ol. Tree Beads
+254	Mil Bath Beads	255	Toy Duckling
+256	Toy Duck	257	Banshak Sake Set
+258	Rose Petals	259	Citrus
+25A	Toy Boat	 
+----------------------* Lottery *-----------------------
+25B	Unchecked Ticket	25C	Winning Ticket
+25D	Losing Ticket	 
+--------------------* Story Items *---------------------<>
+25E	Blinking Mirror	25F	Letter To Zexen
+260	Pentacle	261	LetterTo Knghts
+262	Bundle	263	Screw
+264	Letter Fragment

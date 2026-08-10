@@ -1,0 +1,43 @@
+01 Swing
+02 Accuracy
+03 Damage
+04 Sharpshoot
+05 Counter Attack
+06 Heavy Damage
+07 Continual Attack
+08 Freeze
+09 Thief
+0A Repel
+0B Parry
+0C Shield Protect
+0D Armor Protect
+0E Fire Magic
+0F Water Magic
+10 Wind Magic
+11 Earth Magic
+12 Lightning Magic
+13 Shield Magic
+14 Blinking Magic
+15 Magic Repel
+16 Magic Resistance
+17 Focus
+18 Chanting Volume
+19 Chanting Purity
+1A Holy Dash
+1B Fighting Spirit
+1C Potch Finder
+1D Treasure Hunt
+1E Healing
+1F Cook
+20 Appraisal
+21 Discount
+22 Bujutsu Teacher
+23 Tutor
+24 Rune Sage
+25 Trade-In
+26 Batch
+27 Adrenaline Power
+28 Pale Gate Magic
+29 Sword of Magic
+2A Precision
+2B Magic Rationing
