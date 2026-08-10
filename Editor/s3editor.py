@@ -1330,7 +1330,7 @@ async function renderWeapons(m){const wpn=await api("/api/weapons");
    const mult=+$(`input[data-scale="${idx}"]`).value;
    const w=wpn.find(x=>x.index===idx);
    const levels={};
-   $(`#wl input[data-i="${idx}"][data-lv]`).forEach(inp=>{
+   document.querySelectorAll(`#wl input[data-i="${idx}"][data-lv]`).forEach(inp=>{
     const nv=Math.max(0,Math.min(255,Math.round(+inp.value*mult)));
     inp.value=nv; levels[inp.dataset.lv]=nv;
     inp.dispatchEvent(new Event("change"));});
