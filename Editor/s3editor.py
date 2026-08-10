@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import s3patch as S
 import s3fields as F
+import s3save as SV   # PS2 memory-card save reader (read-only; ISO not required)
 
 ISO_PATH = None
 _backed_up = False
@@ -682,6 +683,28 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, read_weapons())
             if p == "/api/growth":
                 return self._send(200, read_growth())
+            # --- Save editor (PS2 memory card) — independent of any ISO ----------
+            if p == "/api/savecards":
+                roots = {_scan_root, os.path.abspath(os.path.join(_scan_root, "..")),
+                         os.path.abspath(os.path.join(_scan_root, "Saves")),
+                         os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+                         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Saves"))}
+                last = load_config().get("lastCard")
+                return self._send(200, {"root": _scan_root, "lastCard": last,
+                                        "cards": SV.scan_memcards(sorted(roots))})
+            if p == "/api/save-read":
+                path = q.get("path", "")
+                import urllib.parse as _up
+                path = _up.unquote(path)
+                if not os.path.isfile(path):
+                    return self._send(200, {"error": f"file not found: {path}"})
+                try:
+                    saves = SV.read_all_s3_saves(path)
+                except Exception as e:
+                    return self._send(200, {"error": f"could not read card: {e}"})
+                save_config(lastCard=os.path.abspath(path))
+                return self._send(200, {"path": path, "statNames": SV.STAT_NAMES,
+                                        "saves": saves})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -953,8 +976,8 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const tabs=["spells","runes","unites","gear","weapons","shop","characters","hardmode","enemies","reference"];
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference"};
+ const tabs=["spells","runes","unites","gear","weapons","shop","characters","hardmode","enemies","reference","saves"];
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
  $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
  document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
  setTabsEnabled(META.loaded);
@@ -977,7 +1000,10 @@ async function boot(){META=await api("/api/meta");
  });
  if(META.loaded)render(); else pickIso();}
 
-function setTabsEnabled(on){document.querySelectorAll("#nav button").forEach(b=>{b.disabled=!on;});}
+// The Save Editor works on a memory card and needs no ISO, so it stays enabled
+// even before an ISO is picked. Every other tab requires a loaded ISO.
+function setTabsEnabled(on){document.querySelectorAll("#nav button").forEach(b=>{
+ b.disabled=(b.dataset.t==="saves")?false:!on;});}
 function renderIsoHeader(){
  $("#iso").innerHTML=`<button class=act id=pick>${META.loaded?"Change ISO":"Select ISO…"}</button>`+
    (META.loaded?` · <b>${META.iso}</b>`:` <span class=hint>load an ISO to begin</span>`);
@@ -1008,7 +1034,10 @@ async function pickIso(){setActive(true);const m=$("#main");m.innerHTML=spinner(
  $("#openpath").onclick=()=>open($("#isopath").value.trim());
  if($("#openlast"))$("#openlast").onclick=()=>open(META.lastIso);}
 function setActive(clear){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",!clear&&b.dataset.t===TAB));}
-async function render(){if(!META.loaded)return pickIso();setActive();const m=$("#main");m.innerHTML=spinner();
+async function render(){
+ // Save Editor is ISO-independent — allow it with no ISO loaded.
+ if(TAB==="saves"){setActive();const m=$("#main");m.innerHTML=spinner();return renderSaves(m);}
+ if(!META.loaded)return pickIso();setActive();const m=$("#main");m.innerHTML=spinner();
  if(TAB==="spells")return renderSpells(m);
  if(TAB==="runes")return renderRunes(m);
  if(TAB==="unites")return renderUnites(m);
@@ -1018,7 +1047,8 @@ async function render(){if(!META.loaded)return pickIso();setActive();const m=$("
  if(TAB==="characters")return renderChars(m);
  if(TAB==="hardmode")return renderHardMode(m);
  if(TAB==="enemies")return renderEnemies(m);
- if(TAB==="reference")return renderRef(m);}
+ if(TAB==="reference")return renderRef(m);
+ if(TAB==="saves")return renderSaves(m);}
 
 const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
  lightning:"Lightning Rune",thunder:"Thunder Rune",truelightning:"True Lightning Rune",
@@ -1554,6 +1584,76 @@ async function renderRef(m){const items=await api("/api/items");
   items.filter(i=>i.name.toLowerCase().includes(f)||i.id.toString(16).includes(f)).slice(0,400)
    .forEach(i=>{ib.innerHTML+=`<tr><td class=pill>${i.id.toString(16).toUpperCase().padStart(3,'0')}</td><td>${i.name}</td></tr>`;});}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+// ---- Save Editor: reads a PS2 memory card (*.ps2) and decodes S3 save slots. ----
+// Read-only for now: writing needs the save's checksum algorithm, which isn't
+// solved yet. No ISO required — this is a separate subsystem (Editor/s3save.py).
+let SAVE_CARD=null;   // last-opened card path
+async function renderSaves(m){
+ m.innerHTML=spinner("scanning for PS2 memory cards…");
+ const d=await api("/api/savecards");
+ const rows=(d.cards||[]).map(c=>`<tr>
+   <td>${c.name}</td><td class=hint>${c.mb} MB</td>
+   <td>${c.hasS3?'<span class="pill aoe">Suikoden III</span>':'<span class=hint>no S3 save</span>'}</td>
+   <td class=hint style=word-break:break-all>${c.path}</td>
+   <td><button class=act data-card="${encodeURIComponent(c.path)}" ${c.hasS3?'':'disabled'}>Open</button></td></tr>`).join("");
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Save Editor <span class=pill>memory card · read-only</span></h3>
+   <div class=hint>Opens an 8&nbsp;MB PS2 memory-card image (<b>.ps2</b>/.mcd) and reads its Suikoden III
+    save slots — no ISO needed, nothing is written. Cards found near ${d.root}.
+    Writing back isn't enabled yet (the save's checksum isn't cracked), so this is a viewer for now.</div>
+   <table><thead><tr><th>File</th><th>Size</th><th>Contains</th><th>Path</th><th></th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=5 class=hint>no PS2 memory cards found nearby — enter a full path below</td></tr>'}</tbody></table>
+   ${d.lastCard?`<div class=row style="margin-top:12px;align-items:center">
+     <button class=act id=savelast>Reopen last card</button>
+     <span class=hint style=word-break:break-all>${d.lastCard}</span></div>`:""}
+   <div class=row style=margin-top:12px><label style=flex:1>Or enter full path
+     <input id=cardpath style=width:100% placeholder="/path/to/Mcd001.ps2" value="${d.lastCard?String(d.lastCard).replace(/"/g,"&quot;"):""}"></label>
+     <button class=act id=cardopen>Open</button></label></div>
+   <div id=carderr class=hint style=color:#e88></div></div>
+   <div id=savebody></div>`;
+ m.querySelectorAll("[data-card]").forEach(b=>b.onclick=()=>openCard(decodeURIComponent(b.dataset.card)));
+ if($("#savelast"))$("#savelast").onclick=()=>openCard(d.lastCard);
+ $("#cardopen").onclick=()=>openCard($("#cardpath").value.trim());
+ if(SAVE_CARD)openCard(SAVE_CARD);
+}
+async function openCard(path){
+ if(!path)return; SAVE_CARD=path;
+ const body=$("#savebody"); if(body)body.innerHTML=spinner("reading save…");
+ const r=await api("/api/save-read?path="+encodeURIComponent(path));
+ if(r.error){$("#carderr").textContent=r.error; if(body)body.innerHTML=""; return;}
+ $("#carderr").textContent="";
+ renderSaveSlots(r);
+}
+function renderSaveSlots(r){
+ const body=$("#savebody"); if(!body)return;
+ if(!r.saves.length){body.innerHTML=`<div class=card><div class=hint>No Suikoden III save found on this card.</div></div>`;return;}
+ const statCols=r.statNames||[];
+ const slotTabs=r.saves.map((s,i)=>`<button class="act sec" data-slot=${i}>${s.label}</button>`).join("");
+ body.innerHTML=`<div class=card><div class=row style="align-items:center;gap:8px">
+    <b>Save slot:</b> ${slotTabs}
+    <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
+   <div id=slotbody></div>`;
+ function drawSlot(i){
+  const s=r.saves[i];
+  body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
+  $("#slotmeta").innerHTML=`${s.folder} · leader id ${s.global.partyLeader} · story phase ${s.global.storyPhase} · checksum 0x${s.checksumWord.toString(16).toUpperCase()}`;
+  // only show characters that look recruited/active (nonzero level or HP)
+  const live=s.characters.filter(c=>c.level>0||c.curHP>0||c.expToNext>0);
+  const head=`<thead><tr><th>#</th><th>Character</th><th>Lv</th><th>HP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+  const rowsHTML=c=>`<tr data-name="${c.name.toLowerCase()}"><td class=hint>${c.rosterIndex}</td>
+    <td>${c.name}</td><td>${c.level}</td><td>${c.curHP}</td><td class=hint>${c.expToNext}</td>
+    ${statCols.map(n=>`<td>${c.stats[n]}</td>`).join("")}</tr>`;
+  $("#slotbody").innerHTML=`<div class=card>
+     <div class=row style="margin-bottom:8px"><input class=search id=sq placeholder="filter characters…">
+      <span class=hint>${live.length} recruited/active of ${s.characters.length} roster slots.
+       Stat columns are a best-effort decode of the record's stat block (slot 5 is unused in-game).</span></div>
+     <table>${head}<tbody id=sb></tbody></table></div>`;
+  function draw(f=""){$("#sb").innerHTML=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f).map(rowsHTML).join("");}
+  draw();$("#sq").oninput=e=>draw(e.target.value.toLowerCase());
+ }
+ body.querySelectorAll("[data-slot]").forEach(b=>b.onclick=()=>drawSlot(+b.dataset.slot));
+ drawSlot(0);
+}
 boot();
 </script></body></html>"""
 
