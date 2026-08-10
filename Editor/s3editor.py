@@ -946,6 +946,14 @@ nav button{background:transparent;color:var(--mut);border:0;padding:8px 14px;bor
 nav button:hover:not(:disabled):not(.on){background:var(--panel2);color:var(--ink)}
 nav button.on{background:var(--acc);color:var(--accink);font-weight:600}
 nav button:disabled{opacity:.35;cursor:not-allowed}
+/* "Other" hover dropdown: open on hover or keyboard focus-within */
+.navgroup{position:relative;display:inline-flex}
+.navmenu{position:absolute;top:100%;left:0;min-width:150px;display:none;flex-direction:column;gap:2px;
+ padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+ box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:40}
+.navgroup:hover .navmenu,.navgroup:focus-within .navmenu{display:flex}
+.navgroup:has(.navtrig:disabled) .navmenu{display:none!important}
+.navmenu button{width:100%;text-align:left}
 main{padding:18px;max-width:1120px;margin:0 auto}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -1126,10 +1134,19 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const tabs=["characters","spells","runes","unites","gear","weapons","hardmode","shop","enemies","text","reference","saves"];
  const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
- $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
- document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
+ // top-level bar; "Other" is a hover dropdown holding the less-used tabs
+ const topTabs=["characters","spells","runes","unites","gear","weapons","hardmode"];
+ const otherTabs=["shop","enemies","text","reference"];
+ const btn=t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`;
+ window.OTHER_TABS=otherTabs;
+ $("#nav").innerHTML=
+   topTabs.map(btn).join("")
+   +`<div class=navgroup id=navother><button type=button class=navtrig data-group=other>Other ▾</button>`
+   +`<div class=navmenu>${otherTabs.map(btn).join("")}</div></div>`
+   +btn("saves");
+ document.querySelectorAll("#nav button[data-t]").forEach(b=>b.onclick=()=>{
+   if(b.disabled)return;TAB=b.dataset.t;render();});
  setTabsEnabled(META.loaded);
  renderIsoHeader();
  const chk=$("#backupChk");chk.checked=(META.backupEnabled!==false);
@@ -1152,8 +1169,9 @@ async function boot(){META=await api("/api/meta");
 
 // The Save Editor works on a memory card and needs no ISO, so it stays enabled
 // even before an ISO is picked. Every other tab requires a loaded ISO.
-function setTabsEnabled(on){document.querySelectorAll("#nav button").forEach(b=>{
- b.disabled=(b.dataset.t==="saves")?false:!on;});}
+function setTabsEnabled(on){document.querySelectorAll("#nav button[data-t]").forEach(b=>{
+ b.disabled=(b.dataset.t==="saves")?false:!on;});
+ const trig=document.querySelector("#nav .navtrig");if(trig)trig.disabled=!on;}
 function renderIsoHeader(){
  $("#iso").innerHTML=`<button class=act id=pick>${META.loaded?"Change ISO":"Select ISO…"}</button>`+
    (META.loaded?` · <b>${META.iso}</b>`:` <span class=hint>load an ISO to begin</span>`);
@@ -1183,7 +1201,9 @@ async function pickIso(){setActive(true);const m=$("#main");m.innerHTML=spinner(
  m.querySelectorAll("[data-path]").forEach(b=>b.onclick=()=>open(decodeURIComponent(b.dataset.path)));
  $("#openpath").onclick=()=>open($("#isopath").value.trim());
  if($("#openlast"))$("#openlast").onclick=()=>open(META.lastIso);}
-function setActive(clear){document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",!clear&&b.dataset.t===TAB));}
+function setActive(clear){document.querySelectorAll("#nav button[data-t]").forEach(b=>b.classList.toggle("on",!clear&&b.dataset.t===TAB));
+ const trig=document.querySelector("#nav .navtrig");
+ if(trig)trig.classList.toggle("on",!clear&&(window.OTHER_TABS||[]).includes(TAB));}
 async function render(){
  // Save Editor is ISO-independent — allow it with no ISO loaded.
  if(TAB==="saves"){setActive();const m=$("#main");m.innerHTML=spinner();return renderSaves(m);}
