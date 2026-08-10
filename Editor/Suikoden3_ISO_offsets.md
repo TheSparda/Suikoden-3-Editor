@@ -854,3 +854,17 @@ sample saves are byte-identical here and hold the defaults). So detect_carryover
 "S1/S2 data loaded" when those names differ from the defaults, else reports "not detected".
 Surfaced as read-only pills in the Save Editor meta card. Honest limitation: with only
 default-bearing saves available, this is a name-based heuristic, not a confirmed flag.
+
+## Save Editor v7: skills, weapon level, party composition, recruited flag (2026-08-10)
+- SKILLS: 8 slots per character at block +0x10, each (skill id u8, rank u8). Verified vs
+  the skill-id table (Hugo: Heavy Damage/Counter/Continual/Parry/Healing/Swing/Wind/Fire;
+  Chris: Parry/Damage/Repel/Armor Protect/...). Editable per slot (skill + rank 0-15).
+- WEAPON LEVEL: block +0x0D (u8, 1-16), now editable alongside level.
+- PARTY COMPOSITION: 6 u16 member char-ids at file 0x3216 (exe list1 id space), 0=empty.
+  New "Party" sub-tab picks who fills each of the 6 battle slots. Verified: read real
+  names (Hugo/Fubar/Chris/Geddoe/Cecile), edit persisted, checksum stayed 0.
+- RECRUITED flag: a character block is "recruited" when initialized (level>0 or any
+  stat>0) vs all-zero. Shown as a per-character badge; a "recruited only" filter (default
+  on) hides the ~4 empty roster slots.
+All verified end-to-end on card clones (600 skill dropdowns render, party + skill edits
+persist, ECC + checksum valid).

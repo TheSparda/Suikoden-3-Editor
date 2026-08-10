@@ -712,9 +712,10 @@ class Handler(BaseHTTPRequestHandler):
                 for sv in saves:
                     lid = sv.get("global", {}).get("partyLeader")
                     sv["leaderName"] = charById.get(str(lid), "")
+                skills = [{"id": k, "name": v} for k, v in sorted(S.load_skill_ids().items())]
                 return self._send(200, {"path": path, "statNames": SV.STAT_NAMES,
                                         "saves": saves, "items": items,
-                                        "charById": charById})
+                                        "charById": charById, "skills": skills})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -766,7 +767,8 @@ class Handler(BaseHTTPRequestHandler):
                                           body.get("edits", {}),
                                           make_backup=body.get("backup", True),
                                           inv_edits=body.get("invEdits", {}),
-                                          name_edits=body.get("nameEdits", {}))
+                                          name_edits=body.get("nameEdits", {}),
+                                          party_edits=body.get("partyEdits", {}))
                 return self._send(200, res)
             return self._send(404, {"error": "not found"})
         except Exception as e:
@@ -1669,22 +1671,32 @@ function renderSaveSlots(r){
  const ITEMNAME={}; SAVE_ITEMS.forEach(i=>ITEMNAME[i.id]=i.name);
  const itemOpts=`<option value="0">— empty —</option>`+SAVE_ITEMS.map(i=>
    `<option value="${i.id}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`).join("");
+ const SKILLS=r.skills||[];
+ const SKILLNAME={}; SKILLS.forEach(s=>SKILLNAME[s.id]=s.name);
+ const skillOpts=`<option value="0">— none —</option>`+SKILLS.map(s=>
+   `<option value="${s.id}">${s.id.toString(16).toUpperCase().padStart(2,'0')} · ${s.name}</option>`).join("");
+ const CHARBY=r.charById||{};  // {id: name} for party picker
+ const charOpts=`<option value="0">— empty —</option>`+Object.entries(CHARBY)
+   .sort((a,b)=>(+a[0])-(+b[0])).map(([id,nm])=>`<option value="${id}">${(+id).toString().padStart(3,'0')} · ${nm}</option>`).join("");
  const slotTabs=r.saves.map((s,i)=>`<button class="act sec" data-slot=${i}>${s.label}</button>`).join("");
  body.innerHTML=`<div class=card><div class=row style="align-items:center;gap:8px">
     <b>Save slot:</b> ${slotTabs}
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
  // pending edits for the CURRENT slot
- let EDITS={}, INV={}, NAMES={}, SUB="chars";
+ let EDITS={}, INV={}, NAMES={}, PARTY={}, SUB="chars", RECRUITED_ONLY=true;
  function setEdit(ridx,key,val,stat){
   EDITS[ridx]=EDITS[ridx]||{};
   if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
   else EDITS[ridx][key]=val;}
- function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length;}
+ function setSkill(ridx,slot,field,val){
+  EDITS[ridx]=EDITS[ridx]||{};EDITS[ridx].skills=EDITS[ridx].skills||{};
+  EDITS[ridx].skills[slot]=EDITS[ridx].skills[slot]||{};EDITS[ridx].skills[slot][field]=val;}
+ function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length||Object.keys(PARTY).length;}
  function markSaveDirty(){const w=$("#savewrite");if(w){w.disabled=!dirty();w.textContent=dirty()?"● Write to card":"Write to card";}}
 
  function drawSlot(i){
-  const s=r.saves[i]; EDITS={}; INV={}; NAMES={};
+  const s=r.saves[i]; EDITS={}; INV={}; NAMES={}; PARTY={};
   body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
   const meta=s.meta||{};
   const leaderTxt=s.leaderName?`Leader ${s.leaderName}`:`Leader id ${s.global.partyLeader} (guest/NPC)`;
@@ -1715,6 +1727,7 @@ function renderSaveSlots(r){
     <div class=card>
      <div class=subtabs>
       <button data-sub=chars class=on>Characters (${live.length})</button>
+      <button data-sub=party>Party</button>
       <button data-sub=items>Inventory (${invCount})</button></div>
      <div class=row style="margin-bottom:8px;align-items:center">
       <input class=search id=sq placeholder="filter…">
@@ -1734,21 +1747,33 @@ function renderSaveSlots(r){
   function drawChars(f=""){
    const numIn=(c,k,val,stat)=>`<input type=number value="${val}" data-ri=${c.rosterIndex}`+
      (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
-   const shown=live.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f);
-   // Per-character card: a compact stats table (Lv/HP/MaxHP/EXP + 8 stats) with the
-   // 9 equipment dropdowns shown inline directly beneath it — always visible.
-   const statHead=`<thead><tr><th>Lv</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
+   const pool=RECRUITED_ONLY?live:s.characters;
+   const shown=pool.filter(c=>c.name.toLowerCase().includes(f)||String(c.rosterIndex)===f);
+   // Per-character card: stats row (Lv/WpnLv/HP/MaxHP/EXP + 8 stats), then equipment,
+   // then the 8 skill slots — all inline and always visible.
+   const statHead=`<thead><tr><th>Lv</th><th>Wpn</th><th>HP</th><th>MaxHP</th><th>EXP→next</th>${statCols.map(n=>`<th>${n}</th>`).join("")}</tr></thead>`;
    const card=c=>`<div class=card style="margin:0 0 12px;padding:12px 14px">
       <div style="font-weight:600;font-size:15px;color:var(--acc2);margin-bottom:6px">${c.name}
-        <span class=hint style=font-weight:400>#${c.rosterIndex}</span></div>
+        <span class=hint style=font-weight:400>#${c.rosterIndex}</span>
+        ${c.recruited?'<span class="pill aoe" style=font-size:11px>recruited</span>':'<span class=pill style=font-size:11px>not recruited</span>'}</div>
       <div class=tablewrap><table class=savetbl>${statHead}<tbody><tr>
-        <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"curHP",c.curHP)}</td>
-        <td>${numIn(c,"maxHP",c.maxHP)}</td><td>${numIn(c,"expToNext",c.expToNext)}</td>
+        <td>${numIn(c,"level",c.level)}</td><td>${numIn(c,"weaponLevel",c.weaponLevel)}</td>
+        <td>${numIn(c,"curHP",c.curHP)}</td><td>${numIn(c,"maxHP",c.maxHP)}</td>
+        <td>${numIn(c,"expToNext",c.expToNext)}</td>
         ${statCols.map(n=>`<td>${numIn(c,null,c.stats[n],n)}</td>`).join("")}
       </tr></tbody></table></div>
-      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px">
+      <div class=hint style="margin:8px 2px 2px">Equipment</div>
+      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:2px">
       ${EQ.map(([key,lbl])=>`<label class=hint style="flex-direction:column;gap:3px;align-items:stretch">${lbl}
         <select data-eqri=${c.rosterIndex} data-eq=${key} data-def="${c.equip[key]||0}">${eqItemOpts}</select></label>`).join("")}
+      </div>
+      <div class=hint style="margin:10px 2px 2px">Skills</div>
+      <div class=lvgrid style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:2px">
+      ${(c.skills||[]).map(sk=>`<div style="display:flex;flex-direction:column;gap:3px">
+        <select data-skri=${c.rosterIndex} data-skslot=${sk.slot} data-skf=id data-def="${sk.id}">${skillOpts}</select>
+        <label class=hint style="flex-direction:row;gap:4px;align-items:center">rank
+          <input type=number min=0 max=15 style=width:52px value="${sk.rank}" data-skri=${c.rosterIndex} data-skslot=${sk.slot} data-skf=rank data-def="${sk.rank}"></label>
+      </div>`).join("")}
       </div></div>`;
    $("#subview").innerHTML=shown.map(card).join("")||`<div class=hint>no characters</div>`;
    decorate($("#subview"));
@@ -1760,7 +1785,11 @@ function renderSaveSlots(r){
      setSel(sel,+sel.dataset.def);
      sel.addEventListener("change",()=>{
        const ri=+sel.dataset.eqri;EDITS[ri]=EDITS[ri]||{};EDITS[ri].equip=EDITS[ri].equip||{};
-       EDITS[ri].equip[sel.dataset.eq]=+sel.value;markSaveDirty();});});}
+       EDITS[ri].equip[sel.dataset.eq]=+sel.value;markSaveDirty();});});
+   $("#subview").querySelectorAll("[data-skf]").forEach(el=>{
+     if(el.tagName==="SELECT")setSel(el,+el.dataset.def);
+     const ev=el.tagName==="SELECT"?"change":"change";
+     el.addEventListener(ev,()=>{setSkill(+el.dataset.skri,+el.dataset.skslot,el.dataset.skf,+el.value);markSaveDirty();});});}
 
   let INVCAT="regular";  // "regular" (consumables+equipment) or "key"
   // inv is now an array of bags: [{region, base, items:[...]}]. Early game these are the
@@ -1798,13 +1827,30 @@ function renderSaveSlots(r){
      const ev=inp.tagName==="SELECT"?"change":"blur";
      inp.addEventListener(ev,()=>{const sl=+inp.dataset.invslot;INV[sl]=INV[sl]||{};INV[sl][inp.dataset.k]=+inp.value;markSaveDirty();});});}
 
+  function drawParty(){
+   const mem=s.party||[];
+   const rows=mem.map((cid,slot)=>`<tr><td class=hint>Slot ${slot+1}</td>
+     <td><select data-partyslot=${slot} data-def="${cid}">${charOpts}</select></td>
+     <td class=hint>${CHARBY[cid]||(cid?('id '+cid+' (guest/NPC)'):'—')}</td></tr>`).join("");
+   $("#subview").innerHTML=`<div class=tablewrap><table class=savetbl>
+     <thead><tr><th>Party</th><th>Character</th><th>Current</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+   $("#subview").querySelectorAll("select[data-partyslot]").forEach(sel=>{
+     setSel(sel,+sel.dataset.def);
+     sel.addEventListener("change",()=>{PARTY[+sel.dataset.partyslot]=+sel.value;markSaveDirty();});});
+   decorate($("#subview"));}
   function showSub(){
    $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.classList.toggle("on",b.dataset.sub===SUB));
    $("#sq").value="";
-   if(SUB==="chars"){$("#subhint").innerHTML=`Each character shows stats plus equipped runes/armor inline. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.`;drawChars();}
+   if(SUB==="chars"){
+    $("#subhint").innerHTML=`Each character shows stats, equipped runes/armor, and skill slots inline. Stat labels are a best-effort decode (one slot is unused in-game). A .bak is made first; after writing, load the save in-game and resave.
+     &nbsp;<label style="cursor:pointer"><input type=checkbox id=reconly ${RECRUITED_ONLY?'checked':''}> recruited only</label>`;
+    drawChars();
+    const rc=$("#reconly");if(rc)rc.onchange=()=>{RECRUITED_ONLY=rc.checked;drawChars($("#sq").value.toLowerCase());};}
+   else if(SUB==="party"){$("#subhint").innerHTML=`Active battle party (up to 6). Pick who fills each slot. Changing this swaps the in-field party; leave story-required leaders in place to avoid soft-locks. A .bak is made first.`;drawParty();}
    else{$("#subhint").innerHTML=`Party + storage items (id · quantity). Change an item or its count. Only non-empty slots are shown. A .bak is made first.`;drawItems();}}
   $("#slotbody").querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{SUB=b.dataset.sub;showSub();});
-  $("#sq").oninput=e=>{const f=e.target.value.toLowerCase();SUB==="chars"?drawChars(f):drawItems(f);};
+  $("#sq").oninput=e=>{const f=e.target.value.toLowerCase();
+    if(SUB==="chars")drawChars(f);else if(SUB==="items")drawItems(f);else drawParty();};
   // editable name fields (in the meta card, not #subview — decorate + wire directly)
   decorate($("#slotbody"));
   $("#slotbody").querySelectorAll("input[data-name]").forEach(inp=>inp.addEventListener("change",()=>{
@@ -1815,7 +1861,7 @@ function renderSaveSlots(r){
    if(!dirty()){toast("no edits");return;}
    $("#savemsg").textContent="writing…";
    const res=await api("/api/save-write",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,backup:$("#savebak").checked})});
+     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,partyEdits:PARTY,backup:$("#savebak").checked})});
    if(res.ok){$("#savemsg").innerHTML=`wrote ${res.changed} field(s), ${res.clustersWritten} clusters · checksum 0x${res.checksum.toString(16).toUpperCase()}`;
     toast("saved to card");openCard(SAVE_CARD);}
    else{$("#savemsg").textContent="error: "+(res.error||"?");toast("write failed");}
