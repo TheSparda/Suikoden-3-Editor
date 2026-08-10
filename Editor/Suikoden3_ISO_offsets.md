@@ -712,3 +712,43 @@ dictionary to validate our editor:
 - The PDF also documents Recruit digits + skill/item/weapon-level value caps
   (skill 0-8, weapon level 1-16, item qty 0-9) — all consistent with our editor.
 Net: external reference corroborates our data; no corrections required.
+
+## Codebreaker PDF + Suikosource thread audit (2026-08-10)
+Checked the newly-added Pyriel Codebreaker FAQ PDF and two Suikosource threads
+(t=922 "[Codes] Codebreaker", t=14832 "Question About Stat Modifier Codes"),
+following every external link (Wayback for the dead ones).
+
+Codebreaker/GameShark PDF (Pyriel v1.00, GameFAQs id 22704):
+- Same author/content family as the local GS/CB text. Every code writes LIVE EE RAM:
+  Fast-Level-Up per char at 0x2Bxxxxxx, stat mods at 0x4Bxx8664/0x09xxxxxx,
+  skill-slot 5-8 mods at 0x0Bxxxxxx, party/support/recruit at 0x11xx / 0x1Bxxxxxx.
+  NONE touch the boot-ELF static tables we edit. Re-confirms the boundary; no new offsets.
+- Skill-slot codes enumerate the full 79+ playable roster in the same canonical order
+  we use (Hugo, Chris, Geddoe, Lucia, Fred, Rico, Viki, Fubar, SgtJoe, Lulu, Aila,
+  Roland, Lilly, ...). Corroborates our list ordering.
+
+Suikosource threads: purely usage discussion (buying a Codebreaker, recruit codes for
+Lulu/Jimba = 1196B624/1196B67E, a controller-hook stat=100 MIPS snippet at 0x200C4FF4).
+All live-RAM. No static ISO offsets. Links: herrvillain.com (dead, 410),
+cmgsccc.com (now codetwink.com, live), piedpiperplayers.com (dead), gamehacking.org (live).
+
+** Wayback recovery of herrvillain.com/codebreaker/suikoden (the real prize) **
+- codes/digits.htm: Skill-digit table matches ours EXACTLY (00 Nothing, 01 Swing,
+  02 Accuracy, 03 Damage, 05 Counter, 06 Heavy Damage, 08 Freeze, 0E Fire Magic ...
+  2A Precision, 2B Magic Rationing). Independent confirmation of the skill IDs and
+  the gear stat/skill fix.
+- updates/offsets.htm = a SAVE-FILE offset map (memory base 0x0196xxxx, live save RAM):
+  * Each character block is 0x8C = 140 bytes -> EXACTLY our list1 stat-record stride.
+    Order: Flame Champion(real), Hugo, Chris, Geddoe, Lucia, Fred, Rico, Viki, Fubar,
+    Sgt.Joe, Lulu, Aila, Roland, Lilly, Reed, Samus, Ace, Leo, Beecham, Percival, Borus,
+    Queen, Jacques, Joker, Duke, Gau, ... (matches our roster). Strong cross-check that
+    our 140-byte character records + ordering are correct.
+  * Other save regions: Recruit Modifiers 0x0232, Mountain Pass chest 0x1460, party
+    0x3216, Party/Storage Inventory 0x7060-0x76EF, Kidd Investigations 0xC7F0,
+    Book of Beasts 0xCDD0, Treasure Boss Timers 0xCE20. All are SAVE-FILE structures,
+    not ISO/boot-ELF tables -> not something our ISO editor writes, but useful as a
+    roster/stride oracle.
+CONCLUSION: All three sources are live-RAM / save-file oriented. They independently
+VALIDATE our skill IDs, character ordering, and 140-byte stat-record stride, but expose
+no new static ISO tables (enemy HP/drops, EXP curve, shop inventory remain code/script).
+No editor changes required.
