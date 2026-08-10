@@ -477,3 +477,39 @@ from the real ISO (StagingIso.rd reads the file, overlays pending), so opening a
 ISO reflects its actual current values. Endpoints: POST /api/save, POST /api/revert;
 meta.pending reports staged byte count. Verified on a clone: edit stages (disk
 unchanged, no backup), save flushes + backs up, revert clears without touching disk.
+
+## Enemy stats — research spike (2026-08-09, INCONCLUSIVE)
+Goal: a "hard mode" that multiplies enemy HP/damage. Requires the enemy stat table.
+
+FOUND (solid):
+- Enemy NAME table: file 0x3E74E0, 100 entries, stride 0x14, names inline
+  (10-char truncated, e.g. "ZombUnicrn","TrollDragn"). Names indexed by number,
+  NOT by pointer — a scan for u32 pointers to name-string starts returned 0.
+
+NOT FOUND (the stat/HP table):
+Ground truth: 68 enemies' Lv+HP parsed from Suikosource bestiary
+(bestiary.php, fetched past Anubis with headed Chromium). Tests run against a clone:
+- Parallel-to-names array (base+i*stride, HP at fixed field): best 8/65 (Blade
+  Bunny only — coincidence). Tried strides 0x18..0x48, all u16 fields.
+- Dense HP+level co-location clusters in ELF: two hotspots (0x3AC800, 0x3E6xxx)
+  both turned out to be repetitive non-stat blocks (animation/identity matrices,
+  0x08-0x0A spacing).
+- Disassembled the ONE code site that loads the name-table address (code va
+  0x16C70BC / file 0x10E8B4). Addresses it computes nearby:
+    0x3E13A0, 0x3E69F0, 0x3E74E0(names), 0x3B0FA8, 0x3B1088, 0x3E0B68, 0x400BC0.
+  The candidate at 0x3E69F0 is exactly 0x1C*100 below the name table (structurally
+  a parallel 100xrecord table!) but its columns are NOT HP: +0x12 is constant 100,
+  +0x0A/+0x0C only 10-14/100 land in the HP set, in no consistent order. This looks
+  like an AI/encounter/identity table, not base stats.
+- ETC.BIN (386MB): HP values appear everywhere (compressed/asset data); no isolable
+  table via raw u16 search.
+
+CONCLUSION: base enemy HP/ATK is not a plain flat u16 table adjacent to the names.
+Most likely either (a) packed inside a big .BIN archive that must be unpacked first,
+or (b) HP is derived from level via a growth formula in battle code (so there is no
+HP field to scale). A reliable hard-mode needs deeper RE (disassemble the battle
+damage/HP-init routine) or archive unpacking — not shipped.
+
+ALTERNATIVE that IS shippable with what we control: tune player-side knobs
+(reduce party spell/unite power, nerf healing runes) for a harder game without the
+enemy table. Not attempted yet.
