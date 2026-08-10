@@ -1007,7 +1007,7 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
 <div id=toast></div>
 <script>
 const $=s=>document.querySelector(s), api=(u,o)=>fetch(u,o).then(r=>r.json());
-let META={}, TAB="spells", DIRTY=false;
+let META={}, TAB="characters", DIRTY=false;
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
 // theme: 'crimson' (default dark) or 'parchment' (light menu look). Persisted in
 // BOTH localStorage and a cookie (1yr) so it survives even when one is unavailable
@@ -1083,7 +1083,7 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const tabs=["spells","runes","unites","gear","weapons","shop","characters","text","hardmode","enemies","reference","saves"];
+ const tabs=["characters","spells","runes","unites","gear","weapons","hardmode","shop","enemies","text","reference","saves"];
  const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
  $("#nav").innerHTML=tabs.map(t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`).join("");
  document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{if(b.disabled)return;TAB=b.dataset.t;render();});
@@ -1135,7 +1135,7 @@ async function pickIso(){setActive(true);const m=$("#main");m.innerHTML=spinner(
     body:JSON.stringify({path})});
   if(r.ok){META=await api("/api/meta");
    setTabsEnabled(true);renderIsoHeader();
-   TAB="spells";render();toast("loaded "+r.iso);}
+   TAB="characters";render();toast("loaded "+r.iso);}
   else{$("#isoerr").textContent=r.error;}}
  m.querySelectorAll("[data-path]").forEach(b=>b.onclick=()=>open(decodeURIComponent(b.dataset.path)));
  $("#openpath").onclick=()=>open($("#isopath").value.trim());
