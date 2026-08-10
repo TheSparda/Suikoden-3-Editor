@@ -769,7 +769,8 @@ class Handler(BaseHTTPRequestHandler):
                                           inv_edits=body.get("invEdits", {}),
                                           name_edits=body.get("nameEdits", {}),
                                           party_edits=body.get("partyEdits", {}),
-                                          recruit_edits=body.get("recruitEdits", {}))
+                                          recruit_edits=body.get("recruitEdits", {}),
+                                          gold=body.get("gold"))
                 return self._send(200, res)
             return self._send(404, {"error": "not found"})
         except Exception as e:
@@ -1685,7 +1686,7 @@ function renderSaveSlots(r){
     <span class=hint id=slotmeta style=margin-left:auto></span></div></div>
    <div id=slotbody></div>`;
  // pending edits for the CURRENT slot
- let EDITS={}, INV={}, NAMES={}, PARTY={}, RECRUIT={}, SUB="chars", HIDE_EMPTY=true;
+ let EDITS={}, INV={}, NAMES={}, PARTY={}, RECRUIT={}, GOLD=null, SUB="chars", HIDE_EMPTY=true;
  function setEdit(ridx,key,val,stat){
   EDITS[ridx]=EDITS[ridx]||{};
   if(stat){EDITS[ridx].stats=EDITS[ridx].stats||{};EDITS[ridx].stats[stat]=val;}
@@ -1693,18 +1694,18 @@ function renderSaveSlots(r){
  function setSkill(ridx,slot,field,val){
   EDITS[ridx]=EDITS[ridx]||{};EDITS[ridx].skills=EDITS[ridx].skills||{};
   EDITS[ridx].skills[slot]=EDITS[ridx].skills[slot]||{};EDITS[ridx].skills[slot][field]=val;}
- function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length||Object.keys(PARTY).length||Object.keys(RECRUIT).length;}
+ function dirty(){return Object.keys(EDITS).length||Object.keys(INV).length||Object.keys(NAMES).length||Object.keys(PARTY).length||Object.keys(RECRUIT).length||GOLD!==null;}
  function markSaveDirty(){const w=$("#savewrite");if(w){w.disabled=!dirty();w.textContent=dirty()?"● Write to card":"Write to card";}}
 
  function drawSlot(i){
-  const s=r.saves[i]; EDITS={}; INV={}; NAMES={}; PARTY={}; RECRUIT={};
+  const s=r.saves[i]; EDITS={}; INV={}; NAMES={}; PARTY={}; RECRUIT={}; GOLD=null;
   body.querySelectorAll("[data-slot]").forEach(b=>b.style.outline=(+b.dataset.slot===i)?"2px solid var(--acc)":"");
   const meta=s.meta||{};
   const leaderTxt=s.leaderName?`Leader ${s.leaderName}`:`Leader id ${s.global.partyLeader} (guest/NPC)`;
   const metaBits=[
     meta.chapter!=null?`Chapter ${meta.chapter}`:null,
     meta.level!=null?`Party Lv ${meta.level}`:null,
-    meta.playtime?`Playtime ${meta.playtime}`:null,
+    s.global.playtime?`Playtime ${s.global.playtime}`:(meta.playtime?`Playtime ${meta.playtime}`:null),
     leaderTxt,
     `story phase ${s.global.storyPhase}`,
   ].filter(Boolean).join(" · ");
@@ -1726,7 +1727,12 @@ function renderSaveSlots(r){
      <div class=hint style="margin:-2px 0 8px">${metaBits}</div>
      ${carryLine}
      <div style="font-weight:600;color:var(--acc2);margin:0 0 6px">Names</div>
-     <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:4px">${nameInputs}</div></div>
+     <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:4px">${nameInputs}</div>
+     <div class=row style="margin-top:10px;align-items:center;gap:8px">
+       <label class=hint style="flex-direction:column;gap:3px;align-items:stretch">Gold / potch <span class=hint style=font-weight:400>(likely — unverified)</span>
+         <input type=number min=0 max=999999 id=goldfld value="${s.global.gold||0}" data-def="${s.global.gold||0}" style=width:140px></label>
+       <span class=hint style="max-width:520px">Best-effort location; if editing gold doesn't take in-game, tell me the on-screen potch and I'll pin it exactly.</span>
+     </div></div>
     <div class=card>
      <div class=subtabs>
       <button data-sub=chars class=on>Characters (${live.length})</button>
@@ -1895,13 +1901,14 @@ function renderSaveSlots(r){
   decorate($("#slotbody"));
   $("#slotbody").querySelectorAll("input[data-name]").forEach(inp=>inp.addEventListener("change",()=>{
     NAMES[inp.dataset.name]=inp.value;markSaveDirty();}));
+  const gf=$("#goldfld");if(gf)gf.addEventListener("change",()=>{GOLD=+gf.value;markSaveDirty();});
   showSub();
 
   $("#savewrite").onclick=async()=>{
    if(!dirty()){toast("no edits");return;}
    $("#savemsg").textContent="writing…";
    const res=await api("/api/save-write",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,partyEdits:PARTY,recruitEdits:RECRUIT,backup:$("#savebak").checked})});
+     body:JSON.stringify({path:SAVE_CARD,folder:s.folder,edits:EDITS,invEdits:INV,nameEdits:NAMES,partyEdits:PARTY,recruitEdits:RECRUIT,gold:GOLD,backup:$("#savebak").checked})});
    if(res.ok){$("#savemsg").innerHTML=`wrote ${res.changed} field(s), ${res.clustersWritten} clusters · checksum 0x${res.checksum.toString(16).toUpperCase()}`;
     toast("saved to card");openCard(SAVE_CARD);}
    else{$("#savemsg").textContent="error: "+(res.error||"?");toast("write failed");}

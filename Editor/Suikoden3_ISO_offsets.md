@@ -913,3 +913,15 @@ Grasslands allies; Duke/Gau/etc = shared/story = no recruiter bit).
 - WRITE: a "recruited by" dropdown per character rewrites bits 2..5 (RECRUITER_MASK 0x3C),
   preserving the other bits. Choosing a recruiter also sets recruited. Verified: moving
   Fubar Hugo->Chris flips word 0x85 -> 0x89, persists, checksum stays 0.
+
+## Save Editor v11: playtime (confirmed) + gold (likely) via playtime-diff (2026-08-10)
+Applied the playtime-ordered diff to find progression counters:
+- PLAYTIME @0x28 (u32 seconds) — CONFIRMED: 1719==28:39, 2251==37:31, 2312==38:32,
+  2433==40:33, exact match to the save title on all 4. Shown as H:MM:SS (read-only).
+- GOLD @0x3210 (u32) — LIKELY but UNVERIFIED. Money-shaped, varies like spendable gold
+  (390965/341256/475076/23800), sits just before the party list (0x3216). No monotonic
+  proof (gold is spent) and no known-potch save to confirm; single field, not per-party
+  (0x3208/0x320C are zero). Exposed editable-but-flagged (low risk; wrong value is easily
+  fixed in-game). To confirm: edit to a distinctive value, load in-game, check the amount.
+- 0x1E4 (u32) is strictly monotonic too but reaches 4.19M (> gold cap) -> a running
+  "total earned/score" stat, not gold; left unexposed.
