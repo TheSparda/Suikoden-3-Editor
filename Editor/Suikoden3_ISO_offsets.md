@@ -615,3 +615,20 @@ only round-number field (+26 u16) is 2000/1000 on just 2 of 28 weapons. No 16-va
 cost curve fits 12 bytes. The Suikosource guide has no cost data. Conclusion:
 sharpen cost is formula-driven or in a separate global table (not located). Not
 exposed rather than ship a wrong field. Would need dedicated RE.
+
+## Shop RE spike — shops are SCRIPT-driven (2026-08-10, inconclusive for full mapping)
+Investigated mapping every shop by location + full inventory. Findings:
+- There is a large shop-data region ~0x3D0000..0x3EB000, and a 50-entry pointer
+  table at 0x3D23F8 whose targets are shop records.
+- BUT each record is event-SCRIPT data, not a flat inventory: records interleave a
+  0x0198 marker, incrementing script/dialogue IDs (0x9C58, 0x9BE0...), IEEE floats
+  (0x4334.., 0x3F80..), and item IDs. The 0x0198 token appears 1069x in one 64KB
+  window but only 389 are followed by a valid item id -> it is NOT a clean
+  "sell item" opcode.
+- Conclusion: shop inventories live inside the game's event script. Enumerating
+  "shop = town + item list" reliably would require writing a script interpreter for
+  the format, and there is NO external guide (Suikosource has no shop-by-town list)
+  to source location names from. Both halves of the request are blocked.
+- Our existing 3 SHOP tables (item1/item3_a/item3_b) remain valid flat editable
+  slots (they sit in the same region and edit fine); they're a subset, not the whole
+  shop system. Not expanding shop editing to avoid corrupting script data.
