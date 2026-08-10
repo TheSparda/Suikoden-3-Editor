@@ -104,16 +104,37 @@ def off2va(o): return (o - ELF_PL_FILE) + ELF_PL_VADDR
 # EQUIPMENT record table (weapons/armor/shields/accessories).
 # stride 0x44; layout: desc ptr @+0x00, name ptr @+0x40, price u32 @+0x08,
 # DEF u16 @+0x10, then up to 5 effect slots of 8 bytes each starting @+0x14:
-#   slot = (type u16, value u16, skill_id u16, pad u16)
-# effect types (verified vs descriptions across 221 records):
+#   slot = (type u16, value u16, param u16, pad u16)
+# The 3rd u16 ("param") means different things per type: for a Stat bonus it selects
+# WHICH stat; for Grant skill it's the skill id; otherwise it's an element/flag.
 GEAR_STRIDE   = 0x44
 GEAR_DEF_OFF  = 0x10
 GEAR_PRICE_OFF= 0x08
 GEAR_EFFECT_OFFS = (0x14, 0x1C, 0x24, 0x2C, 0x34)
+# Effect types — re-derived vs in-game descriptions (2026-08-10). Type 2 is a
+# generic stat bonus whose stat is chosen by `param` (GEAR_STAT_SELECTOR); the old
+# map wrongly hard-coded types 2/3/4 as SPD/PWR/MDF (that was the reported bug).
 GEAR_EFFECT_TYPES = {
-    0: "(none)", 1: "HP regen/turn", 2: "SPD", 3: "PWR", 4: "MDF",
-    5: "Grant skill", 6: "Status Protect", 7: "Elemental Resist", 8: "Evade ATK",
+    0: "(none)",
+    1: "HP regen/turn",
+    2: "Stat bonus",              # +value to the stat named by `param`
+    3: "Accuracy +%",             # percent accuracy (only sample: Accuracy +10%)
+    4: "type 4 (unverified)",     # no occurrences in this ROM
+    5: "Grant skill",             # `param` = skill id
+    6: "Status Protect",
+    7: "Elemental Resist",
+    8: "Evade single-target ATK",
+    9: "Weak vs thrust / mobility",
+    10: "Lowers ATK effect %",
+    11: "Chance to reflect MGC",
+    12: "Counter-attack rate +%",
 }
+# For a Stat bonus (type 2), the `param` u16 is the S3 stat index
+# (PWR SKL MAG REP PDF MDF SPD LUK). Only 0/1/3/6 occur in gear, matching the
+# four boostable stats PWR/SKL/REP/SPD (verified vs single-stat item descriptions).
+GEAR_STAT_SELECTOR = {0: "PWR", 1: "SKL", 2: "MAG", 3: "REP", 4: "PDF", 5: "MDF", 6: "SPD", 7: "LUK"}
+# Which effect types use `param` as a stat selector vs a skill id vs nothing.
+GEAR_TYPE_PARAM = {2: "stat", 5: "skill"}   # everything else: param unused/flag
 
 def find_gear_records(iso):
     """Return {item_id: file_offset} for every equipment record, keyed by item id.
