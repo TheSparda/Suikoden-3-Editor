@@ -80,6 +80,25 @@ You can also just start it and **pick your ISO in the browser** — it scans nea
 folders for candidate `.iso` files, remembers the last one you opened, and offers
 a one-click **“Reopen last ISO.”**
 
+### Restarting after an update
+
+The server serves the UI once at startup, so if the editor's code changes you need
+to **stop and restart it** to pick up the new build:
+
+```bash
+pkill -f s3editor.py                                          # stop the running server
+cd Editor
+python3 s3editor.py "../ISO/Suikoden III (USA).iso" 8747      # start fresh
+```
+
+On start it prints the URL and **auto-opens a browser tab** at
+**http://127.0.0.1:8747** (a background thread opens it, so a slow browser can't
+block the server). Then just hard-refresh any tab you already had open.
+
+The last-opened ISO is remembered in `Editor/.s3editor.json`. If you delete or move
+that ISO, edit or remove the `lastIso` path there (or use **Change ISO** in the
+header) so it doesn't try to reopen a missing file.
+
 ---
 
 ## How editing works (read this once)
