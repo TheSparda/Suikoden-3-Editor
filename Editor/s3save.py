@@ -97,6 +97,20 @@ PARTY_SLOTS = 6
 # nonzero value or default to 0x1D (the common fresh-story-recruit value); un-recruit = 0.
 RECRUIT_OFF     = 0x232
 RECRUIT_DEFAULT = 0x1D
+# Within the recruit word, bits 2..5 record WHICH protagonist recruited the character
+# (pre-merge, S3 runs three separate parties; a unit is only usable by the hero who
+# recruited them until the parties join). Verified by grouping the early save's recruits:
+# Hugo -> his Grasslands allies, Chris -> the Zexen knights, Geddoe -> his mercenaries,
+# Thomas -> his Chisha castle crew. bit0 (0x01) = recruited; 0x40/0x80 = status/away.
+RECRUITER_BITS  = {0x04: "Hugo", 0x08: "Chris", 0x10: "Geddoe", 0x20: "Thomas"}
+RECRUITER_MASK  = 0x3C   # bits 2..5
+
+def recruiter_of(recruit_word):
+    """Name of the protagonist who recruited this character, or '' (shared/story)."""
+    for bit, nm in RECRUITER_BITS.items():
+        if recruit_word & bit:
+            return nm
+    return ""
 
 # Equipped-gear slots (u16 item ids), located empirically in the save block and matching
 # the herrvillain RAM map's 8-byte spacing. Verified: each decodes to a real rune/armor/
@@ -369,6 +383,7 @@ def decode_character(gamedata, roster_index):
         "skills": skills,
         "recruited": recruit_word != 0,
         "recruitWord": recruit_word,
+        "recruiter": recruiter_of(recruit_word),
         "hasData": lvl > 0 or sum(stats) > 0,
         "raw": list(rec),
     }
@@ -460,19 +475,26 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
     party_edits: {partySlot(0..5): charId} for the active-party composition.
-    recruit_edits: {rosterIndex: bool} to recruit/un-recruit a character.
+    recruit_edits: {rosterIndex: value}, where value is a bool (recruit/un-recruit) OR a
+        dict {"recruited": bool, "recruiter": "Hugo"|"Chris"|"Geddoe"|"Thomas"|""} to also
+        set which protagonist recruited them (pre-merge party ownership).
     Returns (new_gamedata_with_fixed_checksum, changed_field_count)."""
     b = bytearray(gamedata)
     changed = 0
-    for ridx, want in (recruit_edits or {}).items():
+    name_to_bit = {v: k for k, v in RECRUITER_BITS.items()}
+    for ridx, val in (recruit_edits or {}).items():
         ridx = int(ridx)
         ro = RECRUIT_OFF + ridx * 2
         if ro + 2 > len(b):
             continue
         cur = struct.unpack_from("<H", b, ro)[0]
+        want = val.get("recruited", True) if isinstance(val, dict) else bool(val)
+        recruiter = val.get("recruiter") if isinstance(val, dict) else None
         if want:
-            # keep an existing nonzero flag; otherwise use the common fresh-recruit value
-            struct.pack_into("<H", b, ro, cur if cur != 0 else RECRUIT_DEFAULT)
+            word = cur if cur != 0 else RECRUIT_DEFAULT
+            if recruiter is not None:            # rewrite the recruiter bits (2..5)
+                word = (word & ~RECRUITER_MASK) | name_to_bit.get(recruiter, 0)
+            struct.pack_into("<H", b, ro, word)
         else:
             struct.pack_into("<H", b, ro, 0)
         changed += 1
