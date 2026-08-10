@@ -1520,23 +1520,36 @@ async function renderChars(m){
  const skillOpts=`<option value="0">— none (0) —</option>`+SKILLS_CACHE.map(i=>`<option value="${i.id}" title="${(i.desc||'').replace(/"/g,'&quot;')}">${i.id.toString(16).toUpperCase().padStart(2,'0')} · ${i.name}</option>`).join("");
  const SKILLDESC={};SKILLS_CACHE.forEach(i=>{SKILLDESC[i.id]=i.desc||"";});
  const NAMES=META.charNames||{};
- function nameOpts(listKey){
+ function nameOpts(listKey,filter){
   const map=NAMES[listKey]||{};
-  const entries=Object.entries(map).sort((a,b)=>(+a[0])-(+b[0]));
+  let entries=Object.entries(map).sort((a,b)=>(+a[0])-(+b[0]));
   if(!entries.length)return `<option value="1">(index 1)</option>`;
+  const f=(filter||"").trim().toLowerCase();
+  if(f)entries=entries.filter(([i,n])=>n.toLowerCase().includes(f)
+     ||String(i)===f||(+i).toString(16).toLowerCase()===f);
+  if(!entries.length)return `<option value="">(no match)</option>`;
   return entries.map(([i,n])=>`<option value="${i}">${(+i).toString().padStart(3,'0')} — ${n}</option>`).join("");
  }
  m.innerHTML=`<div class=card><h3 style=margin-top:0>Character editor</h3>
  <div class=hint>Names are from the original exe's list. list1 = Starting Stats, list2 = Growth (same roster),
  list3 = Support characters, list4 = weapon attack types. Equipment/rune/skill fields are dropdowns. Saves on change.</div>
  <div class=row>
+  <label>Search<input class=search id=csearch placeholder="name or id (hex/dec)…" style=width:200px></label>
   <label>Character<select id=idx style=min-width:200px>${nameOpts("list1")}</select></label>
   <label>Data section<select id=list>${Object.entries(LIST_NAMES).map(([k,v])=>`<option value="${k}">${k} — ${v}</option>`).join("")}</select></label>
   <button class=act id=load>Reload</button>
   <span class=hint id=addr></span>
  </div><div id=rec></div></div>`;
+ // filter the character dropdown by name / id; keep the current pick if it still matches
+ function refilter(){
+  const cur=$("#idx").value;
+  $("#idx").innerHTML=nameOpts("list"+$("#list").value,$("#csearch").value);
+  const opts=[...$("#idx").options].map(o=>o.value);
+  if(opts.includes(cur))$("#idx").value=cur;
+  if($("#idx").value&&$("#idx").value!==cur)load();}
+ $("#csearch").oninput=refilter;
  // when the section changes: repopulate the name dropdown for that list AND reload
- $("#list").onchange=()=>{$("#idx").innerHTML=nameOpts("list"+$("#list").value);load();};
+ $("#list").onchange=()=>{$("#idx").innerHTML=nameOpts("list"+$("#list").value,$("#csearch").value);load();};
  function fieldEditor(f){
   const dv=(f.def!==undefined?f.def:f.value);
   if(f.kind==="item")  return `<select data-off=${f.off} data-w=${f.width} data-kind=item data-def="${dv}">${itemOpts}</select>`;
