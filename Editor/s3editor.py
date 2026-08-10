@@ -731,7 +731,7 @@ const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
 async function renderSpells(m){const sp=await api("/api/spells");
  const spDef=await api("/api/spells?disk=1");const DEF={};spDef.forEach(s=>DEF[s.index]=s);
  const dstat=s=>META.statuses.includes(s.status)?s.status:"none";
- const elOpts=Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
+ const elOpts=`<option value="0">0 — none / neutral</option>`+Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
  const stOpts=META.statuses.map(s=>`<option>${s}</option>`).join("");
  const tgOpts=(META.targets||[]).map(t=>`<option value="${t.v}">${t.label}</option>`).join("")+`<option value="" disabled>(other/custom)</option>`;
  const byName={};sp.forEach(s=>{if(!(s.name in byName))byName[s.name]=s;});
@@ -854,7 +854,7 @@ async function renderRunes(m){
    "jongleur","palegate","swordofrage","swordofthunder","swordofcyclone"];
  const runeOrder=[...FAM.filter(r=>META.runes.includes(r)),...META.runes.filter(r=>!FAM.includes(r))];
  const rOpts=runeOrder.map(r=>`<option>${r}</option>`).join("");
- const elOpts=Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
+ const elOpts=`<option value="0">0 — none / neutral</option>`+Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
  const stOpts=META.statuses.map(s=>`<option>${s}</option>`).join("");
  const elOptsKeep=`<option value="">(keep)</option>`+elOpts;
  const stOptsKeep=`<option value="">(keep)</option>`+stOpts;
