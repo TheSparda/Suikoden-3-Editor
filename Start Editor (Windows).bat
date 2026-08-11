@@ -1,6 +1,6 @@
 @echo off
 REM Double-click this file to launch the Suikoden III editor on Windows.
-cd /d "%~dp0"
+cd /d "%~dp0Editor"
 
 set "PY="
 where py >nul 2>&1 && set "PY=py"

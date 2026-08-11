@@ -132,7 +132,7 @@ these change a save you're already playing.
 browser. For ISO editing you also need your own USA `SLUS-20387` disc image; for save
 editing, your own PS2 memory-card file. Runs on macOS, Windows, and Linux.
 
-**Easiest — double-click a launcher** in `Editor/`:
+**Easiest — double-click a launcher** at the top of the repo:
 - macOS: **`Start Editor (Mac).command`** (first time: right-click → Open).
 - Windows: **`Start Editor (Windows).bat`**.
 
@@ -177,13 +177,13 @@ be run directly for research.
 
 | Path | What it is |
 |---|---|
+| `Start Editor (Mac).command` / `(Windows).bat` | Double-click launchers (top level) |
 | `Editor/s3editor.py` | The web app (server + embedded UI) |
 | `Editor/s3patch.py` | Core ISO logic + command-line patcher |
 | `Editor/s3save.py` | PS2 memory-card save reader/writer (checksum + ECC) |
 | `Editor/s3fields.py` | Character record field schemas |
 | `Editor/s3_*.json` | Extracted names, descriptions, rune owners, unite casts |
 | `Editor/Suikoden3_ISO_offsets.md` | Reverse-engineering notes / offset reference |
-| `Editor/Start Editor (Mac).command` / `(Windows).bat` | Double-click launchers |
 | `Editor/make_test_iso.sh` | Clone-and-test helper |
 
 ---
