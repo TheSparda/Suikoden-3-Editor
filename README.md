@@ -6,9 +6,10 @@ things:
 
 - **ISO editing** — change spells, runes, unite attacks, gear, weapons, shops, and
   character data directly in the game disc image (permanent, applies to a new game).
-- **Save editing** — open a PS2 **memory card** (`.ps2`) and edit an existing
-  playthrough: character levels/stats/skills/equipment, party composition, per-party
-  inventories, and save names. No ISO required for this.
+- **Save editing** — open a PS2 **memory card** (`.ps2` / `.mcd` / `.mc2` / `.bin`) and
+  edit an existing playthrough: character levels/stats/skills/equipment, party
+  composition, per-party inventories, gold, recruitment, and save names. No ISO
+  required for this.
 
 Nothing is uploaded anywhere — the server runs on your own machine and only ever
 touches the ISO or memory-card file you point it at.
@@ -203,6 +204,8 @@ Things that are behavioral, not structural — worth knowing:
 - **Characters chosen by name** (dropdown), sourced from the original editor's
   name lists. Equipment/rune/skill fields are searchable dropdowns with
   descriptions.
+- **Search box** filters the character picker by name or by id (decimal or hex),
+  across every data section.
 
 ### Hard Mode
 - A **player-nerf difficulty** section with a master **Enable Hard Mode** toggle.
@@ -219,40 +222,61 @@ Things that are behavioral, not structural — worth knowing:
   (Enemy HP/attack are set by the battle engine, not a flat table, so they aren't
   editable — see Hard Mode for raising difficulty.)
 
+### Text
+- Edit the game's **UI / battle / menu / prize / error strings** and short character
+  blurbs, read live from the boot executable and shown in a searchable list.
+- Each edit is **capped to the original byte length** (longer text is truncated,
+  shorter is null-padded), so a string can never overrun its neighbour.
+- **Story dialogue is not here** — it lives in packed event files outside the
+  executable, so only the strings baked into `SLUS_203.87` are editable.
+
 ### Reference
 - Searchable **Item** and **Skill** hex-ID lists for looking up values.
+
+> The **Shop**, **Enemies**, **Text**, and **Reference** tabs are grouped under an
+> **“Other ▾”** menu in the top navigation bar (hover to open); everything else has
+> its own top-level tab.
 
 ### Save Editor (PS2 memory card)
 Edit an **existing playthrough** by opening a PS2 memory-card image — **no ISO
 needed**. Unlike ISO edits (which only affect a new game), these change a save you're
 already playing.
 
-- **Opens 8 MB PS2 memory cards** (`.ps2` / `.mcd`). The editor scans nearby folders,
-  flags which cards contain a Suikoden III save, and reads all four save slots.
-- **Per-save metadata** (read-only): **Chapter**, **party Level**, and **Playtime**
-  (parsed from the save's PS2-browser title), the current **party leader** resolved to
-  a character name, and the story phase.
+- **Opens 8 MB PS2 memory cards** (`.ps2`, `.mcd`, `.mc2`, `.bin`). The editor scans
+  nearby folders and flags which cards contain a Suikoden III save, offers a **Reopen
+  last card** button, and has a **Browse…** button that opens your OS's native
+  file-open dialog (restricted to the supported card formats) so you can pick a card
+  anywhere on disk. It reads all four save slots.
+- **Per-save metadata** (read-only): **Chapter** and **Playtime** (parsed from the
+  save's PS2-browser title), the current **party leader** resolved to a character
+  name, and the raw story phase.
 - **Suikoden I / II carryover indicator** — shows whether a linked S1/S2 save was
   loaded, based on the transferred hero/country names (defaults = no linked save).
 - **Editable names** — Flame Champion, castle, and the imported Suikoden I/II hero and
   country names.
-- **Characters** — for every recruited character (with a "recruited only" filter):
-  level, weapon level, current/max HP, EXP-to-next, the 8 stats, all **equipped gear**
-  (head/right/left rune, helm, armor, shield, boots, gloves, accessory) via item
-  dropdowns, and all **8 skill slots** (skill + rank).
+- **Gold / potch** — editable per save.
+- **Characters** — for every character (with a "recruited only" filter): level,
+  current/max HP, EXP-to-next, the 8 stats, all **equipped gear** (head/right/left
+  rune, helm, armor, shield, boots, gloves, accessory) via item dropdowns, and all
+  **8 skill slots** (skill + rank).
+- **Recruitment** — a per-character **recruited** checkbox, plus a **“recruited by”**
+  dropdown (Hugo / Chris / Geddoe / Thomas) for the pre-merge protagonist who owns
+  that unit.
 - **Party composition** — pick who fills each of the 6 active battle-party slots.
 - **Inventory** — items are grouped by bag. Early game, **Hugo / Chris / Geddoe**
   (and Thomas) carry **separate inventories** before they merge; each bag is editable
-  on its own, split into **Party Items** vs **Key / Valuables**.
+  on its own, split into **Party Items** vs **Key / Valuables**. You can also **add new
+  items** to any bag's free slots.
 - **Safe writes** — a `.bak` of the card is made before the first write, and the save
   **checksum** and per-page **ECC** are recomputed automatically so the edited card
   still loads. Best practice: after editing, load the save in-game and re-save, then
   play from that.
 
-> **Note:** *gold/potch* editing isn't included yet — the field hasn't been reliably
-> located, and writing an unverified value could corrupt a save. Stat-column labels are
-> a best-effort decode (one slot is unused in-game); level/HP/EXP/skills/equipment are
-> confirmed.
+> **Note:** stat-column labels are a best-effort decode (one slot is unused in-game);
+> level / HP / EXP / skills / equipment / names / party / recruitment are confirmed.
+> Per-character *weapon (sharpen) level* is intentionally **not** exposed — its save
+> offset couldn't be confirmed, so it's left out rather than risk clobbering the level
+> byte it aliases.
 
 ### Quality-of-life
 - Batched save with **Save / Revert**, unsaved-changes indicator.
