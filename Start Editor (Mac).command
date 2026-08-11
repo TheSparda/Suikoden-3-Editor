@@ -2,7 +2,7 @@
 # Double-click this file to launch the Suikoden III editor on macOS.
 # (If it won't open: right-click -> Open the first time, or run
 #  chmod +x "Start Editor (Mac).command" in Terminal.)
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/Editor" || exit 1
 
 PY=""
 for c in python3 python; do
