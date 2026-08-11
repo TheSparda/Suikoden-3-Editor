@@ -1,369 +1,175 @@
 # Suikoden III ISO & Save Editor
 
-A cross-platform editor for **Suikoden III** on PlayStation 2. It runs as a local
-web app in your browser (plus a command-line patcher for power users) and does two
-things:
+A cross-platform editor for **Suikoden III** (PS2, USA `SLUS-20387`). It runs as a
+local web app in your browser and does two things:
 
-- **ISO editing** — change spells, runes, unite attacks, gear, weapons, shops, and
-  character data directly in the game disc image (permanent, applies to a new game).
-- **Save editing** — open a PS2 **memory card** (`.ps2` / `.mcd` / `.mc2` / `.bin`) and
-  edit an existing playthrough: character levels/stats/skills/equipment, party
-  composition, per-party inventories, gold, recruitment, and save names. No ISO
-  required for this.
+- **ISO editing** — change spells, runes, unite attacks, gear, weapons, shops,
+  characters, and in-game text directly in the disc image (applies to a new game).
+- **Save editing** — open a PS2 **memory card** and edit an existing playthrough:
+  levels, stats, skills, equipment, party, inventories, gold, recruitment, and names.
+  No ISO required.
 
-Nothing is uploaded anywhere — the server runs on your own machine and only ever
-touches the ISO or memory-card file you point it at.
-
----
-
-## What you need
-
-1. **Your own copy of the game as an ISO** (for ISO editing) **and/or a PS2 memory
-   card image** (for save editing).
-   Only the **USA release, `SLUS-20387`** is supported. The editor verifies the ISO
-   on open and refuses anything else. This project does **not** include the game —
-   dump your own disc, and use your own memory-card file for save editing.
-2. **Python 3.8 or newer.** That's the only dependency; the app uses the Python
-   standard library only (no `pip install` step).
-   - macOS ships with Python 3.
-   - Windows: install from <https://www.python.org/downloads/> and tick
-     **“Add Python to PATH”** on the first installer screen.
-3. A PS2 emulator such as **PCSX2** (or a soft-modded PS2) to actually play your
-   edited ISO.
-
-> **Always keep a clean backup of your original ISO.** The editor can make a
-> `.bak` automatically before its first write (toggle in the header), but a
-> separate untouched copy is the real safety net.
-
----
-
-## Supported environments
-
-Runs anywhere Python 3 and a modern browser exist:
-
-- **macOS** (Apple Silicon or Intel)
-- **Windows** 10 / 11
-- **Linux**
-
-The UI works in any current browser (Chrome, Edge, Firefox, Safari). Because a
-4 GB ISO can't be uploaded through a browser, the server opens the file **by
-path** on the local disk — so the machine running the editor must be able to see
-the ISO file.
-
----
-
-## Getting started
-
-### Easiest — double-click a launcher
-
-From the `Editor/` folder:
-
-- **macOS:** double-click **`Start Editor (Mac).command`**
-  (first time only: right-click → **Open**, or run
-  `chmod +x "Start Editor (Mac).command"` once).
-- **Windows:** double-click **`Start Editor (Windows).bat`**.
-
-A browser tab opens automatically. Keep the little terminal window open while you
-work; closing it (or `Ctrl+C`) stops the editor.
-
-### From a terminal
-
-```bash
-cd Editor
-python3 s3editor.py
-```
-
-Then open the printed URL (default **http://127.0.0.1:8747**).
-
-Optional arguments, in any order:
-
-```bash
-python3 s3editor.py "/path/to/Suikoden III (USA).iso"   # preload an ISO
-python3 s3editor.py 9000                                 # use a different port
-python3 s3editor.py "/path/to/game.iso" 9000             # both
-```
-
-You can also just start it and **pick your ISO in the browser** — it scans nearby
-folders for candidate `.iso` files, remembers the last one you opened, and offers
-a one-click **“Reopen last ISO.”**
-
-### Restarting after an update
-
-The server serves the UI once at startup, so if the editor's code changes you need
-to **stop and restart it** to pick up the new build:
-
-```bash
-pkill -f s3editor.py                                          # stop the running server
-cd Editor
-python3 s3editor.py "../ISO/Suikoden III (USA).iso" 8747      # start fresh
-```
-
-On start it prints the URL and **auto-opens a browser tab** at
-**http://127.0.0.1:8747** (a background thread opens it, so a slow browser can't
-block the server). Then just hard-refresh any tab you already had open.
-
-The last-opened ISO is remembered in `Editor/.s3editor.json`. If you delete or move
-that ISO, edit or remove the `lastIso` path there (or use **Change ISO** in the
-header) so it doesn't try to reopen a missing file.
-
----
-
-## How editing works (read this once)
-
-- **Edits are staged, not written immediately.** As you change fields, they
-  accumulate in memory. Nothing touches the ISO until you press **Save to ISO**
-  in the top-right. **Revert** discards all unsaved changes.
-- **Values are read live from the ISO** when you open it, so what you see always
-  matches the file on disk.
-- **Changed fields are highlighted** in amber, and each one gets a **↺ Restore to
-  default** button that puts it back to the ISO's value.
-- **Backup checkbox** (header): when on, one `.bak` copy is made before the first
-  save of a session. Turn it off when you're re-editing an ISO you already backed
-  up and don't want another copy.
-
-> **Tip:** test edits on a *copy* of your ISO first (see `make_test_iso.sh`), then
-> re-apply to a fresh copy once you're happy. On-screen spell/skill *description
-> text* in-game is static and won't reflect changed numbers.
-
----
-
-## Will my edits load in an emulator?
-
-Yes — the fundamentals were verified against this exact release:
-
-- **No checksums to break.** The disc image is stored as plain 2048-byte ("cooked")
-  sectors, so there's **no per-sector EDC/ECC** to recompute — the usual reason a
-  hand-edited PS2 ISO fails to boot doesn't apply here. Editing bytes in place is safe.
-- **Edits land in the boot executable.** Every table this tool edits lives inside
-  `SLUS_203.87`, which the console loads whole into memory (uncompressed, no
-  relocation of that data). A byte changed on disk is the byte the game runs.
-- **Same bytes the original editor wrote.** Offsets were reverse-engineered from the
-  original Windows editor's own patch routines, so this tool writes the same values
-  to the same places a known-working tool did — nothing extra it did is missing here.
-
-Things that are behavioral, not structural — worth knowing:
-
-- **Actually hit Save to ISO.** Edits stay staged until you save; a fresh `.bak`
-  appearing (with the backup box on) confirms the write happened.
-- **Reload the ISO in the emulator.** PCSX2 caches disc reads — after editing, load
-  the ISO fresh (or restart PCSX2) so it re-reads from disk.
-- **Boot fresh, don't rely on a save state.** Starting stats/equipment apply at
-  recruitment and growth rates at level-up, so a mid-game **save state won't
-  retroactively change** values already baked into it. Start or continue a game
-  normally on the edited ISO. This is also why **Hard Mode** works best from an
-  early save (see below).
+Nothing is uploaded — the server runs on your machine and only touches the ISO or
+memory-card file you point it at. It contains **no game data**; supply your own
+legally-obtained files.
 
 ---
 
 ## Features
 
+### Characters
+- Edit any character by name (dropdown) with a **search box** that filters by name or
+  id (decimal/hex).
+- **Section** selector across the character data tables:
+  1. **Starting Stats / Equipment** — starting skills + ranks, equipped runes
+     (L/R hand, head), helmet/armor/shield, starting items.
+  2. **Growth · Skill Max · Fixed Skills** — stat growth rates, rune levels, per-skill
+     caps, fixed/free skills, starting level.
+  3. **Support Skills** — the character's support-skill slots.
+  4. **Raw bytes** — fallback hex view.
+- Equipment/rune/skill fields are searchable dropdowns with in-game descriptions.
+
 ### Spells
 - Full spell/rune-effect table, **grouped by rune** and ordered by element family
-  (e.g. Fire → Rage → True Fire; Wind → Cyclone → True Wind).
+  (Fire → Rage → True Fire; Wind → Cyclone → True Wind).
 - Edit **power**, **cast/movement time**, **element**, **target/size**, **AOE**
-  (area vs single target), and **status effect** inflicted.
-- In-game **descriptions** shown inline; live-updating **shape/target pill**.
-- Filter/search box.
+  (area vs single), and inflicted **status effect**.
+- In-game descriptions inline; live-updating shape/target pill; filter box.
 
 ### Runes
 - Pick a rune and edit **each of its spells individually**.
-- **Bulk-apply** power / cast / element / AOE / status to *every* spell a rune
-  grants at once.
-- Attack-runes and unit-unique runes are labelled with their **owner** where known.
+- **Bulk-apply** power / cast / element / AOE / status to *every* spell a rune grants.
+- Attack- and unit-unique runes are labelled with their **owner** where known.
 
 ### Unites
-- Co-op **unite attacks** table with the **characters involved** in each unite.
-- Edit **power** (damage/multiplier), **cast time**, and **target**; descriptions
-  shown inline.
+- Co-op **unite attacks** with the **characters involved** in each.
+- Edit **power**, **cast time**, and **target**; descriptions inline.
 
 ### Gear
 - Edit **DEF**, **price**, and up to **5 effect slots** per item.
-- Effect types include **HP regen per turn (auto-heal)**, a **stat bonus** (pick which
-  stat — PWR/SKL/REP/SPD/…), **grant skill** (pick the skill), status protect,
-  elemental resist, evade, and more.
-- In-game item descriptions shown per item.
+- Effect types: **HP regen per turn**, **stat bonus** (choose the stat), **grant skill**
+  (choose the skill), status protect, elemental resist, evade, and more.
+- In-game item descriptions per item.
 
 ### Weapons
-- Edit each weapon type's **ATK at all 16 sharpen levels** — this is Suikoden III's
-  "weapon power" (weapons grow via sharpening rather than having a single fixed stat).
-- Per-level editing plus a **scale ×** control to raise or lower a whole weapon's
-  curve at once. (Weapon "weight" is not a Suikoden III mechanic and doesn't exist.)
-
-### Shop
-- Edit shop stock slots and the price ladder; item slots are name/description
-  dropdowns.
-
-### Characters
-- **Section** selector for the different character data tables:
-  1. **Starting Stats / Equipment** — starting skills + ranks, equipped runes
-     (L/R hand, head), helmet/armor/shield, starting items.
-  2. **Growth · Skill Max · Fixed Skills** — stat growth rates, rune levels,
-     per-skill maximum caps, fixed/free skills, starting level.
-  3. **Support Skills** — the character's support-skill slots.
-  4. **Raw bytes** — fallback hex view.
-- **Characters chosen by name** (dropdown), sourced from the original editor's
-  name lists. Equipment/rune/skill fields are searchable dropdowns with
-  descriptions.
-- **Search box** filters the character picker by name or by id (decimal or hex),
-  across every data section.
+- Edit each weapon type's **ATK at all 16 sharpen levels** — Suikoden III's "weapon
+  power" (weapons grow via sharpening, not a single fixed stat).
+- Per-level editing plus a **scale ×** control to raise/lower a whole curve at once.
 
 ### Hard Mode
 - A **player-nerf difficulty** section with a master **Enable Hard Mode** toggle.
-- Difficulty **presets** (Tougher / Hard / Brutal) plus fully custom per-stat
-  multipliers, driven by each character's in-game **stat growth rate** so the whole
-  party grows weaker across all 99 levels.
-- Optional spell/unite **power** scalers. All multipliers scale the ISO's *default*
-  value, so applying a preset is idempotent (never compounds), and **Restore all to
-  default** cleanly reverts. Enemies can't be buffed directly (their stats aren't in
-  an editable table), so difficulty comes from a weaker party.
+- Presets (**Tougher / Hard / Brutal**) or fully custom per-stat multipliers, driven by
+  each character's **stat growth rate** so the whole party grows weaker across all 99
+  levels. Optional spell/unite **power** scalers.
+- Multipliers scale the ISO's *default* value, so presets are **idempotent** (never
+  compound) and **Restore all to default** cleanly reverts. Enemies can't be buffed
+  directly (their stats aren't in an editable table), so difficulty comes from a weaker
+  party. Lowering growth only affects levels gained *after* the change — best started
+  on an early save.
 
-### Enemies
-- Read-only reference list of all **100 enemy entries** by index + name, searchable.
-  (Enemy HP/attack are set by the battle engine, not a flat table, so they aren't
-  editable — see Hard Mode for raising difficulty.)
+### Other ▾ (grouped in the nav bar)
 
-### Text
-- Edit the game's **UI / battle / menu / prize / error strings** and short character
-  blurbs, read live from the boot executable and shown in a searchable list.
-- Each edit is **capped to the original byte length** (longer text is truncated,
-  shorter is null-padded), so a string can never overrun its neighbour.
-- **Story dialogue is not here** — it lives in packed event files outside the
-  executable, so only the strings baked into `SLUS_203.87` are editable.
+**Shop** — edit shop stock slots and the price ladder; item slots are dropdowns.
 
-### Reference
-- Searchable **Item** and **Skill** hex-ID lists for looking up values.
+**Enemies** — read-only reference list of all 100 enemy entries by index + name,
+searchable. (Enemy HP/attack are set by the battle engine, not a flat table.)
 
-> The **Shop**, **Enemies**, **Text**, and **Reference** tabs are grouped under an
-> **“Other ▾”** menu in the top navigation bar (hover to open); everything else has
-> its own top-level tab.
+**Text** — edit the game's **UI / battle / menu / prize / error strings** and short
+character blurbs, read live from the boot executable in a searchable list. Each edit is
+**capped to the original byte length**. *Story dialogue is not here* — it lives in
+packed event files outside the executable.
+
+**Reference** — searchable **Item** and **Skill** hex-ID lists.
 
 ### Save Editor (PS2 memory card)
-Edit an **existing playthrough** by opening a PS2 memory-card image — **no ISO
-needed**. Unlike ISO edits (which only affect a new game), these change a save you're
-already playing.
+Edit an **existing playthrough** — no ISO needed. Unlike ISO edits (new game only),
+these change a save you're already playing.
 
-- **Opens 8 MB PS2 memory cards** (`.ps2`, `.mcd`, `.mc2`, `.bin`). The editor scans
-  nearby folders and flags which cards contain a Suikoden III save, offers a **Reopen
-  last card** button, and has a **Browse…** button that opens your OS's native
-  file-open dialog (restricted to the supported card formats) so you can pick a card
-  anywhere on disk. It reads all four save slots.
-- **Per-save metadata** (read-only): **Chapter** and **Playtime** (parsed from the
-  save's PS2-browser title), the current **party leader** resolved to a character
-  name, and the raw story phase.
-- **Suikoden I / II carryover indicator** — shows whether a linked S1/S2 save was
-  loaded, based on the transferred hero/country names (defaults = no linked save).
-- **Editable names** — Flame Champion, castle, and the imported Suikoden I/II hero and
-  country names.
+- **Opens 8 MB PS2 memory cards** (`.ps2`, `.mcd`, `.mc2`, `.bin`). Scans nearby folders
+  and flags which cards hold a Suikoden III save, offers **Reopen last card**, and has a
+  **Browse…** button that opens your OS's native file dialog (restricted to card
+  formats) so you can pick a card anywhere on disk. Reads all four save slots.
+- **Per-save metadata** (read-only): **Chapter** and **Playtime** (from the PS2-browser
+  title), the current **party leader** resolved to a name, and the raw story phase.
+- **Suikoden I / II carryover indicator** — whether a linked S1/S2 save was loaded
+  (based on the transferred hero/country names).
+- **Editable names** — Flame Champion, castle, and imported S1/S2 hero + country names.
 - **Gold / potch** — editable per save.
-- **Characters** — for every character (with a "recruited only" filter): level,
-  current/max HP, EXP-to-next, the 8 stats, all **equipped gear** (head/right/left
-  rune, helm, armor, shield, boots, gloves, accessory) via item dropdowns, and all
-  **8 skill slots** (skill + rank).
-- **Recruitment** — a per-character **recruited** checkbox, plus a **“recruited by”**
-  dropdown (Hugo / Chris / Geddoe / Thomas) for the pre-merge protagonist who owns
-  that unit.
+- **Characters** (with a "recruited only" filter): level, current/max HP, EXP-to-next,
+  the 8 stats, all **equipped gear** (head/right/left rune, helm, armor, shield, boots,
+  gloves, accessory), and all **8 skill slots** (skill + rank).
+- **Recruitment** — a per-character **recruited** checkbox plus a **"recruited by"**
+  dropdown (Hugo / Chris / Geddoe / Thomas) for the pre-merge protagonist who owns a
+  unit.
 - **Party composition** — pick who fills each of the 6 active battle-party slots.
-- **Inventory** — items are grouped by bag. Early game, **Hugo / Chris / Geddoe**
-  (and Thomas) carry **separate inventories** before they merge; each bag is editable
-  on its own, split into **Party Items** vs **Key / Valuables**. You can also **add new
-  items** to any bag's free slots.
+- **Inventory** — grouped by bag. Early game, **Hugo / Chris / Geddoe** (and Thomas)
+  carry separate inventories before they merge; each bag is editable on its own, split
+  into **Party Items** vs **Key / Valuables**. You can **add new items** to free slots.
 - **Safe writes** — a `.bak` of the card is made before the first write, and the save
-  **checksum** and per-page **ECC** are recomputed automatically so the edited card
-  still loads. Best practice: after editing, load the save in-game and re-save, then
-  play from that.
+  **checksum** and per-page **ECC** are recomputed so the edited card still loads. Best
+  practice: after editing, load the save in-game, re-save, and play from that.
 
-> **Note:** stat-column labels are a best-effort decode (one slot is unused in-game);
-> level / HP / EXP / skills / equipment / names / party / recruitment are confirmed.
-> Per-character *weapon (sharpen) level* is intentionally **not** exposed — its save
-> offset couldn't be confirmed, so it's left out rather than risk clobbering the level
-> byte it aliases.
+> Stat-column labels are a best-effort decode (one slot is unused in-game); level / HP /
+> EXP / skills / equipment / names / party / recruitment are confirmed. Per-character
+> *weapon (sharpen) level* is intentionally **not** exposed — its save offset couldn't be
+> confirmed, so it's omitted rather than risk clobbering the level byte it aliases.
 
 ### Quality-of-life
-- Batched save with **Save / Revert**, unsaved-changes indicator.
-- **Changed-from-default** highlighting + per-field restore.
-- Numeric inputs are clamped to each field's size, so an over-large or negative
-  value can't corrupt a record or crash a save.
-- Optional automatic `.bak` before first write.
-- Remembers and pre-fills your last-opened ISO.
-- Two **Suikoden III-inspired themes** — *Crimson & Gold* (dark) and *Parchment*
-  (light) — selectable from the toggle at the bottom of the page; your choice is
-  remembered (localStorage + cookie). Inspired styling only; no game art is used.
+- **Edits are staged**, applied on **Save to ISO**; **Revert** discards; unsaved-changes
+  indicator. Save-editor writes go straight to the card (with a `.bak`).
+- **Changed-from-default** highlighting + per-field **↺ Restore to default**.
+- Numeric inputs are clamped to each field's size.
+- Remembers your last-opened ISO / memory card.
+- Two themes — **Crimson & Gold** (dark) and **Parchment** (light), remembered across
+  sessions. Inspired styling only; no game art is used.
 - One-click launchers for macOS and Windows.
 
 ---
 
-## Hard Mode in depth
+## Getting started
 
-Hard Mode makes the game harder by **weakening your own party**, not by buffing
-enemies. Enemy HP/attack are computed by the battle engine and aren't stored in an
-editable table (confirmed by reverse-engineering — see
-`Editor/Suikoden3_ISO_offsets.md`), so the reliable lever is the party side.
+**Requirements:** Python 3.8+ (standard library only — no `pip install`) and a modern
+browser. For ISO editing you also need your own USA `SLUS-20387` disc image; for save
+editing, your own PS2 memory-card file. Runs on macOS, Windows, and Linux.
 
-**How it works.** Every playable character has a per-stat **growth rate** byte
-(one each for HP, PWR/Attack, MAG/Magic, SKL, MDF, SPD, REP, LUK — values roughly
-2–6). That rate controls how much the stat rises on each level-up. Hard Mode
-multiplies those growth-rate bytes across the **whole 79-character roster** at once,
-so the party gets weaker gradually over all 99 levels. It can also scale spell and
-unite **power**.
+**Easiest — double-click a launcher** in `Editor/`:
+- macOS: **`Start Editor (Mac).command`** (first time: right-click → Open).
+- Windows: **`Start Editor (Windows).bat`**.
 
-**Using it (Hard Mode tab):**
-1. Flip **Enable Hard Mode** (the controls stay disabled until you do).
-2. Pick a **preset**, or choose **Custom** and set per-stat multipliers by hand.
-3. Optionally set the **spell power** / **unite power** multipliers (leave at 1.00
-   to nerf via growth rates only — see the note below).
-4. Click **Apply to staged edits**, review the numbers, then **Save to ISO** in the
-   header. Nothing is written until you Save.
+**From a terminal:**
 
-**Presets** (multipliers applied to the ISO's default growth rate / power):
+```bash
+cd Editor
+python3 s3editor.py                                      # then pick an ISO in the browser
+python3 s3editor.py "/path/to/Suikoden III (USA).iso"    # or preload one
+python3 s3editor.py "/path/to/game.iso" 9000             # optional custom port
+```
 
-| Preset  | HP   | Attack/Magic | Speed | Spell & Unite power | Feel |
-|---------|------|--------------|-------|---------------------|------|
-| Tougher | ×0.80 | ×0.85       | ×0.95 | ×0.90               | Gentle nerf |
-| Hard    | ×0.65 | ×0.70       | ×0.90 | ×0.75               | Fights need real thought |
-| Brutal  | ×0.50 | ×0.55       | ×0.85 | ×0.60               | Every battle is a threat |
+It opens a browser tab at **http://127.0.0.1:8747** (or your chosen port). Keep the
+terminal window open while you work. The last-opened ISO is remembered in
+`Editor/.s3editor.json`. Because a 4 GB ISO can't be uploaded through a browser, the
+server opens files **by path** on the local disk.
 
-**Key behaviors:**
-- **Idempotent.** Multipliers scale the ISO's *default* value, never the current one,
-  so re-applying or switching presets won't compound. **Restore all to default**
-  cleanly reverts every touched byte.
-- **Gradual, not retroactive.** Lowering growth rates only affects levels gained
-  *after* the change — it won't shrink a character who's already high-level. Best
-  started on a fresh or early save.
-- **Shared spell records.** A spell's power record is shared between party and enemy
-  casts, so the *spell power* multiplier affects both. Leave it at 1.00 if you only
-  want to weaken the party through growth rates.
-- Review per-character results anytime in **Characters → Growth · Skill Max · Fixed
-  Skills** before saving.
+> **Keep a clean backup of your original ISO.** The editor can make a `.bak` before its
+> first write (header toggle), but a separate untouched copy is the real safety net.
+> Test edits on a *copy* first (see `Editor/make_test_iso.sh`).
 
 ---
 
 ## Command-line patcher (advanced)
 
-`Editor/s3patch.py` is the underlying engine and also a standalone CLI for
-scripting and research. Examples:
+`Editor/s3patch.py` is the underlying ISO engine and a standalone CLI:
 
 ```bash
 cd Editor
-python3 s3patch.py verify      "/path/to/game.iso"    # confirm it's the USA release
-python3 s3patch.py spells      "/path/to/game.iso"    # list the spell table
-python3 s3patch.py dump-spell  "/path/to/game.iso" --index 0
+python3 s3patch.py verify      "/path/to/game.iso"
+python3 s3patch.py spells      "/path/to/game.iso"
 python3 s3patch.py reskin-rune "/path/to/game.iso" --rune fire --power 3000 --aoe on
-python3 s3patch.py ids skill                          # print the skill ID list
+python3 s3patch.py -h                                    # full command list
 ```
 
-Run `python3 s3patch.py -h` for the full command list (verify, dump-char,
-dump-shop, set-shop, set-field, find-bytes, dump-region, spells, dump-spell,
-set-spell, set-aoe, reskin, reskin-rune, ids).
-
-### Safe test workflow
-
-```bash
-cd Editor
-./make_test_iso.sh "/path/to/Suikoden III (USA).iso"
-```
-
-This clones your ISO to a `*.TEST.iso`, applies an example edit to the **copy**
-only, and prints PCSX2 verification steps. Your original is never touched.
+`Editor/s3save.py` is the memory-card engine (read/write + checksum + ECC) and can also
+be run directly for research.
 
 ---
 
@@ -379,33 +185,27 @@ only, and prints PCSX2 verification steps. Your original is never touched.
 | `Editor/Suikoden3_ISO_offsets.md` | Reverse-engineering notes / offset reference |
 | `Editor/Start Editor (Mac).command` / `(Windows).bat` | Double-click launchers |
 | `Editor/make_test_iso.sh` | Clone-and-test helper |
-| `Editor/Suikoden3EditorV12b.exe`, `*_decompiled.cs` | Original Windows editor + decompile (reference only) |
 
 ---
 
 ## Credits & acknowledgements
 
-This project stands on community research and would not exist without it.
+This project stands on community research.
 
-- **[Suikosource](https://suikosource.com/)** and its community gameplay guides,
-  used to identify characters, skills, and unite line-ups:
-  - *Skills List* by **Blue Moon** — skill names and descriptions.
-  - *Initial Equipment / Rune Slot List* by **wataru14 / genso710** — starting
-    equipment, rune slots, and character data.
-  - Unite-attack guides — the characters involved in each unite.
-- **`Suikoden3EditorV12b.exe`** — the original Windows editor by its author, whose
-  embedded name/label lists were the source for the character-name dropdowns and
-  field mappings. Reverse-engineered here for reference and reimplemented
-  cross-platform.
-- Item descriptions and offset tables were extracted directly from the game's own
-  data by this project's reverse-engineering (see `Editor/Suikoden3_ISO_offsets.md`).
+- **[Suikosource](https://suikosource.com/)** and its guides — the *Skills List* by
+  **Blue Moon**, the *Initial Equipment / Rune Slot List* by **wataru14 / genso710**,
+  and the unite-attack guides — used to identify characters, skills, and unites.
+- **`Suikoden3EditorV12b.exe`** — the original Windows editor, whose embedded name/label
+  lists were the source for the character-name dropdowns and field mappings.
+  Reverse-engineered here for reference and reimplemented cross-platform.
+- Item descriptions and offset tables were extracted from the game's own data by this
+  project (see `Editor/Suikoden3_ISO_offsets.md`).
 
-If any attribution is missing or incorrect, please open an issue — credit is owed
-and will be fixed.
+If any attribution is missing or incorrect, please open an issue.
 
 ## Legal
 
-This tool contains **no game data or copyrighted game code**. You must supply your
-own legally-obtained ISO of Suikoden III. Editing your own game files for personal
-use only. Suikoden III is © Konami. All referenced guides and their text remain the
-property of their respective authors and Suikosource.
+This tool contains **no game data or copyrighted game code**. Supply your own
+legally-obtained ISO / memory-card files, for personal use only. Suikoden III is
+© Konami. Referenced guides remain the property of their respective authors and
+Suikosource.
