@@ -1048,6 +1048,7 @@ tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 9px
 tr.mainrow td{border-bottom:0}
 /* changed-from-default field highlighting + restore button */
 input.changed,select.changed{color:var(--warn);border-color:var(--warnbd);background:var(--changed-bg)}
+td.warn{color:var(--warn)}
 .restore{display:none;margin-left:4px;background:transparent;border:1px solid var(--line);color:var(--mut);
  border-radius:6px;padding:3px 7px;cursor:pointer;font:inherit;line-height:1;vertical-align:middle;transition:.12s}
 .restore:hover{color:var(--ink);border-color:var(--acc);background:var(--panel2)}
@@ -1567,6 +1568,26 @@ async function renderFoods(m){
    <span>Also update description text to match
     <span class=hint style=font-weight:400>— best-effort &amp; length-capped; an over-long number leaves the original text intact</span></span></label>
   <table><thead><tr><th>#</th><th>Name</th><th style=width:110px>Heal HP</th><th style=width:110px>Proc %</th><th>Description</th></tr></thead><tbody id=fb></tbody></table>`;
+ const ORIG={};foods.forEach(x=>ORIG[x.index]=x.desc||"");   // on-disk description per food
+ // Mirror the server's best-effort rewrite: swap the "Heals NNN HP" / "NN% chance" numbers.
+ // Returns {text, fits} — fits=false when it would overflow the original byte length.
+ function previewDesc(idx,heal,proc){
+  let t=ORIG[idx];
+  if(heal!=null&&!Number.isNaN(heal))t=t.replace(/Heals \d+HP/, "Heals "+heal+"HP");
+  if(proc!=null&&!Number.isNaN(proc))t=t.replace(/\d+% chance/, proc+"% chance");
+  return {text:t, fits:t.length<=ORIG[idx].length};
+ }
+ function curVals(idx){
+  const h=$(`#fb input[data-i="${idx}"][data-k=heal]`), p=$(`#fb input[data-i="${idx}"][data-k=proc]`);
+  return {heal:h?+h.value:null, proc:p?+p.value:null};
+ }
+ function refreshDesc(idx){
+  const cell=$(`#fb [data-descfor="${idx}"]`); if(!cell)return;
+  if(!$("#fupd").checked){cell.textContent=ORIG[idx];cell.classList.remove("warn");return;}
+  const {heal,proc}=curVals(idx); const pv=previewDesc(idx,heal,proc);
+  if(pv.fits){cell.textContent=pv.text;cell.classList.remove("warn");}
+  else{cell.textContent=ORIG[idx]+"  (new text won't fit — will stay unchanged)";cell.classList.add("warn");}
+ }
  function draw(f=""){
   const rows=foods.filter(x=>x.name.toLowerCase().includes(f)||(x.desc||"").toLowerCase().includes(f));
   $("#fb").innerHTML=rows.map(x=>{const d=FDEF[x.index]||x;return `<tr>
@@ -1575,18 +1596,20 @@ async function renderFoods(m){
     <td><input type=number min=0 max=100 style=width:90px data-i=${x.index} data-k=proc data-def="${d.proc}" value="${x.proc}"></td>
     <td class=hint data-descfor=${x.index}>${(x.desc||"").replace(/</g,"&lt;")}</td></tr>`;}).join("");
   decorate($("#fb"));
-  $("#fb").querySelectorAll("input[data-i]").forEach(inp=>inp.addEventListener("blur",async()=>{
-    const idx=+inp.dataset.i, fields={};fields[inp.dataset.k]=+inp.value;
-    if($("#fupd").checked)fields.updateDesc=true;
-    const r=await api("/api/food",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({index:idx,fields})});
-    if(r.ok){markDirty();
-     if(fields.updateDesc){const fresh=(await api("/api/foods")).find(z=>z.index===idx);
-      const cell=$(`#fb [data-descfor="${idx}"]`);
-      if(fresh&&cell)cell.textContent=fresh.desc||"";}
-     toast(r.descTruncated?"staged (description too long — text left unchanged)":"staged");}
-    else toast("error: "+(r.error||"?"));}));}
- draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+  $("#fb").querySelectorAll("input[data-i]").forEach(inp=>{
+    const idx=+inp.dataset.i;
+    inp.addEventListener("input",()=>refreshDesc(idx));   // live preview as you type
+    inp.addEventListener("blur",async()=>{
+     const fields={};fields[inp.dataset.k]=+inp.value;
+     if($("#fupd").checked)fields.updateDesc=true;
+     const r=await api("/api/food",{method:"POST",headers:{"Content-Type":"application/json"},
+       body:JSON.stringify({index:idx,fields})});
+     if(r.ok){markDirty();refreshDesc(idx);
+      toast(fields.updateDesc&&r.descTruncated?"staged (description too long — text left unchanged)":"staged");}
+     else toast("error: "+(r.error||"?"));});});}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());
+ // toggling the checkbox re-previews every visible row
+ $("#fupd").addEventListener("change",()=>$("#fb").querySelectorAll("[data-descfor]").forEach(c=>refreshDesc(+c.dataset.descfor)));}
 
 async function renderWeapons(m){const wpn=await api("/api/weapons");
  m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter weapons / characters…">
