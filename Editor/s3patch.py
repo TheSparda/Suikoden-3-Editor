@@ -144,10 +144,18 @@ GEAR_STAT_SELECTOR = {0: "PWR", 1: "SKL", 2: "MAG", 3: "REP", 4: "PDF", 5: "MDF"
 GEAR_TYPE_PARAM = {2: "stat", 5: "skill"}   # everything else: param unused/flag
 
 def find_gear_records(iso):
-    """Return {item_id: file_offset} for every equipment record, keyed by item id.
+    """Return {item_id: stats_file_offset} for every equipment record, keyed by item id.
     A record is validated by: desc ptr @+0 and name ptr @+0x40 both point into the
     string pool, the name is a known item, description contains '(' (a stat string),
-    DEF < 500 and price < 2,000,000 (rejects false pointer matches)."""
+    DEF < 500 and price < 2,000,000 (rejects false pointer matches).
+
+    OFF-BY-ONE (confirmed vs the Suikoden III equipment list, 26/26): the NAME pointer
+    for item X lives in the record whose stat block actually belongs to item X-1. X's own
+    stats/DEF/price/effects/description sit in the NEXT record (name_offset + GEAR_STRIDE).
+    So we detect a record by its name pointer at `p`, then return `p + GEAR_STRIDE` as the
+    stats offset for that item. Reading DEF/desc from the name record instead mislabels
+    every item with the next one's stats (e.g. Wooden Shield showing Taikyoku Tunic's
+    DEF 78 / Status Protect)."""
     from struct import unpack_from
     items = load_item_ids(); nameset = {v: k for k, v in items.items()}
     lo = ELF_PL_FILE; hi = ELF_PL_FILE + 0x38D000
@@ -155,7 +163,7 @@ def find_gear_records(iso):
     # string pool sits high in the loaded image; accept any vaddr inside PT_LOAD
     def isptr(w): return ELF_PL_VADDR <= w <= ELF_PL_VADDR + 0x38D000
     out = {}
-    for p in range(0, len(data) - GEAR_STRIDE, 4):
+    for p in range(0, len(data) - 2 * GEAR_STRIDE, 4):
         dp = unpack_from("<I", data, p)[0]
         nv = unpack_from("<I", data, p + 0x40)[0]
         if not (isptr(dp) and isptr(nv)):
@@ -172,7 +180,7 @@ def find_gear_records(iso):
         if defv > 500 or price > 2000000:
             continue
         iid = nameset[nm]
-        out.setdefault(iid, lo + p)
+        out.setdefault(iid, lo + p + GEAR_STRIDE)   # stats live one record after the name
     return out
 
 
