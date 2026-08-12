@@ -69,6 +69,12 @@ legally-obtained files.
 
 ### Other ▾ (grouped in the nav bar)
 
+**Foods** — edit the consumable table (foods, medicines, stat stones): **Heal HP** and the
+**status proc chance %** (the "30% chance of…" values). An opt-in **“also update description
+text”** checkbox rewrites the matching "Heals NNN HP" / "NN% chance" numbers in the item's
+description to match — length-capped, so an over-long number leaves the original text intact.
+*Which* status a food inflicts/cures isn't editable yet.
+
 **Shop** — edit shop stock slots and the price ladder; item slots are dropdowns.
 
 **Enemies** — read-only reference list of all 100 enemy entries by index + name,
