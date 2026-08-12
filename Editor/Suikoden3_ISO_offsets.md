@@ -925,3 +925,41 @@ Applied the playtime-ordered diff to find progression counters:
   fixed in-game). To confirm: edit to a distinctive value, load in-game, check the amount.
 - 0x1E4 (u32) is strictly monotonic too but reaches 4.19M (> gold cap) -> a running
   "total earned/score" stat, not gold; left unexposed.
+
+---
+
+## v12 — Status effects, magic sword runes, and the consumable/food table
+
+### Status effects are NOT a tunable data table (confirmed)
+Searched the boot ELF for a status-parameter table (poison dmg/turn, sleep/unbalance
+durations, proc chances stored per status). Found only:
+- item/spell *description* strings ("Poisons character", "Silences character"), and
+- engine debug strings: "PartyStatus %x is iregal", "charaStatusReadDestroy",
+  "funcStatus = %d" — i.e. status is a code-side enum handled by battle logic.
+There is no per-status struct of numbers to edit. So the *strength/duration* of a status
+(how long sleep lasts, poison dmg/turn) is engine-coded, not data-driven — it cannot be
+exposed by a data editor without patching game code. WHICH status a spell/rune applies is
+already editable via the spell f18 bitfield (see F18_BITS; the sword-fire/lightning/wind
+bits are the Sword of Rage/Thunder/Cyclone elemental adds).
+
+### Magic sword runes
+Sword of Rage=+Fire, Sword of Thunder=+Lightning, Sword of Cyclone=+Wind on physical
+attacks (Suikosource runes guide). These are the sword-* bits in F18_BITS. There is no
+Water sword rune. Effect potency is fixed (engine), not configurable — matches the
+above: only the applied element/status is data, its strength is code.
+
+### Consumable / food table (editable — heal amount + proc chance)
+The "foods get weird" items live in their OWN record array, distinct from gear:
+- BASE (file) 0x3E91D0, STRIDE 0x48, ~62 records (first record is a header/sentinel
+  with a garbage desc — skip it).
+- +0x00  u32 -> description string (vaddr)      [CONFIRMED]
+- +0x14  u16  heal amount (HP)                   [CONFIRMED: 7/7 + clean run vs "Heals NNN HP"]
+- +0x1E  u16  proc chance %  (e.g. 30/60)        [CONFIRMED: 7/7 vs "NN% chance of ..."]
+- +0x44  u32 -> name string (vaddr)              [CONFIRMED anchor]
+- status-id field (which status the food inflicts/cures) lives in the 0x08..0x12 region
+  (small ids / bitflags) — NOT yet fully mapped; do not write until confirmed like the
+  heal/proc fields.
+Medicines, Antitoxin, and stat "Stone of X" items share this structure (heal=0 for the
+stones; a separate field carries the stat/spell they grant). "Medals" are key/valuable
+items (id >= 0x200) with no stat record — editable only as inventory entries in the save
+editor, not here.
