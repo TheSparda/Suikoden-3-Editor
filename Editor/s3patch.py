@@ -65,6 +65,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SPELL_TABLE_FILE = 0x3EC2A0
 SPELL_COUNT      = 94
 SPELL_STRIDE     = 0x20
+# The per-spell element byte is stored one record AHEAD of the record whose name/desc/
+# power it belongs to: element(spell i) = byte at record (i+1) + 0x04. Verified against
+# the "<Element> MGC" prefix in each spell's own description — 32/34 match under this
+# offset vs only 25/34 same-record; the 2 remainders are the Pale Gate spells whose
+# element code is 6 (a special multi/dark element, not one of the 5 basics). Read/write
+# element ONLY through SPELL_ELEM_OFF so the two stay in lockstep.
+SPELL_ELEM_OFF   = SPELL_STRIDE + 0x04   # +0x24 from a record's own base
 
 # Unite (co-op) attack table — same field layout as spells, different array.
 # 38 records x 0x28 bytes at 0x3ECF90. Verified vs Suikosource unite guide
@@ -393,8 +400,15 @@ def _spell_name(iso, rec):
         return "?"
 
 
-ELEMENTS = {1:"Fire",2:"Water",3:"Wind",4:"Earth",5:"Lightning"}
+ELEMENTS = {0:"None", 1:"Fire", 2:"Water", 3:"Wind", 4:"Earth", 5:"Lightning", 6:"Pale (Dark)"}
 AREA_BIT = 0x8000  # flags14 bit15: set = area-of-effect, clear = not-area
+
+def spell_element_byte(iso, index):
+    """Read spell `index`'s element (low byte of the u16 stored one record AHEAD).
+    Returns the raw u16 'kind' word (call decode_element on it)."""
+    if index + 1 >= SPELL_COUNT:
+        return 0
+    return iso.u16(SPELL_TABLE_FILE + index * SPELL_STRIDE + SPELL_ELEM_OFF)
 
 def decode_target(f14):
     """Human-readable target shape from flags14 (validated vs description text)."""
@@ -442,7 +456,7 @@ def cmd_spells(a):
     for i in range(SPELL_COUNT):
         off = SPELL_TABLE_FILE + i*SPELL_STRIDE
         rec = iso.rd(off, SPELL_STRIDE)
-        kind = struct.unpack_from("<H", rec, 0x04)[0]
+        kind = spell_element_byte(iso, i)   # element is stored one record ahead
         cast = struct.unpack_from("<I", rec, 0x10)[0]
         f14  = struct.unpack_from("<I", rec, 0x14)[0]
         power= struct.unpack_from("<I", rec, 0x1C)[0]
@@ -478,7 +492,7 @@ def cmd_dump_spell(a):
             try: extra = "  -> '" + iso.rd(va2off(v),32).split(b'\x00')[0].decode('latin1','replace') + "'"
             except Exception: extra = ""
         print(f"  +0x{fo:02X} {fname:9} = {v}{extra}")
-    kind = struct.unpack_from("<H", rec, 0x04)[0]
+    kind = spell_element_byte(iso, a.index)   # element stored one record ahead
     f14  = struct.unpack_from("<I", rec, 0x14)[0]
     f18  = struct.unpack_from("<I", rec, 0x18)[0]
     print("  decoded:")
@@ -553,8 +567,10 @@ def _apply_spell_changes(iso, index, a):
         rev = {v.lower(): k for k, v in ELEMENTS.items()}
         el = rev.get(a.element.lower())
         if el is None: sys.exit(f"element must be one of {list(ELEMENTS.values())}")
-        kind = struct.unpack_from("<H", rec, 0x04)[0]
-        changes.append((0x04, "<H", (kind & 0xFF00) | el))
+        if index + 1 < SPELL_COUNT:
+            # element byte lives one record ahead; offset is relative to this record's base
+            kind = iso.u16(off + SPELL_ELEM_OFF)
+            changes.append((SPELL_ELEM_OFF, "<H", (kind & 0xFF00) | el))
     if a.aoe is not None:
         f14 = struct.unpack_from("<I", rec, 0x14)[0]
         f14 = (f14 | AREA_BIT) if a.aoe == "on" else (f14 & ~AREA_BIT)
@@ -589,7 +605,7 @@ def cmd_reskin_rune(a):
         for fo, fmt, val in changes:
             iso.wr(off + fo, struct.pack(fmt, val))
         rec = iso.rd(off, SPELL_STRIDE)
-        kind = struct.unpack_from("<H", rec, 0x04)[0]
+        kind = spell_element_byte(iso, idx)
         f14  = struct.unpack_from("<I", rec, 0x14)[0]
         f18  = struct.unpack_from("<I", rec, 0x18)[0]
         cast = struct.unpack_from("<I", rec, 0x10)[0]
@@ -611,7 +627,7 @@ def cmd_reskin(a):
 
     def show(tag):
         r = iso.rd(off, SPELL_STRIDE)
-        kind = struct.unpack_from("<H", r, 0x04)[0]
+        kind = spell_element_byte(iso, a.index)
         f14  = struct.unpack_from("<I", r, 0x14)[0]
         f18  = struct.unpack_from("<I", r, 0x18)[0]
         cast = struct.unpack_from("<I", r, 0x10)[0]
