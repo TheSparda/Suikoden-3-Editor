@@ -185,6 +185,46 @@ def find_gear_records(iso):
 
 
 # ---------------------------------------------------------------------------
+# Consumable / food table (verified v12). Distinct array from gear: name ptr is at
+# +0x44 (gear uses +0x40), and — unlike gear — name/desc/stats are SAME-record aligned
+# (60/60 desc "Heals NNN HP" == heal field; no off-by-one). Medicines, Antitoxin, stat
+# "Stone of X" items, and foods all share this record.
+FOOD_TABLE_FILE = 0x3E91D0     # first record
+FOOD_STRIDE     = 0x48
+FOOD_COUNT      = 62           # valid records forward from base
+FOOD_DESC_OFF   = 0x00         # u32 -> description string (vaddr)   [CONFIRMED]
+FOOD_HEAL_OFF   = 0x14         # u16 heal amount (HP)                [CONFIRMED 60/60]
+FOOD_PROC_OFF   = 0x1E         # u16 proc chance % (0/30/60)         [CONFIRMED 7/7]
+FOOD_NAME_OFF   = 0x44         # u32 -> name string (vaddr)          [CONFIRMED anchor]
+
+def find_food_records(iso):
+    """Return [{index, addr, name, desc, heal, proc}] for the consumable/food table.
+    Only heal and proc% are exposed for editing — both verified against the in-game
+    descriptions. The status-id field (which status a food inflicts/cures) is not yet
+    mapped and is left untouched."""
+    out = []
+    for i in range(FOOD_COUNT):
+        off = FOOD_TABLE_FILE + i * FOOD_STRIDE
+        rec = iso.rd(off, FOOD_STRIDE)
+        nptr = struct.unpack_from("<I", rec, FOOD_NAME_OFF)[0]
+        dptr = struct.unpack_from("<I", rec, FOOD_DESC_OFF)[0]
+        try:
+            name = iso.rd(va2off(nptr), 32).split(b"\x00")[0].decode("latin1", "replace")
+        except Exception:
+            name = "?"
+        try:
+            desc = iso.rd(va2off(dptr), 96).split(b"\x00")[0].decode("latin1", "replace")
+        except Exception:
+            desc = ""
+        out.append({
+            "index": i, "addr": off, "name": name, "desc": desc,
+            "heal": struct.unpack_from("<H", rec, FOOD_HEAL_OFF)[0],
+            "proc": struct.unpack_from("<H", rec, FOOD_PROC_OFF)[0],
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
 # ID list parsing (from the .txt files extracted from the editor)
 # ---------------------------------------------------------------------------
 def load_skill_ids():
