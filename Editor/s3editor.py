@@ -1036,6 +1036,13 @@ h2{color:var(--crimson)!important}
 #toast.show{opacity:1;transform:translateY(0)}
 .hint{color:var(--mut);font-size:12px;margin:4px 0 14px}
 .search{width:260px}
+/* opt-in checkbox pill (Foods "update description", etc.) */
+.optchk{display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;
+ padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+ user-select:none;transition:border-color .12s,background .12s}
+.optchk:hover{border-color:var(--acc);background:var(--panel2)}
+.optchk input{width:16px;height:16px;margin:0;accent-color:var(--acc);cursor:pointer;flex:none}
+.optchk .hint{margin:0}
 tr.descrow td{border-bottom:1px solid var(--line);padding-top:0}
 tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 9px 8px}
 tr.mainrow td{border-bottom:0}
@@ -1555,9 +1562,10 @@ async function renderFoods(m){
  m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter foods / medicines…">
   <span class=hint>Consumables (foods, medicines, stat stones). Edit <b>Heal HP</b> and the
    <b>status proc chance %</b>. Which status a food inflicts/cures isn't editable yet. Saves on change.</span></div>
-  <div class=row style="margin-bottom:10px"><label class=hint style="display:flex;align-items:center;gap:6px;cursor:pointer">
-   <input type=checkbox id=fupd> also update description text to match (best-effort; length-capped, so
-   a longer number may be truncated — the original text stays if it can't fit)</label></div>
+  <label class=optchk for=fupd style="margin-bottom:12px">
+   <input type=checkbox id=fupd>
+   <span>Also update description text to match
+    <span class=hint style=font-weight:400>— best-effort &amp; length-capped; an over-long number leaves the original text intact</span></span></label>
   <table><thead><tr><th>#</th><th>Name</th><th style=width:110px>Heal HP</th><th style=width:110px>Proc %</th><th>Description</th></tr></thead><tbody id=fb></tbody></table>`;
  function draw(f=""){
   const rows=foods.filter(x=>x.name.toLowerCase().includes(f)||(x.desc||"").toLowerCase().includes(f));
