@@ -400,6 +400,22 @@ def write_gear(item_id, fields):
         iso.wr(off + eo + 4, struct.pack("<H", int(param) & 0xFFFF))
     iso.close(); return {"ok": True}
 
+def read_foods():
+    iso = _iso()
+    foods = S.find_food_records(iso)
+    iso.close(); return foods
+
+def write_food(index, fields):
+    iso = _iso(write=True)
+    if not (0 <= int(index) < S.FOOD_COUNT):
+        iso.close(); return {"error": "food index out of range"}
+    off = S.FOOD_TABLE_FILE + int(index) * S.FOOD_STRIDE
+    if "heal" in fields:
+        iso.wr(off + S.FOOD_HEAL_OFF, struct.pack("<H", _u(fields["heal"], 2)))
+    if "proc" in fields:
+        iso.wr(off + S.FOOD_PROC_OFF, struct.pack("<H", _u(fields["proc"], 2)))
+    iso.close(); return {"ok": True}
+
 # --- Weapons (list4 = weapon ATK sharpen table) --------------------------------
 # Each record (stride 28): bytes 0..15 = ATK at sharpen levels 1..16 (u8 each);
 # bytes 16..27 = a 12-byte tail (sharpen cost/material data, meaning unconfirmed).
@@ -771,6 +787,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/spells":  return self._send(200, read_spells())
             if p == "/api/unites":  return self._send(200, read_unites())
             if p == "/api/gear":    return self._send(200, read_gear())
+            if p == "/api/foods":   return self._send(200, read_foods())
             if p == "/api/shop":    return self._send(200, read_shop())
             if p == "/api/items":   return self._send(200,
                 [{"id": k, "name": v, "desc": ITEM_DESC.get(k, "")}
@@ -856,6 +873,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, write_unite(int(body["index"]), body["fields"]))
             if self.path == "/api/gear":
                 return self._send(200, write_gear(int(body["id"]), body["fields"]))
+            if self.path == "/api/food":
+                return self._send(200, write_food(int(body["index"]), body["fields"]))
             if self.path == "/api/rune":
                 return self._send(200, self._rune(body))
             if self.path == "/api/shop":
@@ -1137,10 +1156,10 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
  // top-level bar; "Other" is a hover dropdown holding the less-used tabs
  const topTabs=["characters","spells","runes","unites","gear","weapons","hardmode"];
- const otherTabs=["shop","enemies","text","reference"];
+ const otherTabs=["foods","shop","enemies","text","reference"];
  const btn=t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`;
  window.OTHER_TABS=otherTabs;
  $("#nav").innerHTML=
@@ -1215,6 +1234,7 @@ async function render(){
  if(TAB==="runes")return renderRunes(m);
  if(TAB==="unites")return renderUnites(m);
  if(TAB==="gear")return renderGear(m);
+ if(TAB==="foods")return renderFoods(m);
  if(TAB==="weapons")return renderWeapons(m);
  if(TAB==="shop")return renderShop(m);
  if(TAB==="characters")return renderChars(m);
@@ -1500,6 +1520,29 @@ async function renderGear(m){const gear=await api("/api/gear");
   }
   const r=await api("/api/gear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
   if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
+ draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+async function renderFoods(m){
+ const foods=await api("/api/foods");
+ const fdef=await api("/api/foods?disk=1");const FDEF={};fdef.forEach(f=>FDEF[f.index]={heal:f.heal,proc:f.proc});
+ m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter foods / medicines…">
+  <span class=hint>Consumables (foods, medicines, stat stones). Edit <b>Heal HP</b> and the
+   <b>status proc chance %</b>. The in-game description text is fixed, so it won't update to
+   match new numbers. Which status a food inflicts/cures isn't editable yet. Saves on change.</span></div>
+  <table><thead><tr><th>#</th><th>Name</th><th style=width:110px>Heal HP</th><th style=width:110px>Proc %</th><th>Description</th></tr></thead><tbody id=fb></tbody></table>`;
+ function draw(f=""){
+  const rows=foods.filter(x=>x.name.toLowerCase().includes(f)||(x.desc||"").toLowerCase().includes(f));
+  $("#fb").innerHTML=rows.map(x=>{const d=FDEF[x.index]||x;return `<tr>
+    <td class=hint>${x.index}</td><td>${x.name}</td>
+    <td><input type=number min=0 max=65535 style=width:90px data-i=${x.index} data-k=heal data-def="${d.heal}" value="${x.heal}"></td>
+    <td><input type=number min=0 max=100 style=width:90px data-i=${x.index} data-k=proc data-def="${d.proc}" value="${x.proc}"></td>
+    <td class=hint>${(x.desc||"").replace(/</g,"&lt;")}</td></tr>`;}).join("");
+  decorate($("#fb"));
+  $("#fb").querySelectorAll("input[data-i]").forEach(inp=>inp.addEventListener("blur",async()=>{
+    const fields={};fields[inp.dataset.k]=+inp.value;
+    const r=await api("/api/food",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({index:+inp.dataset.i,fields})});
+    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}));}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
 async function renderWeapons(m){const wpn=await api("/api/weapons");
