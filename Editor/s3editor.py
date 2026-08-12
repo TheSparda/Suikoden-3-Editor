@@ -269,7 +269,8 @@ def read_spells():
     for i in range(S.SPELL_COUNT):
         off = S.SPELL_TABLE_FILE + i * S.SPELL_STRIDE
         rec = iso.rd(off, S.SPELL_STRIDE)
-        kind = struct.unpack_from("<H", rec, 0x04)[0]
+        # element lives one record ahead (see SPELL_ELEM_OFF); last record has no i+1
+        kind = iso.u16(off + S.SPELL_ELEM_OFF) if i + 1 < S.SPELL_COUNT else 0
         f14 = struct.unpack_from("<I", rec, 0x14)[0]
         f18 = struct.unpack_from("<I", rec, 0x18)[0]
         out.append({
@@ -574,9 +575,11 @@ def write_spell(index, fields):
     off = S.SPELL_TABLE_FILE + index * S.SPELL_STRIDE
     if "power" in fields: iso.wr(off + 0x1C, struct.pack("<I", _u(fields["power"], 4)))
     if "cast" in fields:  iso.wr(off + 0x10, struct.pack("<I", _u(fields["cast"], 4)))
-    if "elementId" in fields:
-        kind = iso.u16(off + 0x04)
-        iso.wr(off + 0x04, struct.pack("<H", (kind & 0xFF00) | (int(fields["elementId"]) & 0xFF)))
+    if "elementId" in fields and index + 1 < S.SPELL_COUNT:
+        # element byte is stored one record ahead (SPELL_ELEM_OFF); preserve its high byte
+        kind = iso.u16(off + S.SPELL_ELEM_OFF)
+        iso.wr(off + S.SPELL_ELEM_OFF,
+               struct.pack("<H", (kind & 0xFF00) | (int(fields["elementId"]) & 0xFF)))
     if "aoe" in fields:
         f14 = iso.u32(off + 0x14)
         f14 = (f14 | S.AREA_BIT) if fields["aoe"] else (f14 & ~S.AREA_BIT)
@@ -1233,7 +1236,7 @@ const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
 async function renderSpells(m){const sp=await api("/api/spells");
  const spDef=await api("/api/spells?disk=1");const DEF={};spDef.forEach(s=>DEF[s.index]=s);
  const dstat=s=>META.statuses.includes(s.status)?s.status:"none";
- const elOpts=`<option value="0">0 — none / neutral</option>`+Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
+ const elOpts=Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${id} — ${n}</option>`).join("");
  const stOpts=META.statuses.map(s=>`<option>${s}</option>`).join("");
  const tgOpts=(META.targets||[]).map(t=>`<option value="${t.v}">${t.label}</option>`).join("")+`<option value="" disabled>(other/custom)</option>`;
  const byName={};sp.forEach(s=>{if(!(s.name in byName))byName[s.name]=s;});
@@ -1355,7 +1358,7 @@ async function renderRunes(m){
    "jongleur","palegate","swordofrage","swordofthunder","swordofcyclone"];
  const runeOrder=[...FAM.filter(r=>META.runes.includes(r)),...META.runes.filter(r=>!FAM.includes(r))];
  const rOpts=runeOrder.map(r=>`<option>${r}</option>`).join("");
- const elOpts=`<option value="0">0 — none / neutral</option>`+Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${n}</option>`).join("");
+ const elOpts=Object.entries(META.elements).map(([id,n])=>`<option value="${id}">${id} — ${n}</option>`).join("");
  const stOpts=META.statuses.map(s=>`<option>${s}</option>`).join("");
  const elOptsKeep=`<option value="">(keep)</option>`+elOpts;
  const stOptsKeep=`<option value="">(keep)</option>`+stOpts;
