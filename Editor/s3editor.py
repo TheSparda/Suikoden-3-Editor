@@ -414,7 +414,34 @@ def write_food(index, fields):
         iso.wr(off + S.FOOD_HEAL_OFF, struct.pack("<H", _u(fields["heal"], 2)))
     if "proc" in fields:
         iso.wr(off + S.FOOD_PROC_OFF, struct.pack("<H", _u(fields["proc"], 2)))
-    iso.close(); return {"ok": True}
+    result = {"ok": True}
+    if fields.get("updateDesc"):
+        # Best-effort: rewrite the "Heals NNN HP" / "NN% chance" numbers in the item's
+        # description string to match the new field values. Edited in place, capped to the
+        # string's original byte length (longer text is truncated) — same rule as the Text tab.
+        import re
+        dptr = struct.unpack_from("<I", iso.rd(off + S.FOOD_DESC_OFF, 4), 0)[0]
+        try:
+            doff = S.va2off(dptr)
+            raw = iso.rd(doff, 128)
+            orig = raw.split(b"\x00")[0]
+            maxlen = len(orig)                       # cannot grow past the original string
+            text = orig.decode("latin1", "replace")
+            if "heal" in fields:
+                text = re.sub(r"Heals \d+HP", f"Heals {_u(fields['heal'], 2)}HP", text, count=1)
+            if "proc" in fields:
+                text = re.sub(r"\d+% chance", f"{_u(fields['proc'], 2)}% chance", text, count=1)
+            enc = text.encode("latin1", "replace")
+            if len(enc) > maxlen:
+                # would overflow the original string slot: leave the description untouched
+                # rather than write a truncated (garbled) line.
+                result["descTruncated"] = True
+            else:
+                iso.wr(doff, enc + b"\x00" * (maxlen - len(enc)))
+                result["descTruncated"] = False
+        except Exception as e:
+            result["descError"] = str(e)
+    iso.close(); return result
 
 # --- Weapons (list4 = weapon ATK sharpen table) --------------------------------
 # Each record (stride 28): bytes 0..15 = ATK at sharpen levels 1..16 (u8 each);
@@ -1527,8 +1554,10 @@ async function renderFoods(m){
  const fdef=await api("/api/foods?disk=1");const FDEF={};fdef.forEach(f=>FDEF[f.index]={heal:f.heal,proc:f.proc});
  m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter foods / medicines…">
   <span class=hint>Consumables (foods, medicines, stat stones). Edit <b>Heal HP</b> and the
-   <b>status proc chance %</b>. The in-game description text is fixed, so it won't update to
-   match new numbers. Which status a food inflicts/cures isn't editable yet. Saves on change.</span></div>
+   <b>status proc chance %</b>. Which status a food inflicts/cures isn't editable yet. Saves on change.</span></div>
+  <div class=row style="margin-bottom:10px"><label class=hint style="display:flex;align-items:center;gap:6px;cursor:pointer">
+   <input type=checkbox id=fupd> also update description text to match (best-effort; length-capped, so
+   a longer number may be truncated — the original text stays if it can't fit)</label></div>
   <table><thead><tr><th>#</th><th>Name</th><th style=width:110px>Heal HP</th><th style=width:110px>Proc %</th><th>Description</th></tr></thead><tbody id=fb></tbody></table>`;
  function draw(f=""){
   const rows=foods.filter(x=>x.name.toLowerCase().includes(f)||(x.desc||"").toLowerCase().includes(f));
@@ -1536,13 +1565,19 @@ async function renderFoods(m){
     <td class=hint>${x.index}</td><td>${x.name}</td>
     <td><input type=number min=0 max=65535 style=width:90px data-i=${x.index} data-k=heal data-def="${d.heal}" value="${x.heal}"></td>
     <td><input type=number min=0 max=100 style=width:90px data-i=${x.index} data-k=proc data-def="${d.proc}" value="${x.proc}"></td>
-    <td class=hint>${(x.desc||"").replace(/</g,"&lt;")}</td></tr>`;}).join("");
+    <td class=hint data-descfor=${x.index}>${(x.desc||"").replace(/</g,"&lt;")}</td></tr>`;}).join("");
   decorate($("#fb"));
   $("#fb").querySelectorAll("input[data-i]").forEach(inp=>inp.addEventListener("blur",async()=>{
-    const fields={};fields[inp.dataset.k]=+inp.value;
+    const idx=+inp.dataset.i, fields={};fields[inp.dataset.k]=+inp.value;
+    if($("#fupd").checked)fields.updateDesc=true;
     const r=await api("/api/food",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({index:+inp.dataset.i,fields})});
-    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}));}
+      body:JSON.stringify({index:idx,fields})});
+    if(r.ok){markDirty();
+     if(fields.updateDesc){const fresh=(await api("/api/foods")).find(z=>z.index===idx);
+      const cell=$(`#fb [data-descfor="${idx}"]`);
+      if(fresh&&cell)cell.textContent=fresh.desc||"";}
+     toast(r.descTruncated?"staged (description too long — text left unchanged)":"staged");}
+    else toast("error: "+(r.error||"?"));}));}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
 async function renderWeapons(m){const wpn=await api("/api/weapons");
