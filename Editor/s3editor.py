@@ -47,22 +47,23 @@ def pick_file_dialog(kind="card"):
     path. The server runs locally, so this dialog appears on the user's own desktop.
     macOS uses AppleScript (osascript); other platforms fall back to tkinter. Returns
     {"path": "..."} on choose, {"cancelled": True} if dismissed, or {"error": ...}."""
-    is_card = kind == "card"
-    title = "Select a PS2 memory card" if is_card else "Select a file"
-    CARD_EXTS = (".ps2", ".mcd", ".mc2", ".bin")   # the only formats scan_memcards accepts
+    is_card = kind == "card"       # card-only picker (legacy); "save" also allows .psu / raw gamedata
+    title = "Select a PS2 memory card" if is_card else "Select a PS2 save (card, .psu, or gamedata)"
+    CARD_EXTS = (".ps2", ".mcd", ".mc2", ".bin")   # memory-card formats scan_memcards accepts
     def _guard(path):
-        # Defense in depth: even if the dialog filter is bypassed, reject a non-card path.
+        # Defense in depth: even if the dialog filter is bypassed, reject a non-card path
+        # for the card-only picker. The "save" picker accepts anything (raw gamedata is
+        # extensionless); the server sniffs the format and rejects unsupported files.
         if is_card and path and not path.lower().endswith(CARD_EXTS):
             return {"error": "not a PS2 memory-card file (.ps2/.mcd/.mc2/.bin)"}
         return {"path": path}
     try:
         if sys.platform == "darwin":
             import subprocess
-            # of type {...} restricts the dialog to our supported PS2 card extensions.
-            types = '{"ps2","mcd","mc2","bin"}' if is_card else "{}"
-            script = (f'set f to choose file with prompt "{title}"'
-                      + (f' of type {types}' if is_card else '')
-                      + '\nPOSIX path of f')
+            # of type {...} restricts the dialog to card extensions; the "save" picker is
+            # unrestricted so it can reach .psu exports and extensionless gamedata payloads.
+            typeclause = ' of type {"ps2","mcd","mc2","bin"}' if is_card else ''
+            script = f'set f to choose file with prompt "{title}"{typeclause}\nPOSIX path of f'
             r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=300)
             out = r.stdout.strip()
             if r.returncode != 0 or not out:
@@ -72,8 +73,8 @@ def pick_file_dialog(kind="card"):
         import tkinter as tk
         from tkinter import filedialog
         root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-        ft = ([("PS2 memory cards", "*.ps2 *.mcd *.mc2 *.bin")]
-              if is_card else [("All files", "*.*")])
+        ft = ([("PS2 memory cards", "*.ps2 *.mcd *.mc2 *.bin")] if is_card
+              else [("PS2 saves", "*.ps2 *.mcd *.mc2 *.bin *.psu"), ("All files", "*.*")])
         path = filedialog.askopenfilename(title=title, filetypes=ft)
         root.update(); root.destroy()
         return _guard(path) if path else {"cancelled": True}
@@ -845,8 +846,10 @@ class Handler(BaseHTTPRequestHandler):
                          os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
                          os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Saves"))}
                 last = load_config().get("lastCard")
+                roots = sorted(roots)
                 return self._send(200, {"root": _scan_root, "lastCard": last,
-                                        "cards": SV.scan_memcards(sorted(roots))})
+                                        "cards": SV.scan_memcards(roots),
+                                        "files": SV.scan_individual_saves(roots)})
             if p == "/api/save-read":
                 path = q.get("path", "")
                 import urllib.parse as _up
@@ -1913,24 +1916,33 @@ let SAVE_CARD=null;   // last-opened card path
 async function renderSaves(m){
  m.innerHTML=spinner("scanning for PS2 memory cards…");
  const d=await api("/api/savecards");
- const rows=(d.cards||[]).map(c=>`<tr>
-   <td>${c.name}</td><td class=hint>${c.mb} MB</td>
+ const kindPill={card:"memory card",psu:".psu export",gamedata:"raw gamedata"};
+ const mkrow=c=>`<tr>
+   <td>${c.name} ${c.kind&&c.kind!=="card"?`<span class=pill style=font-size:10px>${kindPill[c.kind]||c.kind}</span>`:""}</td>
+   <td class=hint>${c.mb} MB</td>
    <td>${c.hasS3?'<span class="pill aoe">Suikoden III</span>':'<span class=hint>no S3 save</span>'}</td>
    <td class=hint style=word-break:break-all>${c.path}</td>
-   <td><button class=act data-card="${encodeURIComponent(c.path)}" ${c.hasS3?'':'disabled'}>Open</button></td></tr>`).join("");
- m.innerHTML=`<div class=card><h3 style=margin-top:0>Save Editor <span class=pill aoe>memory card</span></h3>
-   <div class=hint>Opens an 8&nbsp;MB PS2 memory-card image (<b>.ps2</b>/.mcd) and edits its Suikoden III
-    save slots — no ISO needed. Edits write straight to the card file (a <b>.bak</b> is made first);
-    the save checksum and page ECC are recomputed automatically. Cards found near ${d.root}.</div>
+   <td><button class=act data-card="${encodeURIComponent(c.path)}" ${c.hasS3?'':'disabled'}>Open</button></td></tr>`;
+ const rows=(d.cards||[]).map(mkrow).join("");
+ const frows=(d.files||[]).map(mkrow).join("");
+ m.innerHTML=`<div class=card><h3 style=margin-top:0>Save Editor <span class=pill aoe>memory card &amp; single saves</span></h3>
+   <div class=hint>Edits a Suikoden III save — no ISO needed. Opens an 8&nbsp;MB PS2 <b>memory card</b>
+    (.ps2/.mcd/.mc2/.bin) <b>or an individual save</b>: a <b>.psu</b> export (uLaunchELF/mymc) or a raw
+    <b>gamedata</b> payload. A <b>.bak</b> is made before the first write; the save checksum (and, for
+    memory cards, page ECC) is recomputed automatically. Found near ${d.root}.</div>
+   <div class=hint style="margin:2px 0 4px;font-weight:600;color:var(--acc2)">Memory cards</div>
    <table><thead><tr><th>File</th><th>Size</th><th>Contains</th><th>Path</th><th></th></tr></thead>
-    <tbody>${rows||'<tr><td colspan=5 class=hint>no PS2 memory cards found nearby — enter a full path below</td></tr>'}</tbody></table>
+    <tbody>${rows||'<tr><td colspan=5 class=hint>no PS2 memory cards found nearby</td></tr>'}</tbody></table>
+   <div class=hint style="margin:14px 0 4px;font-weight:600;color:var(--acc2)">Individual saves (.psu / gamedata)</div>
+   <table><thead><tr><th>File</th><th>Size</th><th>Contains</th><th>Path</th><th></th></tr></thead>
+    <tbody>${frows||'<tr><td colspan=5 class=hint>no individual saves found nearby — use Browse… or a full path below</td></tr>'}</tbody></table>
    ${d.lastCard?`<div class=row style="margin-top:12px;align-items:center">
-     <button class=act id=savelast>Reopen last card</button>
+     <button class=act id=savelast>Reopen last</button>
      <span class=hint style=word-break:break-all>${d.lastCard}</span></div>`:""}
    <div class=row style=margin-top:12px;align-items:flex-end>
      <button class=act id=cardbrowse>Browse…</button>
      <label style=flex:1>Or enter full path
-     <input id=cardpath style=width:100% placeholder="/path/to/Mcd001.ps2" value="${d.lastCard?String(d.lastCard).replace(/"/g,"&quot;"):""}"></label>
+     <input id=cardpath style=width:100% placeholder="/path/to/save.ps2 · .psu · gamedata" value="${d.lastCard?String(d.lastCard).replace(/"/g,"&quot;"):""}"></label>
      <button class=act id=cardopen>Open</button></div>
    <div id=carderr class=hint style=color:#e88></div></div>
    <div id=savebody></div>`;
@@ -1939,7 +1951,7 @@ async function renderSaves(m){
  $("#cardopen").onclick=()=>openCard($("#cardpath").value.trim());
  $("#cardbrowse").onclick=async()=>{
    $("#carderr").textContent="";
-   const r=await api("/api/pick-file?kind=card");
+   const r=await api("/api/pick-file?kind=save");
    if(r.path){$("#cardpath").value=r.path;openCard(r.path);}
    else if(r.error)$("#carderr").textContent=r.error;};
  if(SAVE_CARD)openCard(SAVE_CARD);

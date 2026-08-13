@@ -573,11 +573,22 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         struct.pack_into("<I", b, GOLD_OFF, _clamp(gold, 4)); changed += 1
     return fix_gamedata_checksum(bytes(b)), changed
 
+def _backup_once(path, make_backup):
+    if make_backup:
+        bak = path + ".bak"
+        if not os.path.exists(bak):
+            shutil.copy2(path, bak)
+
+
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
                      party_edits=None, recruit_edits=None, gold=None):
-    """Apply edits to one save folder's gamedata on a memcard file, in place.
-    Fixes the save checksum and per-page ECC. Backs up the card first by default.
-    Returns a summary dict."""
+    """Apply edits to one save's gamedata, in place, for any supported container
+    (memory card, .psu export, or raw gamedata). Fixes the save checksum (and, for
+    memory cards, per-page ECC). Backs up the file first by default."""
+    fmt = _sniff_format(path)
+    if fmt in ("psu", "gamedata"):
+        return _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
+                                      party_edits, recruit_edits, gold)
     card = load_card(path)
     # locate the folder + its gamedata
     target = None
@@ -628,8 +639,84 @@ def _title_from_icon_sys(ic):
     if m: out["playtime"] = m.group(1)
     return out
 
+GAMEDATA_SIZE = 53264          # 0xD010 — the bare S3 save payload
+_DIRENT = 512                  # PS2MFS / .psu directory-entry size
+_PSU_CLUSTER = 1024            # .psu files are padded to 1 KB boundaries
+_DF_DIR = 0x0020               # dirent mode bit: this entry is a directory
+
+
+def _round_up(n, m):
+    return (n + m - 1) // m * m
+
+
+class PsuSave:
+    """Reader/writer for a single-save EMS (.psu) export (uLaunchELF / mymc).
+    Layout (verified vs mymc ps2save.load_ems): a 512-byte dirent for the save
+    folder, then '.' and '..' dirents, then for each file a 512-byte dirent
+    (mode@0, length@4, name@0x40) followed by its data padded to a 1 KB boundary.
+    No ECC and no whole-file checksum, so editing a file's bytes in place (same
+    length) is all that's needed."""
+    def __init__(self, data):
+        self.data = bytearray(data)
+        d0 = self.data[:_DIRENT]
+        mode, _, n = struct.unpack_from("<HHL", d0, 0)
+        if not (mode & _DF_DIR) or n < 2:
+            raise ValueError("not a .psu save file")
+        self.folder = d0[0x40:0x40 + 448].split(b"\x00")[0].decode("latin1", "replace")
+        self.files = {}                       # name -> {hdr, data_off, length}
+        off = _DIRENT * 3                      # skip dir, '.', '..'
+        for _ in range(n - 2):
+            if off + _DIRENT > len(self.data):
+                break
+            hdr = self.data[off:off + _DIRENT]
+            fmode, _, flen = struct.unpack_from("<HHL", hdr, 0)
+            name = hdr[0x40:0x40 + 448].split(b"\x00")[0].decode("latin1", "replace")
+            data_off = off + _DIRENT
+            self.files[name] = {"hdr": off, "data_off": data_off, "length": flen}
+            off = data_off + _round_up(flen, _PSU_CLUSTER)
+
+    def read_file(self, name):
+        e = self.files.get(name)
+        if not e:
+            return None
+        return bytes(self.data[e["data_off"]:e["data_off"] + e["length"]])
+
+    def write_file(self, name, new_bytes):
+        e = self.files.get(name)
+        if not e or len(new_bytes) != e["length"]:   # in-place only (same length)
+            return False
+        self.data[e["data_off"]:e["data_off"] + e["length"]] = new_bytes
+        return True
+
+    def to_bytes(self):
+        return bytes(self.data)
+
+
+def _sniff_format(path):
+    """Return 'card' | 'psu' | 'gamedata' | 'unknown' for a save file."""
+    try:
+        sz = os.path.getsize(path)
+        with open(path, "rb") as f:
+            head = f.read(_DIRENT)
+    except OSError:
+        return "unknown"
+    if head[:len(MAGIC)] == MAGIC:
+        return "card"
+    if sz == GAMEDATA_SIZE:
+        return "gamedata"
+    if len(head) >= 0x40 and (struct.unpack_from("<H", head, 0)[0] & _DF_DIR):
+        return "psu"
+    return "unknown"
+
+
 def read_all_s3_saves(path):
-    """Top-level: open a memcard file, decode every S3 save it contains."""
+    """Top-level: open a save file (memory card, .psu export, or raw gamedata) and
+    decode every Suikoden III save it contains."""
+    fmt = _sniff_format(path)
+    if fmt == "psu":
+        return _read_psu_saves(path)
+    if fmt == "gamedata":
+        return _read_gamedata_save(path)
     card = load_card(path)
     saves = []
     for s in card.find_s3_saves():
@@ -643,6 +730,69 @@ def read_all_s3_saves(path):
         dec["meta"] = _title_from_icon_sys(ic)
         saves.append(dec)
     return saves
+
+
+def _read_psu_saves(path):
+    with open(path, "rb") as f:
+        psu = PsuSave(f.read())
+    if not psu.folder.startswith(S3_PREFIX):
+        return []
+    gd = psu.read_file("gamedata")
+    if not gd or len(gd) < GAMEDATA_SIZE:
+        return []
+    dec = decode_save(gd)
+    dec["folder"] = psu.folder
+    dec["label"] = slot_label(psu.folder)
+    dec["meta"] = _title_from_icon_sys(psu.read_file("icon.sys"))
+    return [dec]
+
+
+def _read_gamedata_save(path):
+    with open(path, "rb") as f:
+        gd = f.read()
+    if len(gd) != GAMEDATA_SIZE:
+        return []
+    dec = decode_save(gd)
+    dec["folder"] = os.path.basename(path)   # raw payload has no folder name
+    dec["label"] = slot_label(dec["folder"])
+    dec["meta"] = {}
+    return [dec]
+
+
+def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
+                           party_edits, recruit_edits, gold):
+    """Write edits into a .psu export or a raw gamedata file. No ECC (neither format
+    has it); the gamedata's own checksum is recomputed by apply_edits_to_gamedata.
+    Same-length in-place write, so the container layout is untouched."""
+    if fmt == "gamedata":
+        with open(path, "rb") as f:
+            gd = f.read()
+        new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
+                                                  party_edits, recruit_edits, gold)
+        if changed == 0:
+            return {"ok": True, "changed": 0, "note": "no editable fields in request"}
+        _backup_once(path, make_backup)
+        with open(path, "wb") as f:
+            f.write(new_gd)
+        return {"ok": True, "changed": changed,
+                "checksum": struct.unpack_from("<I", new_gd, 0)[0]}
+    # .psu
+    with open(path, "rb") as f:
+        psu = PsuSave(f.read())
+    gd = psu.read_file("gamedata")
+    if gd is None:
+        return {"error": "gamedata not found in .psu"}
+    new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
+                                              party_edits, recruit_edits, gold)
+    if changed == 0:
+        return {"ok": True, "changed": 0, "note": "no editable fields in request"}
+    if not psu.write_file("gamedata", new_gd):
+        return {"error": "could not write gamedata back into .psu (length mismatch)"}
+    _backup_once(path, make_backup)
+    with open(path, "wb") as f:
+        f.write(psu.to_bytes())
+    return {"ok": True, "changed": changed,
+            "checksum": struct.unpack_from("<I", new_gd, 0)[0]}
 
 
 def scan_memcards(roots):
@@ -680,8 +830,56 @@ def scan_memcards(roots):
                     has_s3 = S3_PREFIX.encode() in blob
                 except OSError:
                     continue
-                found.append({"path": full, "name": fn, "size": sz,
+                found.append({"path": full, "name": fn, "size": sz, "kind": "card",
                               "mb": round(sz / 1048576, 1), "hasS3": has_s3})
+    found.sort(key=lambda x: (not x["hasS3"], x["name"].lower()))
+    return found
+
+
+def scan_individual_saves(roots):
+    """Find individual (non-memory-card) S3 saves near the given roots: .psu exports
+    whose folder is an S3 save, and raw 53264-byte `gamedata` payloads. Returns the
+    same shape as scan_memcards with kind 'psu' | 'gamedata'."""
+    seen, found = set(), []
+    for r in roots:
+        if not r or not os.path.isdir(r):
+            continue
+        for dp, _, files in os.walk(r):
+            if dp.count(os.sep) - r.count(os.sep) > 4:
+                continue
+            for fn in files:
+                full = os.path.join(dp, fn)
+                if full in seen:
+                    continue
+                seen.add(full)
+                low = fn.lower()
+                try:
+                    sz = os.path.getsize(full)
+                except OSError:
+                    continue
+                kind = has_s3 = None
+                if low.endswith(".psu"):
+                    # cheap: the folder name is in the first dirent at +0x40
+                    try:
+                        with open(full, "rb") as fh:
+                            head = fh.read(_DIRENT)
+                        name = head[0x40:0x40 + 448].split(b"\x00")[0].decode("latin1", "replace")
+                        kind = "psu"; has_s3 = name.startswith(S3_PREFIX)
+                    except OSError:
+                        continue
+                elif sz == GAMEDATA_SIZE:
+                    # a bare gamedata payload; validate via its self-consistent checksum
+                    try:
+                        with open(full, "rb") as fh:
+                            gd = fh.read()
+                        words = struct.unpack_from("<%dI" % (len(gd) // 4), gd, 0)
+                        kind = "gamedata"; has_s3 = (sum(words) & 0xFFFFFFFF) == 0
+                    except OSError:
+                        continue
+                if kind is None:
+                    continue
+                found.append({"path": full, "name": fn, "size": sz, "kind": kind,
+                              "mb": round(sz / 1048576, 2), "hasS3": bool(has_s3)})
     found.sort(key=lambda x: (not x["hasS3"], x["name"].lower()))
     return found
 
