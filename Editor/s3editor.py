@@ -47,22 +47,33 @@ def pick_file_dialog(kind="card"):
     path. The server runs locally, so this dialog appears on the user's own desktop.
     macOS uses AppleScript (osascript); other platforms fall back to tkinter. Returns
     {"path": "..."} on choose, {"cancelled": True} if dismissed, or {"error": ...}."""
-    is_card = kind == "card"       # card-only picker (legacy); "save" also allows .psu / raw gamedata
-    title = "Select a PS2 memory card" if is_card else "Select a PS2 save (card, .psu, or gamedata)"
+    # kind: "card" (card-only), "save" (card/.psu/raw gamedata), "iso" (game disc image)
+    ISO_EXTS = (".iso", ".bin", ".img")
     CARD_EXTS = (".ps2", ".mcd", ".mc2", ".bin")   # memory-card formats scan_memcards accepts
+    if kind == "iso":
+        title = "Select a Suikoden III ISO"
+        mac_types = '{"iso","bin","img"}'
+        tk_types = [("Disc images", "*.iso *.bin *.img"), ("All files", "*.*")]
+        guard_exts = ISO_EXTS
+    elif kind == "save":
+        title = "Select a PS2 save (card, .psu, or gamedata)"
+        mac_types = ''                              # unrestricted: raw gamedata is extensionless
+        tk_types = [("PS2 saves", "*.ps2 *.mcd *.mc2 *.bin *.psu"), ("All files", "*.*")]
+        guard_exts = None                           # server sniffs; accept anything
+    else:                                           # "card"
+        title = "Select a PS2 memory card"
+        mac_types = '{"ps2","mcd","mc2","bin"}'
+        tk_types = [("PS2 memory cards", "*.ps2 *.mcd *.mc2 *.bin")]
+        guard_exts = CARD_EXTS
     def _guard(path):
-        # Defense in depth: even if the dialog filter is bypassed, reject a non-card path
-        # for the card-only picker. The "save" picker accepts anything (raw gamedata is
-        # extensionless); the server sniffs the format and rejects unsupported files.
-        if is_card and path and not path.lower().endswith(CARD_EXTS):
-            return {"error": "not a PS2 memory-card file (.ps2/.mcd/.mc2/.bin)"}
+        # Defense in depth: reject a wrong extension even if the dialog filter is bypassed.
+        if guard_exts and path and not path.lower().endswith(guard_exts):
+            return {"error": f"expected one of {', '.join(guard_exts)}"}
         return {"path": path}
     try:
         if sys.platform == "darwin":
             import subprocess
-            # of type {...} restricts the dialog to card extensions; the "save" picker is
-            # unrestricted so it can reach .psu exports and extensionless gamedata payloads.
-            typeclause = ' of type {"ps2","mcd","mc2","bin"}' if is_card else ''
+            typeclause = f' of type {mac_types}' if mac_types else ''
             script = f'set f to choose file with prompt "{title}"{typeclause}\nPOSIX path of f'
             r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=300)
             out = r.stdout.strip()
@@ -73,9 +84,7 @@ def pick_file_dialog(kind="card"):
         import tkinter as tk
         from tkinter import filedialog
         root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
-        ft = ([("PS2 memory cards", "*.ps2 *.mcd *.mc2 *.bin")] if is_card
-              else [("PS2 saves", "*.ps2 *.mcd *.mc2 *.bin *.psu"), ("All files", "*.*")])
-        path = filedialog.askopenfilename(title=title, filetypes=ft)
+        path = filedialog.askopenfilename(title=title, filetypes=tk_types)
         root.update(); root.destroy()
         return _guard(path) if path else {"cancelled": True}
     except Exception as e:
@@ -1248,7 +1257,9 @@ async function pickIso(){setActive(true);const m=$("#main");m.innerHTML=spinner(
   ${META.lastIso?`<div class=row style="margin-top:14px;align-items:center">
    <button class=act id=openlast>Reopen last ISO</button>
    <span class=hint style=word-break:break-all>${META.lastIso}</span></div>`:""}
-  <div class=row style=margin-top:14px><label style=flex:1>Or enter full path
+  <div class=row style=margin-top:14px;align-items:flex-end>
+   <button class=act id=isobrowse>Browse…</button>
+   <label style=flex:1>Or enter full path
    <input id=isopath style=width:100% placeholder="/full/path/to/Suikoden III (USA).iso" value="${META.lastIso?String(META.lastIso).replace(/"/g,"&quot;"):""}"></label>
    <button class=act id=openpath>Open</button></div>
   <div id=isoerr class=hint style=color:#e88></div></div>`;
@@ -1260,6 +1271,11 @@ async function pickIso(){setActive(true);const m=$("#main");m.innerHTML=spinner(
   else{$("#isoerr").textContent=r.error;}}
  m.querySelectorAll("[data-path]").forEach(b=>b.onclick=()=>open(decodeURIComponent(b.dataset.path)));
  $("#openpath").onclick=()=>open($("#isopath").value.trim());
+ $("#isobrowse").onclick=async()=>{
+   $("#isoerr").textContent="";
+   const r=await api("/api/pick-file?kind=iso");
+   if(r.path){$("#isopath").value=r.path;open(r.path);}
+   else if(r.error)$("#isoerr").textContent=r.error;};
  if($("#openlast"))$("#openlast").onclick=()=>open(META.lastIso);}
 function setActive(clear){document.querySelectorAll("#nav button[data-t]").forEach(b=>b.classList.toggle("on",!clear&&b.dataset.t===TAB));
  const trig=document.querySelector("#nav .navtrig");
