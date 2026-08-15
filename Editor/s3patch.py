@@ -259,6 +259,26 @@ def load_item_ids():
     return out
 
 
+def load_item_categories():
+    """Parse the '----* Category *----' section headers in the item-id file and map
+    each item id to its category (e.g. 'Runes', 'Headgear', 'Shields'). Used to filter
+    equipment dropdowns to the right item type per slot. Returns {id:int -> category}."""
+    path = os.path.join(HERE, "Suikoden3_item_ids.txt")
+    out = {}
+    if not os.path.exists(path):
+        return out
+    import re
+    cur = ""
+    for line in open(path, encoding="latin1"):
+        hdr = re.search(r"\*\s*(.+?)\s*\*", line)
+        if hdr and "\t" not in line:                 # a section header, not an item row
+            cur = hdr.group(1).strip()
+            continue
+        for m in re.finditer(r"\b([0-9A-Fa-f]{3})\t([^\t\n\r]+)", line):
+            out[int(m.group(1), 16)] = cur
+    return out
+
+
 # ---------------------------------------------------------------------------
 # ISO helpers
 # ---------------------------------------------------------------------------
