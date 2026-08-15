@@ -870,8 +870,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     return self._send(200, {"error": f"could not read card: {e}"})
                 save_config(lastCard=os.path.abspath(path))
-                # item id->name so the UI can label inventory + offer an item picker
-                items = [{"id": k, "name": v, "desc": ITEM_DESC.get(k, "")}
+                # item id->name so the UI can label inventory + offer an item picker;
+                # 'cat' = item category (Runes/Headgear/Shields/...) for filtering equip slots
+                _icats = S.load_item_categories()
+                items = [{"id": k, "name": v, "desc": ITEM_DESC.get(k, ""), "cat": _icats.get(k, "")}
                          for k, v in sorted(S.load_item_ids().items())]
                 # character-id -> name (list1 from the exe) to resolve leader / party ids
                 charById = CHAR_NAMES.get("list1", {})
@@ -2062,12 +2064,24 @@ function renderSaveSlots(r){
      <div class=hint id=subhint style="margin:-2px 0 8px"></div>
      <div id=subview></div></div>`;
 
-  // equip slot labels (order matches s3save EQUIP_SLOTS)
+  // equip slot labels (order matches s3save EQUIP_SLOTS) + which item categories fit each
   const EQ=[["headRune","Head Rune"],["rightRune","Right Rune"],["leftRune","Left Rune"],
             ["helm","Helm"],["armor","Armor"],["shield","Shield"],
             ["boots","Boots"],["gloves","Gloves"],["accessory","Accessory"]];
-  const eqItemOpts=`<option value="0">— none —</option>`+SAVE_ITEMS.map(i=>
-    `<option value="${i.id}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`).join("");
+  const EQ_CATS={headRune:["Runes"],rightRune:["Runes"],leftRune:["Runes"],
+    helm:["Headgear"],armor:["Armor"],shield:["Shields"],boots:["Footwear"],
+    gloves:["Gloves"],accessory:["Rings","Misc Gear"]};
+  // Build a filtered option list for one slot. Always includes "none"; if the item
+  // currently equipped isn't in the expected category (odd save data), it's still shown
+  // so the value is never silently lost.
+  function eqOpts(slotKey, curId){
+    const cats=EQ_CATS[slotKey]||[];
+    const opt=i=>`<option value="${i.id}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`;
+    let list=SAVE_ITEMS.filter(i=>cats.includes(i.cat));
+    if(curId&&!list.some(i=>i.id===curId)){const cur=SAVE_ITEMS.find(i=>i.id===curId);
+      if(cur)list=[cur,...list];}
+    return `<option value="0">— none —</option>`+list.map(opt).join("");
+  }
   function drawChars(f=""){
    const numIn=(c,k,val,stat)=>`<input type=number value="${val}" data-ri=${c.rosterIndex}`+
      (stat?` data-stat=${stat}`:` data-k=${k}`)+` data-def="${val}">`;
@@ -2096,7 +2110,7 @@ function renderSaveSlots(r){
       <div class=hint style="margin:8px 2px 2px">Equipment</div>
       <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:2px">
       ${EQ.map(([key,lbl])=>`<label class=hint style="flex-direction:column;gap:3px;align-items:stretch">${lbl}
-        <select data-eqri=${c.rosterIndex} data-eq=${key} data-def="${c.equip[key]||0}">${eqItemOpts}</select></label>`).join("")}
+        <select data-eqri=${c.rosterIndex} data-eq=${key} data-def="${c.equip[key]||0}">${eqOpts(key,c.equip[key]||0)}</select></label>`).join("")}
       </div>
       <div class=hint style="margin:10px 2px 2px">Skills</div>
       <div class=lvgrid style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:2px">
