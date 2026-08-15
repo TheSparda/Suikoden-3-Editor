@@ -584,7 +584,19 @@ def read_charfields(list_no, index):
     rec_off = base + index*stride
     items = S.load_item_ids()
     skills = S.load_skill_ids()
+    icats = S.load_item_categories()
     groups = []
+
+    # map an equip-field label to the item categories that belong in that slot, so the
+    # dropdown can be filtered (rune hands/head -> Runes, etc). Starting "Other item"
+    # slots hold consumables, so they're left unfiltered (cats = None).
+    def field_cats(label):
+        l = label.lower()
+        if l.startswith("rune "):  return ["Runes"]
+        if l.startswith("helmet"): return ["Headgear"]
+        if l.startswith("armor"):  return ["Armor"]
+        if l.startswith("shield"): return ["Shields"]
+        return None
 
     def field(label, off, width, kind):
         pos = rec_off + off
@@ -592,8 +604,11 @@ def read_charfields(list_no, index):
         name = ""
         if kind == "item":  name = items.get(v, "")
         elif kind == "skill": name = skills.get(v, "")
-        return {"label": label, "off": off, "width": width, "kind": kind,
-                "value": v, "name": name}
+        d = {"label": label, "off": off, "width": width, "kind": kind,
+             "value": v, "name": name}
+        if kind == "item":
+            d["cats"] = field_cats(label)          # None = allow all (e.g. starting items)
+        return d
 
     if list_no == 1:
         groups.append({"title": "Starting Stats / Equipment",
@@ -826,9 +841,11 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/gear":    return self._send(200, read_gear())
             if p == "/api/foods":   return self._send(200, read_foods())
             if p == "/api/shop":    return self._send(200, read_shop())
-            if p == "/api/items":   return self._send(200,
-                [{"id": k, "name": v, "desc": ITEM_DESC.get(k, "")}
-                 for k, v in sorted(S.load_item_ids().items())])
+            if p == "/api/items":
+                _ic = S.load_item_categories()
+                return self._send(200,
+                    [{"id": k, "name": v, "desc": ITEM_DESC.get(k, ""), "cat": _ic.get(k, "")}
+                     for k, v in sorted(S.load_item_ids().items())])
             if p == "/api/skills":  return self._send(200,
                 [{"id": k, "name": v, "desc": SKILL_DESC.get(v, "")}
                  for k, v in sorted(S.load_skill_ids().items())])
@@ -1746,9 +1763,18 @@ async function renderChars(m){
  $("#csearch").oninput=refilter;
  // when the section changes: repopulate the name dropdown for that list AND reload
  $("#list").onchange=()=>{$("#idx").innerHTML=nameOpts("list"+$("#list").value,$("#csearch").value);load();};
+ // item options filtered to a slot's categories (f.cats); null/absent = all items.
+ // The currently-set item is always included so an off-category value is never lost.
+ const optTag=i=>`<option value="${i.id}" title="${(i.desc||'').replace(/"/g,'&quot;')}">${i.id.toString(16).toUpperCase().padStart(3,'0')} · ${i.name}</option>`;
+ function itemOptsFor(cats,curId){
+  if(!cats||!cats.length)return itemOpts;
+  let list=ITEMS_CACHE.filter(i=>cats.includes(i.cat));
+  if(curId&&!list.some(i=>i.id===curId)){const cur=ITEMS_CACHE.find(i=>i.id===curId);if(cur)list=[cur,...list];}
+  return `<option value="0">— none (0) —</option>`+list.map(optTag).join("");
+ }
  function fieldEditor(f){
   const dv=(f.def!==undefined?f.def:f.value);
-  if(f.kind==="item")  return `<select data-off=${f.off} data-w=${f.width} data-kind=item data-def="${dv}">${itemOpts}</select>`;
+  if(f.kind==="item")  return `<select data-off=${f.off} data-w=${f.width} data-kind=item data-def="${dv}">${itemOptsFor(f.cats,f.value)}</select>`;
   if(f.kind==="skill") return `<select data-off=${f.off} data-w=${f.width} data-kind=skill data-def="${dv}">${skillOpts}</select>`;
   return `<input type=number min=0 value="${f.value}" data-off=${f.off} data-w=${f.width} data-def="${dv}">`;
  }
