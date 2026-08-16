@@ -282,19 +282,43 @@ def load_item_categories():
 # ---------------------------------------------------------------------------
 # ISO helpers
 # ---------------------------------------------------------------------------
+# ---- Shareable "mod recipe": every ISO write is auto-journaled at the Iso layer into
+# <iso>.s3mod.json (a byte-level diff with old+new, so it's reversible + version-
+# checkable). RECORD_MODS toggles it globally; _SUPPRESS_MOD is set during recipe-apply
+# so a replay doesn't re-pollute the recipe.
+RECORD_MODS = True
+_SUPPRESS_MOD = False
+
 class Iso:
     def __init__(self, path, write=False):
         self.path = path
+        self.write = write
         self.f = open(path, "r+b" if write else "rb")
+        self._writes = []
 
     def close(self):
+        if self.write and RECORD_MODS and not _SUPPRESS_MOD and self._writes:
+            try:
+                _flush_mods(self.path, self._writes)
+            except Exception:
+                pass
+        self._writes = []
         self.f.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.close()
 
     def rd(self, off, n):
         self.f.seek(off)
         return self.f.read(n)
 
     def wr(self, off, data):
+        if RECORD_MODS and not _SUPPRESS_MOD and self.write:
+            old = self.rd(off, len(data))
+            self._writes.append((off, old, bytes(data)))
         self.f.seek(off)
         self.f.write(data)
 
@@ -322,6 +346,138 @@ def backup(path):
     print(f"Backing up -> {dst}  ({os.path.getsize(path)/1e9:.2f} GB, may take a moment)...")
     shutil.copy2(path, dst)
     return dst
+
+
+# ---------------------------------------------------------------------------
+# Shareable mod recipe (.s3mod) + xdelta patch export/apply
+#
+# A recipe is a small JSON of {offset: [oldByte, newByte]} runs — reversible (it stores
+# the original bytes) and version-checked (it stores the SLUS-20387 version word, so a
+# recipe won't apply to the wrong ISO). It lets people share editor-made mods without
+# passing around the multi-GB disc. xdelta captures *any* byte diff (incl. overlay/raw
+# edits recipes don't model) but needs a pristine ISO to create/apply.
+# ---------------------------------------------------------------------------
+def _mod_sidecar(path):
+    return path + ".s3mod.json"
+
+def _flush_mods(path, writes):
+    """Merge a batch of (off, old, new) writes into the ISO's <iso>.s3mod.json journal."""
+    import json
+    side = _mod_sidecar(path)
+    try:
+        with open(side) as fp:
+            data = json.load(fp)
+    except Exception:
+        data = {"format": "s3mod", "version": 1, "bytes": {}}
+    bm = data.setdefault("bytes", {})
+    for off, old, new in writes:
+        for i in range(len(new)):
+            k = str(off + i)
+            if k not in bm:
+                bm[k] = [old[i], new[i]]   # keep the earliest on-disk value as "old"
+            else:
+                bm[k][1] = new[i]          # collapse repeated edits to the latest "new"
+    tmp = side + ".tmp"
+    with open(tmp, "w") as fp:
+        json.dump(data, fp)
+    os.replace(tmp, side)
+
+def mod_status(path):
+    """Byte + coalesced-run count of the recipe journal accumulated for this ISO."""
+    import json
+    try:
+        with open(_mod_sidecar(path)) as fp:
+            bm = json.load(fp).get("bytes", {})
+    except Exception:
+        return {"bytes": 0, "runs": 0}
+    offs = sorted(int(k) for k in bm)
+    runs = 0
+    prev = None
+    for o in offs:
+        if prev is None or o != prev + 1:
+            runs += 1
+        prev = o
+    return {"bytes": len(offs), "runs": runs}
+
+def export_mod(path, note=""):
+    """Coalesce the byte journal into a portable .s3mod recipe dict (contiguous runs)."""
+    import json
+    with open(_mod_sidecar(path)) as fp:
+        bm = json.load(fp).get("bytes", {})
+    if not bm:
+        raise ValueError("no edits recorded for this ISO yet")
+    items = sorted((int(k), v) for k, v in bm.items())
+    runs = []
+    for off, (old, new) in items:
+        if runs and off == runs[-1]["_end"]:
+            r = runs[-1]
+            r["old"] += "%02x" % old
+            r["new"] += "%02x" % new
+            r["_end"] += 1
+        else:
+            runs.append({"off": off, "old": "%02x" % old, "new": "%02x" % new, "_end": off + 1})
+    for r in runs:
+        r.pop("_end")
+    with Iso(path) as g:
+        vraw = g.rd(VERSION_CHECK_OFF, 4)
+    return {"format": "s3mod", "version": 1, "game": "SLUS-20387",
+            "versionWord": struct.unpack(">I", vraw)[0], "note": note,
+            "patchCount": len(runs), "patches": runs}
+
+def apply_mod(path, mod, make_backup=True):
+    """Replay a .s3mod recipe onto a target ISO (version-checked, old-byte-warned)."""
+    global _SUPPRESS_MOD
+    if mod.get("format") != "s3mod":
+        raise ValueError("not an s3mod recipe")
+    with Iso(path) as g:
+        cur = struct.unpack(">I", g.rd(VERSION_CHECK_OFF, 4))[0]
+    want = mod.get("versionWord")
+    if want is not None and want != cur:
+        raise ValueError(f"ISO version word 0x{cur:08X} != recipe 0x{want:08X} "
+                         f"(wrong game/region — expected SLUS-20387)")
+    if make_backup:
+        backup(path)
+    applied = mism = 0
+    _SUPPRESS_MOD = True
+    try:
+        with Iso(path, write=True) as g:
+            for p in mod.get("patches", []):
+                new = bytes.fromhex(p["new"])
+                off = int(p["off"])
+                if p.get("old") and g.rd(off, len(new)) != bytes.fromhex(p["old"]):
+                    mism += 1
+                g.wr(off, new)
+                applied += len(new)
+    finally:
+        _SUPPRESS_MOD = False
+    return {"appliedBytes": applied, "mismatchedRuns": mism,
+            "patchCount": len(mod.get("patches", []))}
+
+def clear_mod(path):
+    try:
+        os.remove(_mod_sidecar(path))
+        return True
+    except FileNotFoundError:
+        return False
+
+def xdelta_available():
+    return shutil.which("xdelta3") is not None
+
+def make_xdelta(pristine, edited, out):
+    import subprocess
+    r = subprocess.run(["xdelta3", "-e", "-f", "-s", pristine, edited, out],
+                       capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip() or "xdelta3 encode failed")
+    return os.path.getsize(out)
+
+def apply_xdelta(pristine, patch, out):
+    import subprocess
+    r = subprocess.run(["xdelta3", "-d", "-f", "-s", pristine, patch, out],
+                       capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip() or "xdelta3 decode failed")
+    return os.path.getsize(out)
 
 
 # ---------------------------------------------------------------------------
@@ -726,6 +882,38 @@ def cmd_ids(a):
             print(f"{k:03X}  {v}")
 
 
+def cmd_mod_status(a):
+    st = mod_status(a.iso)
+    print(f"recipe journal for {a.iso}: {st['bytes']} bytes across {st['runs']} run(s)")
+
+def cmd_mod_export(a):
+    import json
+    mod = export_mod(a.iso, note=a.note or "")
+    out = a.out or (a.iso + ".s3mod")
+    with open(out, "w") as fp:
+        json.dump(mod, fp, indent=1)
+    print(f"wrote {out}  ({mod['patchCount']} patch run(s))")
+
+def cmd_mod_apply(a):
+    import json
+    with open(a.recipe) as fp:
+        mod = json.load(fp)
+    res = apply_mod(a.iso, mod, make_backup=not a.no_backup)
+    print(f"applied {res['patchCount']} run(s), {res['appliedBytes']} byte(s); "
+          f"{res['mismatchedRuns']} run(s) did not match the recipe's original bytes")
+
+def cmd_mod_clear(a):
+    print("cleared recipe journal" if clear_mod(a.iso) else "no recipe journal to clear")
+
+def cmd_xdelta_make(a):
+    n = make_xdelta(a.pristine, a.iso, a.out)
+    print(f"wrote {a.out}  ({n} bytes)")
+
+def cmd_xdelta_apply(a):
+    n = apply_xdelta(a.pristine, a.patch, a.out)
+    print(f"wrote {a.out}  ({n} bytes)")
+
+
 # ---------------------------------------------------------------------------
 def main():
     p = argparse.ArgumentParser(description="Suikoden III (USA) ISO patcher/research tool")
@@ -802,6 +990,30 @@ def main():
 
     s = sub.add_parser("ids", help="print skill or item ID list")
     s.add_argument("--kind", choices=["skill","item"], required=True); s.set_defaults(fn=cmd_ids)
+
+    # ---- Share / Patch ----
+    s = sub.add_parser("mod-status", help="show the recorded edit journal for an ISO"); add_iso(s)
+    s.set_defaults(fn=cmd_mod_status)
+
+    s = sub.add_parser("mod-export", help="export recorded edits as a shareable .s3mod recipe"); add_iso(s)
+    s.add_argument("--out", help="output path (default <iso>.s3mod)")
+    s.add_argument("--note", help="optional description stored in the recipe"); s.set_defaults(fn=cmd_mod_export)
+
+    s = sub.add_parser("mod-apply", help="apply a .s3mod recipe to an ISO (version-checked)"); add_iso(s)
+    s.add_argument("--recipe", required=True)
+    s.add_argument("--no-backup", action="store_true"); s.set_defaults(fn=cmd_mod_apply)
+
+    s = sub.add_parser("mod-clear", help="delete the recorded edit journal for an ISO"); add_iso(s)
+    s.set_defaults(fn=cmd_mod_clear)
+
+    s = sub.add_parser("xdelta-make", help="create an xdelta patch (pristine -> current)"); add_iso(s)
+    s.add_argument("--pristine", required=True, help="a clean copy of the ISO to diff against")
+    s.add_argument("--out", required=True); s.set_defaults(fn=cmd_xdelta_make)
+
+    s = sub.add_parser("xdelta-apply", help="apply an xdelta patch (pristine + patch -> new ISO)")
+    s.add_argument("--pristine", required=True)
+    s.add_argument("--patch", required=True)
+    s.add_argument("--out", required=True); s.set_defaults(fn=cmd_xdelta_apply)
 
     a = p.parse_args()
     a.fn(a)
