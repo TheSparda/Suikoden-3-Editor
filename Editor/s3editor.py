@@ -1228,7 +1228,8 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  <button class=tb data-theme=parchment>Parchment</button>
  <span class=hint style="margin:0 0 0 6px">Suikoden III-inspired styling (not official art).</span>
  <span class=credit>Made by <b>Sparda</b> ·
-  <a href="https://github.com/TheSparda/Suikoden-3-Editor" target=_blank rel="noopener noreferrer">GitHub</a></span>
+  <a href="https://github.com/TheSparda/Suikoden-3-Editor" target=_blank rel="noopener noreferrer">GitHub</a>
+  · <span class=hint>v1.1.0</span></span>
 </footer>
 <div id=toast></div>
 <script>
