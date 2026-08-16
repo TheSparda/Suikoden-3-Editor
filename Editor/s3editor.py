@@ -1113,6 +1113,9 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  padding:5px 14px;cursor:pointer;font:inherit;transition:.12s}
 #themebar .tb:hover{color:var(--ink);border-color:var(--acc)}
 #themebar .tb.on{background:var(--acc);color:var(--accink);border-color:var(--acc);font-weight:600}
+#themebar .credit{margin-left:auto;color:var(--mut)}
+#themebar .credit a{color:var(--acc2);text-decoration:none}
+#themebar .credit a:hover{text-decoration:underline}
 /* Save Editor: keep wide stat tables from overflowing the card */
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .savetbl{width:auto;min-width:100%}
@@ -1142,6 +1145,8 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  <button class=tb data-theme=crimson>Crimson &amp; Gold</button>
  <button class=tb data-theme=parchment>Parchment</button>
  <span class=hint style="margin:0 0 0 6px">Suikoden III-inspired styling (not official art).</span>
+ <span class=credit>Made by <b>Sparda</b> ·
+  <a href="https://github.com/TheSparda/Suikoden-3-Editor" target=_blank rel="noopener noreferrer">GitHub</a></span>
 </footer>
 <div id=toast></div>
 <script>
