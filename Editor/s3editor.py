@@ -55,6 +55,16 @@ def pick_file_dialog(kind="card"):
         mac_types = '{"iso","bin","img"}'
         tk_types = [("Disc images", "*.iso *.bin *.img"), ("All files", "*.*")]
         guard_exts = ISO_EXTS
+    elif kind == "recipe":
+        title = "Select a .s3mod recipe"
+        mac_types = ''                              # .s3mod has no OS-registered UTI
+        tk_types = [("Mod recipes", "*.s3mod *.json"), ("All files", "*.*")]
+        guard_exts = (".s3mod", ".json")
+    elif kind == "patch":
+        title = "Select an xdelta patch"
+        mac_types = ''
+        tk_types = [("xdelta patches", "*.xdelta *.vcdiff"), ("All files", "*.*")]
+        guard_exts = (".xdelta", ".vcdiff")
     elif kind == "save":
         title = "Select a PS2 save (card, .psu, or gamedata)"
         mac_types = ''                              # unrestricted: raw gamedata is extensionless
@@ -962,6 +972,77 @@ class Handler(BaseHTTPRequestHandler):
                                           recruit_edits=body.get("recruitEdits", {}),
                                           gold=body.get("gold"))
                 return self._send(200, res)
+            if self.path == "/api/mod-status":
+                if not ISO_PATH:
+                    return self._send(200, {"error": "no ISO loaded"})
+                st = S.mod_status(ISO_PATH)
+                st["pending"] = len(PENDING)
+                st["xdelta"] = S.xdelta_available()
+                return self._send(200, st)
+            if self.path == "/api/mod-export":
+                if not ISO_PATH:
+                    return self._send(200, {"error": "no ISO loaded"})
+                if PENDING:
+                    return self._send(200, {"error": f"{len(PENDING)} unsaved edit(s) — click Save first so they're recorded"})
+                try:
+                    mod = S.export_mod(ISO_PATH, note=body.get("note", ""))
+                except ValueError as e:
+                    return self._send(200, {"error": str(e)})
+                out = ISO_PATH + ".s3mod"
+                with open(out, "w") as fp:
+                    json.dump(mod, fp, indent=1)
+                return self._send(200, {"ok": True, "path": out,
+                                        "patchCount": mod["patchCount"]})
+            if self.path == "/api/mod-apply":
+                if not ISO_PATH:
+                    return self._send(200, {"error": "no ISO loaded"})
+                if PENDING:
+                    return self._send(200, {"error": "you have unsaved edits — Save or Revert before applying a recipe"})
+                recipe = body.get("recipe", "")
+                if not os.path.isfile(recipe):
+                    return self._send(200, {"error": f"recipe not found: {recipe}"})
+                try:
+                    mod = json.load(open(recipe))
+                    res = S.apply_mod(ISO_PATH, mod, make_backup=_backup_enabled)
+                except (ValueError, KeyError) as e:
+                    return self._send(200, {"error": str(e)})
+                res["ok"] = True
+                return self._send(200, res)
+            if self.path == "/api/mod-clear":
+                if not ISO_PATH:
+                    return self._send(200, {"error": "no ISO loaded"})
+                return self._send(200, {"ok": True, "cleared": S.clear_mod(ISO_PATH)})
+            if self.path == "/api/xdelta-make":
+                if not ISO_PATH:
+                    return self._send(200, {"error": "no ISO loaded"})
+                if not S.xdelta_available():
+                    return self._send(200, {"error": "xdelta3 not installed (macOS: brew install xdelta)"})
+                pristine = body.get("pristine", "")
+                if not os.path.isfile(pristine):
+                    return self._send(200, {"error": f"pristine ISO not found: {pristine}"})
+                out = ISO_PATH + ".xdelta"
+                try:
+                    n = S.make_xdelta(pristine, ISO_PATH, out)
+                except RuntimeError as e:
+                    return self._send(200, {"error": str(e)})
+                return self._send(200, {"ok": True, "path": out, "size": n})
+            if self.path == "/api/xdelta-apply":
+                if not S.xdelta_available():
+                    return self._send(200, {"error": "xdelta3 not installed (macOS: brew install xdelta)"})
+                pristine = body.get("pristine", "")
+                patch = body.get("patch", "")
+                out = body.get("out", "")
+                if not os.path.isfile(pristine):
+                    return self._send(200, {"error": f"pristine ISO not found: {pristine}"})
+                if not os.path.isfile(patch):
+                    return self._send(200, {"error": f"patch not found: {patch}"})
+                if not out:
+                    out = pristine + ".patched.iso"
+                try:
+                    n = S.apply_xdelta(pristine, patch, out)
+                except RuntimeError as e:
+                    return self._send(200, {"error": str(e)})
+                return self._send(200, {"ok": True, "path": out, "size": n})
             return self._send(404, {"error": "not found"})
         except Exception as e:
             return self._send(500, {"error": str(e)})
@@ -1079,7 +1160,7 @@ tr.descrow .desc{color:var(--mut);font-size:12px;font-style:italic;padding:0 9px
 tr.mainrow td{border-bottom:0}
 /* changed-from-default field highlighting + restore button */
 input.changed,select.changed{color:var(--warn);border-color:var(--warnbd);background:var(--changed-bg)}
-td.warn{color:var(--warn)}
+td.warn,.warn{color:var(--warn)}
 .restore{display:none;margin-left:4px;background:transparent;border:1px solid var(--line);color:var(--mut);
  border-radius:6px;padding:3px 7px;cursor:pointer;font:inherit;line-height:1;vertical-align:middle;transition:.12s}
 .restore:hover{color:var(--ink);border-color:var(--acc);background:var(--panel2)}
@@ -1227,10 +1308,10 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",saves:"Save Editor"};
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",patch:"Share / Patch",saves:"Save Editor"};
  // top-level bar; "Other" is a hover dropdown holding the less-used tabs
  const topTabs=["characters","spells","runes","unites","gear","weapons","hardmode"];
- const otherTabs=["foods","shop","enemies","text","reference"];
+ const otherTabs=["foods","shop","enemies","text","reference","patch"];
  const btn=t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`;
  window.OTHER_TABS=otherTabs;
  $("#nav").innerHTML=
@@ -1320,6 +1401,7 @@ async function render(){
  if(TAB==="enemies")return renderEnemies(m);
  if(TAB==="reference")return renderRef(m);
  if(TAB==="text")return renderText(m);
+ if(TAB==="patch")return renderPatch(m);
  if(TAB==="saves")return renderSaves(m);}
 
 const RUNE_TITLE={fire:"Fire Rune",rage:"Rage Rune",truefire:"True Fire Rune",
@@ -1957,6 +2039,80 @@ async function renderText(m){
     if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}));
   if(texts.length>600&&!f)$("#tb").insertAdjacentHTML("beforeend",`<tr><td colspan=3 class=hint>… showing first 600; use the filter to narrow.</td></tr>`);}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+// ---- Share / Patch: export the edits you've made as a small shareable recipe, or
+// apply someone else's — plus xdelta for whole-ISO diffs (incl. text edits). ----
+const POST=(u,d)=>api(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d||{})});
+async function renderPatch(m){
+ const st=await POST("/api/mod-status",{});
+ if(st.error){m.innerHTML=`<div class=card><div class=hint>${st.error}</div></div>`;return;}
+ const xd=st.xdelta;
+ m.innerHTML=`
+ <div class=card>
+  <h3 style=margin-top:0>Share your edits <span class=pill>recipe (.s3mod)</span></h3>
+  <p class=hint>A recipe is a tiny JSON of the exact byte changes you made (with the original
+   bytes, so it's reversible and version-checked). Share it so others can apply your mod to
+   <b>their own</b> Suikoden III (USA) ISO — no need to pass around the multi-GB disc.</p>
+  <div id=modstat class=hint style="margin:8px 0">${st.pending?`<b class=warn>${st.pending} unsaved edit(s)</b> — click <b>Save</b> up top first so they're recorded. `:""}Recorded: <b>${st.bytes}</b> byte(s) across <b>${st.runs}</b> run(s).</div>
+  <div class=row>
+   <input class=search id=note placeholder="optional note (e.g. 'Hard mode + cheaper runes')" style=width:340px>
+   <button class=act id=modexport ${st.bytes?"":"disabled"}>Export recipe (.s3mod)</button>
+   <button class=ghost id=modclear ${st.bytes?"":"disabled"}>Clear recording</button>
+  </div>
+  <div id=exres class=hint style="margin-top:8px"></div>
+ </div>
+ <div class=card>
+  <h3 style=margin-top:0>Apply someone's recipe</h3>
+  <p class=hint>Point this at a <code>.s3mod</code> file. It's checked against your open ISO's
+   version word and written in place (a <code>.bak</code> is made if backups are on). Save or
+   Revert any unsaved edits first.</p>
+  <div class=row>
+   <input class=search id=recpath placeholder="/path/to/mod.s3mod" style=width:340px>
+   <button class=act id=recbrowse>Browse…</button>
+   <button class=act id=recapply>Apply to current ISO</button>
+  </div>
+  <div id=applyres class=hint style="margin-top:8px"></div>
+ </div>
+ <div class=card>
+  <h3 style=margin-top:0>xdelta patch <span class=pill>whole-ISO diff</span></h3>
+  <p class=hint>Captures <b>every</b> byte difference between a pristine ISO and your edited one —
+   including things recipes don't model. ${xd?"":"<b class=warn>xdelta3 not found</b> — install it first (macOS: <code>brew install xdelta</code>)."}</p>
+  <div class=row style="opacity:${xd?1:.5}">
+   <input class=search id=xdpristine placeholder="pristine (clean) ISO path" style=width:300px>
+   <button class=act id=xdpbrowse ${xd?"":"disabled"}>Browse…</button>
+   <button class=act id=xdmake ${xd?"":"disabled"}>Create .xdelta (pristine → current)</button>
+  </div>
+  <div class=row style="opacity:${xd?1:.5};margin-top:8px">
+   <input class=search id=xda_pristine placeholder="pristine ISO path" style=width:200px>
+   <button class=act id=xda_pbrowse ${xd?"":"disabled"}>Browse…</button>
+   <input class=search id=xda_patch placeholder=".xdelta path" style=width:200px>
+   <button class=act id=xda_patbrowse ${xd?"":"disabled"}>Browse…</button>
+   <button class=act id=xdapply ${xd?"":"disabled"}>pristine + patch → new ISO</button>
+  </div>
+  <div id=xdres class=hint style="margin-top:8px"></div>
+ </div>`;
+ const setbrowse=(btn,inp,kind)=>$(btn).onclick=async()=>{const r=await api("/api/pick-file?kind="+kind);if(r.path)$(inp).value=r.path;};
+ $("#modexport").onclick=async()=>{
+  $("#exres").textContent="exporting…";
+  const r=await POST("/api/mod-export",{note:$("#note").value.trim()});
+  $("#exres").innerHTML=r.ok?`✓ wrote <code>${r.path}</code> (${r.patchCount} run(s)). Share that file.`:`<b class=warn>${r.error}</b>`;};
+ $("#modclear").onclick=async()=>{if(!confirm("Clear the recorded edit journal? (Does not undo edits already written to the ISO.)"))return;
+  const r=await POST("/api/mod-clear",{});$("#exres").textContent=r.ok?"cleared.":r.error;render();};
+ setbrowse("#recbrowse","#recpath","recipe");
+ $("#recapply").onclick=async()=>{
+  $("#applyres").textContent="applying…";
+  const r=await POST("/api/mod-apply",{recipe:$("#recpath").value.trim()});
+  $("#applyres").innerHTML=r.ok?`✓ applied ${r.patchCount} run(s), ${r.appliedBytes} byte(s).${r.mismatchedRuns?` <b class=warn>${r.mismatchedRuns} run(s) didn't match the recipe's original bytes</b> (target ISO differs from the author's).`:""}`:`<b class=warn>${r.error}</b>`;};
+ setbrowse("#xdpbrowse","#xdpristine","iso");
+ setbrowse("#xda_pbrowse","#xda_pristine","iso");
+ setbrowse("#xda_patbrowse","#xda_patch","patch");
+ $("#xdmake").onclick=async()=>{$("#xdres").textContent="creating patch (may take a minute)…";
+  const r=await POST("/api/xdelta-make",{pristine:$("#xdpristine").value.trim()});
+  $("#xdres").innerHTML=r.ok?`✓ wrote <code>${r.path}</code> (${(r.size/1024).toFixed(1)} KB).`:`<b class=warn>${r.error}</b>`;};
+ $("#xdapply").onclick=async()=>{$("#xdres").textContent="applying patch…";
+  const r=await POST("/api/xdelta-apply",{pristine:$("#xda_pristine").value.trim(),patch:$("#xda_patch").value.trim()});
+  $("#xdres").innerHTML=r.ok?`✓ wrote <code>${r.path}</code> (${(r.size/1e9).toFixed(2)} GB).`:`<b class=warn>${r.error}</b>`;};
+}
 
 // ---- Save Editor: reads a PS2 memory card (*.ps2) and decodes S3 save slots. ----
 // Read-only for now: writing needs the save's checksum algorithm, which isn't
