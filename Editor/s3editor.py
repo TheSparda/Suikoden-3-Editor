@@ -66,9 +66,10 @@ def pick_file_dialog(kind="card"):
         tk_types = [("xdelta patches", "*.xdelta *.vcdiff"), ("All files", "*.*")]
         guard_exts = (".xdelta", ".vcdiff")
     elif kind == "save":
-        title = "Select a PS2 save (card, .psu, or gamedata)"
+        title = "Select a PS2 save (card, .psu, .cbs, .sps/.xps, or gamedata)"
         mac_types = ''                              # unrestricted: raw gamedata is extensionless
-        tk_types = [("PS2 saves", "*.ps2 *.mcd *.mc2 *.bin *.psu"), ("All files", "*.*")]
+        tk_types = [("PS2 saves", "*.ps2 *.mcd *.mc2 *.bin *.psu *.cbs *.sps *.xps"),
+                    ("All files", "*.*")]
         guard_exts = None                           # server sniffs; accept anything
     else:                                           # "card"
         title = "Select a PS2 memory card"
