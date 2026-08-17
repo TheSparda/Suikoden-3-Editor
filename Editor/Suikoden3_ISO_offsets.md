@@ -1041,3 +1041,46 @@ stream's header/dispatch in the area-BIN container, enumerate records per area, 
 each area's record set against that area's bestiary enemy list (the bestiary is organized
 by area, so set-equality of HP multisets per area would give the anchor without
 disassembly). Alternatively disassemble the battle-init code that consumes these streams.
+
+---
+
+## Enemy stats — research round 3 (2026-08-17): 9D-stream hypothesis REJECTED; P3 gated on RAM
+
+Executed the phased plan (containers -> stream enumeration -> identity anchoring).
+
+**Container format (P0):** the ~30 DATA/*.BIN area/chapter files are CHUNKED STREAM
+containers — 0x40-byte chunk descriptors with incrementing ids and 'B'/'C'/'D' type tags
+(distinct from ETC.BIN's count+12-byte-entry TOC). Key practical point: in-place,
+same-length edits never need the container framing, and the 9D streams are uncompressed.
+FSECT.BIN is SECTIONED (EE-RAM-address-like u32s early — 0x157xxxx region — then packed
+non-address entries); parked, savestate diffing is the better RAM anchor.
+
+**Stream enumeration (P1):** structural scanner (grammar-validated runs, not value hits)
+found 1,128 records across 15 BINs. Grammar:
+  9D 00 [idx u16] [mode u16: 0x13|0x1000|0x0801] [tag u16 <0x20] [V1] [tag] [V2]
+  72 00 [idx] [tag] [Vs]      7F 00 [idx]      also 70/7C/6F/79/81/8F/DB records
+  (8F records carry idx PAIRS — link/formation-like.)
+Saved artifacts: /tmp scans + `suikosource/bosses.txt` (story bosses: Lv/HP/drops/Potch/SP,
+fetched past Anubis same as the bestiary).
+
+**Identity anchoring (P2) — FAILED, decisively:**
+- Per-area multiset matching: SP overlap ~0% in every BIN; HP overlaps driven entirely by
+  generic round numbers (many BINs "matched" the same small areas).
+- Distinctive boss (HP,Potch) pairs (e.g. Man in Black 2500/10000): every hit lands in
+  DIFFERENT records of the same dense stream — the cross-record coincidence pattern.
+- Strict same-record test (V1,V2)==(HP,Potch) across all streams vs 159 known pairs:
+  25 hits, incoherent (same enemy in unrelated BINs, both value orders, all from the same
+  ~17 round values) = chance level.
+CONCLUSION: the 9D/72/7F streams are generic script commands (amounts/rewards/prices),
+NOT enemy stat records. Do not edit them expecting enemy changes.
+
+**What remains (the two decisive paths):**
+1. P3 RAM anchoring — needs ONE PCSX2 battle savestate (player-assisted): savestate at the
+   start of a battle vs a known enemy (e.g. Blade Bunny, HP 40, Amur Plains). The .p2s
+   contains full EE RAM; locate the live battle HP struct, then search its byte
+   neighborhood back into the ISO/area BINs for the load source. PCSX2 is not installed on
+   this Mac (play happens on the Windows desktop per the memcard sync names).
+2. MIPS fallback — capstone 5.0.7 with MIPS support IS available locally; disassemble the
+   battle-init path in the boot ELF (known code anchor: name-table loader at file
+   0x10E8B4 / va 0x16C70BC) and trace where enemy HP is computed/copied from. Larger
+   effort, fully autonomous.
