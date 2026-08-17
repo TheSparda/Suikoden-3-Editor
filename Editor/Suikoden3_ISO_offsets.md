@@ -843,9 +843,9 @@ per-bag counts render, a Hugo-bag qty edit persisted, checksum sum stayed 0, ECC
   in-place writes): Flame Champion 0xC9E0, Castle 0xC9F1, Suikoden I hero 0xCA13,
   SI country 0xCA24, Suikoden II hero 0xCA35. Verified: edited Flame Champion name,
   persisted, checksum sum stayed 0.
-- Per-party GOLD: investigated but NOT exposed. No confirmable gold field found, and no
-  3-value per-party structure is visible; all sample saves are post-merge (single party)
-  so it couldn't be validated. Needs a save with a known on-screen potch to locate.
+- GOLD/potch @0x3210 (u32): CONFIRMED CORRECT — user verified in-game 2026-08-17. Exposed
+  and editable in the save editor. (Earlier notes below called this "unverified"; that is
+  now resolved.)
 
 ## Save Editor v6: Suikoden I/II carryover indicator (2026-08-10)
 S3 seeds the carryover name fields (SI hero 0xCA13 / SI country 0xCA24 / SII hero 0xCA35
@@ -920,9 +920,9 @@ Grasslands allies; Duke/Gau/etc = shared/story = no recruiter bit).
 Applied the playtime-ordered diff to find progression counters:
 - PLAYTIME @0x28 (u32 seconds) — CONFIRMED: 1719==28:39, 2251==37:31, 2312==38:32,
   2433==40:33, exact match to the save title on all 4. Shown as H:MM:SS (read-only).
-- GOLD @0x3210 (u32) — LIKELY but UNVERIFIED. Money-shaped, varies like spendable gold
-  (390965/341256/475076/23800), sits just before the party list (0x3216). No monotonic
-  proof (gold is spent) and no known-potch save to confirm; single field, not per-party
+- GOLD @0x3210 (u32) — CONFIRMED CORRECT (user verified in-game 2026-08-17). Money-shaped,
+  varies like spendable gold (390965/341256/475076/23800), sits just before the party list
+  (0x3216); single field, not per-party
   (0x3208/0x320C are zero). Exposed editable-but-flagged (low risk; wrong value is easily
   fixed in-game). To confirm: edit to a distinctive value, load in-game, check the amount.
 - 0x1E4 (u32) is strictly monotonic too but reaches 4.19M (> gold cap) -> a running
