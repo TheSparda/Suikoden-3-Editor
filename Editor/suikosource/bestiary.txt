@@ -1,0 +1,611 @@
+	
+News Games Characters History Runes Fanart Gallery Suikosource Forums	2026-08-17
+
+
+Home
+
+News
+About Us
+
+
+Community
+
+Suikosource Forums
+Forum Rules
+
+Chat
+
+
+Games
+
+Suikoden I
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Secrets
+Memorable Scenes
+In-Depth Analyses
+Game Saves
+
+Suikoden II
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Secrets
+Memorable Scenes
+In-Depth Analyses
+Game Saves
+
+Suikoden III
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Secrets
+Memorable Scenes
+In-Depth Analyses
+Game Saves
+
+Suikoden IV
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+
+Suikoden V
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Memorable Scenes
+
+Suikoden Tactics
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+
+Suikoden Tierkreis
+Walkthrough
+Gameplay Guides
+
+Suikogaiden Vol.1
+Chapters
+Gameplay Guides
+Secrets
+
+Suikogaiden Vol.2
+Chapters
+Gameplay Guides
+Secrets
+
+Suikoden Card Stories
+Cards List
+Cards Descriptions
+
+
+Characters
+
+Character List
+108 Stars of Destiny
+
+
+History
+
+Timeline
+Geography
+Legacies
+True Runes
+Weapons
+
+
+Runes
+
+Runes List
+Unite Magic
+
+
+Fanart Gallery
+
+Pictures
+Editorials
+Weblog
+
+
+
+
+
+Remote linking to avatars
+Do not link to Suikosource images on forums, webpages, or anyplace else. If you wish to use the images, place them in your own webspace. We do not allow you to use them from our server.
+Suikoden III: Guides: Bestiary
+The bestiary is a listing of where all of the enemies in the game can be found, their HP, and their dropped items.
+SuikodenIII: Guides: Bestiary by Kuromimi
+Area and Treasure Bosses
+
+Area Boss :- These are enemies that are encountered very rarely in certain areas. The amount of experience, potch and skill points acquired from area bosses are usually much higher than what is normally available in the current area. Some area bosses also drop very rare items.
+
+Treasure Boss :-These are enemies that appear at the very end of a dungeon, guarding a treasure chest. These treasure chests usually contain excellent items if opened as soon as possible. Treasure bosses respawn every fourty to sixty minutes, provided all the items from the chest have been removed.
+
+Story Bosses :- These can be found in a seperate file here.
+
+Table Key
+Chapters when monsters appear
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Enemy Name	Lv.	HP	Common Item	Rare Item	Very Rare	Food Item	10,000	100
+Area Boss	Lv.	HP	Common Item	Rare Item	Very Rare	Rare Food Item	10,000	100
+Treasure Boss	Lv.	HP	Common Item	Rare Item	Very Rare	Very Rare Food Item	10,000	100
+Amur Plains
+Hugo chapter 1 / Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blade Bunny	7	40	Medicine D x6	 	 	Carrot Cake	60	9
+Furrfly	5	25	Medicine D x6	Failure Urn	 	Ripe Tomato	45	7
+Purple Creeper	15	160	Screw	Alertness Rune	 	Pickled Cucumber	150	18
+Shadow Dog	30	1,200	Double-Strike Rune	 	 	Rice Meal	4,500	150
+
+
+
+Hugo chapter 1 to 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Arachivore	15	200	Ol' Tree Beads	 	 	Preserved Mackerel	90	18
+Dark Hare	28	150	Graffiti	Screw	 	Sukiyaki	350	33
+Wild Boar	20	300	New Leather	 	 	Pork Bun	100	40
+Shadow Dog	30	1,200	Double-Strike Rune	 	 	Rice Meal	4,500	150
+
+
+Chris chapter 1 and 2 / Geddoe chapter 1 to 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	Screw	 	Sukiyaki	350	33
+Wild Boar	20	300	New Leather	 	 	Pork Bun	100	40
+Wolf	23	250	 	 	 	Chicken Teriyaki	200	27
+Troll Dragon	38	2,000	Painting: Lady	Rage Rune	 	Shaved Ice	1,700	400
+
+
+Chris chapter 3 / Geddoe chapter 3 / F.Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	Screw	 	Sukiyaki	350	33
+Dokugumo	30	270	Calerian Urn	 	 	Mashed Potato	380	35
+Shadow Dog	35	420	 	 	 	Okonomiyaki	570	50
+Troll Dragon	38	2,000	Painting: Lady	 	 	Shaved Ice	1,700	400
+
+
+F.Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blight	52	570	Screw	Chief's Hat	 	Minced Chicken	1,500	60
+Troll Dragon	50	1,900	Painting: Lady	Sword of Rage Rune	 	Kobold Course	2,900	65
+Ancient Highway
+Hugo chapters 2 and 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dokugumo	30	270	Calerian Urn	 	 	Mashed Potato	380	35
+Soul Slug	25	270	Hex Doll	 	 	Grilled Fish	1,100	35
+Terror Knight	32	100	Flame Armor	 	 	 	650	37
+Malifaux	37	900	Mega Medicine B x4	 	 	Paella	15,000	320
+
+
+Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bronze Sun	40	800	Fury Rune	 	 	Minced Hot Pot	1,900	46
+Dokugumo	30	270	Calerian Urn	 	 	Mashed Potato	380	35
+Terror Knight	32	100	Flame Armor	 	 	 	650	37
+Malifaux	37	900	Mega Medicine B x4	 	 	Paella	15,000	320
+
+
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Ghost Slug	47	500	Mega Medicine B x4	 	 	Cold Ramen	1,800	54
+Malifaux	50	600	Mega Medicine D x4	 	 	Muniere	3,000	75
+Skeleton	50	700	Blessed Leather	 	 	 	1,400	60
+Nemesis	55	4,500	Draining Rune	Pine Bonsai	 	Mild Stew	42,000	580
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Copper Sun	55	1,200	Warrior Rune	 	 	Hot Beef Tripe Stew	5,000	65
+Ghost Armor	52	1,100	Armor of Rage	 	 	 	3,800	60
+Malifaux	50	600	Mega Medicine D x4	 	 	Muniere	3,000	75
+Nemesis	55	4,500	Draining Rune	Pine Bonsai	 	Mild Stew	42,000	580
+Brass Castle
+Hugo chapter 1 to 3 / Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Arachnivore	15	200	Ol' Tree Beads	 	 	Preserved Mackerel	90	18
+Banshee	20	160	Failure Urn	Karaya Urn	 	Red Hot Grilled Fish	170	24
+Megawaki	19	310	Worn Out Tunic	Old Leather	 	Scrambled Eggs	95	20
+Devil Eye	26	1,900	Plant Vase	Mini-Cactus	 	Fried Noodles	6,000	200
+
+
+Chris chapters 2 and 3 / Geddoe chapter 3 / F. Champion chapters 4 and 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Banshee	20	160	Failure Urn	Karaya Urn	 	Red Hot Grilled Fish	170	24
+Devil Eye	30	500	Throat Drops x4	Mini-Cactus	 	Super Pickles	450	35
+Dokugomo	30	270	Calerian Urn	 	 	Mashed Potato	380	35
+Ghost Slug	37	2,500	Mega Medicine B x4	Mega Medicine A x4	 	Soy Sauce Ramen	5,000	180
+Budehuc Castle Basement
+Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blade Bunny	7	40	Gale Rune	 	 	Carrot Cake	60	9
+Chon Chon	10	50	Medicine D x6	 	 	Tomato Juice	55	12
+Megawaki	19	310	Antitoxin x4	Worn Out Tunic	Old Leather	Scrambled Eggs	95	20
+Choe Choe	16	750	Waking Rune	 	 	Maple Syrup	550	80
+
+
+Chris chapter 2 / Geddoe chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Choe Choe	20	140	Waking Rune	 	 	Tomato juice	90	25
+Megawaki	19	310	Antitoxin x4	Worn Out Tunic	Old Leather	Scrambled Eggs	95	20
+Dark Hare	26	750	Scroll Picture	 	 	Sukiyaki	2,500	90
+
+
+Chris chapter 3 / Geddoe chapter 2 and 3 / Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	Medicine B x6	 	Sukiyaki	350	33
+Devil Eye	30	500	Throat Drops x4	Mini-Cactus	 	Super Pickles	450	35
+Yellow Svire	30	120	Banshak Sake set	 	 	Spicy Clam Soup	400	35
+Siren	42	2,200	Goddess Statue	Jongleur Rune	 	Apple Gratin	9,000	120
+
+
+F. Champion chapters 4 and 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blue Svire	36	170	Fish Badge	Water Amulet	 	Dried Fish	700	45
+Siren	50	350	Goddess Statue	Jongleur Rune	 	Gratin	1,100	60
+Song Sprite	35	250	Rose Petals	 	 	 	470	41
+Siren	42	2,200	Goddess Statue	Jongleur Rune	 	Apple Gratin	9,000	120
+Ceremonial Site
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Azzodess	55	1,300	Sword of Cyclone Rune	 	 	 	7,500	75
+Ghost Armor	52	1,100	Power Gloves	Armor of Rage	 	 	3,800	60
+Rock Golem	55	950	Peeing Boy	Knight Statue	 	Dark Hot Pot	3,200	70
+Cyndar Ruins
+F. Champion chapter 4 and 5 / Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Malifaux	50	600	Mega Medicine D x4	 	 	Muniere	3,000	75
+Siren	50	350	Milk Bath Beads	Thunder Rune	 	Gratin	1,100	60
+Troll Dragon	50	1,900	Pale Moon Casque	Sword of Rage Rune	 	Ice Cream	2,900	65
+Copper Sun	55	5,400	 	 	 	 	8,800	570
+F. Champion's Hideaway
+Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bone Soldier	30	600	Lightning Leather	 	 	 	800	35
+Mordolo	40	1,200	Violence Rune	 	 	Gourmet Ramen	1,000	45
+Nariqua	45	510	Blinking Rune	 	 	 	2,100	55
+Azzodess	47	3,700	 	 	 	 	6,800	480
+
+
+Chris chapter 3 / Geddoe chapter 3 / F. Champion early chapter 4 / Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bronze Sun	40	800	Shield Rune	 	 	Minced Hot Pot	1,900	46
+Mordolo	40	1,200	Violence Rune	 	 	Gourmet Ramen	1,000	45
+Nariqua	45	510	Blinking Rune	 	 	 	2,100	55
+Azzodess	47	3,700	 	 	 	 	6,800	480
+
+
+F. Champion chapters 4 and 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Copper Sun	55	1,200	Killer Rune	 	 	Hot Beef Tripe Stew	5,000	65
+Nariqua	45	510	Blinking Rune	 	 	 	2,100	55
+Nemesis	55	5,100	 	 	 	 	8,700	500
+Great Hollow
+Geddoe chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Daggerwing	20	180	Feather Band	 	 	Ice Cream Tempura	85	26
+Shadow	31	210	Potted Cactus	 	 	Spicy Pot Dish	820	36
+Soul Slug	25	270	Hex Doll	Peeing Boy	 	Grilled Fish	1,100	35
+Kuput Forest
+Chris chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Demon Seed	25	350	 	 	 	 	0	40
+Mantikra	34	1,500	 	 	 	Crab Rice Bowl	3,800	75
+Papa Holly	35	600	Flaming Arrow Scroll x2	 	 	Veggie Noodle	2,200	45
+Yellow Svire	30	120	Banshak Sake Set	 	 	Spicy Clam Soup	400	35
+Red Mantik	39	3,500	Mega Medicine B x4	Devil Beads	 	Crab Rice Bowl	400	35
+Chris chapter 3 / Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Needle Beetle	39	370	Medicine C x6	Midnight Beads	 	Steamed Clams	900	45
+Salamander	32	900	Fire Rune	 	 	Yakisoba	1,600	37
+Tarantula	37	330	Lightning Amulet	 	 	 	950	43
+Red Mantik	39	3,500	Mega Medicine B x4	Devil Beads	 	Crab Rice Bowl	400	35
+Chris chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Needle Beetle	39	370	Medicine C x6	Midnight Beads	 	Steamed Clams	900	45
+Rabid Rabbit	38	300	Mega Medicine D x4	 	 	Surprise Stew	1,200	45
+Tarantula	37	330	Lightning Amulet	 	 	 	950	43
+Demon Seed	35	800	 	 	 	 	0	55
+Ghost Holly	46	3,800	Earth Chain Mail	 	 	Peppered Beef	33,000	490
+
+
+Chris chapter 3 / Geddoe chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Needle Beetle	39	370	Medicine C x6	Midnight Beads	 	Steamed Clams	900	45
+Rabid Rabbit	38	300	Mega Medicine D x4	 	 	Surprise Stew	1,200	45
+Demon Seed	35	800	 	 	 	 	0	55
+Ghost Holly	46	3,800	Earth Chain Mail	 	 	Peppered Beef	33,000	490
+
+
+F. Champion chapters 4 and 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Red Mantik	40	1,700	Mega Medicine B x4	Devil Beads	 	Crab Rice Bowl	3,400	57
+Blue Mantik	51	4,500	Premier Helm	 	 	Crab Rice Bowl	36,000	610
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blue Mantik	55	1,800	 	 	 	Crab Rice Bowl	5,700	65
+Demon Seed	43	550	 	 	 	 	0	40
+Ghost Holly	48	700	True Byako Chain Mail	 	 	Peppered Beef	5,500	55
+Ghost Knight	60	5,200	Iron Boots	Flame Casque	 	Full Course	50,000	900
+Mountain Path
+Chris chapter 3 / Geddoe chapter 1 to 3 / Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chon Chon	31	210	Medicine D x6	 	 	Tomato Juice	90	30
+Devil Eye	30	500	Plant Vase	Mini-Cactus	 	Super Pickles	450	35
+Salamander	32	900	Fire Rune	 	 	Yakisoba	1,600	37
+Yellow Svire	30	120	Banshak Sake Set	 	 	Spicy Clam Soup	400	35
+Rock Golem	47	4,100	 	 	 	 	6,800	440
+
+
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Choe Choe	42	400	 	 	 	Tomato Juice	500	50
+Gold Boar	42	1,100	Celadon Urn	 	 	Crispy Gratin	1,300	60
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Rabid Rabbit	38	300	Killer Rune	 	 	Surprise Stew	1,200	45
+Ghost Knight	47	3,800	 	 	 	 	6,600	450
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blight	52	570	Chief's Hat	 	 	Minced Chicken	1,500	60
+Choe Choe	42	400	 	 	 	Tomato Juice	500	50
+Demon Seed	43	550	 	 	 	 	0	50
+Ghost Holly	48	700	True Byakko Chain Mail	 	 	Black Cake	5,500	55
+Troll Dragon	50	1.900	Fire Sealing Rune	 	 	Ice Cream	2,900	65
+Left Head	55	3,000	 	 	 	 	0	180
+Right Head	55	3,000	 	 	 	 	0	180
+Twin Snake	55	6,500	 	 	 	 	9,000	700
+Mt. Hei-Tou
+Thomas chapter 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blade Bunny	7	40	Counter Rune	 	 	Carrot Cake	60	9
+Creeper	7	75	Kuzzler Beads	 	 	Pickled Cabbage	45	7
+Furrfly	5	25	Failure Urn	 	 	Mayo Egg	45	7
+
+
+Chris chapter 2 / Geddoe chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Spark Beetle	25	220	Medicine C x6	 	 	Soy Locusts	350	32
+Wild Boar	20	300	New Leather	 	 	Mapo Bun	100	40
+Wolf	23	250	 	 	 	Chicken Teriyaki	200	27
+Blue Mantik	35	3,300	 	 	 	 	3,600	350
+
+
+Chris chapter 3 / Geddoe chapter 2 and 3 / Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dokugumo	30	270	 	 	 	Tomato Salad	380	35
+Shadow Dog	35	420	Titan rune	 	 	Okonomiyaki	570	50
+Yellow Svire	30	120	Banshak Sake Set	 	 	Spcy Clam Soup	400	35
+Blue Mantik	35	3,300	 	 	 	 	3,600	350
+
+
+F. Champion chapters 4 and 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Gold Boar	42	1,100	Celadon Urn	 	 	Crisp Gratin	1,300	60
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Blue Mantik	35	3,300	 	 	 	 	3,600	350
+Mt. Senai
+Geddoe chapters 2 and 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blue Svire	36	170	Fish Badge	Water Amulet	 	Dried Fish	700	45
+Bone Soldier	30	600	Lightning Leather	 	 	 	800	35
+Magician	34	350	Thunder Runner Scroll x2	 	 	 	1,700	40
+Nemesis	41	3,400	 	 	 	 	5,000	440
+
+
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blue Svire	36	170	Fish Badge	Water Amulet	 	Dried Fish	700	45
+Ghost Slug	47	500	Antitoxin x4	Mega Medicine C x4	 	Cold Ramen	800	35
+Magician	34	350	Thunder Runner Scroll x2	 	 	 	1,700	40
+Nemesis	41	3,400	 	 	 	 	5,000	440
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Ghost Armor	52	1,100	Armor of Rage	 	 	 	3,800	60
+Mirage	51	370	Blessed Chain Mail	 	 	 	1,300	80
+Skeleton	50	700	Blessed Leather	 	 	 	1,400	60
+Ghost Knight	58	6,700	 	 	 	 	9,500	700
+North Amur Plains
+Hugo chapters 1 and 2 / Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Arachnivore	15	200	Ol' Tree Beads	 	 	Preserved Mackerel	90	18
+Blade Bunny	7	40	Gale Rune	 	 	Carrot Cake	60	9
+Wild Boar	20	950	Byakko Chain Mail	 	 	Beef and Potatoes	1,000	400
+
+
+Hugo chapters 2 and 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Arachnivore	15	200	Ol' Tree Beads	 	 	Preserved Mackerel	90	18
+Blade Bunny	7	40	Gale Rune	 	 	Carrot Cake	60	9
+Wild Boar	20	300	Damaged Armor	 	 	Mapo Bun	100	40
+Peckles	29	1,600	Mangosh	 	 	Hashed Beef and Rice	8,000	240
+
+
+Chris chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	Toy Boat	 	Peach Bun	350	33
+Dokugumo	30	270	Calerian Urn	 	 	Mashed Potato	380	35
+Peckles	35	600	Gauntlet	 	 	Grenade Ice	600	60
+Horohoro	39	1,700	Guardian Casque	 	 	Karaya Chicken	8,000	150
+
+
+Geddoe chapter 3 / F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Peckles	35	600	Gauntlet	 	 	Grenade Ice	600	60
+Rabid Rabbit	38	300	Viper Rune	 	 	Surprise Stew	1,200	45
+Blight	46	2,900	Wind Amulet	Toy Duck	 	Chicken Cartilage	13,000	170
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blight	52	570	Toy Duck	Chief's Hat	 	Minced Chicken	1,500	60
+Troll Dragon	50	1,900	Fire Rune	 	 	Kobold's Course	2,900	65
+North Cavern
+Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Banshee	20	160	Failure urn	Wu'ts-ai Urn	 	Red Hot Grilled Fish	170	24
+Purple Creeper	15	160	Firefly Rune	 	 	Pickled Cucumber	150	18
+Magician	18	650	 	 	 	 	1,200	120
+
+
+Hugo chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bandit	17	170	Failure Urn	 	 	 	180	20
+Banshee	20	160	Failure urn	Wu'ts-ai Urn	 	Red Hot Grilled Fish	170	24
+Daggerwing	20	180	Feather Band	 	 	Ice Cream Tempura	85	25
+
+
+Chris chapter 2 / Geddoe chapter 2 / Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bone Soldier	30	600	Patched Leather	Lightning Leather	 	 	800	35
+Spark Beetle	25	220	Medicine C x6	 	 	Soy Locusts	350	32
+Chimera	35	3,500	 	 	 	 	3,900	320
+
+
+Chris chapter 3 / Geddoe chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bone Soldier	30	600	Patched Leather	Lightning Leather	 	 	800	35
+Magician	34	350	Thunder Runner Scroll x2	 	 	 	1,700	40
+Shadow Dog	35	420	Sword of Thunder Rune	 	 	Okonomiyaki	570	50
+Stone Golem	49	5,500	 	 	 	 	5,700	430
+
+
+F.Champion chapters 4 and 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Ghost Slug	47	500	Mega Medicine C x4	Throat Drops x4	 	Cold Ramen	1,800	54
+Siren	50	350	Milk Bath Beads	Wizard Rune	 	Gratin	1,100	60
+Zombie Unicorn	43	650	 	 	 	Tofu Hot Pot	3,600	50
+Ghost Knight	52	5,000	 	 	 	 	8,000	550
+Yaza Plains
+Thomas chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Holly Shrub	2	10	Medicine D x6	Throat Drops x4	 	Nuzkazuke Puckles	15	4
+
+Killer Bee	3	18	Citrus	 	 	 	25	5
+
+
+Thomas chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blade Bunny	7	40	Earth Rune	 	 	Carrot Cake	60	9
+Furrfly	5	25	Failure Urn	 	 	Mayo Egg	45	7
+Arachnivore	10	280	 	 	 	Cherry Tomato	450	70
+
+
+Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Arachnivore	15	200	 	 	 	Preserved Mackerel	90	18
+Blade Bunny	7	40	Earth Rune	 	 	Carrot Cake	60	9
+Furrfly	5	25	Failure Urn	 	 	Mayo Egg	45	7
+Wild Boar	20	950	Byakko Chain Mail	 	 	Beef and Potatoes	1,000	400
+
+
+Geddoe chapters 1 to 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Arachnivore	15	200	 	 	 	Preserved Mackerel	90	18
+Blade Bunny	7	40	Earth Rune	 	 	Carrot Cake	60	9
+Wild Boar	20	300	Damaged Armor	 	 	Pork Bun	100	40
+Peckles	29	1,600	Mangosh	 	 	Hashed Beef and Rice	8,000	240
+
+
+Chris chapters 2 and 3 / Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	Toy Boat	 	Sukiyaki	350	33
+Dokugumo	30	270	Calerian Urn	 	 	Mashed Potato	380	35
+Peckles	35	600	Gauntlet	 	 	Grenade Ice	600	60
+Gold Boar	37	1,800	Berserk Blow Scroll x1	Mega Medicine B x4	 	Salted Beef	10,000	300
+
+
+Geddoe chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Peckles	35	600	Gauntlet	 	 	Grenade Ice	600	60
+Rabid Rabbit	38	300	Skunk Rune	 	 	Surprise Stew	1,200	45
+Stone Golem	48	4,800	Mother Earth Rune	 	 	 	32,000	500
+
+
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Gold Boar	42	1,100	Berserk Blow Scroll x1	Mega Medicine B x4	 	Crispy Gratin	1,300	60
+Horohoro	40	300	Feathered Hat	 	 	Skewered Chicken	1,200	45
+Troll Dragon	50	1,900	Fire Sealing Rune	 	 	Kobold's Course	2,900	65
+Stone Golem	48	4,800	Mother Earth Rune	 	 	 	32,000	500
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Blight	52	570	Premier Tunic	 	 	Minced Chicken	1,500	60
+Stone Golem	50	1,000	Wall rune	 	 	Curry Rice	3,400	59
+Troll Dragon	50	1,900	Fire Sealing Rune	 	 	Kobold's Course	2,900	65
+Zexen Forest
+Thomas chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Creeper	7	75	Kuzzler Beads	 	 	Pickled Cabbage	67	10
+Holly shrub	2	10	Medicine D x6	 	 	Nukazuke Pickles	15	4
+Holly Elf	13	400	Gale Rune	Rose Vase	 	 	500	100
+
+
+Thomas chapters 1 and 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Creeper	7	75	Kuzzler Beads	 	 	Pickled Cabbage	67	10
+Holly shrub	2	10	Medicine D x6	 	 	Nukazuke Pickles	15	4
+Vermitor	15	65	Medicine C x6	Medicine B x6	 	Mapo Bun	120	18
+Holly Elf	13	400	Gale Rune	Rose Vase	 	 	500	100
+
+
+Hugo chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Creeper	7	75	Kuzzler Beads	 	 	Pickled Cabbage	67	10
+Holly Shrub	2	10	Medicine D x6	 	 	Nukazuke Pickles	15	4
+Vermitor	15	65	Medicine C x6	Medicine B x6	 	Mapo Bun	120	18
+Demon Seed	20	400	 	 	 	 	0	30
+Papa Holly	25	1,600	Clay Guardian Scroll x1	 	 	 	7,000	200
+
+
+Chris chapter 1 / Geddoe chapters 1 and 2 / Hugo chapters 1 and 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Holly Elf	20	150	Toy Boat	Rose Vase	 	 	450	25
+Holly Shrub	2	10	Medicine D x6	 	 	Nukazuke Pickles	15	4
+Vermitor	15	65	Medicine C x6	Medicine B x6	 	Mapo Bun	120	18
+Demon Seed	20	400	 	 	 	 	0	30
+Papa Holly	25	1,600	Clay Guardian Scroll x1	 	 	 	7,000	200
+
+
+Chris chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	 	 	Sukiyaki	350	33
+Spark Beetle	25	220	Medicine C x6	 	 	Soy Locusts	350	32
+Demon Seed	20	400	 	 	 	 	0	30
+Papa Holly	25	1,600	Clay Guardian Scroll x1	 	 	 	7,000	200
+
+
+Chris chapters 2 and 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Dark Hare	28	150	Graffiti	 	 	Sukiyaki	350	33
+Shadow	31	210	Potted Cactus	 	 	Spicy Pot Dish	820	36
+Spark Beetle	25	220	Medicine C x6	 	 	Soy Locusts	350	32
+Demon Seed	20	400	 	 	 	 	0	30
+Papa Holly	25	1,600	Clay Guardian Scroll x1	 	 	 	7,000	200
+
+
+Geddoe chapter 3 / F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Demon Seed	25	350	 	 	 	 	0	40
+Mantikra	34	1,500	 	 	 	Crab rice Bowl	3,800	70
+Papa Holly	35	600	Flaming Arrows Scroll x2	 	 	Veggie Noodle	2,200	45
+Song Sprite	35	250	Rose Petals	 	 	 	470	41
+Demon Seed	28	600	 	 	 	 	0	50
+Ghost Holly	42	3,100	Byako Chail Mail	Guardian Casque	 	Peppered Beef	30,000	460
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chimera	50	850	Feather Earrings	Blade Tail Ornament	Gold Beak	Shabu Shabu	2,400	60
+Demon Seed	43	550	 	 	 	 	0	40
+Ghost Holly	48	700	True Byakko Chain Mail	 	 	Black Cake	5,500	55
