@@ -71,3 +71,11 @@ LIST3 = [(f"Support skill {i+1} (id)", i, 1, "skill") for i in range(8)]
 
 SKILL_RANK_HELP = "1=E 2=D 3=C 4=B 5=B+ 6=A 7=A+ 8=S"
 SKILL_MAX_HELP  = "0=Can't get 1=A+ 2=D 3=C 4=B 5=B+ 6=A 7=S"
+
+# Structured (value, label) option lists for skill-rank dropdowns. Kept in lockstep with
+# the HELP strings above. RANK is a learned skill's proficiency (0 = not learned, then
+# E..S); verified 0..8 in real saves. MAX is the ISO list2 "skill maximum level" scale.
+SKILL_RANK_OPTS = [(0, "— (not learned)"), (1, "E"), (2, "D"), (3, "C"), (4, "B"),
+                   (5, "B+"), (6, "A"), (7, "A+"), (8, "S")]
+SKILL_MAX_OPTS  = [(0, "Can't get"), (1, "A+"), (2, "D"), (3, "C"), (4, "B"),
+                   (5, "B+"), (6, "A"), (7, "S")]
