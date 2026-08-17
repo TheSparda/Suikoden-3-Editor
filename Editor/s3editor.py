@@ -729,8 +729,40 @@ def write_spell(index, fields):
         if val is None:
             iso.close(); return {"error": f"unknown status {fields['status']!r}"}
         iso.wr(off + 0x18, struct.pack("<I", val))
+    result = {"ok": True}
+    if fields.get("updateDesc") and "power" in fields:
+        # Best-effort: rewrite the damage figure in the spell's description to match the new
+        # power. Two forms occur in S3: absolute "NNNDMG" (number == power) and multiplier
+        # "DMGxN.N" (N.N == power/100). Edited in place, capped to the original string length
+        # (same rule as Foods / the Text tab); left untouched if it would overflow or has no
+        # number (heals/buffs/status spells carry no numeric damage in their text).
+        import re
+        pw = _u(fields["power"], 4)
+        try:
+            dptr = struct.unpack_from("<I", iso.rd(off + 0x0C, 4), 0)[0]
+            doff = S.va2off(dptr)
+            orig = iso.rd(doff, 160).split(b"\x00")[0]
+            maxlen = len(orig)
+            text = orig.decode("latin1", "replace")
+            if re.search(r"DMGx\d+(?:\.\d+)?", text):
+                new = re.sub(r"DMGx\d+(?:\.\d+)?", f"DMGx{pw/100:g}", text, count=1)
+            elif re.search(r"\d+DMG", text):
+                new = re.sub(r"\d+DMG", f"{pw}DMG", text, count=1)
+            else:
+                new = text
+                result["descNoNumber"] = True   # nothing to update in this spell's text
+            if new != text:
+                enc = new.encode("latin1", "replace")
+                if len(enc) > maxlen:
+                    result["descTruncated"] = True     # would overflow -> leave original
+                else:
+                    iso.wr(doff, enc + b"\x00" * (maxlen - len(enc)))
+                    result["descTruncated"] = False
+                    result["newDesc"] = new
+        except Exception as e:
+            result["descError"] = str(e)
     iso.close()
-    return {"ok": True}
+    return result
 
 def write_char_byte(list_no, index, boff, value, width):
     iso = _iso(write=True)
@@ -1506,7 +1538,8 @@ async function renderSpells(m){const sp=await api("/api/spells");
  const sections=[...mageSecs,...attackSecs];
  if(misc.length)sections.push({title:"Unused / placeholder slots",rows:misc});
 
- m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter spells…">
+ m.innerHTML=`<div class=row style="margin-bottom:12px;align-items:center;gap:10px"><input class=search id=q placeholder="filter spells…">
+  <label class=optchk><input type=checkbox id=syncdesc checked> also update the DMG figure in the description</label>
   <span class=hint>Grouped by rune. Edit power / cast / element / AOE / status — saves on change/blur.</span></div>
   <div id=secs></div>`;
  const head=`<thead><tr><th>#</th><th>Name</th><th>Element</th><th>Power</th><th>Cast</th><th>Target / Size</th><th>Status</th><th>Shape</th></tr></thead>`;
@@ -1543,9 +1576,15 @@ async function renderSpells(m){const sp=await api("/api/spells");
     const idx=+inp.dataset.i, f=inp.dataset.f;
     let v=inp.tagName==="SELECT"?inp.value:+inp.value;
     const fields={};fields[f]=(f==="elementId"||f==="target")?+v:v;
+    if(f==="power"&&$("#syncdesc")&&$("#syncdesc").checked)fields.updateDesc=true;
     const r=await api("/api/spell",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({index:idx,fields})});
-    if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
+    if(r.ok)markDirty();toast(r.ok?(r.descTruncated?"staged (desc too long — left as-is)":"staged"):"error: "+(r.error||"?"));
+    if(r.ok&&f==="power"&&r.newDesc){ // live-update the spell's description row
+     const tr=inp.closest("tr"), drow=tr.nextElementSibling;
+     if(drow&&drow.classList.contains("descrow")){const c=drow.querySelector(".desc");if(c)c.textContent=r.newDesc;}
+     const s=sp.find(x=>x.index===idx);if(s)s.desc=r.newDesc;
+    }
     if(r.ok&&(f==="target"||f==="elementId")){ // refresh the Shape pill + local cache
      const fresh=(await api("/api/spells")).find(x=>x.index===idx);
      const s=sp.find(x=>x.index===idx);Object.assign(s,fresh);
