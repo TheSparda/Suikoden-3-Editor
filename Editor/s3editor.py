@@ -609,7 +609,7 @@ def read_charfields(list_no, index):
         if l.startswith("shield"): return ["Shields"]
         return None
 
-    def field(label, off, width, kind):
+    def field(label, off, width, kind, opts=None):
         pos = rec_off + off
         v = _read_val(iso, pos, width)
         name = ""
@@ -619,6 +619,8 @@ def read_charfields(list_no, index):
              "value": v, "name": name}
         if kind == "item":
             d["cats"] = field_cats(label)          # None = allow all (e.g. starting items)
+        if kind == "enum":
+            d["opts"] = [{"v": ov, "label": ol} for ov, ol in (opts or [])]
         return d
 
     if list_no == 1:
@@ -632,11 +634,18 @@ def read_charfields(list_no, index):
         for k in range(43):
             sid = k + 1
             smax.append(field(skills.get(sid, f"Skill 0x{sid:02X}") + " max",
-                              F.LIST2_SKILLMAX_START + k, 1, "num"))
+                              F.LIST2_SKILLMAX_START + k, 1, "enum", F.SKILL_MAX_OPTS))
         groups.append({"title": "Skill Maximum Levels", "help": F.SKILL_MAX_HELP, "fields": smax})
+        # Fixed-skill "level learned" fields are ranks (E..S); the skill-id fields stay
+        # skill-pickers, and counts/levels (Free Skills, Starting level) stay numeric.
+        fixed = []
+        for label, off, width, kind in F.LIST2_FIXED:
+            if kind == "num" and "level learned" in label:
+                fixed.append(field(label, off, width, "enum", F.SKILL_RANK_OPTS))
+            else:
+                fixed.append(field(label, off, width, kind))
         groups.append({"title": "Fixed Skills / Free Skills / Starting Level",
-                       "help": F.SKILL_RANK_HELP,
-                       "fields": [field(*f) for f in F.LIST2_FIXED]})
+                       "help": F.SKILL_RANK_HELP, "fields": fixed})
     elif list_no == 3:
         groups.append({"title": "Support Character Skills", "help": F.SKILL_RANK_HELP,
                        "fields": [field(*f) for f in F.LIST3]})
@@ -1865,8 +1874,10 @@ async function renderChars(m){
   const dv=(f.def!==undefined?f.def:f.value);
   if(f.kind==="item")  return `<select data-off=${f.off} data-w=${f.width} data-kind=item data-def="${dv}">${itemOptsFor(f.cats,f.value)}</select>`;
   if(f.kind==="skill") return `<select data-off=${f.off} data-w=${f.width} data-kind=skill data-def="${dv}">${skillOpts}</select>`;
+  if(f.kind==="enum")  return `<select data-off=${f.off} data-w=${f.width} data-kind=enum data-def="${dv}">${(f.opts||[]).map(o=>`<option value="${o.v}">${o.v} · ${o.label}</option>`).join("")}</select>`;
   return `<input type=number min=0 value="${f.value}" data-off=${f.off} data-w=${f.width} data-def="${dv}">`;
  }
+ const enumLabel=(f,v)=>{const o=(f.opts||[]).find(o=>o.v===+v);return o?o.label:("= "+v);};
  async function load(){
   const L=+$("#list").value, IX=+$("#idx").value;
   const c=await api(`/api/charfields?list=${L}&index=${IX}`);
@@ -1880,14 +1891,14 @@ async function renderChars(m){
    if(g.help)h+=`<div class=hint>${g.help}</div>`;
    h+=`<table><tbody>`;
    g.fields.forEach(f=>{
-    const note=f.kind==='num'?('= '+f.value):(f.kind==='skill'?(SKILLDESC[f.value]||''):(f.kind==='item'?(ITEMDESC[f.value]||''):''));
+    const note=f.kind==='num'?('= '+f.value):(f.kind==='enum'?enumLabel(f,f.value):(f.kind==='skill'?(SKILLDESC[f.value]||''):(f.kind==='item'?(ITEMDESC[f.value]||''):'')));
     h+=`<tr><td style="width:230px">${f.label}</td><td>${fieldEditor(f)}</td>
      <td class="hint" data-descfor="${f.off}">${note}</td></tr>`;});
    h+=`</tbody></table></div>`;});
   $("#rec").innerHTML=h;
   // set dropdown current values
   c.groups.forEach(g=>g.fields.forEach(f=>{
-   if(f.kind==="item"||f.kind==="skill"){
+   if(f.kind==="item"||f.kind==="skill"||f.kind==="enum"){
     const el=$(`#rec [data-off="${f.off}"][data-kind]`);if(el)setSel(el,f.value);}}));
   $("#rec").querySelectorAll("[data-off]").forEach(inp=>{
    const ev=inp.tagName==="SELECT"?"change":"blur";
@@ -1896,8 +1907,10 @@ async function renderChars(m){
       body:JSON.stringify({list:L,index:IX,off:+inp.dataset.off,value:+inp.value,width:+inp.dataset.w})});
     if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));
     if(inp.dataset.kind){const cell=$(`#rec [data-descfor="${inp.dataset.off}"]`);
-     const map=inp.dataset.kind==="skill"?SKILLDESC:ITEMDESC;
-     if(cell)cell.textContent=map[+inp.value]||"";}});});
+     if(cell){
+      if(inp.dataset.kind==="enum"){const o=inp.selectedOptions[0];cell.textContent=o?o.textContent.replace(/^\d+\s·\s/,''):"";}
+      else{const map=inp.dataset.kind==="skill"?SKILLDESC:ITEMDESC;cell.textContent=map[+inp.value]||"";}
+     }}});});
   decorate($("#rec"));}
  $("#load").onclick=load; $("#idx").onchange=load; load();}
 
@@ -2253,6 +2266,9 @@ function renderSaveSlots(r){
      <div class=hint id=subhint style="margin:-2px 0 8px"></div>
      <div id=subview></div></div>`;
 
+  // learned-skill rank tiers (0 = not learned, then E..S). Verified 0..8 in real saves.
+  const RANK_TIERS=[[0,"— (none)"],[1,"E"],[2,"D"],[3,"C"],[4,"B"],[5,"B+"],[6,"A"],[7,"A+"],[8,"S"]];
+  const RANK_OPTS=RANK_TIERS.map(([v,l])=>`<option value="${v}">${v} · ${l}</option>`).join("");
   // equip slot labels (order matches s3save EQUIP_SLOTS) + which item categories fit each
   const EQ=[["headRune","Head Rune"],["rightRune","Right Rune"],["leftRune","Left Rune"],
             ["helm","Helm"],["armor","Armor"],["shield","Shield"],
@@ -2306,7 +2322,7 @@ function renderSaveSlots(r){
       ${(c.skills||[]).map(sk=>`<div style="display:flex;flex-direction:column;gap:3px">
         <select data-skri=${c.rosterIndex} data-skslot=${sk.slot} data-skf=id data-def="${sk.id}">${skillOpts}</select>
         <label class=hint style="flex-direction:row;gap:4px;align-items:center">rank
-          <input type=number min=0 max=15 style=width:52px value="${sk.rank}" data-skri=${c.rosterIndex} data-skslot=${sk.slot} data-skf=rank data-def="${sk.rank}"></label>
+          <select style=width:118px data-skri=${c.rosterIndex} data-skslot=${sk.slot} data-skf=rank data-def="${sk.rank}">${RANK_OPTS}</select></label>
       </div>`).join("")}
       </div></div>`;
    $("#subview").innerHTML=shown.map(card).join("")||`<div class=hint>no characters</div>`;
