@@ -167,6 +167,48 @@ def flush_pending():
     PENDING.clear()
     return n
 
+def _staged_bytes_map():
+    """Merge the on-disk recipe journal (already-saved edits) with the live PENDING
+    staging buffer into {offset: [oldByte, newByte]} — so a recipe can be exported from
+    staged edits WITHOUT first writing them to the multi-GB ISO. For a staged offset, the
+    'old' byte is read straight from disk (PENDING hasn't touched the file yet)."""
+    import json
+    bm = {}
+    try:
+        raw = json.load(open(ISO_PATH + ".s3mod.json")).get("bytes", {})
+        bm = {int(k): [v[0], v[1]] for k, v in raw.items()}
+    except Exception:
+        bm = {}
+    if PENDING:
+        iso = S.Iso(ISO_PATH)
+        try:
+            for off, newb in PENDING.items():
+                if off in bm:
+                    bm[off][1] = newb                    # keep original 'old', update 'new'
+                else:
+                    bm[off] = [iso.rd(off, 1)[0], newb]  # 'old' = current on-disk byte
+        finally:
+            iso.close()
+    return {o: v for o, v in bm.items() if v[0] != v[1]}   # drop no-ops
+
+def _staged_recipe(note=""):
+    """Coalesce the merged staged+journal byte map into a portable .s3mod recipe dict."""
+    bm = _staged_bytes_map()
+    if not bm:
+        return None
+    runs = []
+    for off, (old, new) in sorted(bm.items()):
+        if runs and off == runs[-1]["_end"]:
+            r = runs[-1]; r["old"] += "%02x" % old; r["new"] += "%02x" % new; r["_end"] += 1
+        else:
+            runs.append({"off": off, "old": "%02x" % old, "new": "%02x" % new, "_end": off + 1})
+    for r in runs:
+        r.pop("_end")
+    with S.Iso(ISO_PATH) as g:
+        vword = struct.unpack(">I", g.rd(S.VERSION_CHECK_OFF, 4))[0]
+    return {"format": "s3mod", "version": 1, "game": "SLUS-20387",
+            "versionWord": vword, "note": note, "patchCount": len(runs), "patches": runs}
+
 def _load_names():
     p = os.path.join(os.path.dirname(__file__), "s3_names.json")
     try:
@@ -988,19 +1030,18 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/mod-status":
                 if not ISO_PATH:
                     return self._send(200, {"error": "no ISO loaded"})
-                st = S.mod_status(ISO_PATH)
-                st["pending"] = len(PENDING)
-                st["xdelta"] = S.xdelta_available()
-                return self._send(200, st)
+                saved = S.mod_status(ISO_PATH)                 # already written to the ISO
+                total = len(_staged_bytes_map())               # staged + saved (exportable now)
+                return self._send(200, {"bytes": total, "runs": saved["runs"],
+                                        "savedBytes": saved["bytes"], "pending": len(PENDING),
+                                        "xdelta": S.xdelta_available()})
             if self.path == "/api/mod-export":
                 if not ISO_PATH:
                     return self._send(200, {"error": "no ISO loaded"})
-                if PENDING:
-                    return self._send(200, {"error": f"{len(PENDING)} unsaved edit(s) — click Save first so they're recorded"})
-                try:
-                    mod = S.export_mod(ISO_PATH, note=body.get("note", ""))
-                except ValueError as e:
-                    return self._send(200, {"error": str(e)})
+                # Build the recipe from staged + already-saved edits — no need to write the ISO.
+                mod = _staged_recipe(note=body.get("note", ""))
+                if mod is None:
+                    return self._send(200, {"error": "no edits to export yet — make some changes first"})
                 out = ISO_PATH + ".s3mod"
                 with open(out, "w") as fp:
                     json.dump(mod, fp, indent=1)
@@ -2086,11 +2127,11 @@ async function renderPatch(m){
   <p class=hint>A recipe is a tiny JSON of the exact byte changes you made (with the original
    bytes, so it's reversible and version-checked). Share it so others can apply your mod to
    <b>their own</b> Suikoden III (USA) ISO — no need to pass around the multi-GB disc.</p>
-  <div id=modstat class=hint style="margin:8px 0">${st.pending?`<b class=warn>${st.pending} unsaved edit(s)</b> — click <b>Save</b> up top first so they're recorded. `:""}Recorded: <b>${st.bytes}</b> byte(s) across <b>${st.runs}</b> run(s).</div>
+  <div id=modstat class=hint style="margin:8px 0"><b>${st.bytes}</b> edit(s) ready to export${st.pending?` — includes <b>${st.pending}</b> staged (not yet written to the ISO; you don't have to save)`:""}${st.savedBytes?` · ${st.savedBytes} already written to the ISO`:""}. <button class="act mini sec" id=modrefresh>Refresh</button></div>
   <div class=row>
    <input class=search id=note placeholder="optional note (e.g. 'Hard mode + cheaper runes')" style=width:340px>
    <button class=act id=modexport ${st.bytes?"":"disabled"}>Export recipe (.s3mod)</button>
-   <button class=ghost id=modclear ${st.bytes?"":"disabled"}>Clear recording</button>
+   <button class=ghost id=modclear ${st.savedBytes?"":"disabled"}>Clear ISO recording</button>
   </div>
   <div id=exres class=hint style="margin-top:8px"></div>
  </div>
@@ -2125,6 +2166,7 @@ async function renderPatch(m){
   <div id=xdres class=hint style="margin-top:8px"></div>
  </div>`;
  const setbrowse=(btn,inp,kind)=>$(btn).onclick=async()=>{const r=await api("/api/pick-file?kind="+kind);if(r.path)$(inp).value=r.path;};
+ $("#modrefresh").onclick=()=>renderPatch(m);
  $("#modexport").onclick=async()=>{
   $("#exres").textContent="exporting…";
   const r=await POST("/api/mod-export",{note:$("#note").value.trim()});
