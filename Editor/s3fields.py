@@ -77,5 +77,7 @@ SKILL_MAX_HELP  = "0=Can't get 1=A+ 2=D 3=C 4=B 5=B+ 6=A 7=S"
 # E..S); verified 0..8 in real saves. MAX is the ISO list2 "skill maximum level" scale.
 SKILL_RANK_OPTS = [(0, "— (not learned)"), (1, "E"), (2, "D"), (3, "C"), (4, "B"),
                    (5, "B+"), (6, "A"), (7, "A+"), (8, "S")]
-SKILL_MAX_OPTS  = [(0, "Can't get"), (1, "A+"), (2, "D"), (3, "C"), (4, "B"),
-                   (5, "B+"), (6, "A"), (7, "S")]
+# Displayed in grade order (ascending), but each option's VALUE is still the game's raw
+# non-linear byte — note A+ = 1 sits between A (6) and S (7) by grade, not by value.
+SKILL_MAX_OPTS  = [(0, "Can't get"), (2, "D"), (3, "C"), (4, "B"), (5, "B+"),
+                   (6, "A"), (1, "A+"), (7, "S")]
