@@ -963,3 +963,36 @@ Medicines, Antitoxin, and stat "Stone of X" items share this structure (heal=0 f
 stones; a separate field carries the stat/spell they grant). "Medals" are key/valuable
 items (id >= 0x200) with no stat record — editable only as inventory entries in the save
 editor, not here.
+
+---
+
+## v13 — Cross-validation against a PCSX2 Cheat Engine table
+
+Source: "Suikoden III NTSC PCSX2 1_7_5_320.CT" (community Cheat Engine trainer for the
+NTSC release under PCSX2 1.7.5). Its addresses are LIVE EE-RAM (a runtime pointer +
+per-slot offset, e.g. FirstPartyExpPtr + [iPartySlot]+2C), NOT memory-card `gamedata`
+offsets, so they do not transfer to the save editor directly. Used here only to
+independently corroborate our own reverse-engineering.
+
+**Item id -> name list: CONFIRMED.** The CT's equipped-item dropdown lists 508 ids with
+names; it matches our `Suikoden3_item_ids.txt` 508/508. The only differences are
+cosmetic: HTML entity encoding ("Beef &amp; Potatoes") and one CT typo ("Tomator Seeds"
+vs our "Tomatoe Seeds"). Our item list is correct and complete.
+
+**Character stat block: CONFIRMED.** The CT's in-RAM stat layout (relative to its EXP
+field) is PWR +0x20 / SKL +0x22 / MAG +0x24 / RPL +0x26 / PDF +0x28 / MDF +0x2A /
+SPD +0x2C / LUK +0x2E — exactly matching our gamedata OFF_STATS = 0x20 with the same 8
+u16 order (the CT's "RPL" = our "REP"). Confirms the save-editor stat decode.
+
+**Not usable from the CT:**
+- RAM struct != save struct beyond the stat block — the CT places curHP/maxHP at
+  RAM base +0x2C/+0x2E, whereas our gamedata has curHP @0x08 and maxHP @0x30.
+- The CT's character dropdown ids (e.g. 0x834 "Ace") are RAM handles, not the roster
+  indices the save uses.
+- Trainer entries (infinite HP, MAGIC/SP multipliers) are Auto-Assembler scripts that
+  hook running code; nothing to translate into a static save/ISO edit.
+
+**Open lead — "SP" (skill points):** the CT edits a per-character SP field we do not
+expose. Its RAM offset (EXP+4) does not map to a confirmed gamedata offset — the word
+at gamedata char+0x04 did not read as plausible SP across a real save. Needs a known
+on-screen SP value to RE and confirm before exposing (per the never-write-unverified rule).
