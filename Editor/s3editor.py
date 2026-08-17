@@ -406,6 +406,12 @@ def _gear_offsets(iso):
 def read_gear():
     iso = _iso(); items = S.load_item_ids(); skills = S.load_skill_ids()
     offs = _gear_offsets(iso); out = []
+    # a couple of desc strings are SHARED between items (e.g. Wooden/Iron Shield):
+    # map ptr -> [item ids] so the UI can warn that editing one edits both.
+    _ptr_ids = {}
+    for iid, off in offs.items():
+        p = struct.unpack_from("<I", iso.rd(off, 4), 0)[0]
+        _ptr_ids.setdefault(p, []).append(iid)
     for iid, off in sorted(offs.items()):
         rec = iso.rd(off, S.GEAR_STRIDE)
         effects = []
@@ -425,9 +431,16 @@ def read_gear():
                 "skillName": skills.get(param, "") if t == 5 else "",
                 "statName": S.GEAR_STAT_SELECTOR.get(param, "") if t == 2 else "",
             })
+        dptr = struct.unpack_from("<I", rec, 0)[0]
+        try:   # capacity = the ON-DISK string length (staged shorter text doesn't shrink it)
+            dmax = len(iso.disk_rd(S.va2off(dptr), 160).split(b"\x00")[0])
+        except Exception:
+            dmax = 0
         out.append({
             "id": iid, "name": items.get(iid, f"0x{iid:X}"),
-            "desc": _desc_at(iso, struct.unpack_from("<I", rec, 0)[0]),
+            "desc": _desc_at(iso, dptr),
+            "descMax": dmax,
+            "sharedWith": [items.get(x, f"0x{x:X}") for x in _ptr_ids.get(dptr, []) if x != iid],
             "addr": off,
             "def": struct.unpack_from("<H", rec, S.GEAR_DEF_OFF)[0],
             "price": struct.unpack_from("<I", rec, S.GEAR_PRICE_OFF)[0],
@@ -462,6 +475,22 @@ def write_gear(item_id, fields):
         iso.wr(off + eo + 2, struct.pack("<H", int(e.get("value", 0)) & 0xFFFF))
         iso.wr(off + eo + 4, struct.pack("<H", int(param) & 0xFFFF))
     result = {"ok": True}
+    if "desc" in fields:
+        # Custom description: user-typed text written over the original string, padded with
+        # NULs. Capped to the ON-DISK slot length (writing longer is rejected, not truncated).
+        try:
+            dptr = struct.unpack_from("<I", iso.rd(off + 0x00, 4), 0)[0]
+            doff = S.va2off(dptr)
+            maxlen = len(iso.disk_rd(doff, 160).split(b"\x00")[0])
+            enc = str(fields["desc"]).encode("latin1", "replace")
+            if len(enc) > maxlen:
+                iso.close()
+                return {"error": f"description too long: {len(enc)} chars, slot holds {maxlen}"}
+            iso.wr(doff, enc + b"\x00" * (maxlen - len(enc)))
+            result["newDesc"] = enc.decode("latin1")
+            result["descMax"] = maxlen
+        except Exception as e:
+            iso.close(); return {"error": f"desc write failed: {e}"}
     if fields.get("updateDesc") and "def" in fields:
         # Best-effort: rewrite the "DEF(+N)" figure in the gear's description to match the
         # new DEF. Capped to the original string length (leaves text + flags if it would
@@ -1775,6 +1804,12 @@ async function renderGear(m){const gear=await api("/api/gear");
     <div class=row style="margin-bottom:6px">
      <label>DEF<input type=number style=width:80px data-id=${g.id} data-k=def data-def="${gd.def}" value="${g.def}"></label>
      <label>Price<input type=number style=width:110px data-id=${g.id} data-k=price data-def="${gd.price}" value="${g.price}"></label></div>
+    <div class=row style="margin-bottom:6px;align-items:center">
+     <label style="flex:1 1 auto">Description
+      <input type=text style="width:100%;max-width:520px" maxlength=${g.descMax} data-id=${g.id} data-k=desc value="${(g.desc||'').replace(/"/g,'&quot;')}"></label>
+     <span class=hint data-descleft=${g.id}>${g.descMax-(g.desc||'').length} left</span>
+     ${(g.sharedWith&&g.sharedWith.length)?`<span class="hint warn">shared with ${g.sharedWith.join(", ")} — editing changes both</span>`:""}
+    </div>
     <table><tbody>${effs}</tbody></table></div>`;}).join("");
   // set dropdown values + show the right param control (stat vs skill) per type
   gear.forEach(g=>g.effects.forEach(e=>{
@@ -1786,10 +1821,15 @@ async function renderGear(m){const gear=await api("/api/gear");
   }));
   $("#gl").querySelectorAll("[data-k]").forEach(inp=>{
    inp.addEventListener(inp.tagName==="SELECT"?"change":"blur",()=>saveGear(inp));});
+  // live remaining-space counter for the custom description inputs
+  $("#gl").querySelectorAll('input[data-k=desc]').forEach(di=>di.addEventListener("input",()=>{
+   const left=$(`#gl [data-descleft="${di.dataset.id}"]`);
+   if(left)left.textContent=(+di.maxLength-di.value.length)+" left";}));
   decorate($("#gl"));}
  async function saveGear(inp){
   const id=+inp.dataset.id;const k=inp.dataset.k;const fields={};
   if(k==="def"){fields.def=+inp.value; if($("#gupd")&&$("#gupd").checked)fields.updateDesc=true;}
+  else if(k==="desc")fields.desc=inp.value;
   else if(k==="price")fields.price=+inp.value;
   else{ // effect slot: gather type + value + the active param control for this off
    const off=+inp.dataset.off;
@@ -1804,7 +1844,8 @@ async function renderGear(m){const gear=await api("/api/gear");
   }
   const r=await api("/api/gear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
   if(r.ok)markDirty();toast(r.ok?(r.descTruncated?"staged (desc too long — left as-is)":"staged"):"error: "+(r.error||"?"));
-  if(r.ok&&r.newDesc){const span=inp.closest(".card")?.querySelector("h3 .hint");if(span)span.textContent=r.newDesc;}}
+  if(r.ok&&r.newDesc){const span=inp.closest(".card")?.querySelector("h3 .hint");if(span)span.textContent=r.newDesc;
+   const di=inp.closest(".card")?.querySelector('input[data-k=desc]');if(di&&k!=="desc")di.value=r.newDesc;}}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
 async function renderFoods(m){
