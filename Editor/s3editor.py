@@ -2348,7 +2348,7 @@ function renderSaveSlots(r){
      <div style="font-weight:600;color:var(--acc2);margin:0 0 6px">Names</div>
      <div class=lvgrid style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:4px">${nameInputs}</div>
      <div class=row style="margin-top:10px;align-items:center;gap:8px">
-       <label class=hint style="flex-direction:column;gap:3px;align-items:stretch">Gold / potch <span class=hint style=font-weight:400>(likely — unverified)</span>
+       <label class=hint style="flex-direction:column;gap:3px;align-items:stretch">Gold / potch
          <input type=number min=0 max=999999 id=goldfld value="${s.global.gold||0}" data-def="${s.global.gold||0}" style=width:140px></label>
      </div></div>
     <div class=card>
