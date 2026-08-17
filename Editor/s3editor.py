@@ -624,9 +624,15 @@ def read_charfields(list_no, index):
         return d
 
     if list_no == 1:
+        # "Skill N rank" fields are learned ranks (E..S); item/skill/count fields stay as-is.
+        l1 = []
+        for label, off, width, kind in F.LIST1:
+            if kind == "num" and label.endswith("rank"):
+                l1.append(field(label, off, width, "enum", F.SKILL_RANK_OPTS))
+            else:
+                l1.append(field(label, off, width, kind))
         groups.append({"title": "Starting Stats / Equipment",
-                       "help": F.SKILL_RANK_HELP,
-                       "fields": [field(*f) for f in F.LIST1]})
+                       "help": F.SKILL_RANK_HELP, "fields": l1})
     elif list_no == 2:
         groups.append({"title": "Growth Rates / Rune Levels", "help": "higher = faster growth",
                        "fields": [field(*f) for f in F.LIST2_GROWTH]})
@@ -636,16 +642,13 @@ def read_charfields(list_no, index):
             smax.append(field(skills.get(sid, f"Skill 0x{sid:02X}") + " max",
                               F.LIST2_SKILLMAX_START + k, 1, "enum", F.SKILL_MAX_OPTS))
         groups.append({"title": "Skill Maximum Levels", "help": F.SKILL_MAX_HELP, "fields": smax})
-        # Fixed-skill "level learned" fields are ranks (E..S); the skill-id fields stay
-        # skill-pickers, and counts/levels (Free Skills, Starting level) stay numeric.
-        fixed = []
-        for label, off, width, kind in F.LIST2_FIXED:
-            if kind == "num" and "level learned" in label:
-                fixed.append(field(label, off, width, "enum", F.SKILL_RANK_OPTS))
-            else:
-                fixed.append(field(label, off, width, kind))
+        # NOTE: "Skill N level learned" is the CHARACTER LEVEL a fixed skill is granted at
+        # (observed 0,1,15,20,25,30,33,35,37,40 — NOT the E..S rank scale), so it stays a
+        # plain number. Skill-id fields are skill-pickers; Free Skills / Starting level are counts.
         groups.append({"title": "Fixed Skills / Free Skills / Starting Level",
-                       "help": F.SKILL_RANK_HELP, "fields": fixed})
+                       "help": "Fixed Skill = auto-granted skill; its \"level learned\" is the "
+                               "character level it's granted at (0 = none).",
+                       "fields": [field(*f) for f in F.LIST2_FIXED]})
     elif list_no == 3:
         groups.append({"title": "Support Character Skills", "help": F.SKILL_RANK_HELP,
                        "fields": [field(*f) for f in F.LIST3]})
@@ -1144,6 +1147,7 @@ button.act:hover{filter:brightness(1.08)}button.act:active{transform:translateY(
 button.act:disabled{opacity:.45;cursor:default;filter:none}
 button.act.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
 button.act.sec:hover{border-color:var(--acc);filter:none}
+button.act.mini{padding:3px 9px;font-size:12px}
 .pill{padding:2px 9px;border-radius:999px;font-size:12px;background:var(--input-bg);border:1px solid var(--line);white-space:nowrap}
 .aoe{color:var(--acc2);border-color:var(--acc)}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;
@@ -1874,7 +1878,7 @@ async function renderChars(m){
   const dv=(f.def!==undefined?f.def:f.value);
   if(f.kind==="item")  return `<select data-off=${f.off} data-w=${f.width} data-kind=item data-def="${dv}">${itemOptsFor(f.cats,f.value)}</select>`;
   if(f.kind==="skill") return `<select data-off=${f.off} data-w=${f.width} data-kind=skill data-def="${dv}">${skillOpts}</select>`;
-  if(f.kind==="enum")  return `<select data-off=${f.off} data-w=${f.width} data-kind=enum data-def="${dv}">${(f.opts||[]).map(o=>`<option value="${o.v}">${o.v} · ${o.label}</option>`).join("")}</select>`;
+  if(f.kind==="enum")  return `<select data-off=${f.off} data-w=${f.width} data-kind=enum data-def="${dv}">${(f.opts||[]).map(o=>`<option value="${o.v}">${o.label}</option>`).join("")}</select>`;
   return `<input type=number min=0 value="${f.value}" data-off=${f.off} data-w=${f.width} data-def="${dv}">`;
  }
  const enumLabel=(f,v)=>{const o=(f.opts||[]).find(o=>o.v===+v);return o?o.label:("= "+v);};
@@ -1886,9 +1890,17 @@ async function renderChars(m){
   c.groups.forEach(g=>g.fields.forEach(f=>{if(DEFOFF[f.off]!==undefined)f.def=DEFOFF[f.off];}));
   $("#addr").textContent=`addr 0x${c.addr.toString(16).toUpperCase()} · stride ${c.stride}`;
   let h="";
-  c.groups.forEach(g=>{
-   h+=`<div class=card style="margin:14px 0"><h4 style="margin:0 0 4px">${g.title}</h4>`;
+  c.groups.forEach((g,gi)=>{
+   h+=`<div class=card style="margin:14px 0" data-grp=${gi}><h4 style="margin:0 0 4px">${g.title}</h4>`;
    if(g.help)h+=`<div class=hint>${g.help}</div>`;
+   // bulk "set all" for groups with 2+ enum fields sharing one scale (e.g. Skill Maximum Levels)
+   const enums=g.fields.filter(f=>f.kind==="enum");
+   if(enums.length>=2){
+    const bopts=(enums[0].opts||[]).map(o=>`<option value="${o.v}">${o.label}</option>`).join("");
+    h+=`<div class=row style="margin:6px 0 4px;align-items:center;gap:6px">
+      <span class=hint>Set all ${enums.length}:</span>
+      <select class=bulkenum>${bopts}</select>
+      <button class="act mini" data-bulkall=${gi}>Apply to all</button></div>`;}
    h+=`<table><tbody>`;
    g.fields.forEach(f=>{
     const note=f.kind==='num'?('= '+f.value):(f.kind==='enum'?enumLabel(f,f.value):(f.kind==='skill'?(SKILLDESC[f.value]||''):(f.kind==='item'?(ITEMDESC[f.value]||''):'')));
@@ -1896,6 +1908,12 @@ async function renderChars(m){
      <td class="hint" data-descfor="${f.off}">${note}</td></tr>`;});
    h+=`</tbody></table></div>`;});
   $("#rec").innerHTML=h;
+  // wire bulk "Apply to all": set every enum select in the group and stage each edit
+  $("#rec").querySelectorAll("[data-bulkall]").forEach(btn=>btn.onclick=()=>{
+   const card=btn.closest("[data-grp]"); const val=card.querySelector(".bulkenum").value;
+   card.querySelectorAll("select[data-kind=enum]").forEach(sel=>{
+    if(sel.value!==val){setSel(sel,+val);sel.dispatchEvent(new Event("change"));}});
+   toast("set "+card.querySelectorAll("select[data-kind=enum]").length+" fields");});
   // set dropdown current values
   c.groups.forEach(g=>g.fields.forEach(f=>{
    if(f.kind==="item"||f.kind==="skill"||f.kind==="enum"){
@@ -2268,7 +2286,7 @@ function renderSaveSlots(r){
 
   // learned-skill rank tiers (0 = not learned, then E..S). Verified 0..8 in real saves.
   const RANK_TIERS=[[0,"— (none)"],[1,"E"],[2,"D"],[3,"C"],[4,"B"],[5,"B+"],[6,"A"],[7,"A+"],[8,"S"]];
-  const RANK_OPTS=RANK_TIERS.map(([v,l])=>`<option value="${v}">${v} · ${l}</option>`).join("");
+  const RANK_OPTS=RANK_TIERS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
   // equip slot labels (order matches s3save EQUIP_SLOTS) + which item categories fit each
   const EQ=[["headRune","Head Rune"],["rightRune","Right Rune"],["leftRune","Left Rune"],
             ["helm","Helm"],["armor","Armor"],["shield","Shield"],
