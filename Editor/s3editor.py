@@ -461,7 +461,35 @@ def write_gear(item_id, fields):
         iso.wr(off + eo,     struct.pack("<H", int(e.get("type", 0)) & 0xFFFF))
         iso.wr(off + eo + 2, struct.pack("<H", int(e.get("value", 0)) & 0xFFFF))
         iso.wr(off + eo + 4, struct.pack("<H", int(param) & 0xFFFF))
-    iso.close(); return {"ok": True}
+    result = {"ok": True}
+    if fields.get("updateDesc") and "def" in fields:
+        # Best-effort: rewrite the "DEF(+N)" figure in the gear's description to match the
+        # new DEF. Capped to the original string length (leaves text + flags if it would
+        # overflow, same rule as Foods/Spells). Gear desc ptr is at record +0x00.
+        import re
+        newdef = int(fields["def"]) & 0xFFFF
+        try:
+            dptr = struct.unpack_from("<I", iso.rd(off + 0x00, 4), 0)[0]
+            doff = S.va2off(dptr)
+            orig = iso.rd(doff, 160).split(b"\x00")[0]
+            maxlen = len(orig)
+            text = orig.decode("latin1", "replace")
+            if re.search(r"DEF\(\+?\d+\)", text):
+                new = re.sub(r"DEF\(\+?\d+\)", f"DEF(+{newdef})", text, count=1)
+            else:
+                new = text
+                result["descNoNumber"] = True   # no "DEF(+N)" token in this item's text
+            if new != text:
+                enc = new.encode("latin1", "replace")
+                if len(enc) > maxlen:
+                    result["descTruncated"] = True
+                else:
+                    iso.wr(doff, enc + b"\x00" * (maxlen - len(enc)))
+                    result["descTruncated"] = False
+                    result["newDesc"] = new
+        except Exception as e:
+            result["descError"] = str(e)
+    iso.close(); return result
 
 def read_foods():
     iso = _iso()
@@ -1720,7 +1748,8 @@ async function renderGear(m){const gear=await api("/api/gear");
  const typeOpts=Object.entries(TYPES).map(([v,n])=>`<option value="${v}">${v} · ${n}</option>`).join("");
  const skillOpts=(META.skills||[]).map(s=>`<option value="${s.id}">${s.id.toString(16).toUpperCase().padStart(2,'0')} · ${s.name}</option>`).join("");
  const statOpts=Object.entries(STATSEL).map(([v,n])=>`<option value="${v}">${n}</option>`).join("");
- m.innerHTML=`<div class=row style="margin-bottom:12px"><input class=search id=q placeholder="filter gear…">
+ m.innerHTML=`<div class=row style="margin-bottom:12px;align-items:center;gap:10px"><input class=search id=q placeholder="filter gear…">
+  <label class=optchk><input type=checkbox id=gupd checked> also update DEF in the description</label>
   <span class=hint>Edit DEF, price, and up to 5 effect slots. Type 2 = Stat bonus (pick which stat), 5 = Grant skill (pick skill). Saves on change.</span></div>
   <div id=gl></div>`;
  // param control depends on type: stat dropdown (type 2), skill dropdown (type 5), else hidden
@@ -1760,7 +1789,7 @@ async function renderGear(m){const gear=await api("/api/gear");
   decorate($("#gl"));}
  async function saveGear(inp){
   const id=+inp.dataset.id;const k=inp.dataset.k;const fields={};
-  if(k==="def")fields.def=+inp.value;
+  if(k==="def"){fields.def=+inp.value; if($("#gupd")&&$("#gupd").checked)fields.updateDesc=true;}
   else if(k==="price")fields.price=+inp.value;
   else{ // effect slot: gather type + value + the active param control for this off
    const off=+inp.dataset.off;
@@ -1774,7 +1803,8 @@ async function renderGear(m){const gear=await api("/api/gear");
    toggleParam(id,off,t);  // update which control shows after a type change
   }
   const r=await api("/api/gear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,fields})});
-  if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
+  if(r.ok)markDirty();toast(r.ok?(r.descTruncated?"staged (desc too long — left as-is)":"staged"):"error: "+(r.error||"?"));
+  if(r.ok&&r.newDesc){const span=inp.closest(".card")?.querySelector("h3 .hint");if(span)span.textContent=r.newDesc;}}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
 
 async function renderFoods(m){
