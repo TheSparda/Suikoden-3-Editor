@@ -28,8 +28,10 @@ The name lists in the UI are just `NNN Label` lines; the editor parses the first
 | 4 | (list 4 record) | 4061704 / 0x3DFA08 | 28 | 16 bytes |
 
 ### List 1 — starting stats (stride 140), fields relative to record start
-- +0  u16  starting item/rune id (list1_1)
-- +9  u8   (list1_2)
+- +0  u16  UNVERIFIED (list1_1). NOT a 0/1 flag and NOT an item id — observed 0..1100
+           across the roster, exceeding the 612 max item id. Meaning unknown; shown raw.
+- +9  u8   weapon-growth CLASS (list1_2), 0..13. Groups the roster by weapon curve
+           (Hugo=3; Chris/Geddoe/Borus/Queen=5). Not a 1:1 index into the 28 list4 curves.
 - +12..+25  14× u8 (list1_3 … list1_14) — skills/runes/equip block
 - +64 u16, +72 u16, +80 u16, +88 u16, +96 u16, +104 u16 (list1_15…20)
 - +112 u16 + u8, +120 u16 + u8, +128 u16 + u8 (list1_21…26)
