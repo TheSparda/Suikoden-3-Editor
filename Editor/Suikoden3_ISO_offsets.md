@@ -998,3 +998,46 @@ u16 order (the CT's "RPL" = our "REP"). Confirms the save-editor stat decode.
 expose. Its RAM offset (EXP+4) does not map to a confirmed gamedata offset — the word
 at gamedata char+0x04 did not read as plausible SP across a real save. Needs a known
 on-screen SP value to RE and confirm before exposing (per the never-write-unverified rule).
+
+---
+
+## Enemy stats — research round 2 (2026-08-17, still not editable; major structural lead)
+
+Re-attempted with post-spike techniques. Ground truth: the full Suikosource bestiary
+(name, Lv, HP, 3 drop slots, food drop, Potch, SP) re-fetched via Playwright + headed
+system Chrome past Anubis and SAVED to `suikosource/bestiary.txt` (68 enemies) so future
+rounds don't need to re-fetch.
+
+**Ruled out this round (with data):**
+- Name-table entry tails: the 10 bytes after each 10-char name at 0x3E74E0 are ALL ZERO —
+  pure padding, no record ids.
+- The parallel table at 0x3E69F0 (stride 0x1C): correlated every u8/u16/BCD column against
+  Lv/HP/Potch/SP for 74 name-matched enemies — best "match" was 14/74 from zero-valued
+  columns (junk). Definitively not the stat table.
+- Whole-ISO windowed scans for (HP,Potch,SP) triples: all hits in MOVIE/*.PSS are video
+  noise; u32-ID list regions in area BINs (FAKE/DKVI/TSVI) are coincidental u16 fragments.
+
+**NEW LEAD — per-area opcode streams (DATA/*.BIN):**
+The DATA folder's ~30 BINs are per-chapter/area archives (AKVI, VDZK, MORI, ICEW, RVER,
+LAST, ...), not just AV. Inside at least AKVI.BIN (int. 0x562xx) and VDZK.BIN
+(int. 0x1AD39xx region, abs 0x2B4939xx) sits a recurring tagged record stream:
+    9d 00 [idx u16] [00 10] [01 00] [V1 u16] [02|03 00] [V2 u16]
+    72 00 [idx u16] [02 00] [Vs u16]
+    7f 00 [idx u16] ...
+with V1/V2 in HP/potch scale (300..4500) and Vs in SP scale (35, 150, 160...). Red Mantik's
+exact HP (3500) and SP (35) appear on records sharing idx 0x0803 in VDZK; Shadow Dog's HP
+1200 appears in the AKVI stream. Interpretation: these look like SCRIPT/OPCODE streams
+(0x9d/0x72/0x7f = opcodes) that set encounter battle parameters per area — consistent with
+round 1's conclusion that no global flat stat table exists.
+
+**Why it's still not editable:** no identity anchor. The stream's idx values (0x0801..)
+don't map to the 100-entry name table by any obvious rule, and V1/V2 don't consistently
+align to a single enemy's (HP,potch) pair — adjacent records interleave values, so which
+record belongs to which enemy is unproven. Writing here blind risks corrupting area
+scripts.
+
+**Path to an enemy editor (future round):** decode the opcode stream properly — find the
+stream's header/dispatch in the area-BIN container, enumerate records per area, and match
+each area's record set against that area's bestiary enemy list (the bestiary is organized
+by area, so set-equality of HP multisets per area would give the anchor without
+disassembly). Alternatively disassemble the battle-init code that consumes these streams.
