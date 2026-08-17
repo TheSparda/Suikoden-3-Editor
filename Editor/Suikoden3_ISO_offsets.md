@@ -1084,3 +1084,23 @@ NOT enemy stat records. Do not edit them expecting enemy changes.
    battle-init path in the boot ELF (known code anchor: name-table loader at file
    0x10E8B4 / va 0x16C70BC) and trace where enemy HP is computed/copied from. Larger
    effort, fully autonomous.
+
+---
+
+## PS3 .PSV export format + per-party gold RULED OUT (2026-08-17)
+
+**.PSV support added** (PS3-XMB-exported PS2 save, verified vs a real BASLUS-20387 export):
+magic `\0VSP`; +0x08 salt+HMAC (PS3 crypto, NOT recomputed on edit — resign externally for
+real-PS3 import); folder name @+0x80; file entries from +0xA0, stride 0x3C:
+[created 8][modified 8][size u32][mode u32][name 32][data offset u32]. The S3 gamedata is
+the 0xD010-byte entry (observed @+0x590); trailing ~76KB is the 3D icon model. Read/write
+in place with checksum fix, same path as SharkPort.
+
+**Per-party gold: RULED OUT with pre-merge evidence.** A 20-save real playthrough series
+(Cpt.1→5, .xps) with active parties Hugo/Chris/Geddoe/Thomas/etc shows 0x3200/0x3204/
+0x3208/0x320C are ZERO in every save, pre- and post-merge. S3 keeps a single active-party
+gold at 0x3210 (rewritten on chapter switch). The earlier "needs pre-merge saves to
+validate" question is now closed — there is no per-party gold structure in gamedata.
+
+Bonus validation: the whole 21-file .xps series + a .cbs decoded/round-tripped through the
+shipped SharkPort/CBS paths without issue.
