@@ -1,0 +1,352 @@
+	
+News Games Characters History Runes Fanart Gallery Suikosource Forums	2026-08-17
+
+
+Home
+
+News
+About Us
+
+
+Community
+
+Suikosource Forums
+Forum Rules
+
+Chat
+
+
+Games
+
+Suikoden I
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Secrets
+Memorable Scenes
+In-Depth Analyses
+Game Saves
+
+Suikoden II
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Secrets
+Memorable Scenes
+In-Depth Analyses
+Game Saves
+
+Suikoden III
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Secrets
+Memorable Scenes
+In-Depth Analyses
+Game Saves
+
+Suikoden IV
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+
+Suikoden V
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+Memorable Scenes
+
+Suikoden Tactics
+Stars of Destiny
+Walkthrough
+Gameplay Guides
+
+Suikoden Tierkreis
+Walkthrough
+Gameplay Guides
+
+Suikogaiden Vol.1
+Chapters
+Gameplay Guides
+Secrets
+
+Suikogaiden Vol.2
+Chapters
+Gameplay Guides
+Secrets
+
+Suikoden Card Stories
+Cards List
+Cards Descriptions
+
+
+Characters
+
+Character List
+108 Stars of Destiny
+
+
+History
+
+Timeline
+Geography
+Legacies
+True Runes
+Weapons
+
+
+Runes
+
+Runes List
+Unite Magic
+
+
+Fanart Gallery
+
+Pictures
+Editorials
+Weblog
+
+
+
+
+
+Remote linking to avatars
+Do not link to Suikosource images on forums, webpages, or anyplace else. If you wish to use the images, place them in your own webspace. We do not allow you to use them from our server.
+Suikoden III: Guides: Bosses
+The bestiary is a listing of where the story bosses in the game, their HP, and their dropped items.
+SuikodenIII: Guides: Bosses by Kuromimi
+
+These are enemies faced due to plot reasons, unlike the other types of bosses they do not respawn.
+Due to the way the game is structred certain bosses will have a variable level which will result in variable awards for defeating them. All such values are represented by an asterisk (*) in the tables.
+
+Table Key
+Chapters when bosses are encountered
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Enemy Name	Lv.	HP	Common Item	Rare Item	Very Rare	Food Item	10,000	100
+Alma Kinan Village
+Chris chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Masked Bishop	45	900	 	 	 	 	20,000	190
+Sarah	42	750	 	 	 	 	15,000	150
+Yuber	40	2,500	 	 	 	 	10,000	150
+
+
+Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chris	*	*	 	 	 	 	*	*
+Fred	*	*	 	 	 	 	*	*
+Nash	*	*	 	 	 	 	*	*
+Rico	*	*	 	 	 	 	*	*
+Yuiri	*	*	 	 	 	 	*	*
+Yumi	*	*	 	 	 	 	*	*
+Ancient Highway
+Hugo chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Man in Black	35	2,500	Gold Emblem	 	 	 	10,000	100
+
+
+Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Fubar	*	*	 	 	 	 	*	*
+Hugo	*	*	 	 	 	 	*	*
+Lilly	*	*	 	 	 	 	*	*
+Reed	*	*	 	 	 	 	*	*
+Samus	*	*	 	 	 	 	*	*
+Sergeant Joe	*	*	 	 	 	 	*	*
+Brass Castle
+Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Leo	35	800	 	 	 	 	7,000	110
+Roland	34	600	 	 	 	 	6,000	90
+Zexen Knight	33	470	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	3,400	60
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Harmonian Soldier	55	600	Hunter Rune	 	 	 	8,800	75
+Budehuc Castle
+Geddoe chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Zexen Patrolman	30	350	 	 	 	 	2,500	90
+
+ 
+Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Zexen Infantryman	30	260	Medicine C x6	New Leather	 		2,650	35
+Zexen Knight	32	430	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	3,100	55
+
+
+Thomas chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Zexen Patrolman(1)	25	250	 	 	 	 	2,500	90
+Zexen Patrolman(2)	25	65,000	 	 	 	 	2,500	90
+Ceremonial Site
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Azzodess	60	950	 	 	 	 	12,000	90
+Guardian	60	300	 	 	 	 	5,000	60
+Hell Steed	60	1,700	 	 	 	 	10,000	85
+Horror Beast	60	1,900	 	 	 	 	10,000	90
+Sarah	60	3,200	Shield Rune	Flowing Rune	 	 	20,000	210
+Skeleton	60	750	 	 	 	 	8,000	80
+True Earth Rune	65	3,500	 	 	 	 	0	60
+True Fire Rune	65	3,000	 	 	 	 	0	60
+True Thunder Rune	65	3,000	 	 	 	 	0	60
+True Water Rune	65	4,000	 	 	 	 	0	60
+Wind Reincarnation	65	11,000	 	 	 	 	50,000	1,000
+Yuber	60	4,500	 	 	 	 	17,000	210
+Chisha Village
+Chris chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Franz	38	400	 	 	 	 	2,500	70
+Mantor	38	400	 	 	 	 	0	60
+Mantor Legionnaire	38	400	Medicine C x6	New Leather	 	 	2,500	70
+Ruby	38	400	 	 	 	 	0	60
+
+
+Hugo chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Harmonian soldier	38	350	Medicine B x6	Iron Boots	Fine Chain Mail	 	4,500	60
+Mantor	38	400	 	 	 	 	0	60
+Mantor Legionnaire	38	400	Medicine C x6	New Leather	 	 	2,500	70
+Cyndar Ruins
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chimera	50	850	 	 	 	 	7,800	60
+Ghost Armor	47	1,000	 	 	 	 	8,000	60
+
+Ice Pillar	48	2,500	 	 	 	 	0	0
+Sarah	52	1,100	Armor of Rage	 	 	 	15,000	190
+Water Dragon	54	9,000	Flowing Rune	 	 	 	27,000	800
+Duck Clan Village
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Harmonian Soldier	45	450	Medicine B x6	Iron Boots	Fine Chain Mail	 	6,300	70
+Sarah	45	1,100	 	 	 	 	15,000	170
+Flame Champion's Hideaway
+F. Champion chapter 4
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chimera	40	700	 	 	 	 	5,100	95
+Fire Reincarnation	47	5,000	Dragon Incense	 	 	 	18,000	700
+Masked Priest	47	1,000	 	 	 	 	20,000	190
+Sarah	44	900	 	 	 	 	15,000	170
+Yuber	40	2,500	 	 	 	 	10,000	150
+
+
+Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chris	*	*	 	 	 	 	*	*
+Geddoe	*	*	 	 	 	 	*	*
+Hugo	*	*	 	 	 	 	*	*
+Great Hollow
+Chris chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Lizard Fighter	29	240	Damaged Helm	New Chain Mail	Mega medicine D x4	2,600	110
+Shiba	31	850	 	 	 	 	3,500	140
+
+
+Geddoe chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Chris	27	800	 	 	 	 	3,500	90
+Lizard Fighter	26	240	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	200	75
+Zexen Knight	25	380	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	0	25
+
+
+Hugo chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Zexen Infantryman	27	240	Medicine C x6	New Leather	 	 	1,200	35
+
+Zexen Knight	29	400	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	2,400	45
+
+
+Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Ace	*	*	 	 	 	 	*	*
+Geddoe	*	*	 	 	 	 	*	*
+Jacques	*	*	 	 	 	 	*	*
+Joker	*	*	 	 	 	 	*	*
+Lizard Fighter	42	250	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	3,700	120
+Queen	*	*	 	 	 	 	*	*
+Shiba	*	*	 	 	 	 	*	*
+Iksay Village
+Chris chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Karaya Fighter	29	220	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	1,600	75
+Lizard Fighter	31	250	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	2,800	75
+Shiba	33	950	 	 	 	 	3,700	150
+Karaya Village
+Chris chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Karaya Fighter	22	160	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	450	30
+
+
+Geddoe chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Aila	25	500	 	 	 	 	1,200	70
+Borus	30	850	 	 	 	 	5,000	150
+Karaya Fighter	25	210	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	1,200	45
+Zexen Knight	28	290	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	2,160	33
+
+
+Luc chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Karaya Fighter	44	230	Damaged Helm	New Chain Mail	Mega Medicine D x4	 	4,500	105
+Zexen Knight	31	320	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	2,900	50
+Kuput Forest
+Chris chapter 3
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Yuber	40	2,500	 	 	 	 	10,000	150
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Azzodess	55	800	 	 	 	 	8,800	75
+Sarah	56	1,100	Drain Rune	 	 	 	15,000	190
+Le Buque Village
+Geddoe chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Franz	38	400	 	 	 	 	2,500	70
+Mantor	32	350	 	 	 	 	0	50
+Mantor Legionnaire	32	350	Medicine C x6	New Leather	 	 	2,200	70
+Ruby	38	400	 	 	 	 	0	60
+Mountain Path
+Geddoe chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Left Head	30	1,200	 	 	 	 	0	35
+Right Head	30	1,200	 	 	 	 	0	35
+Twin Snake	30	3,900	 	 	 	 	12,000	500
+Mt Hei-Tou
+Thomas chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Wild Boar	14	400	Plant Vase	 	 	 	750	40
+Mt Senai
+Geddoe chapter 2
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Duke	34	700	 	 	 	 	4,500	80
+Elaine	33	600	 	 	 	 	3,300	75
+Gau	33	750	 	 	 	 	3,500	75
+Masked Priest	45	900	 	 	 	 	20,000	190
+Nicolas	33	800	 	 	 	 	3,200	75
+Sarah	42	750	 	 	 	 	15,000	150
+
+
+F. Champion chapter 5
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Ghost Armor	54	1,200	 	 	 	 	8,000	60
+Luc	58	1,200	Wind Magic Ring	 	 	 	25,000	190
+Mirage	54	370	 	 	 	 	7,800	80
+Salamander	55	1,800	 	 	 	 	8,500	65
+Sarah	56	1,100	 	 	 	 	15,000	190
+North Cavern
+Hugo chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Bandit	20	180	Failure Urn	 	 	 	200	25
+Vinay del Zexay
+Hugo chapter 1
+Enemy	Lv.	HP	Dropped	Dropped (2)	Dropped (3)	Food Drop	Potch	SP
+Leo	23	600	 	 	 	 	2,200	105
+Percival	22	500	 	 	 	 	1,700	120
+Zexen Infantryman	21	180	Medicine C x6	New Leather	 	 	350	30
+
+Zexen Knight	20	230	New Chain Mail	Damaged Helm	Mega Medicine D x4	 	350	40
