@@ -35,7 +35,7 @@
 23 Tutor
 24 Rune Sage
 25 Trade-In
-26 Batch
+26 Bath
 27 Adrenaline Power
 28 Pale Gate Magic
 29 Sword of Magic
