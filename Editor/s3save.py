@@ -589,7 +589,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     if fmt in ("psu", "gamedata"):
         return _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
                                       party_edits, recruit_edits, gold)
-    if fmt in ("cbs", "sharkport"):
+    if fmt in ("cbs", "sharkport", "psv"):
         return _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
                                       party_edits, recruit_edits, gold)
     card = load_card(path)
@@ -626,6 +626,27 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
     recomputed by apply_edits_to_gamedata either way."""
     with open(path, "rb") as f:
         b = f.read()
+    if fmt == "psv":
+        # PSV stores files uncompressed at directory-declared offsets: patch in place.
+        tgt = next(((off, size) for name, off, size in _psv_entries(b)
+                    if size == GAMEDATA_SIZE), None)
+        if not tgt:
+            return {"error": "gamedata payload not found in .psv"}
+        off, _ = tgt
+        gd = b[off:off + GAMEDATA_SIZE]
+        new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
+                                                  party_edits, recruit_edits, gold)
+        if changed == 0:
+            return {"ok": True, "changed": 0, "note": "no editable fields in request"}
+        _backup_once(path, make_backup)
+        ba = bytearray(b); ba[off:off + GAMEDATA_SIZE] = new_gd
+        with open(path, "wb") as f:
+            f.write(bytes(ba))
+        return {"ok": True, "changed": changed,
+                "checksum": struct.unpack_from("<I", new_gd, 0)[0],
+                "warn": "PSV edited in place (.bak kept). The S3 save checksum was fixed, "
+                        "but the PS3 signature was NOT recomputed — re-importing to a real "
+                        "PS3 needs an external resigner. Fine for PC tools/conversion."}
     if fmt == "sharkport":
         folder, fs = _sps_read(b, want_offsets=True)
         tgt = next(((off, data) for name, (off, data) in fs.items()
@@ -823,6 +844,47 @@ def _sps_read(b, want_offsets=False):
 def load_sharkport(b):
     return _sps_read(b, want_offsets=False)
 
+# ---------------------------------------------------------------------------
+# PS3 .PSV export (PS2 save exported from a PS3's XMB / virtual memory card).
+# Layout (verified against a real BASLUS-20387 export):
+#   +0x00  magic "\x00VSP"
+#   +0x08  20-byte salt + 20-byte HMAC signature (PS3 crypto — we do NOT recompute it;
+#          an edited .psv needs external resigning to import on a real PS3)
+#   +0x68  save-folder block: created/modified ToDs, ..., mode u32 (dir), name[32] @+0x80
+#   +0xA0  file entries, stride 0x3C each:
+#          [created 8][modified 8][size u32][mode u32][name 32][data offset u32]
+# The S3 gamedata is the entry named "gamedata" (size 0xD010); its data offset field
+# points at the raw payload inside the .psv.
+_PSV_MAGIC = b"\x00VSP"
+_PSV_ENTRIES_OFF = 0xA0
+_PSV_ENTRY_SZ = 0x3C
+
+def _psv_entries(b):
+    """Yield (name, data_offset, size) for each file entry in a .psv."""
+    out = []
+    i = _PSV_ENTRIES_OFF
+    while i + _PSV_ENTRY_SZ <= len(b):
+        size = struct.unpack_from("<I", b, i + 0x10)[0]
+        mode = struct.unpack_from("<I", b, i + 0x14)[0]
+        raw = b[i + 0x18:i + 0x18 + 32]
+        name = raw.split(b"\x00")[0].decode("latin1", "replace")
+        off = struct.unpack_from("<I", b, i + 0x38)[0]
+        if not name or any(c < 0x20 or c > 0x7E for c in raw.split(b"\x00")[0]):
+            break
+        if not (mode & 0x8000) or (mode & _DF_DIR):      # must be an existing FILE entry
+            break
+        if off == 0 or off + size > len(b):
+            break
+        out.append((name, off, size))
+        i += _PSV_ENTRY_SZ
+    return out
+
+def load_psv(b):
+    """Return (folder_name, {filename: bytes}) for a PS3 .psv export."""
+    folder = b[0x80:0xA0].split(b"\x00")[0].decode("latin1", "replace")
+    fs = {name: b[off:off + size] for name, off, size in _psv_entries(b)}
+    return folder, fs
+
 def _find_gamedata(files):
     """Pick the S3 gamedata payload from a decoded file dict (by name, then by size)."""
     if "gamedata" in files and len(files["gamedata"]) == GAMEDATA_SIZE:
@@ -847,6 +909,8 @@ def _sniff_format(path):
         return "cbs"
     if head[:len(_SPS_MAGIC)] == _SPS_MAGIC:
         return "sharkport"
+    if head[:len(_PSV_MAGIC)] == _PSV_MAGIC:
+        return "psv"
     if sz == GAMEDATA_SIZE:
         return "gamedata"
     if len(head) >= 0x40 and (struct.unpack_from("<H", head, 0)[0] & _DF_DIR):
@@ -862,7 +926,7 @@ def read_all_s3_saves(path):
         return _read_psu_saves(path)
     if fmt == "gamedata":
         return _read_gamedata_save(path)
-    if fmt in ("cbs", "sharkport"):
+    if fmt in ("cbs", "sharkport", "psv"):
         return _read_individual_save(path, fmt)
     card = load_card(path)
     saves = []
@@ -910,7 +974,9 @@ def _read_individual_save(path, fmt):
     """Decode a CodeBreaker (.cbs) or SharkPort/X-Port (.sps/.xps) file into one S3 save."""
     with open(path, "rb") as f:
         b = f.read()
-    folder, files = (load_cbs(b) if fmt == "cbs" else load_sharkport(b))
+    folder, files = (load_cbs(b) if fmt == "cbs"
+                     else load_psv(b) if fmt == "psv"
+                     else load_sharkport(b))
     _, gd = _find_gamedata(files)
     if not gd:
         return []
@@ -1031,8 +1097,8 @@ def scan_individual_saves(roots):
                         kind = "psu"; has_s3 = name.startswith(S3_PREFIX)
                     except OSError:
                         continue
-                elif low.endswith((".cbs", ".sps", ".xps")):
-                    # cheat-device single-save export; check the magic + S3 folder prefix
+                elif low.endswith((".cbs", ".sps", ".xps", ".psv")):
+                    # cheat-device / PS3 single-save export; check magic + S3 folder prefix
                     try:
                         with open(full, "rb") as fh:
                             b = fh.read()
@@ -1040,6 +1106,8 @@ def scan_individual_saves(roots):
                             folder, files = load_cbs(b); kind = "cbs"
                         elif b[:len(_SPS_MAGIC)] == _SPS_MAGIC:
                             folder, files = load_sharkport(b); kind = "sharkport"
+                        elif b[:len(_PSV_MAGIC)] == _PSV_MAGIC:
+                            folder, files = load_psv(b); kind = "psv"
                         else:
                             continue
                         _, gd = _find_gamedata(files)
