@@ -13,8 +13,12 @@ Skill-max values : 0=Can't get 1=A+ 2=D 3=C 4=B 5=B+ 6=A 7=S.
 
 # list1 — Character Starting Stats (stride 140). Offsets verified vs Patch1_Click.
 LIST1 = [
-    ("Relative indicator (0/1)", 0,   2, "num"),
-    ("Skill points",            9,   1, "num"),
+    # +0 (u16): meaning unverified — NOT a 0/1 flag and NOT an item id (observed 0..1100,
+    #   exceeding the 612 max item id). Left as a raw number rather than a misleading label.
+    ("Unknown (u16 @+0)",       0,   2, "num"),
+    # +9 (u8): weapon-growth class (0..13) grouping the roster by weapon curve — verified
+    #   (Hugo=3; Chris/Geddoe/Borus/Queen=5). See Weapons tab for the class->members table.
+    ("Weapon growth class",     9,   1, "num"),
     ("Skill 1 (hex)",           12,  1, "skill"), ("Skill 1 rank", 13, 1, "num"),
     ("Skill 2 (hex)",           14,  1, "skill"), ("Skill 2 rank", 15, 1, "num"),
     ("Skill 3 (hex)",           16,  1, "skill"), ("Skill 3 rank", 17, 1, "num"),
