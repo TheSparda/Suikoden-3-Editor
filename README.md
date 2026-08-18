@@ -15,6 +15,9 @@ point it at. The repo ships with **no game data**; supply your own legally-obtai
 and/or saves. Writes are guarded by an optional `.bak` backup (a header toggle, on by
 default).
 
+> **Feature requests / Support** available on the **Toran Castle Discord**:
+> https://discord.gg/KesHMX5P2Z
+
 ## Run
 
 - **macOS:** double-click `Start Editor (Mac).command`
@@ -161,3 +164,7 @@ Start Editor (Mac).command / (Windows).bat   launchers
 The repository contains **no game ROM/ISO, saves, audio, or story assets** — only small
 reverse-engineered reference tables (id→name maps, offsets) the editor needs to show
 meaningful labels. That's interoperability data, not the game.
+
+## Support
+
+Feature requests/Support avail on the Toran Castle Discord: https://discord.gg/KesHMX5P2Z
