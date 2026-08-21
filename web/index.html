@@ -6,12 +6,18 @@
 <meta name="theme-color" content="#141414">
 <title>Suikoden III Save Editor (Web)</title>
 <link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="S3 Save Editor">
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>Suikoden III Save Editor</h1>
     <span class="tag">web · runs on your device</span>
+    <button id="installBtn" class="chip hidden" style="margin-left:auto">⬇ Install app</button>
   </header>
   <p class="sub">Full save editor — characters, stats, runes/equipment, skills, inventory,
     party and recruitment. Everything runs in your browser via Python (Pyodide); your save
