@@ -46,6 +46,21 @@ SHOP = {
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+def _res_text(name, encoding="latin1"):
+    """Read a bundled data file as text. Reads from disk beside the sources normally;
+    inside the single-file .pyz build (where open() can't reach archive members) it
+    falls back to pkgutil, which reads straight out of the zip. Returns None if absent."""
+    p = os.path.join(HERE, name)
+    if os.path.exists(p):
+        with open(p, "rb") as f:
+            return f.read().decode(encoding)
+    import pkgutil
+    try:
+        data = pkgutil.get_data(__name__, name)
+    except Exception:
+        return None
+    return data.decode(encoding) if data is not None else None
+
 # ---------------------------------------------------------------------------
 # SPELL / RUNE-EFFECT table  (located + partly validated 2026-08-09)
 # 94 records x 0x20 bytes inside the boot ELF. Name pointers -> string pool.
@@ -229,11 +244,11 @@ def find_food_records(iso):
 # ---------------------------------------------------------------------------
 def load_skill_ids():
     """skill file: 'NN Name' one per line -> {hexid:int -> name}."""
-    path = os.path.join(HERE, "Suikoden3_skill_ids.txt")
+    text = _res_text("Suikoden3_skill_ids.txt")
     out = {}
-    if not os.path.exists(path):
+    if text is None:
         return out
-    for line in open(path, encoding="latin1"):
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -248,12 +263,11 @@ def load_skill_ids():
 
 def load_item_ids():
     """item file: tab-separated 'HHH<TAB>Name' pairs, two per line -> {id:int -> name}."""
-    path = os.path.join(HERE, "Suikoden3_item_ids.txt")
+    text = _res_text("Suikoden3_item_ids.txt")
     out = {}
-    if not os.path.exists(path):
+    if text is None:
         return out
     import re
-    text = open(path, encoding="latin1").read()
     for m in re.finditer(r"\b([0-9A-Fa-f]{3})\t([^\t\n\r]+)", text):
         out[int(m.group(1), 16)] = m.group(2).strip()
     return out
@@ -263,13 +277,13 @@ def load_item_categories():
     """Parse the '----* Category *----' section headers in the item-id file and map
     each item id to its category (e.g. 'Runes', 'Headgear', 'Shields'). Used to filter
     equipment dropdowns to the right item type per slot. Returns {id:int -> category}."""
-    path = os.path.join(HERE, "Suikoden3_item_ids.txt")
+    text = _res_text("Suikoden3_item_ids.txt")
     out = {}
-    if not os.path.exists(path):
+    if text is None:
         return out
     import re
     cur = ""
-    for line in open(path, encoding="latin1"):
+    for line in text.splitlines():
         hdr = re.search(r"\*\s*(.+?)\s*\*", line)
         if hdr and "\t" not in line:                 # a section header, not an item row
             cur = hdr.group(1).strip()

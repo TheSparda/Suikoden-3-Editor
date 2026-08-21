@@ -16,6 +16,9 @@ Editor/.s3editor.json
 __pycache__/
 *.pyc
 
+# Release build output (built locally by make_release.py, uploaded to GitHub Releases)
+dist/
+
 # macOS
 .DS_Store
 

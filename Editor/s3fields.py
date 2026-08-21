@@ -10,6 +10,31 @@ exe's write order in Patch1_Click; treat those labels as the exe's own naming.
 Skill rank values: 1=E 2=D 3=C 4=B 5=B+ 6=A 7=A+ 8=S (exe caps at 7).
 Skill-max values : 0=Can't get 1=A+ 2=D 3=C 4=B 5=B+ 6=A 7=S.
 """
+import json, os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def res_bytes(name):
+    """Read a bundled data file as bytes. Reads from disk beside the sources normally;
+    inside the single-file .pyz build (where open() can't reach archive members) it
+    falls back to pkgutil, which reads straight out of the zip."""
+    p = os.path.join(HERE, name)
+    if os.path.exists(p):
+        with open(p, "rb") as f:
+            return f.read()
+    import pkgutil
+    data = pkgutil.get_data(__name__, name)
+    if data is None:
+        raise FileNotFoundError(name)
+    return data
+
+def res_text(name, encoding="utf-8"):
+    """Read a bundled data file as text (works from sources and from the .pyz)."""
+    return res_bytes(name).decode(encoding)
+
+def res_json(name):
+    """Load a bundled *.json reference table (works from sources and from the .pyz)."""
+    return json.loads(res_text(name))
 
 # list1 — Character Starting Stats (stride 140). Offsets verified vs Patch1_Click.
 LIST1 = [
