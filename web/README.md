@@ -42,11 +42,52 @@ python3 -m http.server 8791
 
 Then browse to `http://localhost:8791/web/`.
 
-## Deploying (e.g. GitHub Pages)
+## Deploying on GitHub Pages
 
-Served from the repo root, `web/index.html` fetches `../Editor/s3save.py`, so publishing
-the repo as a Pages site works as-is. To ship `web/` as a standalone folder instead, copy
-`Editor/s3save.py` next to `app.js` and change the fetch path in `app.js` to `s3save.py`.
+Yes — this hosts on GitHub Pages as-is. The page fetches `../Editor/s3save.py` plus the
+three reference files (all committed to the repo), so it just needs to be served from the
+repo root:
+
+1. Repo **Settings → Pages → Build and deployment → Source: Deploy from a branch**.
+2. Pick the branch (e.g. `main`) and folder **`/ (root)`**. Save.
+3. The editor lives at `https://<user>.github.io/<repo>/web/`
+   (e.g. `https://thesparda.github.io/Suikoden-3-Editor/web/`).
+
+Pages serves over HTTPS, which the service worker and "Add to Home screen" require. On
+Android, open that URL in Chrome and use the ⋮ menu → **Install app** / **Add to Home
+screen**.
+
+To ship `web/` as a standalone folder instead, copy `Editor/s3save.py`,
+`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, and `s3_names.json` next to `app.js`
+and change the four `../Editor/` fetch paths in `app.js`.
+
+## Installable PWA / offline
+
+`manifest.webmanifest` + `sw.js` make it an installable Progressive Web App. On first visit
+everything downloads from the network; the service worker then caches the app shell, the
+`../Editor/` files, and the Pyodide runtime (`.wasm` / `.asm.js` / `python_stdlib.zip`), so
+from the **second visit on it works fully offline** — handy on a phone with no signal.
+`icons/` holds the home-screen icons (192, 512, and a 512 maskable).
+
+An **"Install app"** button appears in the header only when the browser actually offers
+installation (Chrome/Android's `beforeinstallprompt`) and is hidden once installed or when
+already running standalone. iOS Safari has no such event — there, use Share → Add to Home
+Screen.
+
+### How an installed copy gets updates
+
+Updates are **automatic whenever the phone is online** — an installed PWA is not a frozen
+snapshot. The service worker serves same-origin files (`index.html`, `app.js`, `style.css`,
+and the `../Editor/` files) **network-first**: each launch fetches the latest from GitHub
+Pages and only falls back to the cached copy when offline. So pushing a new commit to the
+Pages branch means users get it on their next online launch, with no reinstall.
+
+Two caveats:
+- The **Pyodide runtime** is cache-first and version-pinned (`v0.26.2` in `app.js`); it
+  changes only when you bump that version, which points at fresh CDN URLs.
+- Bumping `CACHE` in `sw.js` (e.g. `s3editor-v2`) forces the old offline cache to be purged
+  on activation — do this when you want to guarantee stale *offline* copies are dropped.
+  It isn't needed for online users, who are already network-first.
 
 ## Scope — full parity with the desktop save editor
 

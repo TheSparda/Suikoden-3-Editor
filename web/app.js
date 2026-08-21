@@ -461,4 +461,30 @@ window.addEventListener("DOMContentLoaded", () => {
     pickBtn.disabled = false;
     return py;
   }).catch((e) => { setDropMsg("Engine failed to start: " + e.message, true); throw e; });
+
+  // Register the service worker so the app is installable + works offline on Android.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register failed", e));
+  }
+
+  // Custom "Install app" button. Chrome/Android fires beforeinstallprompt only when the app
+  // is installable and not already installed — so the button appears exactly when it's useful.
+  const installBtn = $("#installBtn");
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  let deferredPrompt = null;
+  if (!standalone) {
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();                 // suppress the mini-infobar; use our button instead
+      deferredPrompt = e;
+      installBtn.classList.remove("hidden");
+    });
+    installBtn.onclick = async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installBtn.classList.add("hidden");
+    };
+    window.addEventListener("appinstalled", () => installBtn.classList.add("hidden"));
+  }
 });
