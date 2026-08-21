@@ -210,33 +210,29 @@ def _staged_recipe(note=""):
             "versionWord": vword, "note": note, "patchCount": len(runs), "patches": runs}
 
 def _load_names():
-    p = os.path.join(os.path.dirname(__file__), "s3_names.json")
     try:
-        return json.load(open(p, encoding="utf-8"))
+        return F.res_json("s3_names.json")
     except Exception:
         return {}
 CHAR_NAMES = _load_names()   # {"list1": {"1":"Hugo",...}, ...} from the original exe
 
 def _load_skill_desc():
-    p = os.path.join(os.path.dirname(__file__), "s3_skill_desc.json")
     try:
-        return json.load(open(p, encoding="utf-8"))
+        return F.res_json("s3_skill_desc.json")
     except Exception:
         return {}
 SKILL_DESC = _load_skill_desc()   # {skill name: description} from Suikosource skills guide
 
 def _load_item_desc():
-    p = os.path.join(os.path.dirname(__file__), "s3_item_desc.json")
     try:
-        return {int(k): v for k, v in json.load(open(p, encoding="utf-8")).items()}
+        return {int(k): v for k, v in F.res_json("s3_item_desc.json").items()}
     except Exception:
         return {}
 ITEM_DESC = _load_item_desc()   # {item id: description} from the ISO's equipment record table
 
 def _load_weapon_chars():
-    p = os.path.join(os.path.dirname(__file__), "s3_weapon_chars.json")
     try:
-        return json.load(open(p, encoding="utf-8"))
+        return F.res_json("s3_weapon_chars.json")
     except Exception:
         return {"byIndex": {}, "families": {}}
 # {weaponIndex: {family, fighters:[...]}} — mapped by matching each list4 ATK curve
@@ -244,17 +240,15 @@ def _load_weapon_chars():
 WEAPON_CHARS = _load_weapon_chars()
 
 def _load_rune_owner():
-    p = os.path.join(os.path.dirname(__file__), "s3_rune_owner.json")
     try:
-        return json.load(open(p, encoding="utf-8"))
+        return F.res_json("s3_rune_owner.json")
     except Exception:
         return {}
 RUNE_OWNER = _load_rune_owner()   # {rune-attack spell name: owning character / weapon type}
 
 def _load_unite_chars():
-    p = os.path.join(os.path.dirname(__file__), "s3_unite_chars.json")
     try:
-        return {int(k): v.get("chars", "") for k, v in json.load(open(p, encoding="utf-8")).items()}
+        return {int(k): v.get("chars", "") for k, v in F.res_json("s3_unite_chars.json").items()}
     except Exception:
         return {}
 UNITE_CHARS = _load_unite_chars()   # {unite index: "char, char, char"} from Suikosource unite guide
