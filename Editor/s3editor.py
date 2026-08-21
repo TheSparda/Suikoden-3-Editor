@@ -23,7 +23,12 @@ _backup_enabled = True   # UI-controlled: make one .bak copy before the first ed
 _scan_root = os.getcwd()
 
 # --- persistent settings (last ISO path, backup pref) -----------------------
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".s3editor.json")
+# Config lives next to the sources normally; in the single-file .pyz build the module
+# dir is inside the archive (not a real, writable directory), so fall back to the
+# user's home so "last ISO / last card / backup pref" still persist across runs.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = (os.path.join(_HERE, ".s3editor.json") if os.path.isdir(_HERE)
+               else os.path.expanduser("~/.s3editor.json"))
 
 def load_config():
     try:
