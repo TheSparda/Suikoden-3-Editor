@@ -20,7 +20,17 @@ PS2 emulator (AetherSX2 / NetherSX2 / PCSX2).
 
 Because it drives the real module, every container the desktop editor supports works
 here too: `.ps2` / `.mcd` memory cards, `.psu`, `.psv`, `.cbs`, SharkPort `.xps`,
-and raw `gamedata`.
+and raw `gamedata`. The edited container is byte-identical to what the desktop tool
+produces (same checksum, same ECC).
+
+## Files
+
+- `index.html` — page shell.
+- `style.css` — styling.
+- `app.js` — Pyodide bootstrap, reference-table parsing, and the full editor UI.
+
+Reference data pulled from `../Editor/`: `s3save.py`, `Suikoden3_item_ids.txt`,
+`Suikoden3_skill_ids.txt`, `s3_names.json`.
 
 ## Running locally
 
@@ -38,10 +48,22 @@ Served from the repo root, `web/index.html` fetches `../Editor/s3save.py`, so pu
 the repo as a Pages site works as-is. To ship `web/` as a standalone folder instead, copy
 `Editor/s3save.py` next to `app.js` and change the fetch path in `app.js` to `s3save.py`.
 
-## Scope
+## Scope — full parity with the desktop save editor
 
-This prototype edits **gold, the name fields, and per-character level / HP / EXP / stats**
-— enough to prove the full parse → edit → checksum → download loop across every save
-format. Skills, equipment, inventory, party and recruitment (all already implemented in
-`s3save.py`) can be surfaced the same way. **ISO patching stays desktop-only** — it needs
-the multi-GB ISO and does not belong in a browser tool.
+The web UI covers everything the desktop save editor does:
+
+- **Overview** — names, gold, playtime, story phase, party leader, Suikoden I/II carryover.
+- **Characters** — level / cur HP / max HP / EXP, the 8 stats, equipped runes + armour
+  (category-filtered, name-resolved dropdowns), 8 skill slots (id + rank), and recruitment
+  (recruited toggle + "recruited by").
+- **Party** — the active battle party (up to 6), by character name.
+- **Inventory** — every bag (Hugo / Chris / Geddoe / Thomas / Storage), split into Party
+  Items vs Key/Valuables, with name-resolved item dropdowns, quantities, add and remove.
+- **Multi-slot** memory cards show a slot switcher.
+
+Item / skill / character names come from the same reference files the desktop server uses
+(`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, `s3_names.json`), parsed with the same
+rules. The reference files are fetched from `../Editor/` alongside `s3save.py`.
+
+**ISO patching stays desktop-only** — it needs the multi-GB ISO and does not belong in a
+browser tool.
