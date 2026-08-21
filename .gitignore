@@ -6,11 +6,18 @@ ISO/
 
 # Backups the editor makes before writing
 *.bak
+*.bak_*
 *.TEST.iso
 *.webtest.iso
 
+# Shareable patches / recipes (contain changed game bytes) — not distributed
+*.s3mod
+*.s3mod.json
+*.xdelta
+
 # Editor local state
 Editor/.s3editor.json
+.s3editor.json
 
 # Python
 __pycache__/
