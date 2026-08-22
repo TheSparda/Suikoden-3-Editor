@@ -35,6 +35,13 @@ h1 { font-size:20px; margin:0; letter-spacing:.02em; font-family:var(--titlefont
 .tag { font-size:12px; color:var(--mut); border:1px solid var(--line); padding:2px 9px; border-radius:999px;
   background:var(--input-bg); }
 p.sub { color:var(--mut); margin:10px 0 16px; font-size:13px; }
+
+/* top-level mode tabs (Save Editor / ISO Editor) */
+.modebar { display:flex; gap:8px; margin:14px 0 4px; }
+.modebar .mtab { background:transparent; border:1px solid var(--line); color:var(--mut);
+  border-radius:999px; padding:7px 18px; font:inherit; font-weight:600; letter-spacing:.02em; }
+.modebar .mtab:hover:not(.on) { color:var(--ink); border-color:var(--acc); }
+.modebar .mtab.on { background:var(--acc); border-color:var(--acc); color:var(--accink); }
 .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
   padding:16px; margin-bottom:16px; box-shadow:var(--shadow); }
 .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--acc2);
@@ -138,10 +145,28 @@ button.picker { width:100%; text-align:left; background:var(--input-bg); color:v
 button.picker:hover:not(:disabled) { border-color:var(--acc); }
 button.picker.dirty { color:var(--warn); border-color:var(--warnbd); background-color:var(--changed-bg); }
 
+/* per-field "restore original" affordance (shown only when a field differs from the ISO) */
+button.revert { display:none; margin:4px 0 0; padding:2px 8px; font-size:12px; line-height:1.2;
+  background:transparent; border:1px solid var(--warnbd); color:var(--warn); border-radius:6px;
+  align-self:flex-start; }
+button.revert.show { display:inline-block; }
+button.revert:hover:not(:disabled) { border-color:var(--acc); color:var(--acc2); }
+td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; }
+
 /* boot progress */
 .bootmsg { margin-bottom:6px; }
 .bar { height:4px; background:var(--line); border-radius:999px; overflow:hidden; max-width:280px; margin:0 auto; }
 .bar-fill { height:100%; background:var(--acc); transition:width .3s ease; }
+/* indeterminate (used while the browser makes its atomic-save copy — no % available) */
+.bar.indet .bar-fill { width:35% !important; transition:none; animation:indet 1.15s ease-in-out infinite; }
+@keyframes indet { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
+
+/* save-progress modal */
+.pg-body { padding:16px; }
+.pg-body .bar { max-width:none; height:6px; margin:0; }
+#pgTitle { font-family:var(--titlefont); color:var(--acc2); font-size:15px; }
+.pg-meta { font-variant-numeric:tabular-nums; }
+.bar-fill.err { background:var(--crimson); }
 
 /* modals (picker + review-changes) */
 .modal-ov { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:flex-end;

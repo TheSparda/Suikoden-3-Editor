@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#141414">
-<title>Suikoden III Save Editor (Web)</title>
+<title>Suikoden III Editor (Web)</title>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -15,29 +15,44 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Suikoden III Save Editor</h1>
+    <h1>Suikoden III Editor</h1>
     <span class="tag">web · runs on your device</span>
     <button id="installBtn" class="chip hidden" style="margin-left:auto">⬇ Install app</button>
   </header>
-  <p class="sub">Full save editor — characters, stats, runes/equipment, skills, inventory,
-    party and recruitment. Everything runs in your browser via Python (Pyodide); your save
-    never leaves the device. Works on desktop and Android. A backup is always wise.</p>
 
-  <div class="card" id="loaderCard">
-    <h2>1 · Load save</h2>
-    <div class="drop" id="drop">
-      <div><b>Drop a save file here</b> or</div>
-      <label class="file"><button type="button" id="pickBtn" disabled>Choose file…</button>
-        <input type="file" id="file"></label>
-      <div class="muted" style="margin-top:10px" id="engineStatus">
-        <span class="spinner"></span>Starting Python engine…</div>
-      <div class="muted" style="margin-top:6px">Supports .ps2/.mcd memory cards, .psu, .psv,
-        .cbs, SharkPort/.xps, and raw gamedata.</div>
+  <nav class="modebar">
+    <button class="mtab on" data-mode="save">Save Editor</button>
+    <button class="mtab" data-mode="iso">ISO Editor</button>
+  </nav>
+
+  <section id="mode-save" class="mode">
+    <p class="sub">Full save editor — characters, stats, runes/equipment, skills, inventory,
+      party and recruitment. Everything runs in your browser via Python (Pyodide); your save
+      never leaves the device. Works on desktop and Android. A backup is always wise.</p>
+
+    <div class="card" id="loaderCard">
+      <h2>1 · Load save</h2>
+      <div class="drop" id="drop">
+        <div><b>Drop a save file here</b> or</div>
+        <label class="file"><button type="button" id="pickBtn" disabled>Choose file…</button>
+          <input type="file" id="file"></label>
+        <div class="muted" style="margin-top:10px" id="engineStatus">
+          <span class="spinner"></span>Starting Python engine…</div>
+        <div class="muted" style="margin-top:6px">Supports .ps2/.mcd memory cards, .psu, .psv,
+          .cbs, SharkPort/.xps, and raw gamedata.</div>
+      </div>
+      <div id="recent"></div>
     </div>
-    <div id="recent"></div>
-  </div>
 
-  <div id="editor"></div>
+    <div id="editor"></div>
+  </section>
+
+  <section id="mode-iso" class="mode hidden">
+    <p class="sub">Edit the game disc directly — character growth, skills, runes, shops, spells,
+      unite attacks, equipment and consumables. Changes are written <b>in place</b> into your ISO;
+      nothing is uploaded. Desktop Chromium only (needs the File System Access API). Back up first.</p>
+    <div id="isoRoot"></div>
+  </section>
 
   <footer>
     <button class="tb" data-theme="crimson">Crimson &amp; Gold</button>
@@ -45,12 +60,13 @@
     <span class="credit">Made by <b>Sparda</b> ·
       <a href="https://github.com/TheSparda/Suikoden-3-Editor" target="_blank" rel="noopener noreferrer">GitHub</a>
       · v1.1.5</span>
-    <span class="note">Client-side Pyodide port of <code>s3save.py</code> · full parity with the
-      desktop save editor · ISO patching stays desktop-only.</span>
+    <span class="note">Save editor: client-side Pyodide port of <code>s3save.py</code> (full parity, works everywhere).
+      ISO editor: client-side port of <code>s3patch.py</code>/<code>s3fields.py</code>, in-place edits on Chromium desktop.</span>
   </footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
 <script src="app.js"></script>
+<script src="iso.js"></script>
 </body>
 </html>
