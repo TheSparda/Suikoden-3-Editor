@@ -77,3 +77,9 @@ details[open] .chev { transform:rotate(90deg); }
 .slotbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .rm { color:var(--acc2); border-color:var(--line); background:transparent; padding:4px 9px; }
 .warnbox { color:var(--warn); font-size:12px; margin:0 2px 10px; }
+footer { margin-top:20px; padding-top:14px; border-top:1px solid var(--line);
+  display:flex; flex-direction:column; gap:4px; }
+footer .credit { font-size:13px; color:var(--ink); }
+footer .credit a { color:var(--acc2); text-decoration:none; }
+footer .credit a:hover { text-decoration:underline; }
+footer .muted { font-size:12px; }
