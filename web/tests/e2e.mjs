@@ -92,11 +92,14 @@ async function save(page) {
 }
 
 // =====================================================================================
-head("Gating (unsupported browser)");
+head("Fallback (no File System Access → input loader)");
 { const page = await newPage();
   await page.addInitScript("Object.defineProperty(window,'showOpenFilePicker',{value:undefined})");
-  await gotoIsoTab(page); await page.waitForTimeout(120);
-  check("blocked notice shown, no loader", !!(await page.$("#isoRoot .warnbox")) && !(await page.$("#isoPick")));
+  await gotoIsoTab(page); await page.waitForTimeout(150);
+  // Without FS Access we no longer hard-block: the loader offers a plain <input type=file>
+  // (open + stage + streaming/recipe save), and the FS-only picker button is absent.
+  check("input-file loader shown, no FS picker",
+    !!(await page.$("#isoFileInput")) && !(await page.$("#isoPick")));
   await page.context().close();
 }
 

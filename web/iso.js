@@ -135,9 +135,18 @@
 
   // ---- environment / capability ---------------------------------------------
   const SUPPORTS_FS = typeof window !== "undefined" && typeof window.showOpenFilePicker === "function";
+  // Streaming "save patched ISO" fallback (Android/Firefox/Safari — no File System Access).
+  // We can't overwrite a 4 GB file in place there, but we CAN read it in chunks and stream a
+  // patched copy to the device via our own service worker. Needs transferable ReadableStreams
+  // (to hand the stream to the SW). Everything stays local — nothing is uploaded.
+  const CAN_TRANSFER_STREAM = (() => {
+    try { const rs = new ReadableStream(); new MessageChannel().port1.postMessage(rs, [rs]); return true; }
+    catch (e) { return false; }
+  })();
+  const CAN_STREAM_SAVE = typeof navigator !== "undefined" && "serviceWorker" in navigator && CAN_TRANSFER_STREAM;
 
   // ---- state -----------------------------------------------------------------
-  let isoHandle = null, isoName = "";
+  let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...} }
@@ -354,12 +363,19 @@
     } catch (e) { if (e && e.name !== "AbortError") setStatus("Could not open ISO: " + e.message, "err"); return; }
     loadFromHandle(handle);
   }
-  // Read + validate + commit an ISO from a writable file handle (shared by the picker and the
-  // one-tap "reopen last" path). Nothing large is held — only the ~3.75 MB editable region.
+  // Open via a writable handle (desktop FS Access → in-place save + one-tap reopen).
   async function loadFromHandle(handle) {
     let file;
     try { file = await handle.getFile(); }
     catch (e) { return setStatus("Could not read that file: " + e.message, "err"); }
+    return commitIso(file, handle);
+  }
+  // Open via a plain <input type=file> (Android/Firefox/Safari — no handle; save streams a copy).
+  async function loadFromInputFile(file) { return commitIso(file, null); }
+
+  // Read + validate + commit an ISO from a File. Nothing large is held — only the ~3.75 MB
+  // editable region is read (via a ranged Blob.slice); the source File is kept for streaming.
+  async function commitIso(file, handle) {
     setStatus("Reading disc region…", "");
     if (file.size < ELF_END) return setStatus(`That file is only ${fmtSize(file.size)} — not a full Suikoden III ISO.`, "err");
     let ab;
@@ -375,14 +391,20 @@
     }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
-    isoHandle = handle; isoName = file.name || "game.iso";
+    isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false;
     VIEW = "chars"; SEARCH = "";
-    rememberIso(isoName, handle);            // persist the handle for one-tap reopen next visit
+    if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
     renderEditor(file.size);
     q("#isoRoot").scrollIntoView({ behavior: "smooth", block: "start" });
     setStatus(`Loaded ${isoName} — USA verified.`, "ok");
+  }
+  // How this browser can write edits back: overwrite in place, stream a patched copy, or neither.
+  function saveMode() {
+    if (SUPPORTS_FS && isoHandle) return "inplace";
+    if (CAN_STREAM_SAVE && isoFile) return "stream";
+    return "none";
   }
 
   // ---- remember last opened ISO (persist the file HANDLE; the 4 GB bytes are never stored) --
@@ -425,7 +447,9 @@
   let recipeExported = false, saveNudged = false;
   function saveIso() {
     if (!anyChanges()) return setStatus("No changes to save.", "warn");
-    // One-time nudge to export a reversible recipe before the first in-place write of a session.
+    if (saveMode() === "none")
+      return setStatus("This browser can't write the ISO. Use “Export recipe…” and apply it on a desktop Chromium browser (or the desktop app).", "warn");
+    // One-time nudge to export a reversible recipe before the first write of a session.
     if (!recipeExported && !saveNudged) { saveNudged = true; return backupNudge(confirmAndSave); }
     confirmAndSave();
   }
@@ -433,7 +457,12 @@
     const rows = buildReview();
     const bytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
     if (!rows.length) rows.push({ g: "Raw", t: `${bytes} byte(s)` });
-    openConfirm(rows, doSave, `Write ${bytes} byte(s) to ${isoName}`);   // shared confirm modal
+    if (saveMode() === "stream") {
+      openConfirm(rows, doStreamSave,
+        `Save patched ISO (~${fmtSize(isoFile.size)} download)`);
+    } else {
+      openConfirm(rows, doSave, `Write ${bytes} byte(s) to ${isoName}`);   // in-place
+    }
   }
   // "Back up first?" prompt shown once before the first save; offers a one-click recipe export.
   function backupNudge(onContinue) {
@@ -489,6 +518,73 @@
     } catch (e) {
       pg.done("Write failed: " + e.message + ". Your staged edits are still here — you can retry or export a recipe.", true);
       setStatus("Write failed: " + e.message, "err");
+    } finally { setBusy(false); }
+  }
+
+  // Streaming save (Android/Firefox/Safari): there's no in-place API for a 4 GB file, so read
+  // the source disc in chunks, splice the edited ~3.75 MB region over it, and stream the whole
+  // patched copy straight to the device's downloads through our own service worker. Bounded
+  // memory (backpressure via the stream's pull()); nothing is uploaded; no third-party helper.
+  async function doStreamSave() {
+    if (!isoFile) return setStatus("The original ISO isn't available to copy — reopen it and try again.", "err");
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller)
+      return setStatus("Saving needs the offline helper active — reload the page once, then reopen the ISO and save.", "warn");
+
+    const m = isoName.match(/\.[^.]+$/);
+    const outName = (m ? isoName.slice(0, isoName.length - m[0].length) : isoName || "s3") + ".patched" + (m ? m[0] : ".iso");
+    const total = isoFile.size;
+    const region = BUF.slice();          // snapshot so mid-save edits can't corrupt the copy
+    const pg = progressModal(); setBusy(true);
+    try {
+      pg.phase("Preparing", `Building a patched copy of ${isoName} (~${fmtSize(total)}). It streams straight to your downloads — nothing is uploaded.`, { pct: 0 });
+
+      let pos = 0, finished, failed;
+      const done = new Promise((res, rej) => { finished = res; failed = rej; });
+      const reader = isoFile.stream().getReader();
+      const stream = new ReadableStream({
+        async pull(controller) {
+          let r;
+          try { r = await reader.read(); }
+          catch (e) { controller.error(e); failed(e); return; }
+          if (r.done) { controller.close(); finished(); return; }
+          let chunk = r.value;                                  // bytes at [pos, pos+len)
+          const start = pos, end = pos + chunk.length;
+          if (end > ELF_BASE && start < ELF_END) {              // overlaps the editable region
+            chunk = chunk.slice();                              // writable copy
+            const a = Math.max(start, ELF_BASE), b = Math.min(end, ELF_END);
+            for (let i = a; i < b; i++) chunk[i - start] = region[i - ELF_BASE];
+          }
+          controller.enqueue(chunk);
+          pos = end;
+          pg.phase("Writing", `Streaming patched ISO to your downloads… ${fmtSize(pos)} / ${fmtSize(total)}`,
+            { pct: total ? (pos / total) * 100 : 0 });
+        },
+        cancel(reason) { try { reader.cancel(reason); } catch (e) {} failed(new Error("download cancelled")); },
+      });
+
+      // Hand the stream to the service worker, wait for its ack, then trigger the download.
+      const id = "iso-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+      const sw = navigator.serviceWorker.controller;
+      await new Promise((res, rej) => {
+        const ch = new MessageChannel();
+        const to = setTimeout(() => rej(new Error("the offline helper didn't respond")), 5000);
+        ch.port1.onmessage = () => { clearTimeout(to); res(); };
+        try { sw.postMessage({ type: "dl-register", id, filename: outName, size: total, stream }, [stream, ch.port2]); }
+        catch (e) { clearTimeout(to); rej(e); }
+      });
+      const ifr = document.createElement("iframe");
+      ifr.style.display = "none"; ifr.src = "_dl/" + id;
+      document.body.appendChild(ifr);
+
+      await done;                                                // resolves when fully streamed
+      ORIG = BUF.slice(); ODV = new DataView(ORIG.buffer);       // treat as saved
+      drawView();
+      setTimeout(() => ifr.remove(), 1000);
+      pg.done(`Streamed a patched copy — check your downloads for “${outName}”. Replace your ISO with it to play the edits.`, false);
+      setStatus(`Saved a patched copy (${fmtSize(total)}) to your downloads: ${outName}.`, "ok");
+    } catch (e) {
+      pg.done("Save failed: " + e.message + ". Your edits are still staged — retry, or export a recipe instead.", true);
+      setStatus("Save failed: " + e.message, "err");
     } finally { setBusy(false); }
   }
 
@@ -578,11 +674,15 @@
 
   function renderEditor(size) {
     const root = q("#isoRoot");
+    const sm = saveMode();
+    const saveLabel = sm === "stream" ? "Apply &amp; save patched ISO" : "Apply &amp; save to ISO";
+    const saveNote = sm === "stream" ? ` · <span class="muted">saves a patched copy to downloads</span>`
+      : sm === "none" ? ` · <span style="color:var(--warn)">read-only here — export a recipe</span>` : "";
     root.innerHTML = `
       <div class="card">
         <div class="row" style="justify-content:space-between">
           <div><b class="acc2">${esc2(isoName)}</b>
-            <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span></div>
+            <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span>${saveNote}</div>
           <button id="isoClose" class="chip mini">Close</button>
         </div>
       </div>
@@ -593,7 +693,7 @@
         <div class="muted" id="isoHint" style="margin:2px 0 10px"></div>
         <div id="isoView"></div>
         <div class="toolbar">
-          <button class="primary" id="isoSaveBtn">Apply &amp; save to ISO</button>
+          <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
           <span class="pill" id="isoDirty" hidden></span>
           <button id="isoRecipeBtn">Export recipe…</button>
           <label class="file" style="margin:0"><button type="button" id="isoImportBtn">Import recipe…</button>
@@ -604,7 +704,7 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = null; renderLoader(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoImportBtn").onclick = () => q("#isoRecipeFile").click();
@@ -1213,36 +1313,39 @@
   function fmtSize(n) { return n >= 1e9 ? (n / 1e9).toFixed(2) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " KB"; }
   function setStatus(msg, kind) { const el = q("#isoStatus"); if (el) { el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); } else { const b = q("#isoBootStatus"); if (b) b.textContent = msg; } }
 
-  // ---- blocked / loader shells ----------------------------------------------
-  function renderBlocked() {
-    q("#isoRoot").innerHTML = `
-      <div class="card">
-        <h2>ISO editing isn't available in this browser</h2>
-        <p class="sub" style="margin-top:0">The ISO editor writes changes <b>in place</b> into your ~4 GB disc image.
-          That needs the <b>File System Access API</b> (a writable file handle), which this browser doesn't provide.</p>
-        <div class="warnbox" style="margin:0 0 10px">Your browser: no <code>showOpenFilePicker</code> support.</div>
-        <p class="muted">Supported: <b>desktop Chrome, Edge, Brave, Opera</b> and other Chromium browsers.
-          Not supported: Firefox, Safari, and all mobile/iOS browsers — they can't open a multi-gigabyte file
-          for in-place editing, and the disc is far too large to load into a tab's memory to download a copy.</p>
-        <p class="muted">The <b>Save editor</b> tab works everywhere, including mobile.</p>
-      </div>`;
-  }
+  // ---- loader shell (adapts to how this browser can save) --------------------
   function renderLoader() {
+    // Copy + picker depend on the save capability. FS Access → in-place; else streamed copy;
+    // else read-only (recipe export). Opening the ISO works everywhere via a ranged read.
+    const howSaves = SUPPORTS_FS
+      ? `Edits are written back <b>in place</b>. Nothing is uploaded. <b>Back up your ISO first</b> — or use <i>Export recipe</i> for a reversible record.`
+      : CAN_STREAM_SAVE
+        ? `This browser can't overwrite the file in place, so saving <b>streams a patched copy to your downloads</b> (a full ~4 GB file) — nothing is uploaded. You then swap it in for your ISO. <i>Export recipe</i> is a lighter alternative.`
+        : `This browser can only <b>read</b> the disc. Browse and stage edits, then <b>Export a recipe</b> and apply it on a desktop Chromium browser (or the desktop app).`;
+    const picker = SUPPORTS_FS
+      ? `<label class="file"><button type="button" id="isoPick">Choose ISO…</button></label>`
+      : `<label class="file"><button type="button" id="isoPickInputBtn">Choose ISO…</button>
+          <input type="file" id="isoFileInput" accept=".iso,.bin,.img,application/octet-stream"></label>`;
     q("#isoRoot").innerHTML = `
       <div class="card">
         <h2>Load ISO</h2>
         <p class="sub" style="margin-top:0">Pick your <b>Suikoden III (USA)</b> disc image (SLUS-20387).
-          Only a ~3.7 MB slice is read; edits are written back in place. Nothing is uploaded.
-          <b>Back up your ISO first</b> — or use <i>Export recipe</i> to keep a reversible record of your edits.</p>
+          Only a ~3.7 MB slice is read to edit. ${howSaves}</p>
         <div class="drop">
           <div><b>Open a Suikoden III ISO</b></div>
-          <label class="file"><button type="button" id="isoPick">Choose ISO…</button></label>
+          ${picker}
           <div class="muted" style="margin-top:10px" id="isoBootStatus">.iso / .bin / .img · USA release only</div>
         </div>
         <div id="isoRecent"></div>
       </div>`;
-    q("#isoPick").onclick = () => loadRef().then(openIso).catch((e) => setStatus("Failed to load reference tables: " + e.message, "err"));
-    loadRef().then(showLastIso).catch(() => {});   // offer one-tap reopen of the last ISO
+    if (SUPPORTS_FS) {
+      q("#isoPick").onclick = () => loadRef().then(openIso).catch((e) => setStatus("Failed to load reference tables: " + e.message, "err"));
+      loadRef().then(showLastIso).catch(() => {});   // one-tap reopen (persisted handle; FS only)
+    } else {
+      const inp = q("#isoFileInput");
+      q("#isoPickInputBtn").onclick = () => loadRef().then(() => inp.click()).catch((e) => setStatus("Failed to load reference tables: " + e.message, "err"));
+      inp.onchange = () => { if (inp.files[0]) loadFromInputFile(inp.files[0]); };
+    }
   }
 
   // ---- mode tabs + init ------------------------------------------------------
@@ -1252,7 +1355,7 @@
     if (save) save.classList.toggle("hidden", mode !== "save");
     if (iso) iso.classList.toggle("hidden", mode !== "iso");
     if (mode === "iso" && !q("#isoRoot").dataset.init) {
-      if (SUPPORTS_FS) renderLoader(); else renderBlocked();
+      renderLoader();
       q("#isoRoot").dataset.init = "1";
     }
   }
