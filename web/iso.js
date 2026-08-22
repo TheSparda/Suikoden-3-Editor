@@ -376,7 +376,7 @@
   // Read + validate + commit an ISO from a File. Nothing large is held — only the ~3.75 MB
   // editable region is read (via a ranged Blob.slice); the source File is kept for streaming.
   async function commitIso(file, handle) {
-    setStatus("Reading disc region…", "");
+    setStatus("Reading disc region… (a moment on a large disc)", "");
     if (file.size < ELF_END) return setStatus(`That file is only ${fmtSize(file.size)} — not a full Suikoden III ISO.`, "err");
     let ab;
     try { ab = await file.slice(ELF_BASE, ELF_END).arrayBuffer(); }
@@ -536,7 +536,9 @@
     const region = BUF.slice();          // snapshot so mid-save edits can't corrupt the copy
     const pg = progressModal(); setBusy(true);
     try {
-      pg.phase("Preparing", `Building a patched copy of ${isoName} (~${fmtSize(total)}). It streams straight to your downloads — nothing is uploaded.`, { pct: 0 });
+      pg.phase("Preparing", `Building a patched copy of ${isoName} (~${fmtSize(total)}). ` +
+        `This can take a few minutes for a full disc — keep this tab open and your screen awake. ` +
+        `It streams straight to your downloads; nothing is uploaded.`, { indet: true });
 
       let pos = 0, finished, failed;
       const done = new Promise((res, rej) => { finished = res; failed = rej; });
@@ -1325,7 +1327,7 @@
     const picker = SUPPORTS_FS
       ? `<label class="file"><button type="button" id="isoPick">Choose ISO…</button></label>`
       : `<label class="file"><button type="button" id="isoPickInputBtn">Choose ISO…</button>
-          <input type="file" id="isoFileInput" accept=".iso,.bin,.img,application/octet-stream"></label>`;
+          <input type="file" id="isoFileInput"></label>`;
     q("#isoRoot").innerHTML = `
       <div class="card">
         <h2>Load ISO</h2>
