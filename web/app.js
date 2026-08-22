@@ -811,6 +811,36 @@ function downloadBytes(bytes, name) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+// Per-platform "how to install" help, shown when the browser hasn't offered a native install
+// prompt (iOS never does; Chrome only after its engagement heuristic; some browsers never).
+function showInstallHelp() {
+  const ua = navigator.userAgent || "";
+  const isIOS = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  let steps;
+  if (isIOS) {
+    steps = `<p>In <b>Safari</b>: tap the <b>Share</b> button <span aria-hidden="true">⎋</span> (the square with an up-arrow), then <b>Add to Home Screen</b>.</p>
+      <p class="muted">iOS only installs web apps from Safari — not Chrome or other browsers.</p>`;
+  } else if (isAndroid) {
+    steps = `<p>In <b>Chrome</b>: tap the <b>⋮</b> menu (top-right), then <b>Install app</b> (or <b>Add to Home screen</b>).</p>
+      <p class="muted">If you don't see it yet, Chrome sometimes waits until you've used the page for a little while — interact for ~30&nbsp;seconds and check the menu again. Some third-party or built-in browsers on handhelds can't install PWAs; if the option never appears, try the latest <b>Google Chrome</b> from the Play Store.</p>`;
+  } else {
+    steps = `<p>In <b>Chrome / Edge / Brave / Opera</b> (desktop): click the <b>install icon</b> in the address bar, or the <b>⋮</b> menu → <b>Install…</b>.</p>
+      <p class="muted">Firefox and Safari on desktop don't support installing this kind of app.</p>`;
+  }
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="How to install" style="max-width:460px">
+      <div class="modal-h"><b>Add to Home Screen / Install</b><button class="modal-x" aria-label="close">✕</button></div>
+      <div class="cf-list" style="font-size:13px">${steps}
+        <p class="muted" style="margin-bottom:0">Installing makes it open full-screen and work offline. Nothing is uploaded either way.</p></div>
+      <div class="modal-f"><button class="primary" id="ihOk">Got it</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  $(".modal-x", ov).onclick = close; $("#ihOk", ov).onclick = close;
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+}
+
 // ---- misc ------------------------------------------------------------------
 let _STAT_NAMES = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"];
 function STAT_NAMES() { return _STAT_NAMES; }
@@ -877,23 +907,30 @@ window.addEventListener("DOMContentLoaded", () => {
     navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register failed", e));
   }
 
-  // Custom "Install app" button. Chrome/Android fires beforeinstallprompt only when the app
-  // is installable and not already installed — so the button appears exactly when it's useful.
+  // Install affordance. Chrome fires beforeinstallprompt only after the PWA is installable AND
+  // a ~30s engagement heuristic — and never on iOS, or on some Android browsers — so a button
+  // gated solely on that event often never shows. Instead: always show the button when not
+  // already installed; use the native prompt if we captured one, otherwise open per-platform
+  // "how to install" instructions (Chrome ⋮ menu / iOS Share sheet).
   const installBtn = $("#installBtn");
   const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   let deferredPrompt = null;
   if (!standalone) {
+    installBtn.classList.remove("hidden");          // show it regardless; click explains how
     window.addEventListener("beforeinstallprompt", (e) => {
-      e.preventDefault();                 // suppress the mini-infobar; use our button instead
+      e.preventDefault();                           // capture it; drive it from our button
       deferredPrompt = e;
-      installBtn.classList.remove("hidden");
+      installBtn.textContent = "⬇ Install app";
     });
     installBtn.onclick = async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      installBtn.classList.add("hidden");
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if (outcome === "accepted") installBtn.classList.add("hidden");
+        return;
+      }
+      showInstallHelp();                            // no native prompt available → guide them
     };
     window.addEventListener("appinstalled", () => installBtn.classList.add("hidden"));
   }
