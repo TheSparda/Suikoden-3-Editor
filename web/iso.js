@@ -345,15 +345,21 @@
 
   // ---- ISO load --------------------------------------------------------------
   async function openIso() {
-    let handle, file;
+    let handle;
     try {
       [handle] = await window.showOpenFilePicker({
         multiple: false,
         types: [{ description: "Disc images", accept: { "application/octet-stream": [".iso", ".bin", ".img"] } }],
       });
-      file = await handle.getFile();
     } catch (e) { if (e && e.name !== "AbortError") setStatus("Could not open ISO: " + e.message, "err"); return; }
-
+    loadFromHandle(handle);
+  }
+  // Read + validate + commit an ISO from a writable file handle (shared by the picker and the
+  // one-tap "reopen last" path). Nothing large is held — only the ~3.75 MB editable region.
+  async function loadFromHandle(handle) {
+    let file;
+    try { file = await handle.getFile(); }
+    catch (e) { return setStatus("Could not read that file: " + e.message, "err"); }
     setStatus("Reading disc region…", "");
     if (file.size < ELF_END) return setStatus(`That file is only ${fmtSize(file.size)} — not a full Suikoden III ISO.`, "err");
     let ab;
@@ -371,10 +377,31 @@
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     isoHandle = handle; isoName = file.name || "game.iso";
     gearCache = null; Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    recipeExported = false; saveNudged = false;
     VIEW = "chars"; SEARCH = "";
+    rememberIso(isoName, handle);            // persist the handle for one-tap reopen next visit
     renderEditor(file.size);
     q("#isoRoot").scrollIntoView({ behavior: "smooth", block: "start" });
     setStatus(`Loaded ${isoName} — USA verified.`, "ok");
+  }
+
+  // ---- remember last opened ISO (persist the file HANDLE; the 4 GB bytes are never stored) --
+  function rememberIso(name, handle) { idbSet("lastIso", { name, handle, at: Date.now() }).catch(() => {}); }
+  async function showLastIso() {
+    const el = q("#isoRecent"); if (!el) return;
+    let rec; try { rec = await idbGet("lastIso"); } catch (e) { return; }
+    if (!rec || !rec.handle) { el.innerHTML = ""; return; }
+    el.innerHTML = `<div class="recent">Last opened:
+        <button class="chip" id="isoReopen">↻ ${esc2(rec.name)}</button>
+        <button class="chip mini" id="isoForget" title="forget" aria-label="forget last ISO">✕</button></div>`;
+    q("#isoReopen", el).onclick = () => reopenLastIso(rec);
+    q("#isoForget", el).onclick = async () => { await idbDel("lastIso").catch(() => {}); el.innerHTML = ""; };
+  }
+  async function reopenLastIso(rec) {
+    try {
+      if (!(await ensureWritable(rec.handle))) return setStatus("Reopen cancelled — write permission denied.", "warn");
+      await loadFromHandle(rec.handle);
+    } catch (e) { setStatus("Could not reopen — the file may have moved. Pick it again.", "err"); }
   }
 
   // ---- save (in place) -------------------------------------------------------
@@ -1212,8 +1239,10 @@
           <label class="file"><button type="button" id="isoPick">Choose ISO…</button></label>
           <div class="muted" style="margin-top:10px" id="isoBootStatus">.iso / .bin / .img · USA release only</div>
         </div>
+        <div id="isoRecent"></div>
       </div>`;
     q("#isoPick").onclick = () => loadRef().then(openIso).catch((e) => setStatus("Failed to load reference tables: " + e.message, "err"));
+    loadRef().then(showLastIso).catch(() => {});   // offer one-tap reopen of the last ISO
   }
 
   // ---- mode tabs + init ------------------------------------------------------

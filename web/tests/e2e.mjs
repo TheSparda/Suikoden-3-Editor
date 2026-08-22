@@ -323,6 +323,27 @@ head("Save-progress UX + backup nudge (export path)");
   await page.context().close();
 }
 
+head("Last opened ISO (persist handle + reopen)");
+{ const page = await newPage();
+  // back the picked file with a REAL OPFS handle so it's IndexedDB-serializable (the plain
+  // fake handle used elsewhere can't be structured-cloned into IndexedDB)
+  await page.addInitScript(`window.showOpenFilePicker = async () => {
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle('synth.iso', { create: true });
+    const w = await fh.createWritable(); await w.write(await (await fetch('/synth.bin')).arrayBuffer()); await w.close();
+    return [fh];
+  };`);
+  await gotoIsoTab(page); await page.click("#isoPick"); await page.waitForSelector("#isoTabs", { timeout: 8000 });
+  await page.click("#isoClose"); await page.waitForSelector("#isoRecent .recent", { timeout: 3000 });
+  check("last-opened chip shows the ISO name", (await page.textContent("#isoReopen")).includes("synth.iso"));
+  await page.click("#isoReopen"); await page.waitForSelector("#isoTabs", { timeout: 8000 });
+  check("reopen loads the ISO editor", !!(await page.$("#isoTabs")));
+  await page.click("#isoClose"); await page.waitForSelector("#isoRecent .recent");
+  await page.click("#isoForget"); await page.waitForTimeout(100);
+  check("forget clears the last-opened chip", !(await page.$("#isoReopen")));
+  await page.context().close();
+}
+
 head("Close returns to loader");
 { const page = await newPage(); await loadIso(page);
   await page.click("#isoClose"); await page.waitForTimeout(80);
