@@ -109,6 +109,18 @@ fetched from `../Editor/` alongside `s3save.py`.
 
 ## Quality-of-life
 
+- **Faster Android workflow (Web Share)** — the installed PWA registers as a **share target**,
+  so in your file manager (or an emulator that can share) you tap **Share → S3 Save Editor**
+  and the memory card opens straight in the editor — no download, no "Choose file". After
+  editing, **Apply & share…** hands the edited file to the Android share sheet to send it
+  back to your file manager / the emulator folder / cloud. Turns copy→download→move into
+  *Share → edit → Share back*. (True overwrite-in-place isn't possible in a web app on
+  Android — the File System Access API is desktop-only — so this is the fastest web option;
+  a native wrapper would be needed for literal in-place saving.)
+- **Remembers the last opened save** — the most recent save (its bytes, on desktop also its
+  writable handle) is kept in on-device IndexedDB, so a **↻ Last opened** chip on the loader
+  lets you reopen it in one tap next visit (on desktop that reopen restores save-in-place).
+  A ✕ forgets it. Nothing is uploaded; it lives only in your browser.
 - **Save in place** (desktop Chromium) — when you open a file via **Choose file…** or drag it
   in, the app keeps a writable handle (File System Access API), so "Apply & save to file"
   overwrites the original directly (a "Download copy" button stays available too). Browsers
