@@ -27,6 +27,7 @@ html.theme-parchment{
 html,body { margin:0; background:var(--bg); color:var(--ink);
   font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased; }
+html { scroll-padding-bottom:88px; }        /* keep focused inputs clear of the sticky action bar */
 body { padding:max(14px,env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom)); }
 .wrap { max-width:900px; margin:0 auto; }
 header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px;
@@ -87,6 +88,10 @@ input.dirty, select.dirty { color:var(--warn); border-color:var(--warnbd); backg
 input.ro { color:var(--mut); }
 
 .subtabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+/* the ISO view has 9 tabs — keep them on one swipeable row instead of stacking */
+#isoTabs { flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+  scroll-snap-type:x proximity; padding-bottom:6px; scrollbar-width:thin; }
+#isoTabs .chip { flex:0 0 auto; scroll-snap-align:start; }
 .pill { padding:2px 9px; border-radius:999px; font-size:12px; background:var(--input-bg);
   border:1px solid var(--line); white-space:nowrap; color:var(--mut); }
 .pill.on { color:var(--acc2); border-color:var(--acc); }
@@ -111,8 +116,11 @@ details[open] .chev { transform:rotate(90deg); }
 .bag .bag-h { font-weight:600; color:var(--acc2); font-family:var(--titlefont); margin:0 2px 6px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .bag .bag-h .u { font-weight:400; color:var(--mut); font-size:12px; font-family:inherit; }
 .search { width:100%; margin-bottom:10px; }
+/* sticky action bar — opaque so content scrolls cleanly UNDER it (a translucent
+   fade made buttons appear to overlap the fields on small screens) */
 .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; position:sticky; bottom:0;
-  background:linear-gradient(180deg,transparent,var(--bg) 45%); padding:14px 0 4px; margin-top:6px; }
+  background:var(--panel); border-top:1px solid var(--line); box-shadow:0 -7px 16px -10px rgba(0,0,0,.55);
+  padding:12px 0 calc(8px + env(safe-area-inset-bottom)); margin-top:12px; z-index:5; }
 .status { font-size:13px; min-height:18px; }
 .status.ok { color:var(--ok); } .status.err { color:var(--acc2); } .status.warn { color:var(--warn); }
 .muted { color:var(--mut); font-size:12px; }
@@ -192,3 +200,35 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .cf-g { font-family:var(--titlefont); color:var(--acc2); font-size:13px; margin-bottom:4px; }
 .cf-row { font-size:13px; color:var(--ink); padding:2px 0 2px 10px; border-left:2px solid var(--line); margin-bottom:2px; }
 .recent { margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--mut); font-size:13px; }
+
+/* ===== small-screen / Android tuning (≤480px: most target devices) ===== */
+@media (max-width:480px) {
+  body { padding:10px 10px calc(16px + env(safe-area-inset-bottom)); }
+  .wrap { max-width:100%; }
+  .card { padding:13px; }
+  h1 { font-size:18px; }
+  p.sub { font-size:12px; margin:8px 0 12px; }
+  header { gap:8px; }
+
+  /* comfortable touch targets (≈44px) for the primary interactive controls */
+  input[type=text], input[type=number], select, button.picker { min-height:44px; font-size:15px; }
+  .toolbar button { min-height:44px; }
+  .subtabs .chip { min-height:38px; }
+
+  /* two mode tabs split the full width and are easy to tap */
+  .modebar { gap:6px; }
+  .modebar .mtab { flex:1 1 0; text-align:center; min-height:44px; padding:10px 8px; }
+
+  /* the primary Save/Apply button gets its own full-width row; the secondary
+     actions pack into a compact row below it so the sticky bar stays short */
+  .toolbar { gap:8px; }
+  .toolbar button.primary { flex:1 1 100%; }
+  .toolbar button:not(.primary) { flex:1 1 auto; min-height:40px; font-size:13px; padding:8px 10px; }
+  .toolbar .status { flex:1 1 100%; }
+
+  /* one field per row for the wide equipment / skill pickers so labels + ↺ fit */
+  .grid.eq, .grid.sk { grid-template-columns:1fr; }
+
+  /* keep the mobile bottom sheet from feeling cramped */
+  .picker-list { max-height:70vh; }
+}
