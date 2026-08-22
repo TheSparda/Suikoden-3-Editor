@@ -249,6 +249,7 @@ async function handleFile(file, handle) {
   saves = JSON.parse(json);
   if (!saves.length) { $("#editor").innerHTML = ""; return setDropMsg("No Suikoden III (USA) save found in that file.", true); }
   curSlot = 0;
+  setDropMsg("Python engine ready — load a save file.", false);   // clear any prior "no save found" error
   rememberSave(origName, bytes, fileHandle);   // persist for one-tap reopen next visit
   renderEditor();
   $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
