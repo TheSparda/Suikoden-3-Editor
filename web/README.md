@@ -109,6 +109,12 @@ fetched from `../Editor/` alongside `s3save.py`.
 
 ## Quality-of-life
 
+- **Save in place** (desktop Chromium) — when you open a file via **Choose file…** or drag it
+  in, the app keeps a writable handle (File System Access API), so "Apply & save to file"
+  overwrites the original directly (a "Download copy" button stays available too). Browsers
+  without the API — Android Chrome, Firefox, Safari — automatically fall back to
+  "Apply & download". The original is only overwritten on an explicit save-to-file, after you
+  confirm the change list and grant write permission.
 - **Searchable pickers** — items, skills, equipment, and party members open a type-to-filter
   modal instead of a giant native dropdown (essential with 500+ items, especially on mobile).
   Rows show the id, name, in-game description, and category.

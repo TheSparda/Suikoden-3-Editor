@@ -22,6 +22,10 @@ const RECRUITERS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 let pyReady = null;
 let REF = { items: [], skills: [], charById: {} };
 let ITEM_BY_ID = {}, saves = [], curSlot = 0, origName = "save.bin";
+// File System Access API (desktop Chromium): lets us overwrite the original file in place
+// instead of downloading a copy. Absent on Android/Firefox/Safari → we fall back to download.
+let fileHandle = null;
+const SUPPORTS_FS = typeof window !== "undefined" && "showOpenFilePicker" in window;
 let OPT_RANK = "";   // rank stays a small native <select>; other lists use pickers
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -176,8 +180,25 @@ function openPicker(title, list, current, onPick, idFmt) {
 }
 
 // ---- File loading ----------------------------------------------------------
-async function handleFile(file) {
+// Open via the File System Access picker so we retain a writable handle (desktop only).
+async function openViaPicker() {
+  try {
+    const [h] = await window.showOpenFilePicker({ multiple: false });
+    fileHandle = h;
+    await handleFile(await h.getFile(), h);
+  } catch (e) {
+    if (e && e.name !== "AbortError") setDropMsg("Could not open file: " + e.message, true);
+  }
+}
+async function ensureWritable(h) {
+  const opts = { mode: "readwrite" };
+  if ((await h.queryPermission(opts)) === "granted") return true;
+  return (await h.requestPermission(opts)) === "granted";
+}
+
+async function handleFile(file, handle) {
   const py = await pyReady;
+  fileHandle = handle || null;              // plain <input>/drag-drop have no handle
   origName = file.name || "save.bin";
   py.FS.writeFile(SAVE_PATH, new Uint8Array(await file.arrayBuffer()));
   let json;
@@ -257,7 +278,10 @@ function drawSlot() {
       <div class="muted" id="subhint" style="margin:2px 0 10px"></div>
       <div id="subview"></div>
       <div class="toolbar">
-        <button class="primary" id="saveBtn">Apply &amp; download</button>
+        ${SUPPORTS_FS && fileHandle
+          ? `<button class="primary" id="saveFileBtn">Apply &amp; save to file</button>
+             <button id="saveBtn">Download copy</button>`
+          : `<button class="primary" id="saveBtn">Apply &amp; download</button>`}
         <button id="resetBtn">Reset</button>
         <span class="status" id="status"></span>
       </div>
@@ -273,7 +297,8 @@ function drawSlot() {
   };
   $$("[data-sub]").forEach((b) => (b.onclick = () => { SUB = b.dataset.sub; SEARCH = ""; $("#sq").value = ""; showSub(); }));
   $("#sq").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); showSub(); };
-  $("#saveBtn").onclick = saveAndDownload;
+  $("#saveBtn").onclick = () => applyEdits(false);
+  const sfb = $("#saveFileBtn"); if (sfb) sfb.onclick = () => applyEdits(true);
   $("#resetBtn").onclick = drawSlot;
   showSub();
 }
@@ -522,7 +547,7 @@ function buildDiff() {
   return rows;
 }
 
-function openConfirm(rows, onConfirm) {
+function openConfirm(rows, onConfirm, okLabel) {
   const groups = {}; rows.forEach((r) => (groups[r.g] = groups[r.g] || []).push(r.t));
   const body = Object.entries(groups).map(([g, ts]) =>
     `<div class="cf-group"><div class="cf-g">${esc(g)}</div>${ts.map((t) => `<div class="cf-row">${esc(t)}</div>`).join("")}</div>`).join("");
@@ -532,7 +557,7 @@ function openConfirm(rows, onConfirm) {
       <div class="modal-h"><b>Review changes (${rows.length})</b><button class="modal-x" aria-label="close">✕</button></div>
       <div class="cf-list">${body}</div>
       <div class="modal-f"><button id="cfCancel">Cancel</button>
-        <button class="primary" id="cfOk">Apply &amp; download</button></div></div>`;
+        <button class="primary" id="cfOk">${esc(okLabel || "Apply & download")}</button></div></div>`;
   document.body.appendChild(ov);
   const close = () => ov.remove();
   $(".modal-x", ov).onclick = close; $("#cfCancel", ov).onclick = close;
@@ -540,14 +565,15 @@ function openConfirm(rows, onConfirm) {
   $("#cfOk", ov).onclick = () => { close(); onConfirm(); };
 }
 
-async function saveAndDownload() {
+function applyEdits(writeBack) {
   if (!hasChanges()) return setStatus("No changes to apply.", "warn");
   const diff = buildDiff();
   if (!diff.length) return setStatus("No effective changes (values match the save).", "warn");
-  openConfirm(diff, doApply);
+  const okLabel = writeBack ? `Apply & save to ${origName}` : "Apply & download";
+  openConfirm(diff, () => doApply(writeBack), okLabel);
 }
 
-async function doApply() {
+async function doApply(writeBack) {
   const py = await pyReady;
   const s = saves[curSlot];
   const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY, recruitEdits: RECRUIT, gold: GOLD };
@@ -560,10 +586,20 @@ async function doApply() {
   } catch (e) { return setStatus("Write failed: " + e.message, "err"); }
   if (res.error) return setStatus("Write failed: " + res.error, "err");
 
-  downloadBytes(py.FS.readFile(SAVE_PATH), downloadName());
-  let msg = `Saved — ${res.changed} field(s) changed. Downloaded ${downloadName()}.`;
+  const bytes = py.FS.readFile(SAVE_PATH);
+  let msg;
+  if (writeBack && fileHandle) {
+    try {
+      if (!(await ensureWritable(fileHandle))) return setStatus("Save cancelled — write permission denied.", "warn");
+      const w = await fileHandle.createWritable();
+      await w.write(bytes); await w.close();
+      msg = `Saved — ${res.changed} field(s) changed, written to ${fileHandle.name}.`;
+    } catch (e) { return setStatus("Could not write file: " + e.message, "err"); }
+  } else {
+    downloadBytes(bytes, downloadName());
+    msg = `Saved — ${res.changed} field(s) changed. Downloaded ${downloadName()}.`;
+  }
   if (res.warn) msg += " ⚠ " + res.warn;
-  setStatus(msg, res.warn ? "warn" : "ok");
 
   saves = JSON.parse(py.runPython(`load_saves(${JSON.stringify(SAVE_PATH)})`));  // refresh from edited file
   drawSlot();
@@ -612,11 +648,21 @@ window.addEventListener("DOMContentLoaded", () => {
   $$("footer .tb").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
 
   const drop = $("#drop"), fileInput = $("#file"), pickBtn = $("#pickBtn");
-  pickBtn.onclick = () => fileInput.click();
+  // Prefer the FS Access picker (keeps a writable handle for save-in-place); else <input>.
+  pickBtn.onclick = () => (SUPPORTS_FS ? openViaPicker() : fileInput.click());
   fileInput.onchange = () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); };
   ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("hot"); }));
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("hot"); }));
-  drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+  drop.addEventListener("drop", async (e) => {
+    const item = e.dataTransfer.items && e.dataTransfer.items[0];
+    if (SUPPORTS_FS && item && item.getAsFileSystemHandle) {   // keeps a writable handle
+      try {
+        const h = await item.getAsFileSystemHandle();
+        if (h && h.kind === "file") return handleFile(await h.getFile(), h);
+      } catch (err) { /* fall through to plain File */ }
+    }
+    const f = e.dataTransfer.files[0]; if (f) handleFile(f);
+  });
 
   // Guard against losing pending edits on accidental close/navigation.
   window.addEventListener("beforeunload", (e) => {
