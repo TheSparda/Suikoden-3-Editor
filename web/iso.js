@@ -270,6 +270,30 @@
     for (let i = 0; i < width; i++) if (BUF[off - ELF_BASE + i] !== ORIG[off - ELF_BASE + i]) return true;
     return false;
   }
+  // restore a field's original bytes from the pristine snapshot
+  function revertRange(off, width) { for (let i = 0; i < width; i++) if (inBlk(off + i, 1)) BUF[off - ELF_BASE + i] = ORIG[off - ELF_BASE + i]; }
+  // Toggle a control's changed-highlight AND attach/refresh a ↺ "restore original" button
+  // next to it. The button appears only while the field differs from the on-disk value; its
+  // tooltip shows that original value; clicking it reverts just this field and re-renders.
+  function markField(el, off, width, kind) {
+    const dirty = isDirty(off, width);
+    el.classList.toggle("dirty", dirty);
+    let btn = el._revBtn;
+    if (!btn) {
+      if (!dirty) return;                    // clean fields don't need a button yet
+      btn = document.createElement("button"); btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+      btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); revertRange(off, width); drawView(); };
+      (kind === "raw" && el.parentElement && el.parentElement.hasAttribute("data-eff")
+        ? el.parentElement.appendChild(btn) : el.insertAdjacentElement("afterend", btn));
+      el._revBtn = btn;
+    }
+    btn.classList.toggle("show", dirty);
+    if (dirty) {
+      const ov = kind === "text" ? `"${strFrom(ORIG, off, width)}"`
+        : kind === "raw" ? "original" : fmtVal(kind, origW(off, width));
+      btn.title = `Restore original (${ov})`;
+    }
+  }
   function fmtVal(kind, v) {
     if (kind === "item") return itemLabel(v);
     if (kind === "skill") return skillLabel(v);
@@ -514,6 +538,10 @@
     };
     q("#isoHint").textContent = hints[VIEW] || "";
     const host = q("#isoView");
+    // remember which records are expanded so a re-render (e.g. a per-field revert) keeps your place
+    const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
+    const open = new Set(qa("details.char[open]", host).map(detKey));
+    const y = window.scrollY;
     if (VIEW === "chars") drawRecords(host, "list1", REF.names.list1, LIST1_FIELDS, true);
     else if (VIEW === "growth") drawGrowth(host);
     else if (VIEW === "support") drawRecords(host, "list3", REF.names.list3, LIST3_FIELDS, false);
@@ -523,6 +551,10 @@
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "food") drawFood(host);
+    if (open.size) qa("details.char", host).forEach((d) => {
+      if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
+    });
+    window.scrollTo(0, y);
   }
 
   // ---- generic record editor (list1 / list3 / list4) ------------------------
@@ -570,31 +602,36 @@
       <input type="number" class="fnum${dirty}" min="0" max="${max}" value="${v}" data-off="${off}" data-w="${w}" data-kind="num"></label>`;
   }
   function wireFields(scope, recBase, group) {
-    qa("button.picker[data-off]", scope).forEach((btn) => (btn.onclick = () => {
-      const off = +btn.dataset.off, w = +btn.dataset.w, kind = btn.dataset.kind, cur = readW(off, w);
+    qa("button.picker[data-off]", scope).forEach((btn) => {
+      const off = +btn.dataset.off, w = +btn.dataset.w, kind = btn.dataset.kind;
       const label = btn.parentElement.querySelector("span").textContent;
-      const opts = kind === "item" ? itemOpts(slotCat(label)) : skillOpts();
-      // ensure current value is selectable even if filtered out
-      if (cur && !opts.some((o) => o.id === cur)) opts.splice(1, 0, { id: cur, name: kind === "item" ? itemName(cur) : skillName(cur) });
-      openPicker(label, opts, cur, (id) => {
-        writeW(off, w, id); reg(off, w, kind, group, label);
-        btn.textContent = kind === "item" ? itemLabel(id) : skillLabel(id);
-        btn.classList.toggle("dirty", isDirty(off, w));
-      }, (id) => hex(id, kind === "item" ? 3 : 2));
-    }));
-    qa("select.fsel[data-off]", scope).forEach((sel) => (sel.onchange = () => {
+      btn.onclick = () => {
+        const cur = readW(off, w);
+        const opts = kind === "item" ? itemOpts(slotCat(label)) : skillOpts();
+        if (cur && !opts.some((o) => o.id === cur)) opts.splice(1, 0, { id: cur, name: kind === "item" ? itemName(cur) : skillName(cur) });
+        openPicker(label, opts, cur, (id) => {
+          writeW(off, w, id); reg(off, w, kind, group, label);
+          btn.textContent = kind === "item" ? itemLabel(id) : skillLabel(id);
+          markField(btn, off, w, kind);
+        }, (id) => hex(id, kind === "item" ? 3 : 2));
+      };
+      markField(btn, off, w, kind);          // initialise ↺ / highlight for already-changed fields
+    });
+    qa("select.fsel[data-off]", scope).forEach((sel) => {
       const off = +sel.dataset.off, w = +sel.dataset.w, kind = sel.dataset.kind;
       const label = sel.parentElement.querySelector("span").textContent;
-      writeW(off, w, +sel.value); reg(off, w, kind, group, label);
-      sel.classList.toggle("dirty", isDirty(off, w));
-    }));
-    qa("input.fnum[data-off]", scope).forEach((inp) => (inp.onchange = () => {
+      sel.onchange = () => { writeW(off, w, +sel.value); reg(off, w, kind, group, label); markField(sel, off, w, kind); };
+      markField(sel, off, w, kind);
+    });
+    qa("input.fnum[data-off]", scope).forEach((inp) => {
       const off = +inp.dataset.off, w = +inp.dataset.w;
       const label = inp.parentElement.querySelector("span").textContent;
-      writeW(off, w, Math.max(0, Math.min(+inp.value || 0, w === 1 ? 255 : w === 2 ? 65535 : 4294967295)));
-      reg(off, w, "num", group, label);
-      inp.classList.toggle("dirty", isDirty(off, w));
-    }));
+      inp.onchange = () => {
+        writeW(off, w, Math.max(0, Math.min(+inp.value || 0, w === 1 ? 255 : w === 2 ? 65535 : 4294967295)));
+        reg(off, w, "num", group, label); markField(inp, off, w, "num");
+      };
+      markField(inp, off, w, "num");
+    });
   }
 
   // ---- growth (list2: growth + fixed skills + skill-max array) ---------------
@@ -655,18 +692,21 @@
       itemBlk("Shop items — slots 21–36 (item3_b)", "item3_b") +
       numBlk("Price ladder (item2)", "item2", "potch, u32") +
       numBlk("item1 group", "item1", "u32");
-    qa("button.shopitem", host).forEach((btn) => (btn.onclick = () => {
-      const off = +btn.dataset.off, w = +btn.dataset.w, cur = readW(off, w);
-      openPicker("Choose item", itemOpts(""), cur, (id) => {
-        writeW(off, w, id); reg(off, w, "item", "Shops", `slot @0x${hex(off, 6)}`);
-        btn.textContent = itemLabel(id); btn.classList.toggle("dirty", isDirty(off, w));
-      });
-    }));
-    qa("input.shopnum", host).forEach((inp) => (inp.onchange = () => {
+    qa("button.shopitem", host).forEach((btn) => {
+      const off = +btn.dataset.off, w = +btn.dataset.w;
+      btn.onclick = () => {
+        openPicker("Choose item", itemOpts(""), readW(off, w), (id) => {
+          writeW(off, w, id); reg(off, w, "item", "Shops", `slot @0x${hex(off, 6)}`);
+          btn.textContent = itemLabel(id); markField(btn, off, w, "item");
+        });
+      };
+      markField(btn, off, w, "item");
+    });
+    qa("input.shopnum", host).forEach((inp) => {
       const off = +inp.dataset.off, w = +inp.dataset.w;
-      writeW(off, w, Math.max(0, +inp.value || 0)); reg(off, w, "num", "Shops", `value @0x${hex(off, 6)}`);
-      inp.classList.toggle("dirty", isDirty(off, w));
-    }));
+      inp.onchange = () => { writeW(off, w, Math.max(0, +inp.value || 0)); reg(off, w, "num", "Shops", `value @0x${hex(off, 6)}`); markField(inp, off, w, "num"); };
+      markField(inp, off, w, "num");
+    });
   }
 
   // ---- spells ----------------------------------------------------------------
@@ -754,16 +794,14 @@
       applySpell(i, f, spDescOn && k === "power");
       updateSpellSummary(host, i);
     }));
+    qa("details.char", host).forEach((d) => updateSpellSummary(host, +d.dataset.i));   // init ↺/highlight
   }
   function updateSpellSummary(host, i) {
     const d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
     const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
     d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
-    qa(".sp", d).forEach((el) => {
-      const off2 = { power: 0x1C, cast: 0x10, elementId: SPELL.elem, target: 0x14, aoe: 0x14, status: 0x18 }[el.dataset.k];
-      const w = { power: 4, cast: 4, elementId: 2, target: 4, aoe: 4, status: 4 }[el.dataset.k];
-      el.classList.toggle("dirty", isDirty(off + off2, w));
-    });
+    const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"] };
+    qa(".sp", d).forEach((el) => { const [o, w, kind] = MAP[el.dataset.k]; markField(el, off + o, w, kind); });
   }
   function runeReskin() {
     const rune = q("#rsRune").value, idx = spellNameIndex();
@@ -803,16 +841,21 @@
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
+    const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"] };
+    const markUnite = (i) => {
+      const off = UNITE.off + i * UNITE.stride, d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
+      d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
+      qa(".un", d).forEach((c) => { const [o, w, kind] = UMAP[c.dataset.k]; markField(c, off + o, w, kind); });
+    };
     qa(".un", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, k = el.dataset.k, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
       if (k === "power") { writeW(off + 0x1C, 4, Math.max(0, +el.value || 0)); reg(off + 0x1C, 4, "num", name, "Power"); }
       else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
       else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF00FF) | ((+el.value & 0xFF) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
       else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
-      const d = q(`details.char[data-i="${i}"]`, host);
-      if (d) d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
-      qa(".un", d).forEach((c) => { const o = { power: 0x1C, cast: 0x10, target: 0x14, aoe: 0x14 }[c.dataset.k]; const w = c.dataset.k === "cast" || c.dataset.k === "power" ? 4 : 4; c.classList.toggle("dirty", isDirty(off + o, w)); });
+      markUnite(i);
     }));
+    qa("details.char", host).forEach((d) => markUnite(+d.dataset.i));   // init ↺/highlight
   }
 
   // ---- food ------------------------------------------------------------------
@@ -829,11 +872,15 @@
     host.innerHTML = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
       <table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
     q("#fUpd", host).onchange = (e) => { foodDescOn = e.target.checked; };
-    qa("input.fd", host).forEach((inp) => (inp.onchange = () => {
-      const off = +inp.dataset.off, v = Math.max(0, Math.min(+inp.value || 0, 65535)), nm = inp.dataset.g;
-      writeW(off, 2, v); reg(off, 2, "num", nm, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, 2));
-      if (foodDescOn && inp.dataset.dptr) rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description");
-    }));
+    qa("input.fd", host).forEach((inp) => {
+      const off = +inp.dataset.off, nm = inp.dataset.g;
+      inp.onchange = () => {
+        const v = Math.max(0, Math.min(+inp.value || 0, 65535));
+        writeW(off, 2, v); reg(off, 2, "num", nm, inp.dataset.l); markField(inp, off, 2, "num");
+        if (foodDescOn && inp.dataset.dptr) rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description");
+      };
+      markField(inp, off, 2, "num");
+    });
   }
 
   // ---- gear (equipment: DEF + price editable; effects read-only) ------------
@@ -904,22 +951,28 @@
     host.innerHTML = updBox + (rows.join("") || `<div class="muted">no matching equipment</div>`);
     q("#gUpd", host).onchange = (e) => { gearDescOn = e.target.checked; };
 
-    qa("input.gr", host).forEach((inp) => (inp.onchange = () => {
+    qa("input.gr", host).forEach((inp) => {
       const off = +inp.dataset.off, w = +inp.dataset.w, nm = inp.dataset.g;
-      const v = Math.max(0, Math.min(+inp.value || 0, w === 2 ? 65535 : 4294967295));
-      writeW(off, w, v); reg(off, w, "num", nm, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, w));
-      if (inp.dataset.l === "DEF" && gearDescOn && inp.dataset.dptr) {
-        const r = rewriteDesc(+inp.dataset.dptr, (t) => descDef(t, v), nm, "Description");
-        const di = q(`.ge-desc[data-dptr="${inp.dataset.dptr}"]`, host);
-        if (di && r.ok) { di.value = strAt(+inp.dataset.dptr); di.classList.toggle("dirty", isDirty(vaOff(+inp.dataset.dptr), origSlotLen(+inp.dataset.dptr))); }
-      }
-    }));
-    qa("input.ge-desc", host).forEach((inp) => (inp.onchange = () => {
+      inp.onchange = () => {
+        const v = Math.max(0, Math.min(+inp.value || 0, w === 2 ? 65535 : 4294967295));
+        writeW(off, w, v); reg(off, w, "num", nm, inp.dataset.l); markField(inp, off, w, "num");
+        if (inp.dataset.l === "DEF" && gearDescOn && inp.dataset.dptr) {
+          const r = rewriteDesc(+inp.dataset.dptr, (t) => descDef(t, v), nm, "Description");
+          const di = q(`.ge-desc[data-dptr="${inp.dataset.dptr}"]`, host);
+          if (di && r.ok) { di.value = strAt(+inp.dataset.dptr); markField(di, vaOff(+inp.dataset.dptr), origSlotLen(+inp.dataset.dptr), "text"); }
+        }
+      };
+      markField(inp, off, w, "num");
+    });
+    qa("input.ge-desc", host).forEach((inp) => {
       const dptr = +inp.dataset.dptr;
-      const r = setDescText(dptr, inp.value, inp.dataset.g, "Description");
-      if (r.tooLong) setStatus(`Description too long — the slot holds ${r.max} characters.`, "warn");
-      inp.classList.toggle("dirty", isDirty(vaOff(dptr), origSlotLen(dptr)));
-    }));
+      inp.onchange = () => {
+        const r = setDescText(dptr, inp.value, inp.dataset.g, "Description");
+        if (r.tooLong) setStatus(`Description too long — the slot holds ${r.max} characters.`, "warn");
+        markField(inp, vaOff(dptr), origSlotLen(dptr), "text");
+      };
+      markField(inp, vaOff(dptr), origSlotLen(dptr), "text");
+    });
     qa("[data-eff]", host).forEach((rowEl) => wireEffectSlot(rowEl));
   }
   function wireEffectSlot(rowEl) {
@@ -935,10 +988,15 @@
       reg(base + eo, 2, "num", nm, `Effect ${GEAR.effs.indexOf(eo)} type`);
       reg(base + eo + 2, 2, "num", nm, `Effect ${GEAR.effs.indexOf(eo)} value`);
       reg(base + eo + 4, 2, "num", nm, `Effect ${GEAR.effs.indexOf(eo)} param`);
-      rowEl.classList.toggle("dirty", isDirty(base + eo, 8));
-      [tSel, vIn, stat, skill].forEach((el) => el.classList.toggle("dirty", isDirty(base + eo, 8)));
+      const d = isDirty(base + eo, 8);
+      [tSel, stat, skill].forEach((el) => el.classList.toggle("dirty", d));
+      markField(vIn, base + eo, 8, "raw");   // one ↺ for the whole 8-byte slot, anchored on the amount
     };
     [tSel, vIn, stat, skill].forEach((el) => (el.onchange = commit));
+    // initialise ↺ / highlight without writing (reflects any already-staged slot change)
+    const d0 = isDirty(base + eo, 8);
+    [tSel, stat, skill].forEach((el) => el.classList.toggle("dirty", d0));
+    markField(vIn, base + eo, 8, "raw");
   }
 
   // ---- misc ------------------------------------------------------------------

@@ -145,6 +145,14 @@ button.picker { width:100%; text-align:left; background:var(--input-bg); color:v
 button.picker:hover:not(:disabled) { border-color:var(--acc); }
 button.picker.dirty { color:var(--warn); border-color:var(--warnbd); background-color:var(--changed-bg); }
 
+/* per-field "restore original" affordance (shown only when a field differs from the ISO) */
+button.revert { display:none; margin:4px 0 0; padding:2px 8px; font-size:12px; line-height:1.2;
+  background:transparent; border:1px solid var(--warnbd); color:var(--warn); border-radius:6px;
+  align-self:flex-start; }
+button.revert.show { display:inline-block; }
+button.revert:hover:not(:disabled) { border-color:var(--acc); color:var(--acc2); }
+td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; }
+
 /* boot progress */
 .bootmsg { margin-bottom:6px; }
 .bar { height:4px; background:var(--line); border-radius:999px; overflow:hidden; max-width:280px; margin:0 auto; }
