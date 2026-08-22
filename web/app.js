@@ -448,7 +448,21 @@ function setStatus(msg, kind) { const el = $("#status"); if (el) { el.textConten
 function setDropMsg(msg, isErr) { $("#engineStatus").innerHTML = (isErr ? "⚠ " : "") + msg; }
 
 // ---- wire up ---------------------------------------------------------------
+// Theme switcher — same two themes as the desktop editor, persisted in localStorage.
+function applyTheme(t) {
+  document.documentElement.classList.toggle("theme-parchment", t === "parchment");
+  $$("footer .tb").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t === "parchment" ? "#cdbb95" : "#17110d";
+  try { localStorage.setItem("s3theme", t); } catch (e) {}
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  let theme = "crimson";
+  try { theme = localStorage.getItem("s3theme") || "crimson"; } catch (e) {}
+  applyTheme(theme);
+  $$("footer .tb").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
+
   const drop = $("#drop"), fileInput = $("#file"), pickBtn = $("#pickBtn");
   pickBtn.onclick = () => fileInput.click();
   fileInput.onchange = () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); };
