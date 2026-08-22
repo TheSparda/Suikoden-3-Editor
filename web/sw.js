@@ -17,13 +17,33 @@ self.addEventListener("install", (e) => {
 });
 
 self.addEventListener("activate", (e) => {
+  const keep = [CACHE, SHARE_CACHE];      // never purge a pending shared-in file
   e.waitUntil(caches.keys()
-    .then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    .then((ks) => Promise.all(ks.filter((k) => !keep.includes(k)).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
+const SHARE_CACHE = "s3editor-share";   // must match app.js
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
+  // Web Share Target: a save shared into the installed PWA arrives as a POST. Stash the
+  // file, then redirect to the app which picks it up (?shared=1). See app.js pickupSharedFile.
+  if (req.method === "POST" && new URL(req.url).pathname.endsWith("/share-target")) {
+    e.respondWith((async () => {
+      try {
+        const form = await req.formData();
+        const file = form.get("save");
+        if (file) {
+          const c = await caches.open(SHARE_CACHE);
+          await c.put("shared-save", new Response(file,
+            { headers: { "X-Filename": encodeURIComponent(file.name || "shared.bin") } }));
+        }
+      } catch (err) { /* ignore — app just shows the loader */ }
+      return Response.redirect("./?shared=1", 303);
+    })());
+    return;
+  }
   if (req.method !== "GET") return;
   const sameOrigin = new URL(req.url).origin === self.location.origin;
   e.respondWith((async () => {
