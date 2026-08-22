@@ -1,5 +1,9 @@
 # Suikoden III ISO & Save Editor
 
+> 🌐 **Edit saves online (no install) — works on Android:**
+> **https://thesparda.github.io/Suikoden-3-Editor/web/**
+> Runs entirely in your browser; your save never leaves your device. See [`web/`](web/).
+
 A cross-platform editor for **Suikoden III** (PS2, USA `SLUS-20387`). It runs as a local
 web app in your browser and does two things:
 
