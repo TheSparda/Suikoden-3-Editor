@@ -1,6 +1,6 @@
 # Web editor tests
 
-Two layers, both runnable with plain Node (v18+):
+Three layers, all runnable with plain Node (v18+):
 
 ## `validate.mjs` — fast, no browser (runs in CI + on session start)
 Checks the client JS parses, every ISO table offset stays inside the read block, the
@@ -9,6 +9,19 @@ wired (loads `iso.js`, both mode tabs present, service worker precaches `iso.js`
 
 ```bash
 node web/tests/validate.mjs
+```
+
+## `save_roundtrip.py` (via `save-roundtrip.mjs`) — save engine, no browser
+The Save Editor runs `Editor/s3save.py` unchanged in the browser (Pyodide). This drives that
+same module directly against a **synthetic** 53264-byte `gamedata` payload (the repo ships no
+real saves): decode → edit → write → re-decode, asserting every field persists and the
+gamedata checksum invariant (all u32 words sum to 0) holds. Also unit-checks the memory-card
+ECC helper and the file-rejection path. It imports `s3save` for the offsets/checksum, so the
+fixture can't drift from the engine. The `.mjs` wrapper lets it ride in `npm test` and
+**skips cleanly (exit 0)** if `python3` isn't installed.
+
+```bash
+node web/tests/save-roundtrip.mjs        # or: python3 web/tests/save_roundtrip.py
 ```
 
 ## `e2e.mjs` — full end-to-end in headless Chromium
