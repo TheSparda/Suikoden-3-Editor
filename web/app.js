@@ -19,13 +19,32 @@ const EQ_CATS = { headRune: ["Runes"], rightRune: ["Runes"], leftRune: ["Runes"]
   gloves: ["Gloves"], accessory: ["Rings", "Misc Gear"] };
 const RECRUITERS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 
-let pyReady = null;
+let pyReady = null, PY = null;   // PY = resolved pyodide (sync access keeps share() in-gesture)
 let REF = { items: [], skills: [], charById: {} };
 let ITEM_BY_ID = {}, saves = [], curSlot = 0, origName = "save.bin";
 // File System Access API (desktop Chromium): lets us overwrite the original file in place
 // instead of downloading a copy. Absent on Android/Firefox/Safari → we fall back to download.
 let fileHandle = null;
 const SUPPORTS_FS = typeof window !== "undefined" && "showOpenFilePicker" in window;
+// Web Share with files (Android Chrome): send the edited save straight to another app.
+const CAN_SHARE_FILES = (() => {
+  try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob([1])], "t.bin")] })); }
+  catch (e) { return false; }
+})();
+const SHARE_CACHE = "s3editor-share";   // must match sw.js (share-target hand-off)
+
+// ---- tiny IndexedDB kv (remembers the last opened save across sessions) ----
+const IDB_DB = "s3editor", IDB_STORE = "kv";
+function _idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(IDB_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idbSet(k, v) { const db = await _idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, "readwrite"); t.objectStore(IDB_STORE).put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
+async function idbGet(k) { const db = await _idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, "readonly"); const q = t.objectStore(IDB_STORE).get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+async function idbDel(k) { const db = await _idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, "readwrite"); t.objectStore(IDB_STORE).delete(k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
 let OPT_RANK = "";   // rank stays a small native <select>; other lists use pickers
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -119,6 +138,7 @@ def apply_edits(path, folder, payload_json):
   CHAR_LIST = Object.entries(REF.charById).map(([id, nm]) => ({ id: +id, name: nm }))
     .sort((a, b) => a.id - b.id);
   OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+  PY = py;
   bootProgress(100, "Ready");
   return py;
 }
@@ -200,7 +220,8 @@ async function handleFile(file, handle) {
   const py = await pyReady;
   fileHandle = handle || null;              // plain <input>/drag-drop have no handle
   origName = file.name || "save.bin";
-  py.FS.writeFile(SAVE_PATH, new Uint8Array(await file.arrayBuffer()));
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  py.FS.writeFile(SAVE_PATH, bytes);
   let json;
   try {
     json = py.runPython(`load_saves(${JSON.stringify(SAVE_PATH)})`);
@@ -208,8 +229,53 @@ async function handleFile(file, handle) {
   saves = JSON.parse(json);
   if (!saves.length) { $("#editor").innerHTML = ""; return setDropMsg("No Suikoden III (USA) save found in that file.", true); }
   curSlot = 0;
+  rememberSave(origName, bytes, fileHandle);   // persist for one-tap reopen next visit
   renderEditor();
   $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---- remember last opened save --------------------------------------------
+function rememberSave(name, bytes, handle) {
+  // store a copy of the bytes + name (+ the writable handle on desktop, for in-place reopen)
+  idbSet("lastSave", { name, bytes, handle: handle || null, at: Date.now() }).catch(() => {});
+}
+async function showRecent() {
+  const el = $("#recent"); if (!el) return;
+  let rec; try { rec = await idbGet("lastSave"); } catch (e) { return; }
+  if (!rec) { el.innerHTML = ""; return; }
+  const kb = Math.round((rec.bytes?.length || 0) / 1024);
+  el.innerHTML = `<div class="recent">Last opened:
+      <button class="chip" id="reopenBtn">↻ ${esc(rec.name)} <span class="muted">(${kb} KB)</span></button>
+      <button class="chip mini" id="forgetBtn" title="forget">✕</button></div>`;
+  $("#reopenBtn").onclick = () => reopenLast(rec);
+  $("#forgetBtn").onclick = async () => { await idbDel("lastSave").catch(() => {}); el.innerHTML = ""; };
+}
+async function reopenLast(rec) {
+  // Prefer the stored handle (re-grant permission → enables save-in-place) then fall back to bytes.
+  if (SUPPORTS_FS && rec.handle) {
+    try {
+      if (await ensureWritable(rec.handle)) return handleFile(await rec.handle.getFile(), rec.handle);
+    } catch (e) { /* handle stale/denied → fall back to stored bytes */ }
+  }
+  handleFile(new File([rec.bytes], rec.name));
+}
+
+// ---- Web Share Target: a save shared INTO the installed PWA ----------------
+async function pickupSharedFile() {
+  if (!new URLSearchParams(location.search).has("shared")) return false;
+  history.replaceState({}, "", location.pathname);      // drop ?shared=1
+  try {
+    const c = await caches.open(SHARE_CACHE);
+    const res = await c.match("shared-save");
+    if (res) {
+      const blob = await res.blob();
+      const name = decodeURIComponent(res.headers.get("X-Filename") || "shared.bin");
+      await c.delete("shared-save");
+      await handleFile(new File([blob], name));
+      return true;
+    }
+  } catch (e) { /* ignore */ }
+  return false;
 }
 
 // ---- top-level editor render ----------------------------------------------
@@ -282,6 +348,7 @@ function drawSlot() {
           ? `<button class="primary" id="saveFileBtn">Apply &amp; save to file</button>
              <button id="saveBtn">Download copy</button>`
           : `<button class="primary" id="saveBtn">Apply &amp; download</button>`}
+        ${CAN_SHARE_FILES ? `<button id="shareBtn">Apply &amp; share…</button>` : ""}
         <button id="resetBtn">Reset</button>
         <span class="status" id="status"></span>
       </div>
@@ -297,8 +364,9 @@ function drawSlot() {
   };
   $$("[data-sub]").forEach((b) => (b.onclick = () => { SUB = b.dataset.sub; SEARCH = ""; $("#sq").value = ""; showSub(); }));
   $("#sq").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); showSub(); };
-  $("#saveBtn").onclick = () => applyEdits(false);
-  const sfb = $("#saveFileBtn"); if (sfb) sfb.onclick = () => applyEdits(true);
+  $("#saveBtn").onclick = () => applyEdits("download");
+  const sfb = $("#saveFileBtn"); if (sfb) sfb.onclick = () => applyEdits("file");
+  const shb = $("#shareBtn"); if (shb) shb.onclick = () => applyEdits("share");
   $("#resetBtn").onclick = drawSlot;
   showSub();
 }
@@ -565,30 +633,42 @@ function openConfirm(rows, onConfirm, okLabel) {
   $("#cfOk", ov).onclick = () => { close(); onConfirm(); };
 }
 
-function applyEdits(writeBack) {
+function applyEdits(mode) {   // mode: "download" | "file" | "share"
   if (!hasChanges()) return setStatus("No changes to apply.", "warn");
   const diff = buildDiff();
   if (!diff.length) return setStatus("No effective changes (values match the save).", "warn");
-  const okLabel = writeBack ? `Apply & save to ${origName}` : "Apply & download";
-  openConfirm(diff, () => doApply(writeBack), okLabel);
+  const okLabel = mode === "file" ? `Apply & save to ${origName}`
+    : mode === "share" ? "Apply & share…" : "Apply & download";
+  openConfirm(diff, () => doApply(mode), okLabel);
 }
 
-async function doApply(writeBack) {
-  const py = await pyReady;
+// Runs the edit synchronously up to the first await, so navigator.share() (mode "share")
+// still sees the confirm-button's user activation. Uses the resolved PY (no await pyReady).
+async function doApply(mode) {
+  const py = PY; if (!py) return setStatus("Engine not ready.", "err");
   const s = saves[curSlot];
   const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY, recruitEdits: RECRUIT, gold: GOLD };
   setStatus("Applying…", "");
   let res;
   try {
-    const out = py.runPython(
-      `apply_edits(${JSON.stringify(SAVE_PATH)}, ${JSON.stringify(s.folder)}, ${JSON.stringify(JSON.stringify(payload))})`);
-    res = JSON.parse(out);
+    res = JSON.parse(py.runPython(
+      `apply_edits(${JSON.stringify(SAVE_PATH)}, ${JSON.stringify(s.folder)}, ${JSON.stringify(JSON.stringify(payload))})`));
   } catch (e) { return setStatus("Write failed: " + e.message, "err"); }
   if (res.error) return setStatus("Write failed: " + res.error, "err");
-
   const bytes = py.FS.readFile(SAVE_PATH);
+
   let msg;
-  if (writeBack && fileHandle) {
+  if (mode === "share") {
+    const file = new File([bytes], downloadName(), { type: "application/octet-stream" });
+    try {
+      await navigator.share({ files: [file], title: origName, text: `${origName} (edited)` });
+      msg = `Applied ${res.changed} field(s) — shared ${downloadName()}.`;
+    } catch (e) {
+      if (e && e.name === "AbortError") { setStatus("Share cancelled — nothing left the device.", "warn"); return refreshAfterApply(py); }
+      downloadBytes(bytes, downloadName());          // share unavailable → download instead
+      msg = `Applied ${res.changed} field(s). Share failed, downloaded ${downloadName()}.`;
+    }
+  } else if (mode === "file" && fileHandle) {
     try {
       if (!(await ensureWritable(fileHandle))) return setStatus("Save cancelled — write permission denied.", "warn");
       const w = await fileHandle.createWritable();
@@ -600,10 +680,15 @@ async function doApply(writeBack) {
     msg = `Saved — ${res.changed} field(s) changed. Downloaded ${downloadName()}.`;
   }
   if (res.warn) msg += " ⚠ " + res.warn;
-
-  saves = JSON.parse(py.runPython(`load_saves(${JSON.stringify(SAVE_PATH)})`));  // refresh from edited file
-  drawSlot();
+  refreshAfterApply(py);
   setStatus(msg, res.warn ? "warn" : "ok");
+}
+
+function refreshAfterApply(py) {
+  saves = JSON.parse(py.runPython(`load_saves(${JSON.stringify(SAVE_PATH)})`));  // reflect edited file
+  const bytes = py.FS.readFile(SAVE_PATH);
+  rememberSave(origName, bytes, fileHandle);        // keep the remembered copy current
+  drawSlot();
 }
 
 function downloadName() {
@@ -669,11 +754,16 @@ window.addEventListener("DOMContentLoaded", () => {
     if (dirtyNow()) { e.preventDefault(); e.returnValue = ""; }
   });
 
-  pyReady = bootPyodide().then((py) => {
+  pyReady = bootPyodide();
+  pyReady.then(() => {
     setDropMsg("Python engine ready — load a save file.", false);
     pickBtn.disabled = false;
-    return py;
-  }).catch((e) => { setDropMsg("Engine failed to start: " + e.message, true); throw e; });
+  }).catch((e) => { setDropMsg("Engine failed to start: " + e.message, true); });
+  // After the engine is up: a save shared into the PWA wins; otherwise offer the last one.
+  pyReady.then(async () => {
+    const shared = await pickupSharedFile();
+    if (!shared) showRecent();
+  }).catch(() => {});
 
   // Register the service worker so the app is installable + works offline on Android.
   if ("serviceWorker" in navigator) {
