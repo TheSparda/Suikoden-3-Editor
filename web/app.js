@@ -22,8 +22,7 @@ const RECRUITERS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 let pyReady = null;
 let REF = { items: [], skills: [], charById: {} };
 let ITEM_BY_ID = {}, saves = [], curSlot = 0, origName = "save.bin";
-// prebuilt <option> html reused across renders
-let OPT_SKILL = "", OPT_CHAR = "", OPT_RANK = "";
+let OPT_RANK = "";   // rank stays a small native <select>; other lists use pickers
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -33,7 +32,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 // ---- Pyodide bootstrap -----------------------------------------------------
 async function bootPyodide() {
+  bootProgress(10, "Downloading Python runtime…");
   const py = await loadPyodide();
+  bootProgress(55, "Loading save module…");
   const grab = async (url) => {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`fetch ${url} (${r.status})`);
@@ -43,6 +44,9 @@ async function bootPyodide() {
   py.FS.writeFile("items.txt", await (await grab("../Editor/Suikoden3_item_ids.txt")).text());
   py.FS.writeFile("skills.txt", await (await grab("../Editor/Suikoden3_skill_ids.txt")).text());
   py.FS.writeFile("names.json", await (await grab("../Editor/s3_names.json")).text());
+  py.FS.writeFile("itemdesc.json", await (await grab("../Editor/s3_item_desc.json")).text());
+  py.FS.writeFile("skilldesc.json", await (await grab("../Editor/s3_skill_desc.json")).text());
+  bootProgress(80, "Parsing reference tables…");
 
   py.runPython(`
 import json, re, s3save
@@ -72,8 +76,12 @@ def _skill_ids(t):
 def load_reference():
     it = open("items.txt", encoding="latin1").read()
     ids, cats = _item_ids(it), _item_cats(it)
-    items = [{"id": k, "name": v, "cat": cats.get(k, "")} for k, v in sorted(ids.items())]
-    skills = [{"id": k, "name": v} for k, v in sorted(_skill_ids(open("skills.txt", encoding="latin1").read()).items())]
+    idesc = {int(k): v for k, v in json.load(open("itemdesc.json")).items()}
+    sdesc = json.load(open("skilldesc.json"))     # keyed by skill NAME
+    items = [{"id": k, "name": v, "cat": cats.get(k, ""), "desc": idesc.get(k, "")}
+             for k, v in sorted(ids.items())]
+    skills = [{"id": k, "name": v, "desc": sdesc.get(v, "")}
+              for k, v in sorted(_skill_ids(open("skills.txt", encoding="latin1").read()).items())]
     charById = json.load(open("names.json")).get("list1", {})
     return json.dumps({"items": items, "skills": skills, "charById": charById})
 
@@ -102,13 +110,69 @@ def apply_edits(path, folder, payload_json):
 `);
   REF = JSON.parse(py.runPython("load_reference()"));
   REF.items.forEach((i) => (ITEM_BY_ID[i.id] = i));
-  OPT_SKILL = `<option value="0">— none —</option>` + REF.skills.map((s) =>
-    `<option value="${s.id}">${hx(s.id, 2)} · ${esc(s.name)}</option>`).join("");
-  OPT_CHAR = `<option value="0">— empty —</option>` + Object.entries(REF.charById)
-    .sort((a, b) => (+a[0]) - (+b[0]))
-    .map(([id, nm]) => `<option value="${id}">${(+id).toString().padStart(3, "0")} · ${esc(nm)}</option>`).join("");
+  REF.skills.forEach((s) => (SKILL_BY_ID[s.id] = s));
+  // character picker list (id · name), sorted by id
+  CHAR_LIST = Object.entries(REF.charById).map(([id, nm]) => ({ id: +id, name: nm }))
+    .sort((a, b) => a.id - b.id);
   OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+  bootProgress(100, "Ready");
   return py;
+}
+
+// ---- searchable pickers (replace long native <select>s) --------------------
+// Item / skill / character lists are large; a native select is unusable on mobile.
+// Each picker button opens a filterable modal. Labels resolve id → "HHH · Name".
+let SKILL_BY_ID = {}, CHAR_LIST = [];
+
+function itemLabel(id) { return id ? `${hx(id, 3)} · ${ITEM_BY_ID[id]?.name || "#" + id}` : "— empty —"; }
+function skillLabel(id) { return id ? `${hx(id, 2)} · ${SKILL_BY_ID[id]?.name || "#" + id}` : "— none —"; }
+function charLabel(id) { return id ? `${String(id).padStart(3, "0")} · ${REF.charById[id] || "id " + id + " (guest/NPC)"}` : "— empty —"; }
+
+// Option lists (each ends up as [{id,name,cat,desc}], with a 0 = none/empty entry first).
+function itemList(noneLabel) { return [{ id: 0, name: noneLabel }, ...REF.items]; }
+function skillList() { return [{ id: 0, name: "none" }, ...REF.skills]; }
+function eqList(slotKey, curId) {
+  const cats = EQ_CATS[slotKey] || [];
+  let list = REF.items.filter((i) => cats.includes(i.cat));
+  if (curId && !list.some((i) => i.id === curId) && ITEM_BY_ID[curId]) list = [ITEM_BY_ID[curId], ...list];
+  return [{ id: 0, name: "none" }, ...list];
+}
+function charList() { return [{ id: 0, name: "empty" }, ...CHAR_LIST]; }
+
+// Open the shared picker modal. list=[{id,name,cat?,desc?}]; onPick(id) fires on choose.
+// idFmt formats the id prefix per domain (3-hex items, 2-hex skills, decimal chars).
+function openPicker(title, list, current, onPick, idFmt) {
+  idFmt = idFmt || ((id) => hx(id, 3));
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `<div class="modal picker-modal" role="dialog" aria-label="${esc(title)}">
+      <div class="modal-h"><b>${esc(title)}</b><button class="modal-x" aria-label="close">✕</button></div>
+      <input class="picker-search" placeholder="type to filter…" autocomplete="off">
+      <div class="picker-list"></div></div>`;
+  document.body.appendChild(ov);
+  const listEl = $(".picker-list", ov), search = $(".picker-search", ov);
+  const close = () => ov.remove();
+
+  function render(f) {
+    const q = (f || "").toLowerCase();
+    const rows = list.filter((o) => !q || o.name.toLowerCase().includes(q) ||
+      (o.id && (hx(o.id, 2).toLowerCase().includes(q) || String(o.id) === q)));
+    listEl.innerHTML = rows.slice(0, 300).map((o) =>
+      `<button class="picker-row${o.id === current ? " cur" : ""}" data-id="${o.id}">
+         <span class="pr-name">${o.id ? idFmt(o.id) + " · " : ""}${esc(o.name)}</span>
+         ${o.desc ? `<span class="pr-desc">${esc(o.desc)}</span>` : ""}
+         ${o.cat ? `<span class="pr-cat">${esc(o.cat)}</span>` : ""}</button>`).join("") ||
+      `<div class="muted" style="padding:12px">no matches</div>`;
+    if (rows.length > 300) listEl.insertAdjacentHTML("beforeend",
+      `<div class="muted" style="padding:8px 12px">…${rows.length - 300} more — keep typing</div>`);
+    $$(".picker-row", listEl).forEach((b) => (b.onclick = () => { onPick(+b.dataset.id); close(); }));
+  }
+  render("");
+  search.oninput = () => render(search.value);
+  $(".modal-x", ov).onclick = close;
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  ov.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  setTimeout(() => search.focus(), 30);
 }
 
 // ---- File loading ----------------------------------------------------------
@@ -126,22 +190,6 @@ async function handleFile(file) {
   renderEditor();
   $("#editor").scrollIntoView({ behavior: "smooth", block: "start" });
 }
-
-// ---- option builders -------------------------------------------------------
-function itemOpts(curId) {
-  return `<option value="0">— empty —</option>` + REF.items.map((i) =>
-    `<option value="${i.id}"${i.id === curId ? " selected" : ""}>${hx(i.id, 3)} · ${esc(i.name)}</option>`).join("");
-}
-function eqOpts(slotKey, curId) {
-  const cats = EQ_CATS[slotKey] || [];
-  let list = REF.items.filter((i) => cats.includes(i.cat));
-  if (curId && !list.some((i) => i.id === curId)) {           // keep odd/unexpected value visible
-    const cur = ITEM_BY_ID[curId]; if (cur) list = [cur, ...list];
-  }
-  return `<option value="0">— none —</option>` + list.map((i) =>
-    `<option value="${i.id}"${i.id === curId ? " selected" : ""}>${hx(i.id, 3)} · ${esc(i.name)}</option>`).join("");
-}
-const sel = (cur) => (v) => v === cur ? " selected" : "";
 
 // ---- top-level editor render ----------------------------------------------
 // Per-slot pending edits (reset when switching slots), mirroring the desktop editor.
@@ -257,19 +305,25 @@ function drawChars() {
   shown.forEach(wireChar);
 }
 
+const CHAR_CAP = { level: 99, curHP: 9999, maxHP: 9999, expToNext: 99999999 };
 function charCard(c) {
-  const num = (k, val, stat) => `<input type="number" value="${val}" data-ri="${c.rosterIndex}"` +
-    (stat ? ` data-stat="${stat}"` : ` data-k="${k}"`) + ` data-def="${val}">`;
+  const num = (k, val, stat) => {
+    const max = stat ? 999 : (CHAR_CAP[k] ?? 999999);
+    return `<input type="number" min="0" max="${max}" value="${val}" data-ri="${c.rosterIndex}"` +
+      (stat ? ` data-stat="${stat}"` : ` data-k="${k}"`) + ` data-def="${val}" title="0–${max}">`;
+  };
   const statCells = STAT_NAMES().map((n) =>
     `<label class="field"><span>${n}</span>${num(null, c.stats[n], n)}</label>`).join("");
   const core = [["Level", "level"], ["Cur HP", "curHP"], ["Max HP", "maxHP"], ["EXP→next", "expToNext"]]
     .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}</label>`).join("");
-  const equip = EQ.map(([key, lbl]) =>
-    `<label class="field"><span>${lbl}</span>
-       <select data-eqri="${c.rosterIndex}" data-eq="${key}" data-def="${c.equip[key] || 0}">${eqOpts(key, c.equip[key] || 0)}</select></label>`).join("");
+  const equip = EQ.map(([key, lbl]) => {
+    const cur = c.equip[key] || 0;
+    return `<label class="field"><span>${lbl}</span>
+       <button type="button" class="picker" data-eqri="${c.rosterIndex}" data-eq="${key}" data-val="${cur}" data-def="${cur}">${esc(itemLabel(cur))}</button></label>`;
+  }).join("");
   const skills = (c.skills || []).map((sk) =>
     `<div class="field"><span>Skill slot ${sk.slot + 1}</span>
-       <select data-skri="${c.rosterIndex}" data-skslot="${sk.slot}" data-skf="id" data-def="${sk.id}">${skillSel(sk.id)}</select>
+       <button type="button" class="picker" data-skri="${c.rosterIndex}" data-skslot="${sk.slot}" data-skf="id" data-val="${sk.id}" data-def="${sk.id}">${esc(skillLabel(sk.id))}</button>
        <div class="row" style="gap:6px;margin-top:4px"><span class="muted">rank</span>
          <select style="flex:1" data-skri="${c.rosterIndex}" data-skslot="${sk.slot}" data-skf="rank" data-def="${sk.rank}">${rankSel(sk.rank)}</select></div></div>`).join("");
   return `<details class="char"><summary>
@@ -291,7 +345,6 @@ function charCard(c) {
       <h4>Skills</h4><div class="grid sk">${skills}</div>
     </div></details>`;
 }
-function skillSel(cur) { return OPT_SKILL.replace(`value="${cur}"`, `value="${cur}" selected`); }
 function rankSel(cur) { return OPT_RANK.replace(`value="${cur}"`, `value="${cur}" selected`); }
 
 function wireChar(c) {
@@ -303,15 +356,27 @@ function wireChar(c) {
     else EDITS[ri][inp.dataset.k] = v;
     inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
   }));
-  $$("select[data-eq]", body).forEach((s2) => (s2.onchange = () => {
-    const ri = +s2.dataset.eqri;
-    EDITS[ri] = EDITS[ri] || {}; (EDITS[ri].equip = EDITS[ri].equip || {})[s2.dataset.eq] = +s2.value;
-    s2.classList.toggle("dirty", s2.value !== s2.dataset.def);
+  $$("button.picker[data-eq]", body).forEach((btn) => (btn.onclick = () => {
+    const ri = +btn.dataset.eqri, key = btn.dataset.eq, cur = +btn.dataset.val;
+    openPicker(`Equip — ${key}`, eqList(key, cur), cur, (id) => {
+      btn.dataset.val = id; btn.textContent = itemLabel(id);
+      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
+      EDITS[ri] = EDITS[ri] || {}; (EDITS[ri].equip = EDITS[ri].equip || {})[key] = id;
+    });
   }));
-  $$("[data-skf]", body).forEach((s2) => (s2.onchange = () => {
+  $$("button.picker[data-skf='id']", body).forEach((btn) => (btn.onclick = () => {
+    const ri = +btn.dataset.skri, slot = +btn.dataset.skslot, cur = +btn.dataset.val;
+    openPicker(`Skill slot ${slot + 1}`, skillList(), cur, (id) => {
+      btn.dataset.val = id; btn.textContent = skillLabel(id);
+      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
+      EDITS[ri] = EDITS[ri] || {}; EDITS[ri].skills = EDITS[ri].skills || {};
+      (EDITS[ri].skills[slot] = EDITS[ri].skills[slot] || {}).id = id;
+    }, (id) => hx(id, 2));
+  }));
+  $$("select[data-skf='rank']", body).forEach((s2) => (s2.onchange = () => {
     const ri = +s2.dataset.skri, slot = +s2.dataset.skslot;
     EDITS[ri] = EDITS[ri] || {}; EDITS[ri].skills = EDITS[ri].skills || {};
-    (EDITS[ri].skills[slot] = EDITS[ri].skills[slot] || {})[s2.dataset.skf] = +s2.value;
+    (EDITS[ri].skills[slot] = EDITS[ri].skills[slot] || {}).rank = +s2.value;
     s2.classList.toggle("dirty", s2.value !== s2.dataset.def);
   }));
   const recEntry = (ri) => (RECRUIT[ri] = RECRUIT[ri] || {});
@@ -330,17 +395,19 @@ function drawParty() {
   const anyFilled = mem.some((c) => c > 0);
   const rows = mem.map((cid, slot) => `<tr>
       <td class="sl">Slot ${slot + 1}</td>
-      <td><select data-partyslot="${slot}" data-def="${cid}">${charSel(cid)}</select></td>
-      <td class="ty">${esc(REF.charById[cid] || (cid ? "id " + cid + " (guest/NPC)" : "—"))}</td></tr>`).join("");
+      <td><button type="button" class="picker" data-partyslot="${slot}" data-val="${cid}" data-def="${cid}">${esc(charLabel(cid))}</button></td></tr>`).join("");
   $("#subview").innerHTML =
     (anyFilled ? "" : `<div class="warnbox">This save's active-party table is empty — common in early chapters where story events set the field party. Assignments here may be overwritten by the next event on a very early save.</div>`) +
-    `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th><th>Current</th></tr></thead><tbody>${rows}</tbody></table>`;
-  $$("select[data-partyslot]").forEach((se) => (se.onchange = () => {
-    PARTY[+se.dataset.partyslot] = +se.value;
-    se.classList.toggle("dirty", se.value !== se.dataset.def);
+    `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $$("button.picker[data-partyslot]").forEach((btn) => (btn.onclick = () => {
+    const slot = +btn.dataset.partyslot, cur = +btn.dataset.val;
+    openPicker(`Party slot ${slot + 1}`, charList(), cur, (id) => {
+      btn.dataset.val = id; btn.textContent = charLabel(id);
+      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
+      PARTY[slot] = id;
+    }, (id) => String(id).padStart(3, "0"));
   }));
 }
-function charSel(cur) { return OPT_CHAR.replace(`value="${cur}"`, `value="${cur}" selected`); }
 
 // ---- Inventory -------------------------------------------------------------
 function drawItems() {
@@ -352,8 +419,8 @@ function drawItems() {
 
   const rowHTML = (it) => `<tr>
       <td class="sl">${it.slot}</td>
-      <td><select data-invslot="${it.slot}" data-k="id" data-def="${it.id}">${itemOpts(it.id)}</select></td>
-      <td><input type="number" min="0" style="width:74px" data-invslot="${it.slot}" data-k="qty" data-def="${it.qty}" value="${it.qty}"></td>
+      <td><button type="button" class="picker" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.id}">${esc(itemLabel(it.id))}</button></td>
+      <td><input type="number" min="0" max="99" style="width:74px" data-invslot="${it.slot}" data-k="qty" data-def="${it.qty}" value="${it.qty}"></td>
       <td class="ty">${it.category}</td>
       <td><button class="rm mini" data-clearslot="${it.slot}" title="remove">✕</button></td></tr>`;
 
@@ -378,14 +445,19 @@ function drawItems() {
     ${bags || `<div class="muted">none</div>`}`;
 
   $$("[data-invcat]").forEach((b) => (b.onclick = () => { INVCAT = b.dataset.invcat; drawItems(); }));
-  $$("[data-invslot]").forEach((inp) => {
-    const ev = inp.tagName === "SELECT" ? "change" : "change";
-    inp.addEventListener(ev, () => {
-      const sl = +inp.dataset.invslot;
-      (INV[sl] = INV[sl] || {})[inp.dataset.k] = +inp.value;
-      inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
+  $$("input[data-invslot]").forEach((inp) => (inp.onchange = () => {
+    const sl = +inp.dataset.invslot;
+    (INV[sl] = INV[sl] || {}).qty = +inp.value;
+    inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
+  }));
+  $$("button.picker[data-invslot]").forEach((btn) => (btn.onclick = () => {
+    const sl = +btn.dataset.invslot, cur = +btn.dataset.val;
+    openPicker("Choose item", itemList("empty"), cur, (id) => {
+      btn.dataset.val = id; btn.textContent = itemLabel(id);
+      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
+      (INV[sl] = INV[sl] || {}).id = id;
     });
-  });
+  }));
   $$("[data-addbag]").forEach((btn) => (btn.onclick = () => {
     const bi = +btn.dataset.addbag;
     ADDED[bi] = (ADDED[bi] || []).concat(+btn.dataset.freeslot); drawItems();
@@ -404,8 +476,78 @@ function hasChanges() {
     Object.keys(PARTY).length || Object.keys(RECRUIT).length || GOLD !== null;
 }
 
+const RANK_LABEL = (v) => (RANK_TIERS.find((t) => t[0] === v) || [v, "?"])[1];
+
+// Build a human-readable old→new list of everything the write will change.
+function buildDiff() {
+  const s = saves[curSlot];
+  const rows = [];
+  const byRi = {}; s.characters.forEach((c) => (byRi[c.rosterIndex] = c));
+  const invBySlot = {}; (s.inventory || []).forEach((b) => b.items.forEach((it) => (invBySlot[it.slot] = it)));
+  const FIELD_LABEL = { level: "Level", curHP: "Cur HP", maxHP: "Max HP", expToNext: "EXP→next" };
+
+  if (GOLD !== null && GOLD !== s.global.gold) rows.push({ g: "Gold", t: `${s.global.gold} → ${GOLD}` });
+  Object.entries(NAMES).forEach(([k, v]) => {
+    const n = (s.names || []).find((x) => x.key === k);
+    if (n && v !== n.value) rows.push({ g: "Names", t: `${n.label}: "${n.value}" → "${v}"` });
+  });
+  Object.entries(EDITS).forEach(([ri, f]) => {
+    const c = byRi[ri] || byRi[+ri] || {}; const who = c.name || `#${ri}`;
+    Object.entries(f).forEach(([k, v]) => {
+      if (k === "stats") Object.entries(v).forEach(([st, nv]) => { if (nv !== c.stats?.[st]) rows.push({ g: who, t: `${st}: ${c.stats?.[st]} → ${nv}` }); });
+      else if (k === "equip") Object.entries(v).forEach(([slot, nv]) => { if (nv !== (c.equip?.[slot] || 0)) rows.push({ g: who, t: `${slot}: ${itemLabel(c.equip?.[slot] || 0)} → ${itemLabel(nv)}` }); });
+      else if (k === "skills") Object.entries(v).forEach(([slot, sk]) => {
+        const cur = (c.skills || [])[+slot] || {};
+        if ("id" in sk && sk.id !== cur.id) rows.push({ g: who, t: `Skill ${+slot + 1}: ${skillLabel(cur.id)} → ${skillLabel(sk.id)}` });
+        if ("rank" in sk && sk.rank !== cur.rank) rows.push({ g: who, t: `Skill ${+slot + 1} rank: ${RANK_LABEL(cur.rank)} → ${RANK_LABEL(sk.rank)}` });
+      });
+      else if (FIELD_LABEL[k] && v !== c[k]) rows.push({ g: who, t: `${FIELD_LABEL[k]}: ${c[k]} → ${v}` });
+    });
+  });
+  Object.entries(RECRUIT).forEach(([ri, v]) => {
+    const who = (byRi[ri] || byRi[+ri] || {}).name || `#${ri}`;
+    if ("recruited" in v) rows.push({ g: who, t: `Recruited: ${v.recruited ? "yes" : "no"}` });
+    if (v.recruiter != null && v.recruiter !== "") rows.push({ g: who, t: `Recruited by: ${v.recruiter}` });
+  });
+  Object.entries(PARTY).forEach(([slot, cid]) => {
+    const old = (s.party || [])[+slot] || 0;
+    if (cid !== old) rows.push({ g: "Party", t: `Slot ${+slot + 1}: ${charLabel(old)} → ${charLabel(cid)}` });
+  });
+  Object.entries(INV).forEach(([slot, ent]) => {
+    const old = invBySlot[slot] || { id: 0, qty: 0 };
+    const nid = "id" in ent ? ent.id : old.id, nq = "qty" in ent ? ent.qty : old.qty;
+    if (nid !== old.id || nq !== old.qty)
+      rows.push({ g: "Inventory", t: `Slot ${slot}: ${itemLabel(old.id)} ×${old.qty} → ${itemLabel(nid)} ×${nq}` });
+  });
+  return rows;
+}
+
+function openConfirm(rows, onConfirm) {
+  const groups = {}; rows.forEach((r) => (groups[r.g] = groups[r.g] || []).push(r.t));
+  const body = Object.entries(groups).map(([g, ts]) =>
+    `<div class="cf-group"><div class="cf-g">${esc(g)}</div>${ts.map((t) => `<div class="cf-row">${esc(t)}</div>`).join("")}</div>`).join("");
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `<div class="modal" role="dialog" aria-label="Review changes">
+      <div class="modal-h"><b>Review changes (${rows.length})</b><button class="modal-x" aria-label="close">✕</button></div>
+      <div class="cf-list">${body}</div>
+      <div class="modal-f"><button id="cfCancel">Cancel</button>
+        <button class="primary" id="cfOk">Apply &amp; download</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  $(".modal-x", ov).onclick = close; $("#cfCancel", ov).onclick = close;
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  $("#cfOk", ov).onclick = () => { close(); onConfirm(); };
+}
+
 async function saveAndDownload() {
   if (!hasChanges()) return setStatus("No changes to apply.", "warn");
+  const diff = buildDiff();
+  if (!diff.length) return setStatus("No effective changes (values match the save).", "warn");
+  openConfirm(diff, doApply);
+}
+
+async function doApply() {
   const py = await pyReady;
   const s = saves[curSlot];
   const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY, recruitEdits: RECRUIT, gold: GOLD };
@@ -446,6 +588,12 @@ let _STAT_NAMES = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"];
 function STAT_NAMES() { return _STAT_NAMES; }
 function setStatus(msg, kind) { const el = $("#status"); if (el) { el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); } }
 function setDropMsg(msg, isErr) { $("#engineStatus").innerHTML = (isErr ? "⚠ " : "") + msg; }
+function bootProgress(pct, msg) {
+  const el = $("#engineStatus"); if (!el) return;
+  el.innerHTML = `<div class="bootmsg">${pct < 100 ? '<span class="spinner"></span>' : ""}${esc(msg)}</div>` +
+    `<div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>`;
+}
+function dirtyNow() { try { return typeof EDITS !== "undefined" && hasChanges(); } catch (e) { return false; } }
 
 // ---- wire up ---------------------------------------------------------------
 // Theme switcher — same two themes as the desktop editor, persisted in localStorage.
@@ -469,6 +617,11 @@ window.addEventListener("DOMContentLoaded", () => {
   ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("hot"); }));
   ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("hot"); }));
   drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+
+  // Guard against losing pending edits on accidental close/navigation.
+  window.addEventListener("beforeunload", (e) => {
+    if (dirtyNow()) { e.preventDefault(); e.returnValue = ""; }
+  });
 
   pyReady = bootPyodide().then((py) => {
     setDropMsg("Python engine ready — load a save file.", false);
