@@ -264,18 +264,78 @@
     openConfirm(rows, doSave, `Write ${bytes} byte(s) to ${isoName}`);
   }
   async function doSave() {
-    setStatus("Writing to ISO (the browser copies the file first — this can take a while for a 4 GB disc)…", "");
+    const runs = diffRuns();
+    const total = runs.length, totalBytes = runs.reduce((a, r) => a + (r[1] - r[0]), 0);
+    const pg = progressModal();
+    setBusy(true);
     try {
-      const opts = { keepExistingData: true };
-      const w = await isoHandle.createWritable(opts);
-      for (const [s, e] of diffRuns()) {
+      // Phase 1: the browser makes a safe (atomic) copy of the disc before applying writes.
+      // There are no progress events for this, so show an animated bar + elapsed timer.
+      pg.phase("Preparing", `Making a safe copy of ${isoName} before writing… ` +
+        `Large discs can take a while — nothing is uploaded, and the original stays intact until this finishes.`, { indet: true });
+      const w = await isoHandle.createWritable({ keepExistingData: true });
+
+      // Phase 2: apply just the changed byte-runs. These are tiny and fast; show real progress.
+      let done = 0, wrote = 0;
+      pg.phase("Writing", `Applying ${total} change${total === 1 ? "" : "s"} (${totalBytes} bytes) in place…`, { pct: 0 });
+      for (const [s, e] of runs) {
         await w.write({ type: "write", position: ELF_BASE + s, data: BUF.slice(s, e) });
+        done++; wrote += e - s;
+        pg.phase("Writing", `Applying change ${done} of ${total}…`, { pct: (done / total) * 100 });
       }
+
+      // Phase 3: commit/rename the copy over the original.
+      pg.phase("Finalizing", "Committing changes to the disc…", { indet: true });
       await w.close();
-    } catch (e) { return setStatus("Write failed: " + e.message, "err"); }
-    ORIG = BUF.slice(); ODV = new DataView(ORIG.buffer);   // now clean
-    drawView();
-    setStatus(`Saved — changes written in place to ${isoName}.`, "ok");
+
+      ORIG = BUF.slice(); ODV = new DataView(ORIG.buffer);   // now clean
+      drawView();
+      pg.done(`Wrote ${wrote} byte(s) across ${total} run(s) to ${isoName}.`, false);
+      setStatus(`Saved — ${wrote} byte(s) written in place to ${isoName}.`, "ok");
+    } catch (e) {
+      pg.done("Write failed: " + e.message + ". Your staged edits are still here — you can retry or export a recipe.", true);
+      setStatus("Write failed: " + e.message, "err");
+    } finally { setBusy(false); }
+  }
+
+  // Disable the toolbar while a write is in flight (prevents double-saves / racing edits).
+  function setBusy(b) {
+    ["#isoSaveBtn", "#isoRecipeBtn", "#isoImportBtn", "#isoResetBtn"].forEach((s) => { const el = q(s); if (el) el.disabled = b; });
+  }
+
+  // Non-dismissable progress modal with phase text, a bar (animated or %), and an elapsed timer.
+  function progressModal() {
+    const ov = document.createElement("div");
+    ov.className = "modal-ov";
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Saving to ISO" style="max-width:460px">
+        <div class="modal-h"><b id="pgTitle">Saving to ISO</b></div>
+        <div class="pg-body" aria-live="polite">
+          <div class="muted" id="pgMsg" style="margin-bottom:12px"></div>
+          <div class="bar indet"><div class="bar-fill" id="pgFill" style="width:35%"></div></div>
+          <div class="muted pg-meta" id="pgMeta" style="margin-top:8px"></div>
+        </div>
+        <div class="modal-f" id="pgFoot" style="display:none"><button class="primary" id="pgClose">Done</button></div>
+      </div>`;
+    document.body.appendChild(ov);
+    const el = (id) => ov.querySelector("#" + id), bar = ov.querySelector(".bar"), fill = el("pgFill");
+    const t0 = (performance && performance.now) ? performance.now() : Date.now();
+    const now = () => ((performance && performance.now) ? performance.now() : Date.now());
+    const tick = () => (el("pgMeta").textContent = `elapsed ${((now() - t0) / 1000).toFixed(1)}s`);
+    const timer = setInterval(tick, 100); tick();
+    return {
+      phase(title, msg, { indet = false, pct = null } = {}) {
+        el("pgTitle").textContent = title; el("pgMsg").textContent = msg;
+        bar.classList.toggle("indet", indet);
+        if (!indet) fill.style.width = Math.max(2, Math.min(100, pct == null ? 100 : pct)) + "%";
+      },
+      done(msg, isErr) {
+        clearInterval(timer); tick();
+        el("pgTitle").textContent = isErr ? "Save failed" : "Saved";
+        el("pgMsg").textContent = msg;
+        bar.classList.remove("indet"); fill.style.width = "100%"; fill.classList.toggle("err", !!isErr);
+        el("pgFoot").style.display = "flex"; el("pgClose").onclick = () => ov.remove();
+      },
+    };
   }
 
   // ---- shareable .s3mod recipe (tiny, reversible, version-checked) -----------

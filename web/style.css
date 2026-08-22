@@ -149,6 +149,16 @@ button.picker.dirty { color:var(--warn); border-color:var(--warnbd); background-
 .bootmsg { margin-bottom:6px; }
 .bar { height:4px; background:var(--line); border-radius:999px; overflow:hidden; max-width:280px; margin:0 auto; }
 .bar-fill { height:100%; background:var(--acc); transition:width .3s ease; }
+/* indeterminate (used while the browser makes its atomic-save copy — no % available) */
+.bar.indet .bar-fill { width:35% !important; transition:none; animation:indet 1.15s ease-in-out infinite; }
+@keyframes indet { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
+
+/* save-progress modal */
+.pg-body { padding:16px; }
+.pg-body .bar { max-width:none; height:6px; margin:0; }
+#pgTitle { font-family:var(--titlefont); color:var(--acc2); font-size:15px; }
+.pg-meta { font-variant-numeric:tabular-nums; }
+.bar-fill.err { background:var(--crimson); }
 
 /* modals (picker + review-changes) */
 .modal-ov { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:flex-end;
