@@ -166,3 +166,4 @@ button.picker.dirty { color:var(--warn); border-color:var(--warnbd); background-
 .cf-group { margin-bottom:12px; }
 .cf-g { font-family:var(--titlefont); color:var(--acc2); font-size:13px; margin-bottom:4px; }
 .cf-row { font-size:13px; color:var(--ink); padding:2px 0 2px 10px; border-left:2px solid var(--line); margin-bottom:2px; }
+.recent { margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--mut); font-size:13px; }
