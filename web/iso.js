@@ -18,7 +18,9 @@
   const VERSION_OFF = 4136544;              // u32 big-endian
   const VERSION_VAL = 0x40A69A01;           // SLUS-20387 (USA)
   const ELF_BASE = 0xA4800;                 // PT_LOAD file offset
-  const ELF_LEN = 0x38D000;                 // PT_LOAD size (~3.71 MB) — covers every table
+  // Read to the end of the ELF text/string region (0x465DF0) so every editable table AND
+  // every description string it points into is inside the block we hold.
+  const ELF_LEN = 0x465DF0 - 0xA4800;       // ~3.75 MB
   const ELF_VADDR = 0x165D000;              // PT_LOAD virtual address (for name/desc pointers)
   const ELF_END = ELF_BASE + ELF_LEN;
 
@@ -39,6 +41,42 @@
     25: "resist-fire", 26: "resist-lightning", 27: "resist-wind" };
   const RANK_OPTS = [[0, "— (not learned)"], [1, "E"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [7, "A+"], [8, "S"]];
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
+  // spell/unite target byte (flags14 bits 8..15). AOE is a separate bit (0x8000).
+  const TARGET_OPTS = [[0x0A, "Single target"], [0x02, "All foes"], [0x03, "All foes + allies"]];
+
+  // gear effect-slot semantics (mirror s3patch.py)
+  const GEAR_EFFECT_TYPES = { 0: "(none)", 1: "HP regen/turn", 2: "Stat bonus", 3: "Accuracy +%",
+    4: "type 4 (unverified)", 5: "Grant skill", 6: "Status Protect", 7: "Elemental Resist",
+    8: "Evade single-target ATK", 9: "Weak vs thrust / mobility", 10: "Lowers ATK effect %",
+    11: "Chance to reflect MGC", 12: "Counter-attack rate +%" };
+  const GEAR_STAT_SELECTOR = { 0: "PWR", 1: "SKL", 2: "MAG", 3: "REP", 4: "PDF", 5: "MDF", 6: "SPD", 7: "LUK" };
+  const GEAR_TYPE_PARAM = { 2: "stat", 5: "skill" };   // type -> what `param` means
+
+  // Rune -> ordered spell names it grants (resolved to table indices by name at runtime).
+  const RUNE_SPELLS = {
+    fire: ["Flaming Arrows", "Dancing Flames", "Blazing Wall", "Explosion"],
+    rage: ["Dancing Flames", "Blazing Wall", "Explosion", "Final Flame"],
+    truefire: ["Blazing Wall", "Explosion", "Final Flame", "Hellfire"],
+    lightning: ["Thunder Runner", "Berserk Blow", "Soaring Bolt", "Furious Blow"],
+    thunder: ["Berserk Blow", "Soaring Bolt", "Furious Blow", "Thunder Storm"],
+    truelightning: ["Soaring Bolt", "Furious Blow", "Thunder Storm", "Hammer of Raijin"],
+    wind: ["Wind of Sleep", "Healing Wind", "The Shredding", "Funeral Wind"],
+    cyclone: ["Healing Wind", "The Shredding", "Funeral Wind", "Shining Wind"],
+    truewind: ["The Shredding", "Funeral Wind", "Shining Wind", "Eternal Wind"],
+    water: ["Kindness Drops", "Breath of Ice", "Kindness Rain", "Silent Lake"],
+    flowing: ["Breath of Ice", "Kindness Rain", "Silent Lake", "Mother Ocean"],
+    truewater: ["Kindness Rain", "Silent Lake", "Mother Ocean", "Heavenly Drops"],
+    earth: ["Clay Guardian", "Vengeful Child", "Guardian Earth", "Earthquake"],
+    motherearth: ["Vengeful Child", "Guardian Earth", "Earthquake", "Canopy Defense"],
+    trueearth: ["Guardian Earth", "Earthquake", "Canopy Defense", "Land of Eternity"],
+    shield: ["Battle Oath", "Great Blessing", "Battlefield"],
+    blinking: ["Ready!", "Set!", "Go!"],
+    jongleur: ["Song of Skylark", "Song of Serenity", "Song of Madness", "Song of a Hero"],
+    palegate: ["Open Gate", "Royal Passage", "Pale Palace", "Empty World"],
+    swordofrage: ["Sword of Rage", "Fire Amulet"],
+    swordofthunder: ["Sword of Thunder", "Thunder Amulet"],
+    swordofcyclone: ["Sword of Cyclone", "Wind Amulet"],
+  };
 
   // ---- field schemas for the character/growth/support/weapon record tables ----
   // [label, offsetInRecord, widthBytes, kind]  (kind: item | skill | rank | num)
@@ -85,6 +123,7 @@
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...} }
   let VIEW = "chars", SEARCH = "";
+  let spDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
   let gearCache = null;                     // {itemId: absStatsOffset}
   const FIELD_REG = {};                     // absOff -> {group,label,off:absOff,width,kind}
   const dec = new TextDecoder("latin1");
@@ -118,6 +157,49 @@
     let e = BUF.indexOf(0, rel); if (e < 0) e = Math.min(rel + 48, BUF.length);
     return dec.decode(BUF.subarray(rel, e));
   }
+  const vaOff = (v) => v - ELF_VADDR + ELF_BASE;                 // vaddr -> absolute file offset
+  const latin1Enc = (s) => { const o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); o[i] = c < 256 ? c : 63; } return o; };
+  function writeBytes(off, bytes) { for (let i = 0; i < bytes.length; i++) if (inBlk(off + i, 1)) BUF[off - ELF_BASE + i] = bytes[i]; }
+  // decode a null-terminated string from a given block copy (BUF or ORIG), bounded by maxlen
+  function strFrom(arr, off, maxlen) {
+    const rel = off - ELF_BASE; if (rel < 0 || rel >= arr.length) return "";
+    let e = arr.indexOf(0, rel); if (e < 0 || e > rel + maxlen) e = rel + maxlen;
+    return dec.decode(arr.subarray(rel, e));
+  }
+  // original on-disk slot length for a description pointer (the hard cap for edits)
+  function origSlotLen(dptr) {
+    const rel = vaOff(dptr) - ELF_BASE; if (rel < 0 || rel >= ORIG.length) return 0;
+    let e = ORIG.indexOf(0, rel); if (e < 0) e = rel; return e - rel;
+  }
+  // Rewrite an in-place description string. transform(currentText)->newText. Capped to the
+  // ORIGINAL slot length, null-padded. Returns a status object. Registers a review entry.
+  function rewriteDesc(dptr, transform, group, label) {
+    const off = vaOff(dptr), maxlen = origSlotLen(dptr);
+    if (maxlen <= 0 || !inBlk(off, maxlen)) return { skip: true };
+    const cur = strFrom(BUF, off, maxlen), next = transform(cur);
+    if (next === cur) return { noNumber: true };
+    const enc = latin1Enc(next);
+    if (enc.length > maxlen) return { truncated: true };
+    const padded = new Uint8Array(maxlen); padded.set(enc);
+    writeBytes(off, padded); FIELD_REG[off] = { group, label, off, width: maxlen, kind: "text" };
+    return { ok: true };
+  }
+  // Set a description to explicit text (gear custom desc). Rejects text longer than the slot.
+  function setDescText(dptr, text, group, label) {
+    const off = vaOff(dptr), maxlen = origSlotLen(dptr);
+    if (maxlen <= 0 || !inBlk(off, maxlen)) return { skip: true, max: 0 };
+    const enc = latin1Enc(text);
+    if (enc.length > maxlen) return { tooLong: true, max: maxlen };
+    const padded = new Uint8Array(maxlen); padded.set(enc);
+    writeBytes(off, padded); FIELD_REG[off] = { group, label, off, width: maxlen, kind: "text" };
+    return { ok: true, max: maxlen };
+  }
+  // description-number transforms (mirror the desktop's regex rewrites)
+  const descPower = (t, pw) => /DMGx\d+(?:\.\d+)?/.test(t) ? t.replace(/DMGx\d+(?:\.\d+)?/, "DMGx" + String(pw / 100))
+    : /\d+DMG/.test(t) ? t.replace(/\d+DMG/, pw + "DMG") : t;
+  const descDef = (t, def) => /DEF\(\+?\d+\)/.test(t) ? t.replace(/DEF\(\+?\d+\)/, "DEF(+" + def + ")") : t;
+  const descHeal = (t, h) => t.replace(/Heals \d+HP/, "Heals " + h + "HP");
+  const descProc = (t, p) => t.replace(/\d+% chance/, p + "% chance");
 
   // ---- reference tables (parsed in JS so the ISO tab needs no Pyodide) -------
   async function loadRef() {
@@ -195,6 +277,7 @@
     if (kind === "max") return maxLabel(v);
     if (kind === "elem") return ELEMENTS[v & 0xFF] || "0x" + (v & 0xFF).toString(16);
     if (kind === "aoe") return (v & AREA_BIT) ? "AOE on" : "AOE off";
+    if (kind === "flags14") return decodeTarget(v);
     if (kind === "status") return decodeF18(v);
     return String(v);
   }
@@ -249,7 +332,9 @@
     for (const off in FIELD_REG) {
       const m = FIELD_REG[off];
       if (!isDirty(m.off, m.width)) continue;
-      const ov = fmtVal(m.kind, origW(m.off, m.width)), nv = fmtVal(m.kind, readW(m.off, m.width));
+      let ov, nv;
+      if (m.kind === "text") { ov = `"${strFrom(ORIG, m.off, m.width)}"`; nv = `"${strFrom(BUF, m.off, m.width)}"`; }
+      else { ov = fmtVal(m.kind, origW(m.off, m.width)); nv = fmtVal(m.kind, readW(m.off, m.width)); }
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}` });
     }
     return rows;
@@ -422,9 +507,9 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Shop item slots (pick an item), the price ladder, and the item1 group. Prices are potch.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, area-of-effect, and status.",
-      unites: "Unite (co-op) attack table: power and cast (MOV).",
-      gear: "Equipment records: DEF and price. Effect slots are shown read-only.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect.",
+      gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
       food: "Consumable / food table: heal amount and proc chance %.",
     };
     q("#isoHint").textContent = hints[VIEW] || "";
@@ -585,54 +670,117 @@
   }
 
   // ---- spells ----------------------------------------------------------------
+  function spellNameIndex() {
+    const m = {};
+    for (let i = 0; i < SPELL.count; i++) { const n = strAt(r32(SPELL.off + i * SPELL.stride + 0x08)); if (!(n in m)) m[n] = i; }
+    return m;
+  }
+  // Shared edit engine for a spell record (used by per-spell controls AND rune reskin).
+  function applySpell(idx, f, updateDesc) {
+    const off = SPELL.off + idx * SPELL.stride, name = strAt(r32(off + 0x08));
+    if (f.power != null) {
+      writeW(off + 0x1C, 4, Math.max(0, f.power)); reg(off + 0x1C, 4, "num", name, "Power");
+      if (updateDesc) rewriteDesc(r32(off + 0x0C), (t) => descPower(t, Math.max(0, f.power)), name, "Description");
+    }
+    if (f.cast != null) { writeW(off + 0x10, 4, Math.max(0, f.cast)); reg(off + 0x10, 4, "num", name, "Cast"); }
+    if (f.elementId != null && idx + 1 < SPELL.count) {
+      const eo = off + SPELL.elem; writeW(eo, 2, (r16(eo) & 0xFF00) | (f.elementId & 0xFF)); reg(eo, 2, "elem", name, "Element");
+    }
+    if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF00FF) | ((f.target & 0xFF) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
+    if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
+    if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
+  }
+  const targetOptsHTML = (cur) => {
+    let html = TARGET_OPTS.map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`).join("");
+    if (!TARGET_OPTS.some(([v]) => v === cur)) html += `<option value="${cur}" selected>custom 0x${hex(cur, 2)}</option>`;
+    return html;
+  };
   function drawSpells(host) {
+    const upd = spDescOn;
+    const runeOpts = Object.keys(RUNE_SPELLS).map((r) => `<option value="${r}">${r}</option>`).join("");
+    const elemOptsBlank = `<option value="">— no change —</option>` + Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+    const statOptsBlank = `<option value="">— no change —</option>` + ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}">${s}</option>`).join("");
+    const reskin = `<div class="card" style="margin:0 0 12px">
+      <div class="bag-h">Rune reskin <span class="u">apply the fields you set to every spell a rune grants</span></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">
+        <label class="field"><span>Rune</span><select id="rsRune">${runeOpts}</select></label>
+        <label class="field"><span>Power</span><input type="number" id="rsPower" min="0" placeholder="no change"></label>
+        <label class="field"><span>Cast (MOV)</span><input type="number" id="rsCast" min="0" placeholder="no change"></label>
+        <label class="field"><span>Element</span><select id="rsElem">${elemOptsBlank}</select></label>
+        <label class="field"><span>Target</span><select id="rsTarget"><option value="">— no change —</option>${TARGET_OPTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
+        <label class="field"><span>Area of effect</span><select id="rsAoe"><option value="">— no change —</option><option value="1">on</option><option value="0">off</option></select></label>
+        <label class="field"><span>Status</span><select id="rsStatus">${statOptsBlank}</select></label>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
+        <span class="muted" id="rsInfo"></span></div></div>`;
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes</label>`;
+
     const rows = [];
     for (let i = 0; i < SPELL.count; i++) {
-      const off = SPELL.off + i * SPELL.stride;
-      const name = strAt(r32(off + 0x08));
+      const off = SPELL.off + i * SPELL.stride, name = strAt(r32(off + 0x08));
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, off, name });
     }
-    host.innerHTML = rows.map(({ i, off, name }) => {
-      const elemOff = off + SPELL.elem, cast = off + 0x10, pw = off + 0x1C, f14 = off + 0x14, f18 = off + 0x18;
-      const canElem = i + 1 < SPELL.count;
-      const elVal = canElem ? (r16(elemOff) & 0xFF) : 0;
+    const body = rows.map(({ i, off, name }) => {
+      const canElem = i + 1 < SPELL.count, elVal = canElem ? (r16(off + SPELL.elem) & 0xFF) : 0;
+      const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0xFF, f18 = r32(off + 0x18);
+      const statCur = f18 === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => f18 === (1 << b)) || [])[1] || "custom";
       const elemSel = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === elVal ? " selected" : ""}>${l}</option>`).join("");
-      const statVal = r32(f18);
-      const statCur = statVal === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => statVal === (1 << b)) || [])[1] || "custom";
       const statOpts = ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}"${s === statCur ? " selected" : ""}>${s}</option>`).join("");
-      return `<details class="char"><summary>
+      return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
-          <span class="lv">${ELEMENTS[elVal]} · pw ${r32(pw)} · ${decodeTarget(r32(f14))}</span></summary>
-        <div class="char-body"><div class="grid">
-          <label class="field"><span>Power</span><input type="number" class="sp" min="0" max="4294967295" value="${r32(pw)}" data-off="${pw}" data-kind="num" data-g="${esc2(name)}" data-l="Power"></label>
-          <label class="field"><span>Cast (MOV)</span><input type="number" class="sp" min="0" max="4294967295" value="${r32(cast)}" data-off="${cast}" data-kind="num" data-g="${esc2(name)}" data-l="Cast"></label>
-          <label class="field"><span>Element</span><select class="spelem" ${canElem ? "" : "disabled"} data-off="${elemOff}" data-g="${esc2(name)}">${elemSel}</select></label>
-          <label class="field"><span>Area of effect</span><select class="spaoe" data-off="${f14}" data-g="${esc2(name)}"><option value="0"${!(r32(f14) & AREA_BIT) ? " selected" : ""}>off</option><option value="1"${(r32(f14) & AREA_BIT) ? " selected" : ""}>on</option></select></label>
-          <label class="field"><span>Status</span><select class="spstat" data-off="${f18}" data-g="${esc2(name)}">${statOpts}</select></label>
-        </div></div></details>`;
+          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
+        <div class="char-body">
+          <div class="muted" style="margin:0 0 8px">${esc2(strAt(r32(off + 0x0C)))}</div>
+          <div class="grid">
+            <label class="field"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
+            <label class="field"><span>Cast (MOV)</span><input type="number" class="sp" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
+            <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canElem ? "" : "disabled"}>${elemSel}</select></label>
+            <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
+            <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
+            <label class="field"><span>Status</span><select class="sp" data-i="${i}" data-k="status">${statOpts}</select></label>
+          </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
-    wireSpellControls(host);
-  }
-  function wireSpellControls(host) {
-    qa("input.sp", host).forEach((inp) => (inp.onchange = () => {
-      const off = +inp.dataset.off; writeW(off, 4, Math.max(0, +inp.value || 0));
-      reg(off, 4, "num", inp.dataset.g, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, 4));
-    }));
-    qa("select.spelem", host).forEach((sel) => (sel.onchange = () => {
-      const off = +sel.dataset.off, kept = r16(off) & 0xFF00; writeW(off, 2, kept | (+sel.value & 0xFF));
-      reg(off, 2, "elem", sel.dataset.g, "Element"); markSel(sel, off, 2);
-    }));
-    qa("select.spaoe", host).forEach((sel) => (sel.onchange = () => {
-      const off = +sel.dataset.off; let f = r32(off); f = +sel.value ? (f | AREA_BIT) : (f & ~AREA_BIT); writeW(off, 4, f);
-      reg(off, 4, "aoe", sel.dataset.g, "Area of effect"); markSel(sel, off, 4);
-    }));
-    qa("select.spstat", host).forEach((sel) => (sel.onchange = () => {
-      const off = +sel.dataset.off; const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b;
-      writeW(off, 4, sel.value === "none" ? 0 : (rev[sel.value] || 0)); reg(off, 4, "status", sel.dataset.g, "Status"); markSel(sel, off, 4);
+    host.innerHTML = reskin + updBox + body;
+
+    q("#spUpd", host).onchange = (e) => { spDescOn = e.target.checked; };
+    q("#rsApply", host).onclick = () => runeReskin();
+    q("#rsRune", host).onchange = () => { const el = q("#rsInfo", host); el.textContent = "→ " + RUNE_SPELLS[q("#rsRune", host).value].join(", "); };
+    q("#rsRune", host).dispatchEvent(new Event("change"));
+
+    qa(".sp", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, k = el.dataset.k;
+      const f = {}; f[k] = k === "aoe" ? el.value === "1" : k === "status" ? el.value : +el.value;
+      applySpell(i, f, spDescOn && k === "power");
+      updateSpellSummary(host, i);
     }));
   }
-  const markSel = (sel, off, w) => sel.classList.toggle("dirty", isDirty(off, w));
+  function updateSpellSummary(host, i) {
+    const d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
+    const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
+    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
+    qa(".sp", d).forEach((el) => {
+      const off2 = { power: 0x1C, cast: 0x10, elementId: SPELL.elem, target: 0x14, aoe: 0x14, status: 0x18 }[el.dataset.k];
+      const w = { power: 4, cast: 4, elementId: 2, target: 4, aoe: 4, status: 4 }[el.dataset.k];
+      el.classList.toggle("dirty", isDirty(off + off2, w));
+    });
+  }
+  function runeReskin() {
+    const rune = q("#rsRune").value, idx = spellNameIndex();
+    const targets = (RUNE_SPELLS[rune] || []).map((n) => idx[n]).filter((v) => v != null);
+    if (!targets.length) return setStatus("Could not resolve that rune's spells in this ISO.", "err");
+    const f = {}, num = (id) => q(id).value;
+    if (num("#rsPower") !== "") f.power = +num("#rsPower");
+    if (num("#rsCast") !== "") f.cast = +num("#rsCast");
+    if (num("#rsElem") !== "") f.elementId = +num("#rsElem");
+    if (num("#rsTarget") !== "") f.target = +num("#rsTarget");
+    if (num("#rsAoe") !== "") f.aoe = num("#rsAoe") === "1";
+    if (num("#rsStatus") !== "") f.status = num("#rsStatus");
+    if (!Object.keys(f).length) return setStatus("Set at least one field to apply.", "warn");
+    targets.forEach((i) => applySpell(i, f, spDescOn));
+    drawView();
+    setStatus(`Reskinned ${targets.length} spell(s) for rune "${rune}". Review, then Save.`, "ok");
+  }
 
   // ---- unites ----------------------------------------------------------------
   function drawUnites(host) {
@@ -640,15 +788,30 @@
     for (let i = 0; i < UNITE.count; i++) {
       const off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
-      const pw = off + 0x1C, cast = off + 0x10;
-      rows.push(`<tr><td class="sl">${i}</td><td class="acc2">${esc2(name || "#" + i)}</td>
-        <td><input type="number" class="un" min="0" max="4294967295" style="width:110px" value="${r32(pw)}" data-off="${pw}" data-g="${esc2(name)}" data-l="Power"></td>
-        <td><input type="number" class="un" min="0" max="4294967295" style="width:110px" value="${r32(cast)}" data-off="${cast}" data-g="${esc2(name)}" data-l="Cast"></td></tr>`);
+      rows.push({ i, off, name });
     }
-    host.innerHTML = `<table class="invtbl"><thead><tr><th>#</th><th>Unite</th><th>Power</th><th>Cast</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
-    qa("input.un", host).forEach((inp) => (inp.onchange = () => {
-      const off = +inp.dataset.off; writeW(off, 4, Math.max(0, +inp.value || 0));
-      reg(off, 4, "num", inp.dataset.g, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, 4));
+    host.innerHTML = rows.map(({ i, off, name }) => {
+      const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0xFF;
+      return `<details class="char" data-i="${i}"><summary>
+          <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
+          <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
+        <div class="char-body"><div class="muted" style="margin:0 0 8px">${esc2(strAt(r32(off + 0x0C)))}</div>
+          <div class="grid">
+            <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
+            <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
+            <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
+            <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
+          </div></div></details>`;
+    }).join("") || `<div class="muted">no matches</div>`;
+    qa(".un", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, k = el.dataset.k, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
+      if (k === "power") { writeW(off + 0x1C, 4, Math.max(0, +el.value || 0)); reg(off + 0x1C, 4, "num", name, "Power"); }
+      else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
+      else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF00FF) | ((+el.value & 0xFF) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
+      else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
+      const d = q(`details.char[data-i="${i}"]`, host);
+      if (d) d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
+      qa(".un", d).forEach((c) => { const o = { power: 0x1C, cast: 0x10, target: 0x14, aoe: 0x14 }[c.dataset.k]; const w = c.dataset.k === "cast" || c.dataset.k === "power" ? 4 : 4; c.classList.toggle("dirty", isDirty(off + o, w)); });
     }));
   }
 
@@ -658,15 +821,18 @@
     for (let i = 0; i < FOOD.count; i++) {
       const off = FOOD.off + i * FOOD.stride, name = strAt(r32(off + FOOD.name));
       if (SEARCH && !name.toLowerCase().includes(SEARCH)) continue;
-      const heal = off + FOOD.heal, proc = off + FOOD.proc;
+      const heal = off + FOOD.heal, proc = off + FOOD.proc, dptr = r32(off + FOOD.desc);
       rows.push(`<tr><td class="sl">${i}</td><td class="acc2">${esc2(name || "#" + i)}</td>
-        <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(heal)}" data-off="${heal}" data-g="${esc2(name)}" data-l="Heal HP"></td>
-        <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-g="${esc2(name)}" data-l="Proc %"></td></tr>`);
+        <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(heal)}" data-off="${heal}" data-dptr="${dptr}" data-kind="heal" data-g="${esc2(name)}" data-l="Heal HP"></td>
+        <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-dptr="${dptr}" data-kind="proc" data-g="${esc2(name)}" data-l="Proc %"></td></tr>`);
     }
-    host.innerHTML = `<table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+    host.innerHTML = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
+      <table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+    q("#fUpd", host).onchange = (e) => { foodDescOn = e.target.checked; };
     qa("input.fd", host).forEach((inp) => (inp.onchange = () => {
-      const off = +inp.dataset.off; writeW(off, 2, Math.max(0, Math.min(+inp.value || 0, 65535)));
-      reg(off, 2, "num", inp.dataset.g, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, 2));
+      const off = +inp.dataset.off, v = Math.max(0, Math.min(+inp.value || 0, 65535)), nm = inp.dataset.g;
+      writeW(off, 2, v); reg(off, 2, "num", nm, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, 2));
+      if (foodDescOn && inp.dataset.dptr) rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description");
     }));
   }
 
@@ -693,29 +859,86 @@
     }
     gearCache = out; return out;
   }
+  // one effect slot: type select + value + a param control (stat / skill / hidden per type)
+  function effectSlotHTML(nm, base, eo) {
+    const t = r16(base + eo), val = r16(base + eo + 2), param = r16(base + eo + 4);
+    const typeOpts = Object.entries(GEAR_EFFECT_TYPES).map(([v, l]) => `<option value="${v}"${+v === t ? " selected" : ""}>${v} · ${l}</option>`).join("");
+    const statOpts = Object.entries(GEAR_STAT_SELECTOR).map(([v, l]) => `<option value="${v}"${+v === param ? " selected" : ""}>${l}</option>`).join("");
+    const skillOpts = skillOpts2(param);
+    const pk = GEAR_TYPE_PARAM[t];
+    return `<div class="row" data-eff data-base="${base}" data-eo="${eo}" data-g="${esc2(nm)}" style="gap:6px;margin-bottom:6px">
+        <span class="muted" style="width:52px">slot ${GEAR.effs.indexOf(eo)}</span>
+        <select class="ge-type" style="flex:1 1 150px">${typeOpts}</select>
+        <input type="number" class="ge-val" style="width:80px" min="0" max="65535" value="${val}" title="amount">
+        <select class="ge-stat" style="flex:0 1 90px;${pk === "stat" ? "" : "display:none"}">${statOpts}</select>
+        <select class="ge-skill" style="flex:1 1 150px;${pk === "skill" ? "" : "display:none"}">${skillOpts}</select>
+      </div>`;
+  }
+  function skillOpts2(cur) {
+    const list = Object.keys(REF.skills).map(Number).sort((a, b) => a - b);
+    if (cur && !list.includes(cur)) list.unshift(cur);
+    return list.map((id) => `<option value="${id}"${id === cur ? " selected" : ""}>${hex(id, 2)} · ${skillName(id)}</option>`).join("");
+  }
   function drawGear(host) {
     const g = scanGear();
     const ids = Object.keys(g).map(Number).sort((a, b) => a - b);
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="gUpd"${gearDescOn ? " checked" : ""}> also rewrite the DEF(+N) number in the description when DEF changes</label>`;
     const rows = [];
     for (const iid of ids) {
       const nm = itemName(iid);
       if (SEARCH && !nm.toLowerCase().includes(SEARCH) && hex(iid, 3).toLowerCase() !== SEARCH) continue;
-      const base = g[iid], def = base + GEAR.def, price = base + GEAR.price;
-      const effs = GEAR.effs.map((eo) => { const t = r16(base + eo); return t ? `${t}/${r16(base + eo + 2)}/${r16(base + eo + 4)}` : ""; }).filter(Boolean).join(", ") || "—";
-      rows.push(`<details class="char"><summary><span class="chev">▸</span>
+      const base = g[iid], def = base + GEAR.def, price = base + GEAR.price, dptr = r32(base + 0x00);
+      const descStr = strAt(dptr), descMax = origSlotLen(dptr);
+      const effs = GEAR.effs.map((eo) => effectSlotHTML(nm, base, eo)).join("");
+      rows.push(`<details class="char" data-base="${base}"><summary><span class="chev">▸</span>
           <span class="nm">${esc2(nm)}</span><span class="muted">${hex(iid, 3)}</span>
           <span class="lv">DEF ${r16(def)} · ${r32(price)}p</span></summary>
         <div class="char-body"><div class="grid">
-          <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-g="${esc2(nm)}" data-l="DEF"></label>
+          <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
           <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
-        </div><div class="muted" style="margin-top:8px">Effect slots (type/value/param, read-only): ${esc2(effs)}</div></div></details>`);
+        </div>
+        <label class="field" style="margin-top:8px"><span>Description (${descMax} char slot)</span>
+          <input type="text" class="ge-desc" maxlength="${descMax}" value="${esc2(descStr)}" data-dptr="${dptr}" data-g="${esc2(nm)}"></label>
+        <h4>Effect slots</h4>${effs}</div></details>`);
     }
-    host.innerHTML = rows.join("") || `<div class="muted">no matching equipment</div>`;
+    host.innerHTML = updBox + (rows.join("") || `<div class="muted">no matching equipment</div>`);
+    q("#gUpd", host).onchange = (e) => { gearDescOn = e.target.checked; };
+
     qa("input.gr", host).forEach((inp) => (inp.onchange = () => {
-      const off = +inp.dataset.off, w = +inp.dataset.w;
-      writeW(off, w, Math.max(0, Math.min(+inp.value || 0, w === 2 ? 65535 : 4294967295)));
-      reg(off, w, "num", inp.dataset.g, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, w));
+      const off = +inp.dataset.off, w = +inp.dataset.w, nm = inp.dataset.g;
+      const v = Math.max(0, Math.min(+inp.value || 0, w === 2 ? 65535 : 4294967295));
+      writeW(off, w, v); reg(off, w, "num", nm, inp.dataset.l); inp.classList.toggle("dirty", isDirty(off, w));
+      if (inp.dataset.l === "DEF" && gearDescOn && inp.dataset.dptr) {
+        const r = rewriteDesc(+inp.dataset.dptr, (t) => descDef(t, v), nm, "Description");
+        const di = q(`.ge-desc[data-dptr="${inp.dataset.dptr}"]`, host);
+        if (di && r.ok) { di.value = strAt(+inp.dataset.dptr); di.classList.toggle("dirty", isDirty(vaOff(+inp.dataset.dptr), origSlotLen(+inp.dataset.dptr))); }
+      }
     }));
+    qa("input.ge-desc", host).forEach((inp) => (inp.onchange = () => {
+      const dptr = +inp.dataset.dptr;
+      const r = setDescText(dptr, inp.value, inp.dataset.g, "Description");
+      if (r.tooLong) setStatus(`Description too long — the slot holds ${r.max} characters.`, "warn");
+      inp.classList.toggle("dirty", isDirty(vaOff(dptr), origSlotLen(dptr)));
+    }));
+    qa("[data-eff]", host).forEach((rowEl) => wireEffectSlot(rowEl));
+  }
+  function wireEffectSlot(rowEl) {
+    const base = +rowEl.dataset.base, eo = +rowEl.dataset.eo, nm = rowEl.dataset.g;
+    const tSel = rowEl.querySelector(".ge-type"), vIn = rowEl.querySelector(".ge-val");
+    const stat = rowEl.querySelector(".ge-stat"), skill = rowEl.querySelector(".ge-skill");
+    const commit = () => {
+      const t = +tSel.value, pk = GEAR_TYPE_PARAM[t];
+      stat.style.display = pk === "stat" ? "" : "none";
+      skill.style.display = pk === "skill" ? "" : "none";
+      const param = pk === "stat" ? +stat.value : pk === "skill" ? +skill.value : 0;
+      writeW(base + eo, 2, t); writeW(base + eo + 2, 2, Math.max(0, +vIn.value || 0)); writeW(base + eo + 4, 2, param);
+      reg(base + eo, 2, "num", nm, `Effect ${GEAR.effs.indexOf(eo)} type`);
+      reg(base + eo + 2, 2, "num", nm, `Effect ${GEAR.effs.indexOf(eo)} value`);
+      reg(base + eo + 4, 2, "num", nm, `Effect ${GEAR.effs.indexOf(eo)} param`);
+      rowEl.classList.toggle("dirty", isDirty(base + eo, 8));
+      [tSel, vIn, stat, skill].forEach((el) => el.classList.toggle("dirty", isDirty(base + eo, 8)));
+    };
+    [tSel, vIn, stat, skill].forEach((el) => (el.onchange = commit));
   }
 
   // ---- misc ------------------------------------------------------------------
