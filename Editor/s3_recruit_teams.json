@@ -1,0 +1,11 @@
+{
+  "format": "s3recruitteams",
+  "version": 1,
+  "note": "Best-effort canonical PRE-MERGE party assignment for Suikoden III. Only the fixed early-chapter units are listed; every other recruit is treated as shared/story. The recruiter bits only matter before the Flame Champion is chosen (parties merge afterward). Names must match Editor/s3save.py ROSTER exactly. Verify before relying on it for a specific playthrough.",
+  "teams": {
+    "Hugo": ["Hugo", "Lulu", "Sgt. Joe", "Aila", "Fubar"],
+    "Chris": ["Chris", "Salome", "Borus", "Percival", "Roland", "Leo"],
+    "Geddoe": ["Geddoe", "Ace", "Joker", "Queen", "Jacques", "Duke"],
+    "Thomas": ["Thomas", "Cecile", "Juan"]
+  }
+}

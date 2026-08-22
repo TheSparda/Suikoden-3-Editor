@@ -115,6 +115,7 @@ details[open] .chev { transform:rotate(90deg); }
 .invtbl td { padding:6px 8px; border-top:1px solid var(--line); vertical-align:middle; }
 .invtbl td.sl { color:var(--mut); font-size:12px; width:38px; }
 .invtbl td.ty { color:var(--mut); font-size:12px; }
+.invtbl tr.dirtyrow td { background:var(--changed-bg); }
 .bag { margin-bottom:16px; }
 .bag .bag-h { font-weight:600; color:var(--acc2); font-family:var(--titlefont); margin:0 2px 6px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .bag .bag-h .u { font-weight:400; color:var(--mut); font-size:12px; font-family:inherit; }

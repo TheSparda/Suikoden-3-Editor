@@ -344,6 +344,55 @@ head("Last opened ISO (persist handle + reopen)");
   await page.context().close();
 }
 
+head("Recruit section (save editor, Pyodide stubbed)");
+{ const page = await newPage();
+  // Stub the Python engine so the save-editor UI renders headless (real Pyodide needs a CDN
+  // this sandbox can't reach). Canned saves drive the Recruit view; the recruit STAGING math
+  // is the real recruit-core.js, and the diff/review is the real buildDiff/openConfirm.
+  await page.addInitScript(`
+    // [name, recruiter, recruited]
+    const CHARS = [
+      ['Hugo','Hugo',true], ['Chris','',false], ['Salome','',false],
+      ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false]
+    ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
+      level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
+      stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
+    const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
+      global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
+      carryover: {}, names: [], characters: CHARS, party: [0,0,0,0,0,0], inventory: [] }];
+    window.loadPyodide = async () => ({
+      FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
+      runPython(code) {
+        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {} });
+        if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
+        if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
+        return undefined;
+      },
+    });
+  `);
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
+  await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
+  await page.waitForSelector('[data-sub="recruit"]', { timeout: 5000 });
+  await page.click('[data-sub="recruit"]'); await page.waitForSelector("#rteam");
+  check("recruit roster renders", (await page.locator("#subview .invtbl tbody tr").count()) === 6);
+  // bulk recruit all shown -> Geddoe
+  await page.selectOption("#rteam", "Geddoe");
+  await page.click("#recAllShown"); await page.waitForTimeout(80);
+  check("recruit-all checks every row", (await page.locator("#subview input[data-rec]:checked").count()) === 6);
+  check("recruit-all sets team select to Geddoe", (await page.locator('#subview select[data-team] >> nth=0').inputValue()) === "Geddoe");
+  // canonical preset -> Chris (Chris + Salome)
+  await page.click('[data-canon="Chris"]'); await page.waitForTimeout(80);
+  const salomeTeam = await page.locator('#subview tr:has-text("Salome") select[data-team]').inputValue();
+  check("canonical→Chris assigns Salome to Chris", salomeTeam === "Chris");
+  // review modal lists recruit/team changes
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const review = await page.textContent(".cf-list");
+  check("review lists recruit/team changes", /Recruited: yes/.test(review) && /Team:/.test(review));
+  await page.click("#cfCancel");
+  await page.context().close();
+}
+
 head("Close returns to loader");
 { const page = await newPage(); await loadIso(page);
   await page.click("#isoClose"); await page.waitForTimeout(80);

@@ -357,6 +357,7 @@ function drawSlot() {
     <div class="card">
       <div class="subtabs">
         <button class="chip" data-sub="chars">Characters (${live})</button>
+        <button class="chip" data-sub="recruit">Recruit</button>
         <button class="chip" data-sub="party">Party</button>
         <button class="chip" data-sub="items">Inventory (${invCount})</button>
       </div>
@@ -399,6 +400,11 @@ function showSub() {
       `<label style="cursor:pointer;margin-left:6px"><input type="checkbox" id="reconly" ${RECRUITED_ONLY ? "checked" : ""}> recruited only</label>`;
     drawChars();
     $("#reconly").onchange = (e) => { RECRUITED_ONLY = e.target.checked; drawChars(); };
+  } else if (SUB === "recruit") {
+    $("#subhint").innerHTML = `Bulk-recruit units into a protagonist's <b>pre-merge team</b> in one action. ` +
+      `Pick a team, then use the bulk buttons or the canonical presets — no need to open each character. ` +
+      `Team only matters before the parties merge (Flame Champion); after that it's cosmetic. Changes are staged until you Apply.`;
+    drawRecruit();
   } else if (SUB === "party") {
     $("#subhint").innerHTML = `Active battle party (up to 6). Leaving story-required leaders in place avoids soft-locks.`;
     drawParty();
@@ -500,6 +506,85 @@ function wireChar(c) {
     if (cb && !cb.checked) { cb.checked = true; e.recruited = true; }
   }));
 }
+
+// ---- Recruit (bulk team assignment) ----------------------------------------
+// Recruitment lives in the save: each character has a recruit word whose bits 2-5 encode
+// which protagonist recruited them (their pre-merge team). This section stages bulk
+// {recruited, recruiter} edits into RECRUIT (the same shape a single character card uses),
+// so Apply routes them through the tried s3save.write_save_edits path unchanged.
+const TEAM_OPTS = [["", "— shared / story —"], ...RECRUITERS.map((h) => [h, h])];
+let RECRUIT_TEAMS = null, RTEAM = "Hugo";   // canonical map (name->team) + current bulk target
+async function loadRecruitTeams() {
+  if (RECRUIT_TEAMS) return RECRUIT_TEAMS;
+  const map = {};
+  try {
+    const j = await (await fetch("../Editor/s3_recruit_teams.json")).json();
+    for (const [team, names] of Object.entries(j.teams || {})) for (const n of names) map[n] = team;
+  } catch (e) { /* presets just stay unavailable if the file is missing */ }
+  RECRUIT_TEAMS = map;
+  return map;
+}
+
+// recruit staging math lives in recruit-core.js (shared with the Node tests); thin wrappers
+// bind the RECRUIT edit-map so call sites stay terse.
+const recState = (c) => RecruitCore.recState(c, RECRUIT);
+const setRecruit = (c, recruited, team) => RecruitCore.setRecruit(c, recruited, team, RECRUIT);
+
+function drawRecruit() {
+  if (RECRUIT_TEAMS === null) loadRecruitTeams().then(() => { if (SUB === "recruit") drawRecruit(); });   // enable presets once loaded (once)
+  const s = saves[curSlot];
+  const roster = s.characters.filter((c) => c.hasData || c.recruited || (c.name && !/^#/.test(c.name)));
+  const shown = roster.filter((c) => !SEARCH || c.name.toLowerCase().includes(SEARCH) || String(c.rosterIndex) === SEARCH);
+
+  // per-team counts over the whole roster (staged)
+  const { total, counts } = RecruitCore.teamCounts(roster, RECRUIT);
+  const teamSel = TEAM_OPTS.map(([v, l]) => `<option value="${v}"${v === RTEAM ? " selected" : ""}>${esc(l)}</option>`).join("");
+  const canon = RECRUIT_TEAMS && Object.keys(RECRUIT_TEAMS).length;
+  const presetBtns = canon
+    ? RECRUITERS.map((h) => `<button class="chip" data-canon="${h}">Canonical → ${h}</button>`).join("") +
+      `<button class="chip" data-canon="ALL">Canonical → everyone</button>`
+    : `<span class="muted">canonical presets unavailable</span>`;
+
+  const rows = shown.map((c) => {
+    const st = recState(c), dirty = (c.rosterIndex in RECRUIT);
+    const opts = TEAM_OPTS.map(([v, l]) => `<option value="${v}"${v === st.team ? " selected" : ""}>${esc(l)}</option>`).join("");
+    return `<tr class="${dirty ? "dirtyrow" : ""}">
+        <td><label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-rec="${c.rosterIndex}" ${st.recruited ? "checked" : ""}> <span>${esc(c.name)}</span></label></td>
+        <td class="sl">#${c.rosterIndex}</td>
+        <td><select data-team="${c.rosterIndex}" ${st.recruited ? "" : "disabled"}>${opts}</select></td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`;
+
+  $("#subview").innerHTML = `
+    <div class="warnbox" style="margin:0 0 10px">Recruiting a character the story hasn't unlocked yet — or un-recruiting a protagonist — can soft-lock an early save. Keep a backup.</div>
+    <div class="row" style="gap:10px;margin-bottom:8px">
+      <label class="field" style="max-width:220px"><span>Team for bulk actions</span><select id="rteam">${teamSel}</select></label>
+      <span class="muted">Recruited ${total} · Hugo ${counts.Hugo} · Chris ${counts.Chris} · Geddoe ${counts.Geddoe} · Thomas ${counts.Thomas} · shared ${counts[""]}</span>
+    </div>
+    <div class="subtabs" style="margin-bottom:8px">
+      <button class="chip" id="recAllShown">Recruit all shown → team</button>
+      <button class="chip" id="moveShown">Move all shown → team</button>
+      <button class="chip" id="unrecShown">Un-recruit all shown</button>
+    </div>
+    <div class="subtabs" style="margin-bottom:10px">${presetBtns}</div>
+    <table class="invtbl"><thead><tr><th>Character</th><th>#</th><th>Team</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  $("#rteam").onchange = (e) => { RTEAM = e.target.value; };
+  $$("input[data-rec]").forEach((cb) => (cb.onchange = () => {
+    const c = charByRoster(+cb.dataset.rec); setRecruit(c, cb.checked, cb.checked ? RTEAM : undefined); drawRecruit();
+  }));
+  $$("select[data-team]").forEach((se) => (se.onchange = () => {
+    const c = charByRoster(+se.dataset.team); setRecruit(c, true, se.value); drawRecruit();
+  }));
+  $("#recAllShown").onclick = () => { shown.forEach((c) => setRecruit(c, true, RTEAM)); drawRecruit(); };
+  $("#moveShown").onclick = () => { shown.forEach((c) => { if (recState(c).recruited) setRecruit(c, true, RTEAM); }); drawRecruit(); };
+  $("#unrecShown").onclick = () => { shown.forEach((c) => setRecruit(c, false)); drawRecruit(); };
+  $$("[data-canon]").forEach((b) => (b.onclick = () => {
+    RecruitCore.applyCanonical(roster, b.dataset.canon, RECRUIT_TEAMS || {}, RECRUIT);
+    drawRecruit();
+  }));
+}
+function charByRoster(ri) { return saves[curSlot].characters.find((c) => c.rosterIndex === ri) || { rosterIndex: ri, recruited: false, recruiter: "" }; }
 
 // ---- Party -----------------------------------------------------------------
 function drawParty() {
@@ -618,9 +703,10 @@ function buildDiff() {
     });
   });
   Object.entries(RECRUIT).forEach(([ri, v]) => {
-    const who = (byRi[ri] || byRi[+ri] || {}).name || `#${ri}`;
-    if ("recruited" in v) rows.push({ g: who, t: `Recruited: ${v.recruited ? "yes" : "no"}` });
-    if (v.recruiter != null && v.recruiter !== "") rows.push({ g: who, t: `Recruited by: ${v.recruiter}` });
+    const c = byRi[ri] || byRi[+ri] || {}, who = c.name || `#${ri}`;
+    if ("recruited" in v && v.recruited !== !!c.recruited) rows.push({ g: who, t: `Recruited: ${v.recruited ? "yes" : "no"}` });
+    if (v.recruited && "recruiter" in v && v.recruiter !== (c.recruiter || ""))
+      rows.push({ g: who, t: `Team: ${(c.recruiter || "shared")} → ${v.recruiter || "shared"}` });
   });
   Object.entries(PARTY).forEach(([slot, cid]) => {
     const old = (s.party || [])[+slot] || 0;

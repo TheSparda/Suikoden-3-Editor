@@ -19,3 +19,5 @@ jobs:
           node-version: "20"
       - name: Validate web editor
         run: node web/tests/validate.mjs
+      - name: Recruit-core unit tests
+        run: node web/tests/recruit-logic.mjs

@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -49,8 +49,28 @@ let nSkills = 0; for (const l of skillsTxt.split(/\r?\n/)) { const p = l.trim().
 console.log("App shell:");
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
+(/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
 (/data-mode="iso"/.test(html) && /data-mode="save"/.test(html) ? ok : bad)("both mode tabs present");
-(/iso\.js/.test(fs.readFileSync(path.join(WEB, "sw.js"), "utf8")) ? ok : bad)("service worker precaches iso.js");
+{ const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
+  (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js"); }
+
+// 5) canonical recruit-team map: parses, teams valid, every name is in s3save.py ROSTER
+console.log("Recruit teams:");
+try {
+  const rt = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_teams.json"), "utf8"));
+  const validTeams = ["Hugo", "Chris", "Geddoe", "Thomas"];
+  const teams = rt.teams || {};
+  (Object.keys(teams).every((t) => validTeams.includes(t)) ? ok : bad)("only valid protagonist teams");
+  // ROSTER names from s3save.py
+  const src = fs.readFileSync(path.join(REPO, "Editor", "s3save.py"), "utf8");
+  const m = /ROSTER\s*=\s*\[([\s\S]*?)\]/.exec(src);
+  const roster = new Set([...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
+  const all = Object.values(teams).flat();
+  const missing = all.filter((n) => !roster.has(n));
+  (missing.length === 0 ? ok : bad)(`all ${all.length} team members exist in ROSTER` + (missing.length ? " (missing: " + missing.join(", ") + ")" : ""));
+  const dupes = all.filter((n, i) => all.indexOf(n) !== i);
+  (dupes.length === 0 ? ok : bad)("no character listed on two teams" + (dupes.length ? " (dupes: " + dupes.join(", ") + ")" : ""));
+} catch (e) { bad("s3_recruit_teams.json — " + e.message); }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
 process.exit(failures ? 1 : 0);
