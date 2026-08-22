@@ -1,177 +1,170 @@
 # Suikoden III ISO & Save Editor
 
-> 🌐 **Edit online (no install):**
-> **https://thesparda.github.io/Suikoden-3-Editor/web/**
-> Runs entirely in your browser; nothing is uploaded. The **Save Editor** tab works
-> everywhere (incl. Android). The **ISO Editor** tab edits your disc image in place and
-> requires a Chromium desktop browser (Chrome/Edge/Brave/Opera) for the File System
-> Access API — it's blocked with an explanation on unsupported browsers. See [`web/`](web/).
-
-A cross-platform editor for **Suikoden III** (PS2, USA `SLUS-20387`). It runs as a local
-web app in your browser and does two things:
+A cross-platform editor for **Suikoden III** (PS2, USA `SLUS-20387`) that lets you rebalance
+the game and edit your playthroughs. Two things:
 
 - **ISO editing** — rebalance spells, runes, unite attacks, gear, weapons, foods, shops,
-  enemies, characters, and in-game text directly in the disc image. ISO edits apply to a
-  **new game**.
+  enemies, and characters directly in the disc image. ISO edits apply to a **new game**.
 - **Save editing** — open a PS2 **memory card** (or a standalone save export) and edit an
   existing playthrough: levels, HP, EXP, stats, skills, equipment, party, inventory, gold,
   recruitment, and names. **No ISO required.**
 
-Everything runs locally — nothing is uploaded, and the server only touches the file you
-point it at. The repo ships with **no game data**; supply your own legally-obtained ISO
-and/or saves. Writes are guarded by an optional `.bak` backup (a header toggle, on by
-default).
+Nothing is ever uploaded — everything runs on your own device. The repo ships with **no
+game data**; supply your own legally-obtained ISO and/or saves.
 
-> **Feature requests / Support** available on the **Toran Castle Discord**:
+> ## 🌐 Use it online — no install
+>
+> ### **https://thesparda.github.io/Suikoden-3-Editor/web/**
+>
+> **This is the recommended way to use the editor for almost everyone.** It runs entirely
+> in your browser, your files never leave your device, and it now covers everything the
+> downloadable app does for day-to-day editing. There's nothing to install and it updates
+> itself.
+
+> **Feature requests / Support** on the **Toran Castle Discord**:
 > https://discord.gg/KesHMX5P2Z
 
-## Run
+---
+
+## The web editor (recommended)
+
+Open **https://thesparda.github.io/Suikoden-3-Editor/web/** in any modern browser. The page
+has two tabs — **Save Editor** and **ISO Editor** — and everything happens locally on your
+device (the save engine runs the real Python module in your browser via Pyodide/WebAssembly;
+nothing is uploaded).
+
+- **Works on phones too.** The **Save Editor** works in any modern browser, including
+  Android — handy for editing a memory card on the same device you emulate on
+  (AetherSX2 / NetherSX2 / PCSX2).
+- **Installable app / offline.** It's a PWA: use your browser's **Install app** / **Add to
+  Home Screen** and, after the first visit, it works fully offline.
+- **Your data stays put.** No server, no upload. Saves and ISOs are read and written on
+  your device only.
+
+### Save Editor (web)
+
+Open a save with **Choose file…** or drag it in — no ISO needed. Supported containers:
+
+| Format | Extension | Notes |
+|---|---|---|
+| PS2 memory card | `.ps2` / `.mcd` / `.mc2` / `.bin` | Full PS2MFS walk; multi-slot; per-page ECC recomputed |
+| EMS export | `.psu` | Edited in place |
+| PS3 virtual card | `.psv` | Edited in place |
+| SharkPort / X-Port | `.sps` / `.xps` | Patched in place |
+| CodeBreaker | `.cbs` | Decompressed, edited, re-encoded |
+| Raw payload | `gamedata` | The bare save payload |
+
+Multi-save memory cards show a **slot switcher**. Every write recomputes the save's
+**checksum** (and card **ECC**) automatically, so the result is byte-compatible with the game.
+Editable per save:
+
+- **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, playtime,
+  story phase, party leader, and Suikoden I/II carryover detection.
+- **Characters** — level, current/max HP, EXP, all 8 stats, equipped runes + armour
+  (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
+  per-character recruitment (recruited toggle + "recruited by").
+- **Party** — the active battle party (up to 6), by character name.
+- **Recruit** — bulk recruitment: recruit / move / un-recruit everyone shown to a team, plus
+  **canonical presets** ("Canonical → Hugo / Chris / Geddoe / Thomas / everyone") that assign
+  each Star of Destiny to its story-correct recruiter.
+- **Inventory** — every bag (Hugo / Chris / Geddoe / Thomas / Storage), split into Party Items
+  vs Key/Valuables, with name-resolved item pickers, quantities, add and remove.
+
+Quality-of-life: **searchable pickers** (type-to-filter, with id + name + in-game
+description + category), a **review-changes** confirmation (an explicit old → new list before
+anything is written), an **unsaved-changes guard**, and a one-tap **↻ Last opened** chip.
+On desktop Chromium the app keeps a writable handle so **Apply & save to file** overwrites
+the original in place; other browsers fall back to **Apply & download**. On Android it can
+also **Apply & share…** the edited file straight to your file manager or emulator folder.
+
+### ISO Editor (web)
+
+Edit the disc image directly. This tab needs a **Chromium desktop browser**
+(Chrome / Edge / Brave / Opera) for the File System Access API used to write in place — it's
+blocked with an explanation on unsupported browsers. The editor only reads the ~3.75 MB
+executable region of the disc, verifies it's a USA `SLUS-20387` image, and writes just the
+changed bytes back in place (the multi-GB disc is never fully loaded or uploaded).
+
+Views: **Characters** (starting stats, equipment, skills + ranks), **Growth** (stat-growth
+rates, rune levels, fixed skills, skill-max caps), **Support**, **Weapons** (ATK across all
+16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE / status,
+plus a **rune reskin** that edits every spell a rune grants at once and optional description
+rewrites), **Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Balance**
+(idempotent hard-mode multiplier presets), **Enemies** (name reference), and **Reference**
+(item/skill id → name lists).
+
+**Share a mod without the disc.** Export a **mod recipe (`.s3mod`)** — a tiny JSON of the
+exact byte changes (with original bytes, so it's reversible and **version-checked**; a recipe
+for the wrong game/region is rejected). Recipes are built from your staged edits directly, so
+you don't have to write the ISO first. Others import it to replay the edits on **their own**
+clean disc.
+
+---
+
+## Offline / desktop app (advanced & developers)
+
+The repo also ships a self-contained Python app that runs the same engine locally. Most
+people don't need it — reach for it if you want to **script edits from the CLI**, produce
+**whole-ISO `xdelta` patches**, edit the disc's **in-ROM text strings**, or work fully offline
+from source.
+
+### Run
 
 - **macOS:** double-click `Start Editor (Mac).command`
 - **Windows:** double-click `Start Editor (Windows).bat`
 - **Any:** `cd Editor && python3 s3editor.py`
 
-Requires Python 3.8+ (standard library only — no `pip install`). The app opens your
-browser at `http://127.0.0.1:8747/`. Open your ISO with **Browse… / Open** (a native file
-picker), or drop it near the app and pick it from the scan list.
+Requires Python 3.8+ (standard library only — no `pip install`). The app opens your browser
+at `http://127.0.0.1:8747/`. Open your ISO or save with a native file picker, or drop it near
+the app and pick it from the scan list. Edits stage in memory and highlight amber; click
+**Save** to write them (a `.bak` is made first, a toggle that's on by default). Every field
+has a **↺** restore and there's a light/dark theme toggle.
 
-> Edits stage in memory and highlight amber; click **Save** to write them to disk (a
-> `.bak` is made first). Every field has a **↺** restore, and there's a light/dark theme
-> toggle. The nav bar groups the less-used tabs under **Other ▾**.
+### What the desktop app adds over the web editor
 
----
-
-## ISO editing
-
-### Characters
-Edit any character by name (searchable dropdown, filters by name or id). A **Data section**
-selector switches between the character tables:
-- **Starting Stats / Equipment** — starting skills + **ranks (E–S tier dropdowns)**,
-  equipped runes (L/R hand, head), helmet / armor / shield, and starting items. Equipment
-  and rune fields are category-filtered dropdowns with in-game descriptions.
-- **Growth / Skill Max / Fixed Skills** — per-stat growth rates, rune levels, **Skill
-  Maximum Levels** (grade-tier dropdowns, with a **bulk "set all"** control to cap every
-  skill at once), and the Fixed-Skill block (skill picker + the character level each is
-  learned at).
-- **Support Skills** — the character's support-skill slots.
-- **Raw bytes** — fallback hex view.
-
-### Spells
-The full spell / rune-effect table, **grouped by rune** and ordered by element family
-(Fire → Rage → True Fire, etc.). Edit **power**, **cast/movement time**, **element**,
-**target/size**, **AOE** (area vs single), and inflicted **status effect**, with in-game
-descriptions and a live target/shape pill.
-
-### Runes
-Pick a rune and edit **each of its spells individually**, or reskin the whole rune's
-spell set at once.
-
-### Unites
-Every co-op unite attack (verified vs the Unites guide) — edit power, cast time, element,
-target, and status.
-
-### Gear
-Weapons, armor, shields, and accessories: DEF, buy/sell price, and up to five effect slots
-(stat bonuses, granted skills, elemental flags), each a typed dropdown. The in-game
-description is shown for reference.
-
-### Weapons
-Each weapon type's ATK across all 16 sharpen levels, in a wrapping grid. A reference panel
-maps weapon-growth classes to their characters.
-
-### Foods
-Consumable heal amounts and status-cure chances, with an opt-in **live description
-preview** that rewrites the item's in-game text to match your edited values (length-capped).
-
-### Hard Mode
-Scale enemy/growth power with idempotent, fully-restorable multiplier presets.
-
-### Shop
-Shop stock slots and the price ladder, by item name.
-
-### Enemies
-Reference list of enemy names + indices (S3 has no flat editable enemy-stat table).
-
-### Text
-In-place editor for the boot-ELF strings (UI / battle / menu / prize / error text and
-character blurbs), each capped to its original length. Story **dialogue** lives in packed
-event files outside the executable and is **not** editable here.
-
-### Reference
-Clean id → name lists (items, skills) for lookup.
-
----
-
-## Save editing
-
-Open a save by **file picker** or folder scan — no ISO needed. Supported containers:
-
-| Format | Extension | Notes |
-|---|---|---|
-| PS2 memory card | `.ps2` / `.mcd` / `.mc2` / `.bin` | Full PS2MFS walk; per-page ECC recomputed |
-| EMS export | `.psu` | In-place |
-| Raw payload | `gamedata` | The bare 53264-byte save |
-| SharkPort / X-Port | `.sps` / `.xps` | Patched in place |
-| CodeBreaker | `.cbs` | Decompressed, edited, re-encoded (RC4+zlib) |
-
-Every write recomputes the save's **checksum** (and card ECC) automatically, and keeps a
-`.bak`. Editable per save:
-- **Per character:** level, current/max HP, EXP, all 8 stats, equipped runes + gear, and
-  skill slots with **rank tier dropdowns** (— / E … S).
-- **Whole save:** gold, castle name, active party, and recruitment (with "recruited by").
-- **Inventory:** item slots + quantities, via item-name dropdowns.
-
----
-
-## Share / Patch
-
-Share your edits as a small file so others can apply them to **their own** clean ISO —
-without passing around the multi-GB disc. Under **Other → Share / Patch**:
-
-- **Mod recipe (`.s3mod`)** — a tiny JSON of the exact byte changes (with original bytes,
-  so it's reversible and **version-checked**; a recipe for the wrong game/region is
-  rejected). It's built from your **staged edits directly** — you do **not** have to write
-  the ISO first. Export, then share the file. Applying replays it in place (with a `.bak`)
-  and warns on any byte that doesn't match the author's original.
-- **xdelta patch (`.xdelta`)** — a whole-ISO binary diff that captures *everything*,
+- **Text editing** — an in-place editor for the boot-ELF strings (UI / battle / menu / prize /
+  error text and character blurbs), each capped to its original length. (Story **dialogue**
+  lives in packed event files outside the executable and is not editable.) This is **not**
+  available in the web ISO editor.
+- **xdelta patches (`.xdelta`)** — a whole-ISO binary diff that captures *everything*,
   including in-place text edits. Needs a pristine ISO to create/apply; the wrong source is
   detected, not silently mis-patched (requires `xdelta3`: macOS `brew install xdelta`).
+- **CLI** — `Editor/s3patch.py` exposes the same engine for scripting:
 
----
+  ```bash
+  cd Editor
+  python3 s3patch.py verify   "/path/to/Suikoden III (USA).iso"
+  python3 s3patch.py set-field "…" --list 1 --index 2 --off 9 --u8 5
+  python3 s3patch.py mod-export "…" --note "my rebalance"      # -> <iso>.s3mod
+  python3 s3patch.py mod-apply  "…" --recipe mod.s3mod
+  python3 s3patch.py xdelta-make "…" --pristine clean.iso --out mod.xdelta
+  ```
 
-## CLI
+  `Editor/s3save.py <memcard.ps2>` dumps the decoded saves on a card.
 
-`Editor/s3patch.py` exposes the same engine for scripting:
-
-```bash
-cd Editor
-python3 s3patch.py verify   "/path/to/Suikoden III (USA).iso"
-python3 s3patch.py set-field "…" --list 1 --index 2 --off 9 --u8 5
-python3 s3patch.py mod-export "…" --note "my rebalance"      # -> <iso>.s3mod
-python3 s3patch.py mod-apply  "…" --recipe mod.s3mod
-python3 s3patch.py xdelta-make "…" --pristine clean.iso --out mod.xdelta
-```
-
-`Editor/s3save.py <memcard.ps2>` dumps the decoded saves on a card.
-
-## Layout
+### Layout
 
 ```
 Editor/
   s3editor.py   local web app (all tabs + JSON API)
   s3patch.py    ISO engine + CLI (verify / set / recipe / xdelta)
-  s3save.py     save engine (card / .psu / gamedata / .sps / .xps / .cbs)
+  s3save.py     save engine (card / .psu / .psv / gamedata / .sps / .xps / .cbs)
   s3fields.py   verified ISO field tables + schema
   s3_*.json / *_ids.txt   verified id→name / description reference data
+web/            the browser editor (also deployed to GitHub Pages)
 Start Editor (Mac).command / (Windows).bat   launchers
 ```
+
+---
 
 ## Privacy & scope
 
 The repository contains **no game ROM/ISO, saves, audio, or story assets** — only small
 reverse-engineered reference tables (id→name maps, offsets) the editor needs to show
-meaningful labels. That's interoperability data, not the game.
+meaningful labels. That's interoperability data, not the game. Whichever editor you use,
+nothing you open is uploaded anywhere.
 
 ## Support
 
-Feature requests/Support avail on the Toran Castle Discord: https://discord.gg/KesHMX5P2Z
+Feature requests / Support available on the **Toran Castle Discord**:
+https://discord.gg/KesHMX5P2Z
