@@ -103,8 +103,22 @@ The web UI covers everything the desktop save editor does:
 - **Multi-slot** memory cards show a slot switcher.
 
 Item / skill / character names come from the same reference files the desktop server uses
-(`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, `s3_names.json`), parsed with the same
-rules. The reference files are fetched from `../Editor/` alongside `s3save.py`.
+(`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, `s3_names.json`, plus
+`s3_item_desc.json` / `s3_skill_desc.json` for descriptions), parsed with the same rules and
+fetched from `../Editor/` alongside `s3save.py`.
+
+## Quality-of-life
+
+- **Searchable pickers** — items, skills, equipment, and party members open a type-to-filter
+  modal instead of a giant native dropdown (essential with 500+ items, especially on mobile).
+  Rows show the id, name, in-game description, and category.
+- **Review changes before writing** — "Apply" first shows an explicit *old → new* list of
+  every field that will change, grouped by character / section. Confirm to download.
+- **Unsaved-changes guard** — warns before you close or navigate away with pending edits.
+- **Value hints** — number fields carry sensible min/max; the module still clamps to the
+  real byte width on write.
+- **Boot progress** — the first-load Pyodide download shows staged progress instead of a bare
+  spinner.
 
 **ISO patching stays desktop-only** — it needs the multi-GB ISO and does not belong in a
 browser tool.
