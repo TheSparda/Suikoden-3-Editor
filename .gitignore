@@ -42,3 +42,6 @@ Saves/
 # local cheat/reference files — not distributed
 Cheat files/
 Guides/
+
+# web test deps
+web/tests/node_modules/

@@ -32,6 +32,25 @@
   const UNITE = { off: 0x3ECF90, count: 38, stride: 0x28 };
   const FOOD = { off: 0x3E91D0, stride: 0x48, count: 62, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
   const GEAR = { stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
+  const ENEMY = { off: 0x3E74E0, count: 100, stride: 0x14 };   // names only (no editable stat table)
+
+  // Known table starts, sorted — used to stop a record write from spilling into the next
+  // table (list1's last record physically abuts list3; see nextBoundary/drawRecords).
+  const BOUNDARIES = [3970620, 4054224, 4061704, 4068152, 4078716, 4089904, 4093152, 4100560, 4105552, 4113056, 4115344, 4136544, 4136564]
+    .sort((a, b) => a - b);
+  const nextBoundary = (off) => { for (const b of BOUNDARIES) if (b > off) return b; return ELF_END; };
+
+  // ---- Hard Mode / bulk balance (mirror s3editor apply_hard_mode) ------------
+  const GROWTH_OFFS = { PWR: 4, SKL: 5, MAG: 6, REP: 7, MDF: 8, SPD: 9, LUK: 10, HP: 11 };
+  const HM_STATS = ["HP", "PWR", "MAG", "SKL", "MDF", "SPD", "REP", "LUK"];
+  const HM_PRESETS = {
+    tougher: { label: "Tougher", desc: "A gentle nerf — the party grows a bit slower.",
+      growth: { HP: 0.8, PWR: 0.85, MAG: 0.85, SKL: 0.9, MDF: 0.9, SPD: 0.95, REP: 1, LUK: 1 }, spell: 0.9, unite: 0.9 },
+    hard: { label: "Hard", desc: "Noticeably weaker party. Fights take real thought.",
+      growth: { HP: 0.65, PWR: 0.7, MAG: 0.7, SKL: 0.8, MDF: 0.8, SPD: 0.9, REP: 0.9, LUK: 1 }, spell: 0.75, unite: 0.75 },
+    brutal: { label: "Brutal", desc: "Punishing. Low HP, weak hits — every battle is a threat.",
+      growth: { HP: 0.5, PWR: 0.55, MAG: 0.55, SKL: 0.7, MDF: 0.7, SPD: 0.85, REP: 0.85, LUK: 1 }, spell: 0.6, unite: 0.6 },
+  };
 
   const ELEMENTS = { 0: "None", 1: "Fire", 2: "Water", 3: "Wind", 4: "Earth", 5: "Lightning", 6: "Pale (Dark)" };
   const AREA_BIT = 0x8000;                  // flags14 bit15 = area-of-effect
@@ -292,7 +311,15 @@
       const ov = kind === "text" ? `"${strFrom(ORIG, off, width)}"`
         : kind === "raw" ? "original" : fmtVal(kind, origW(off, width));
       btn.title = `Restore original (${ov})`;
+      btn.setAttribute("aria-label", `Restore original value (${ov})`);
     }
+    scheduleBadge();
+  }
+  // Coalesce dirty-badge refreshes to once per frame — markField fires many times per render.
+  let badgePending = false;
+  function scheduleBadge() {
+    if (badgePending) return; badgePending = true;
+    (window.requestAnimationFrame || setTimeout)(() => { badgePending = false; updateDirtyBadge(); }, 0);
   }
   function fmtVal(kind, v) {
     if (kind === "item") return itemLabel(v);
@@ -353,24 +380,55 @@
   // ---- save (in place) -------------------------------------------------------
   function buildReview() {
     const rows = [];
+    let covered = 0;
     for (const off in FIELD_REG) {
       const m = FIELD_REG[off];
       if (!isDirty(m.off, m.width)) continue;
+      covered += m.width;
       let ov, nv;
       if (m.kind === "text") { ov = `"${strFrom(ORIG, m.off, m.width)}"`; nv = `"${strFrom(BUF, m.off, m.width)}"`; }
       else { ov = fmtVal(m.kind, origW(m.off, m.width)); nv = fmtVal(m.kind, readW(m.off, m.width)); }
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}` });
     }
+    // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
+    const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
+    if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. Balance multipliers)` });
     return rows;
   }
+  let recipeExported = false, saveNudged = false;
   function saveIso() {
     if (!anyChanges()) return setStatus("No changes to save.", "warn");
+    // One-time nudge to export a reversible recipe before the first in-place write of a session.
+    if (!recipeExported && !saveNudged) { saveNudged = true; return backupNudge(confirmAndSave); }
+    confirmAndSave();
+  }
+  function confirmAndSave() {
     const rows = buildReview();
-    const runs = diffRuns();
-    const bytes = runs.reduce((a, r) => a + (r[1] - r[0]), 0);
-    if (!rows.length) rows.push({ g: "Raw", t: `${bytes} byte(s) across ${runs.length} run(s)` });
-    // reuse the save editor's confirm modal (same global function/markup)
-    openConfirm(rows, doSave, `Write ${bytes} byte(s) to ${isoName}`);
+    const bytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
+    if (!rows.length) rows.push({ g: "Raw", t: `${bytes} byte(s)` });
+    openConfirm(rows, doSave, `Write ${bytes} byte(s) to ${isoName}`);   // shared confirm modal
+  }
+  // "Back up first?" prompt shown once before the first save; offers a one-click recipe export.
+  function backupNudge(onContinue) {
+    const ov = document.createElement("div");
+    ov.className = "modal-ov";
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Back up before saving" style="max-width:460px">
+        <div class="modal-h"><b>Back up before saving?</b></div>
+        <div class="pg-body">
+          <p class="sub" style="margin:0 0 6px">Editing an ISO writes changes into your disc image. Export a tiny <b>.s3mod recipe</b> first — it records every change so you can undo, and it takes a second (no 4&nbsp;GB copy).</p>
+          <p class="muted" style="margin:0">You can also keep your own backup copy of the ISO.</p>
+        </div>
+        <div class="modal-f">
+          <button id="bnCancel">Cancel</button>
+          <button id="bnSkip">Save without backup</button>
+          <button class="primary" id="bnExport">Export recipe &amp; continue</button>
+        </div></div>`;
+    document.body.appendChild(ov);
+    const close = modalA11y(ov, () => ov.remove(), q("#bnExport", ov));
+    q("#bnCancel", ov).onclick = () => close();
+    ov.onclick = (e) => { if (e.target === ov) close(); };
+    q("#bnSkip", ov).onclick = () => { close(); onContinue(); };
+    q("#bnExport", ov).onclick = () => { close(); exportRecipe(); onContinue(); };
   }
   async function doSave() {
     const runs = diffRuns();
@@ -443,6 +501,7 @@
         el("pgMsg").textContent = msg;
         bar.classList.remove("indet"); fill.style.width = "100%"; fill.classList.toggle("err", !!isErr);
         el("pgFoot").style.display = "flex"; el("pgClose").onclick = () => ov.remove();
+        setTimeout(() => el("pgClose").focus(), 20);
       },
     };
   }
@@ -456,6 +515,7 @@
       for (let i = s; i < e; i++) { oldHex += hex(ORIG[i], 2).toLowerCase(); newHex += hex(BUF[i], 2).toLowerCase(); }
       patches.push({ off: ELF_BASE + s, old: oldHex, new: newHex });
     }
+    recipeExported = true;
     const mod = { format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
       note: "made with the web ISO editor", patchCount: patches.length, patches };
     const blob = new Blob([JSON.stringify(mod, null, 1)], { type: "application/json" });
@@ -486,7 +546,8 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["food", "Food"]];
+    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["food", "Food"],
+    ["balance", "Balance"], ["enemies", "Enemies"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -506,6 +567,7 @@
         <div id="isoView"></div>
         <div class="toolbar">
           <button class="primary" id="isoSaveBtn">Apply &amp; save to ISO</button>
+          <span class="pill" id="isoDirty" hidden></span>
           <button id="isoRecipeBtn">Export recipe…</button>
           <label class="file" style="margin:0"><button type="button" id="isoImportBtn">Import recipe…</button>
             <input type="file" id="isoRecipeFile" accept=".s3mod,.json"></label>
@@ -515,12 +577,24 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = null; renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoImportBtn").onclick = () => q("#isoRecipeFile").click();
     q("#isoRecipeFile").onchange = (e) => { if (e.target.files[0]) importRecipe(e.target.files[0]); e.target.value = ""; };
     q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     drawView();
+  }
+
+  // Live "unsaved changes" indicator: count of labeled field changes, or a dot for
+  // bulk (Balance) edits that aren't tied to a single field. Also annotates the Save button.
+  function updateDirtyBadge() {
+    const badge = q("#isoDirty"), btn = q("#isoSaveBtn"); if (!badge || !btn) return;
+    const n = buildReview().length;
+    if (n > 0) { badge.hidden = false; badge.textContent = `${n} unsaved`; }
+    else if (anyChanges()) { badge.hidden = false; badge.textContent = "unsaved changes"; }
+    else { badge.hidden = true; }
+    btn.textContent = anyChanges() ? "Apply & save to ISO ●" : "Apply & save to ISO";
   }
 
   function drawView() {
@@ -535,6 +609,9 @@
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect.",
       gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
       food: "Consumable / food table: heal amount and proc chance %.",
+      balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
+      enemies: "Enemy name reference (read-only) — Suikoden III has no editable flat enemy-stat table in this ROM.",
+      ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
     };
     q("#isoHint").textContent = hints[VIEW] || "";
     const host = q("#isoView");
@@ -551,10 +628,14 @@
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "food") drawFood(host);
+    else if (VIEW === "balance") drawBalance(host);
+    else if (VIEW === "enemies") drawEnemies(host);
+    else if (VIEW === "ref") drawReference(host);
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
     });
     window.scrollTo(0, y);
+    scheduleBadge();
   }
 
   // ---- generic record editor (list1 / list3 / list4) ------------------------
@@ -585,7 +666,15 @@
     });
   }
   function recFields(recBase, fields, group) {
-    return fields.map(([label, off, w, kind]) => fieldHTML(recBase + off, w, kind, label)).join("");
+    // Records physically abut the next table (e.g. list1's last record overlaps list3).
+    // Drop any field whose bytes would spill past that boundary so an edit can't corrupt it.
+    const safeEnd = Math.min(recBase + 200, nextBoundary(recBase));
+    let dropped = 0;
+    const html = fields.map(([label, off, w, kind]) => {
+      if (recBase + off + w > safeEnd) { dropped++; return ""; }
+      return fieldHTML(recBase + off, w, kind, label);
+    }).join("");
+    return html + (dropped ? `<div class="muted" style="grid-column:1/-1">${dropped} field(s) hidden — they overlap the next table and aren't safe to edit on this record.</div>` : "");
   }
   function fieldHTML(off, w, kind, label) {
     const v = readW(off, w), dirty = isDirty(off, w) ? " dirty" : "";
@@ -997,6 +1086,100 @@
     const d0 = isDirty(base + eo, 8);
     [tSel, stat, skill].forEach((el) => el.classList.toggle("dirty", d0));
     markField(vIn, base + eo, 8, "raw");
+  }
+
+  // ---- Balance (Hard Mode / bulk) --------------------------------------------
+  // All scaling is relative to the ORIGINAL on-disk value, so presets are idempotent
+  // (re-applying "Hard" doesn't compound) and setting a multiplier to 1 restores the field.
+  function applyHardMode(growthMults, spellMult, uniteMult) {
+    let gN = 0, sN = 0, uN = 0;
+    const [gb, gs] = TABLES.list2;
+    for (let i = 0; i < LIST_COUNT.list2; i++) {
+      for (const stat in GROWTH_OFFS) {
+        const m = growthMults[stat]; if (m == null) continue;
+        const off = gb + i * gs + GROWTH_OFFS[stat];
+        const nv = Math.max(0, Math.min(15, Math.round(o8(off) * m)));   // growth bytes clamp 0..15
+        if (nv !== r8(off)) gN++;
+        writeW(off, 1, nv);
+      }
+    }
+    if (spellMult != null) for (let i = 0; i < SPELL.count; i++) {
+      const off = SPELL.off + i * SPELL.stride + 0x1C, nv = Math.max(0, Math.min(0xFFFFFFFF, Math.round(o32(off) * spellMult)));
+      if (nv !== r32(off)) sN++; writeW(off, 4, nv);
+    }
+    if (uniteMult != null) for (let i = 0; i < UNITE.count; i++) {
+      const off = UNITE.off + i * UNITE.stride + 0x1C, nv = Math.max(0, Math.min(0xFFFFFFFF, Math.round(o32(off) * uniteMult)));
+      if (nv !== r32(off)) uN++; writeW(off, 4, nv);
+    }
+    return { gN, sN, uN };
+  }
+  function drawBalance(host) {
+    const presetBtns = Object.entries(HM_PRESETS).map(([k, p]) =>
+      `<button class="chip" data-preset="${k}" title="${esc2(p.desc)}">${p.label}</button>`).join("");
+    const statRows = HM_STATS.map((s) =>
+      `<label class="field"><span>${s} growth ×</span>
+        <input type="number" class="hm-g" data-stat="${s}" min="0" max="4" step="0.05" value="1"></label>`).join("");
+    host.innerHTML = `
+      <div class="warnbox" style="margin-bottom:10px">This is a party <b>nerf</b> tool. It lowers how fast your characters grow (and optionally your spell/unite power) to make the game harder. Enemies can't be buffed directly in this ROM. Values scale from the ISO's originals, so presets don't stack.</div>
+      <div class="bag-h">Presets</div>
+      <div class="subtabs" style="margin-bottom:12px">${presetBtns}<button class="chip" data-preset="reset">Reset to 1.00×</button></div>
+      <div class="bag-h">Growth-rate multipliers <span class="u">1.00 = unchanged</span></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">${statRows}</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:10px">
+        <label class="field"><span>Spell power ×</span><input type="number" id="hm-spell" min="0" max="4" step="0.05" value="1"></label>
+        <label class="field"><span>Unite power ×</span><input type="number" id="hm-unite" min="0" max="4" step="0.05" value="1"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="hm-apply">Stage these multipliers</button>
+        <span class="muted" id="hm-out"></span>
+      </div>`;
+    const gInputs = qa(".hm-g", host);
+    const setMults = (g, sp, up) => {
+      gInputs.forEach((i) => { i.value = g[i.dataset.stat] != null ? g[i.dataset.stat] : 1; });
+      q("#hm-spell", host).value = sp; q("#hm-unite", host).value = up;
+    };
+    qa("[data-preset]", host).forEach((b) => (b.onclick = () => {
+      if (b.dataset.preset === "reset") return setMults({}, 1, 1);
+      const p = HM_PRESETS[b.dataset.preset]; setMults(p.growth, p.spell, p.unite);
+    }));
+    q("#hm-apply", host).onclick = () => {
+      const g = {}; gInputs.forEach((i) => (g[i.dataset.stat] = +i.value || 0));
+      const sp = +q("#hm-spell", host).value, up = +q("#hm-unite", host).value;
+      const res = applyHardMode(g, sp, up);
+      updateDirtyBadge();
+      q("#hm-out", host).textContent =
+        `Staged ${res.gN} growth byte(s)` + (res.sN ? `, ${res.sN} spell power(s)` : "") + (res.uN ? `, ${res.uN} unite power(s)` : "") + ". Review, then Save.";
+      setStatus("Balance multipliers staged.", "ok");
+    };
+  }
+
+  // ---- Enemies (read-only names) ---------------------------------------------
+  function drawEnemies(host) {
+    const rows = [];
+    for (let i = 0; i < ENEMY.count; i++) {
+      const off = ENEMY.off + i * ENEMY.stride;
+      const nm = strFrom(BUF, off, ENEMY.stride).replace(/[^\x20-\x7e].*$/, "").trim();
+      if (SEARCH && !nm.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
+      rows.push(`<tr><td class="sl">${i}</td><td>${esc2(nm || "—")}</td></tr>`);
+    }
+    host.innerHTML = `<table class="invtbl"><thead><tr><th>#</th><th>Enemy</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="2" class="muted">no matches</td></tr>`}</tbody></table>`;
+  }
+
+  // ---- Reference (read-only item / skill browser) ----------------------------
+  let REF_KIND = "items";
+  function drawReference(host) {
+    const isItems = REF_KIND === "items";
+    const list = isItems
+      ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: REF.idesc[id] || "" }))
+      : Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 2, nm: skillName(id), sub: "", desc: "" }));
+    const q2 = SEARCH;
+    const rows = list.filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, o.w).toLowerCase().includes(q2))
+      .map((o) => `<tr><td class="sl">${hex(o.id, o.w)}</td><td>${esc2(o.nm)}${o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
+    host.innerHTML = `<div class="subtabs" style="margin-bottom:10px">
+        <button class="chip${isItems ? " on" : ""}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
+        <button class="chip${isItems ? "" : " on"}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button></div>
+      <table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
+    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawReference(host); }));
   }
 
   // ---- misc ------------------------------------------------------------------

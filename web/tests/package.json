@@ -1,0 +1,12 @@
+{
+  "name": "s3-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node validate.mjs",
+    "test:e2e": "node e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.40.0"
+  }
+}

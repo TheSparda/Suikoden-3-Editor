@@ -165,6 +165,27 @@ function charList() { return [{ id: 0, name: "empty" }, ...CHAR_LIST]; }
 
 // Open the shared picker modal. list=[{id,name,cat?,desc?}]; onPick(id) fires on choose.
 // idFmt formats the id prefix per domain (3-hex items, 2-hex skills, decimal chars).
+// Shared modal accessibility: focus the initial element, trap Tab within the overlay,
+// close on Escape, and restore focus to the opener. Returns a wrapped close() to use everywhere.
+function modalA11y(ov, closeFn, initial) {
+  const prev = document.activeElement;
+  const SEL = 'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
+  const focusables = () => $$(SEL, ov).filter((el) => !el.disabled && el.offsetParent !== null);
+  const close = () => { document.removeEventListener("keydown", onKey, true); closeFn(); if (prev && prev.focus) try { prev.focus(); } catch (e) {} };
+  function onKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
+    if (e.key === "Tab") {
+      const f = focusables(); if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+  document.addEventListener("keydown", onKey, true);
+  setTimeout(() => { const t = initial || focusables()[0]; if (t && t.focus) t.focus(); }, 30);
+  return close;
+}
+
 function openPicker(title, list, current, onPick, idFmt) {
   idFmt = idFmt || ((id) => hx(id, 3));
   const ov = document.createElement("div");
@@ -175,7 +196,7 @@ function openPicker(title, list, current, onPick, idFmt) {
       <div class="picker-list"></div></div>`;
   document.body.appendChild(ov);
   const listEl = $(".picker-list", ov), search = $(".picker-search", ov);
-  const close = () => ov.remove();
+  let close = () => ov.remove();
 
   function render(f) {
     const q = (f || "").toLowerCase();
@@ -193,10 +214,9 @@ function openPicker(title, list, current, onPick, idFmt) {
   }
   render("");
   search.oninput = () => render(search.value);
-  $(".modal-x", ov).onclick = close;
+  close = modalA11y(ov, () => ov.remove(), search);   // focus trap + Esc + focus restore
+  $(".modal-x", ov).onclick = () => close();
   ov.onclick = (e) => { if (e.target === ov) close(); };
-  ov.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-  setTimeout(() => search.focus(), 30);
 }
 
 // ---- File loading ----------------------------------------------------------
@@ -621,14 +641,14 @@ function openConfirm(rows, onConfirm, okLabel) {
     `<div class="cf-group"><div class="cf-g">${esc(g)}</div>${ts.map((t) => `<div class="cf-row">${esc(t)}</div>`).join("")}</div>`).join("");
   const ov = document.createElement("div");
   ov.className = "modal-ov";
-  ov.innerHTML = `<div class="modal" role="dialog" aria-label="Review changes">
+  ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Review changes">
       <div class="modal-h"><b>Review changes (${rows.length})</b><button class="modal-x" aria-label="close">✕</button></div>
       <div class="cf-list">${body}</div>
       <div class="modal-f"><button id="cfCancel">Cancel</button>
         <button class="primary" id="cfOk">${esc(okLabel || "Apply & download")}</button></div></div>`;
   document.body.appendChild(ov);
-  const close = () => ov.remove();
-  $(".modal-x", ov).onclick = close; $("#cfCancel", ov).onclick = close;
+  const close = modalA11y(ov, () => ov.remove(), $("#cfOk", ov));   // focus trap + Esc + focus restore
+  $(".modal-x", ov).onclick = () => close(); $("#cfCancel", ov).onclick = () => close();
   ov.onclick = (e) => { if (e.target === ov) close(); };
   $("#cfOk", ov).onclick = () => { close(); onConfirm(); };
 }

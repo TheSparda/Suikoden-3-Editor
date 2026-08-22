@@ -1,0 +1,21 @@
+name: web-tests
+
+# Fast, browser-free validation of the web editor (JS syntax, ISO offset bounds,
+# reference-table parsing, app-shell wiring). The full Playwright e2e suite is a local
+# step (see web/tests/README.md) and is intentionally not run here to keep CI light.
+on:
+  push:
+    paths: ["web/**", "Editor/**", ".github/workflows/web-tests.yml"]
+  pull_request:
+    paths: ["web/**", "Editor/**"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate web editor
+        run: node web/tests/validate.mjs

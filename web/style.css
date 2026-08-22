@@ -56,6 +56,9 @@ button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(-
   transition:filter .12s,border-color .12s,background .12s,transform .04s; }
 button:hover:not(:disabled) { border-color:var(--acc); }
 button:active:not(:disabled) { transform:translateY(1px); }
+/* visible keyboard focus for accessibility (mouse clicks don't trigger :focus-visible) */
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--acc2); outline-offset:2px; }
+#isoDirty { color:var(--warn); border-color:var(--warnbd); background:var(--changed-bg); font-weight:600; }
 button:disabled { opacity:.45; cursor:default; }
 button.primary { background:var(--acc); border-color:var(--acc); color:var(--accink); font-weight:600; }
 button.primary:hover:not(:disabled) { filter:brightness(1.08); border-color:var(--acc); }
