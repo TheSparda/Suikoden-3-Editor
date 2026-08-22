@@ -13,7 +13,10 @@ export const ELF_BASE = 0xA4800, ELF_END = 0x465DF0, ELF_VADDR = 0x165D000;
 export const SPELL = { off: 0x3EC2A0, stride: 0x20, elem: 0x24 };
 export const UNITE = { off: 0x3ECF90, stride: 0x28 };
 export const FOOD = { off: 0x3E91D0, stride: 0x48, heal: 0x14, proc: 0x1E, name: 0x44, desc: 0x00 };
-export const GEAR_STRIDE = 0x44;
+export const ENEMY = { off: 0x3E74E0, stride: 0x14, count: 100 };
+export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
+export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
+export const SHOP = { item3_a: [4105552, 2], item3_b: [4054224, 2], item2: [3970620, 4], item1: [4136564, 4] };
 export const VERSION_OFF = 4136544, VERSION_VAL = 0x40A69A01;
 
 // first Armor-category item (id + exact name) from the shipped id list — used for a gear record
@@ -45,8 +48,13 @@ export function buildSynthIso() {
   { const o = UNITE.off; w32(o + 8, put("Test Unite")); w32(o + 0x0C, put("coop")); w32(o + 0x10, 65); w32(o + 0x14, 0x00000200); w32(o + 0x1C, 200); }
   { const o = FOOD.off; w32(o + FOOD.name, put("Medicine")); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100); }
   const armor = firstArmor();
-  const P = 0x410000, st = P + GEAR_STRIDE;
+  const P = GEAR.P, st = P + GEAR.stride;
   w32(P, put("(x)")); w32(P + 8, 1000); w16(P + 0x10, 10); w32(P + 0x40, put(armor.name));
   w32(st, put("DEF(+10)")); w32(st + 8, 1000); w16(st + 0x10, 10); w16(st + 0x14, 2); w16(st + 0x16, 5);
+  // enemy names (inline, 0x14 stride) so the Enemies view + search have content
+  ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
+  for (let i = 0; i < 16; i++) bytes[TABLES.list4[0] + i] = 20 + i;   // list4 rec0 ATK curve
+  // list2 record #1 (first named char) growth bytes +4..+11, so Balance has values to scale
+  [6, 5, 4, 3, 3, 4, 2, 8].forEach((v, k) => (bytes[TABLES.list2[0] + 1 * 132 + 4 + k] = v));
   return { bytes, armor };
 }
