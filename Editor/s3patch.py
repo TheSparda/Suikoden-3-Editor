@@ -206,7 +206,9 @@ def find_gear_records(iso):
 # "Stone of X" items, and foods all share this record.
 FOOD_TABLE_FILE = 0x3E91D0     # first record
 FOOD_STRIDE     = 0x48
-FOOD_COUNT      = 62           # valid records forward from base
+FOOD_COUNT      = 60           # recipe/dish records 0..59; recs 60-61 resolve to consumable
+                               # ITEMS (Sacrificial Jizo=Curative, Escape Scroll=Spell Scroll) —
+                               # past the recipe table, so excluded (was 62; see issue notes)
 FOOD_DESC_OFF   = 0x00         # u32 -> description string (vaddr)   [CONFIRMED]
 FOOD_HEAL_OFF   = 0x14         # u16 heal amount (HP)                [CONFIRMED 60/60]
 FOOD_PROC_OFF   = 0x1E         # u16 proc chance % (0/30/60)         [CONFIRMED 7/7]

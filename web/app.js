@@ -75,6 +75,11 @@ async function bootPyodide() {
   py.FS.writeFile("names.json", await (await grab("../Editor/s3_names.json")).text());
   py.FS.writeFile("itemdesc.json", await (await grab("../Editor/s3_item_desc.json")).text());
   py.FS.writeFile("skilldesc.json", await (await grab("../Editor/s3_skill_desc.json")).text());
+  // Rune/food descriptions (runes+food have no equipment desc-record) + rich per-rank skill
+  // effects — pre-extracted from the ISO / guides so the save editor (no ISO) can show them too.
+  const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : "{}"; } catch (e) { return "{}"; } };
+  py.FS.writeFile("itemdescextra.json", await grabOpt("../Editor/s3_rune_food_desc.json"));
+  py.FS.writeFile("skillref.json", await grabOpt("../Editor/s3_skill_ref.json"));
   bootProgress(80, "Parsing reference tables…");
 
   py.runPython(`
@@ -102,14 +107,27 @@ def _skill_ids(t):
             except ValueError: pass
     return out
 
+def _skill_effect_text(ref, sid):
+    r = ref.get(str(sid))
+    if not r: return ""
+    t = r.get("desc", "")
+    effs = r.get("effects") or []
+    if effs:
+        e = effs[0]; ranks = e.get("ranks", {})
+        span = " · ".join(f"{g} {ranks[g]}" for g in ("E","A","S") if ranks.get(g))
+        if span: t += f"  [{e.get('label','')}: {span}]"
+    return t
+
 def load_reference():
     it = open("items.txt", encoding="latin1").read()
     ids, cats = _item_ids(it), _item_cats(it)
     idesc = {int(k): v for k, v in json.load(open("itemdesc.json")).items()}
+    extra = {int(k): v for k, v in json.load(open("itemdescextra.json")).items()}   # rune/food
     sdesc = json.load(open("skilldesc.json"))     # keyed by skill NAME
-    items = [{"id": k, "name": v, "cat": cats.get(k, ""), "desc": idesc.get(k, "")}
+    sref  = json.load(open("skillref.json"))      # keyed by skill id str: {desc, effects}
+    items = [{"id": k, "name": v, "cat": cats.get(k, ""), "desc": extra.get(k) or idesc.get(k, "")}
              for k, v in sorted(ids.items())]
-    skills = [{"id": k, "name": v, "desc": sdesc.get(v, "")}
+    skills = [{"id": k, "name": v, "desc": _skill_effect_text(sref, k) or sdesc.get(v, "")}
               for k, v in sorted(_skill_ids(open("skills.txt", encoding="latin1").read()).items())]
     charById = json.load(open("names.json")).get("list1", {})
     return json.dumps({"items": items, "skills": skills, "charById": charById})
