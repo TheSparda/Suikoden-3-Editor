@@ -62,6 +62,7 @@
     25: "resist-fire", 26: "resist-lightning", 27: "resist-wind" };
   const RANK_OPTS = [[0, "— (not learned)"], [1, "E"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [7, "A+"], [8, "S"]];
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
+  const MAX_BY_GRADE = {}; MAX_OPTS.forEach(([v, l]) => (MAX_BY_GRADE[l] = v));   // "B+"->5, "A+"->1, "S"->7
   // spell/unite target byte (flags14 bits 8..15). AOE is a separate bit (0x8000).
   const TARGET_OPTS = [[0x0A, "Single target"], [0x02, "All foes"], [0x03, "All foes + allies"]];
 
@@ -1071,18 +1072,37 @@
          <div class="char-body"></div></details>`).join("");
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
-      d.addEventListener("toggle", () => {
-        if (!d.open || d.dataset.built) return;
+      const build = () => {
         const body = d.querySelector(".char-body");
         const skillmax = [];
         for (let k = 0; k < 43; k++) skillmax.push(fieldHTML(rec + LIST2_SKILLMAX_START + k, 1, "max", "Max: " + skillName(k + 1), skillCapNote(lbl, k + 1)));
+        const hasCaps = REF.skillCaps && REF.skillCaps[lbl];
+        const presets = `<div class="subtabs" style="margin:4px 0 8px">
+          ${hasCaps ? `<button class="chip" data-cap="guide">Set to guide caps</button>` : ""}
+          <button class="chip" data-cap="max">Max all (S)</button>
+          <button class="chip" data-cap="none">Clear all</button></div>`;
         body.innerHTML =
           `<h4>Growth rates</h4><div class="grid">${recFields(rec, LIST2_GROWTH, lbl)}</div>
            <h4>Fixed skills &amp; start</h4><div class="grid">${recFields(rec, LIST2_FIXED, lbl)}</div>
-           <h4>Skill maximum levels</h4><div class="grid">${skillmax.join("")}</div>`;
-        wireFields(d, rec, lbl); d.dataset.built = "1";
-      });
+           <h4>Skill maximum levels</h4>${presets}<div class="grid">${skillmax.join("")}</div>`;
+        wireFields(d, rec, lbl);
+        qa("[data-cap]", body).forEach((b) => (b.onclick = () => { applyCapPreset(rec, lbl, b.dataset.cap); build(); }));
+      };
+      d.addEventListener("toggle", () => { if (d.open && !d.dataset.built) { build(); d.dataset.built = "1"; } });
     });
+  }
+  // Bulk-set a character's 43 skill-max bytes: guide caps (from the Suikosource guide),
+  // all-S, or all "Can't get". Staged like any edit (revertible; nothing written until Save).
+  function applyCapPreset(rec, lbl, mode) {
+    const caps = (REF.skillCaps && REF.skillCaps[lbl]) || {};
+    for (let k = 0; k < 43; k++) {
+      const off = rec + LIST2_SKILLMAX_START + k;
+      let v;
+      if (mode === "max") v = 7;
+      else if (mode === "none") v = 0;
+      else { const g = caps[String(k + 1)]; v = g != null && MAX_BY_GRADE[g] != null ? MAX_BY_GRADE[g] : 0; }
+      writeW(off, 1, v); reg(off, 1, "max", lbl, "Max: " + skillName(k + 1));
+    }
   }
 
   // ---- shops -----------------------------------------------------------------
