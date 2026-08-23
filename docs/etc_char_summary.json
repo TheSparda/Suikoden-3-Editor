@@ -1,0 +1,1554 @@
+{
+ "0001": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 0,
+  "first_off": 132382592,
+  "imf": 13,
+  "n_occurrences": 13
+ },
+ "acee": {
+  "cha": 35,
+  "cha_bytes": 7487296944,
+  "ctx": 24,
+  "first_off": 72,
+  "imf": 28,
+  "n_occurrences": 87
+ },
+ "alns": {
+  "cha": 22,
+  "cha_bytes": 6744942044,
+  "ctx": 9,
+  "first_off": 18504,
+  "imf": 21,
+  "n_occurrences": 52
+ },
+ "alvl": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 8,
+  "first_off": 36936,
+  "imf": 35,
+  "n_occurrences": 46
+ },
+ "ama1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 8,
+  "first_off": 65513548,
+  "imf": 0,
+  "n_occurrences": 11
+ },
+ "amg1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 72818764,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "aml1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 75507788,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "amw1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 70772812,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "appl": {
+  "cha": 8,
+  "cha_bytes": 6540592564,
+  "ctx": 8,
+  "first_off": 55368,
+  "imf": 40,
+  "n_occurrences": 56
+ },
+ "areg": {
+  "cha": 7,
+  "cha_bytes": 7412075984,
+  "ctx": 8,
+  "first_off": 73800,
+  "imf": 21,
+  "n_occurrences": 36
+ },
+ "arma": {
+  "cha": 35,
+  "cha_bytes": 6613649796,
+  "ctx": 20,
+  "first_off": 92232,
+  "imf": 26,
+  "n_occurrences": 81
+ },
+ "armb": {
+  "cha": 34,
+  "cha_bytes": 6613411240,
+  "ctx": 20,
+  "first_off": 110664,
+  "imf": 25,
+  "n_occurrences": 79
+ },
+ "ayam": {
+  "cha": 24,
+  "cha_bytes": 7351403980,
+  "ctx": 10,
+  "first_off": 129096,
+  "imf": 21,
+  "n_occurrences": 55
+ },
+ "bell": {
+  "cha": 26,
+  "cha_bytes": 7414212008,
+  "ctx": 12,
+  "first_off": 147528,
+  "imf": 21,
+  "n_occurrences": 59
+ },
+ "biki": {
+  "cha": 39,
+  "cha_bytes": 10886639967,
+  "ctx": 20,
+  "first_off": 165960,
+  "imf": 29,
+  "n_occurrences": 88
+ },
+ "bity": {
+  "cha": 34,
+  "cha_bytes": 7287393728,
+  "ctx": 18,
+  "first_off": 184392,
+  "imf": 28,
+  "n_occurrences": 80
+ },
+ "bkjy": {
+  "cha": 9,
+  "cha_bytes": 9854516001,
+  "ctx": 8,
+  "first_off": 202824,
+  "imf": 21,
+  "n_occurrences": 38
+ },
+ "bogu": {
+  "cha": 8,
+  "cha_bytes": 7410918824,
+  "ctx": 8,
+  "first_off": 221256,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "bols": {
+  "cha": 63,
+  "cha_bytes": 7421580740,
+  "ctx": 78,
+  "first_off": 239688,
+  "imf": 27,
+  "n_occurrences": 168
+ },
+ "brit": {
+  "cha": 25,
+  "cha_bytes": 6651904,
+  "ctx": 12,
+  "first_off": 258120,
+  "imf": 25,
+  "n_occurrences": 62
+ },
+ "bzba": {
+  "cha": 35,
+  "cha_bytes": 8157547980,
+  "ctx": 20,
+  "first_off": 276552,
+  "imf": 27,
+  "n_occurrences": 82
+ },
+ "cat1": {
+  "cha": 3,
+  "cha_bytes": 753664,
+  "ctx": 2,
+  "first_off": 78360652,
+  "imf": 0,
+  "n_occurrences": 5
+ },
+ "cat2": {
+  "cha": 3,
+  "cha_bytes": 753664,
+  "ctx": 2,
+  "first_off": 79411276,
+  "imf": 0,
+  "n_occurrences": 5
+ },
+ "cat3": {
+  "cha": 3,
+  "cha_bytes": 753664,
+  "ctx": 2,
+  "first_off": 79560780,
+  "imf": 0,
+  "n_occurrences": 5
+ },
+ "cecl": {
+  "cha": 39,
+  "cha_bytes": 10673267805,
+  "ctx": 22,
+  "first_off": 294984,
+  "imf": 30,
+  "n_occurrences": 91
+ },
+ "ckn1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 2,
+  "first_off": 79145036,
+  "imf": 0,
+  "n_occurrences": 5
+ },
+ "ckn2": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 2,
+  "first_off": 79710284,
+  "imf": 0,
+  "n_occurrences": 5
+ },
+ "cock": {
+  "cha": 8,
+  "cha_bytes": 7884613068,
+  "ctx": 8,
+  "first_off": 313416,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "crb1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 74170444,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "crm1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 73498700,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "crw1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 73824332,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "crz1": {
+  "cha": 2,
+  "cha_bytes": 458752,
+  "ctx": 7,
+  "first_off": 74514508,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "ddga": {
+  "cha": 37,
+  "cha_bytes": 6613307792,
+  "ctx": 18,
+  "first_off": 331848,
+  "imf": 25,
+  "n_occurrences": 80
+ },
+ "ddgb": {
+  "cha": 35,
+  "cha_bytes": 6679237008,
+  "ctx": 32,
+  "first_off": 350280,
+  "imf": 21,
+  "n_occurrences": 88
+ },
+ "ddgc": {
+  "cha": 38,
+  "cha_bytes": 6680398240,
+  "ctx": 20,
+  "first_off": 368712,
+  "imf": 21,
+  "n_occurrences": 79
+ },
+ "deco": {
+  "cha": 21,
+  "cha_bytes": 7281393072,
+  "ctx": 13,
+  "first_off": 387144,
+  "imf": 22,
+  "n_occurrences": 56
+ },
+ "deos": {
+  "cha": 8,
+  "cha_bytes": 7882253732,
+  "ctx": 13,
+  "first_off": 405576,
+  "imf": 36,
+  "n_occurrences": 57
+ },
+ "dgns": {
+  "cha": 36,
+  "cha_bytes": 10194032874,
+  "ctx": 18,
+  "first_off": 424008,
+  "imf": 32,
+  "n_occurrences": 86
+ },
+ "dkk1": {
+  "cha": 16,
+  "cha_bytes": 4194304,
+  "ctx": 14,
+  "first_off": 64798796,
+  "imf": 0,
+  "n_occurrences": 30
+ },
+ "dkm1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 65159244,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "dkm2": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 70418508,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "dog1": {
+  "cha": 2,
+  "cha_bytes": 524288,
+  "ctx": 2,
+  "first_off": 78233676,
+  "imf": 0,
+  "n_occurrences": 4
+ },
+ "dogu": {
+  "cha": 8,
+  "cha_bytes": 7881014664,
+  "ctx": 8,
+  "first_off": 442440,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "dov1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 2,
+  "first_off": 79009868,
+  "imf": 0,
+  "n_occurrences": 5
+ },
+ "duke": {
+  "cha": 38,
+  "cha_bytes": 7892272540,
+  "ctx": 20,
+  "first_off": 460872,
+  "imf": 26,
+  "n_occurrences": 84
+ },
+ "dyup": {
+  "cha": 34,
+  "cha_bytes": 6543877608,
+  "ctx": 20,
+  "first_off": 479304,
+  "imf": 31,
+  "n_occurrences": 85
+ },
+ "elin": {
+  "cha": 34,
+  "cha_bytes": 7282402744,
+  "ctx": 18,
+  "first_off": 497736,
+  "imf": 26,
+  "n_occurrences": 78
+ },
+ "elot": {
+  "cha": 8,
+  "cha_bytes": 6808503756,
+  "ctx": 8,
+  "first_off": 516168,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "fire": {
+  "cha": 3,
+  "cha_bytes": 819200,
+  "ctx": 9,
+  "first_off": 534600,
+  "imf": 2,
+  "n_occurrences": 14
+ },
+ "fred": {
+  "cha": 34,
+  "cha_bytes": 7485826504,
+  "ctx": 30,
+  "first_off": 553032,
+  "imf": 27,
+  "n_occurrences": 91
+ },
+ "frms": {
+  "cha": 39,
+  "cha_bytes": 10301415805,
+  "ctx": 20,
+  "first_off": 571464,
+  "imf": 25,
+  "n_occurrences": 84
+ },
+ "frpt": {
+  "cha": 8,
+  "cha_bytes": 7213264356,
+  "ctx": 10,
+  "first_off": 589896,
+  "imf": 23,
+  "n_occurrences": 41
+ },
+ "fuda": {
+  "cha": 8,
+  "cha_bytes": 7144048028,
+  "ctx": 8,
+  "first_off": 608328,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "fuku": {
+  "cha": 19,
+  "cha_bytes": 3007115878,
+  "ctx": 13,
+  "first_off": 626760,
+  "imf": 16,
+  "n_occurrences": 48
+ },
+ "furo": {
+  "cha": 8,
+  "cha_bytes": 7751177656,
+  "ctx": 8,
+  "first_off": 645192,
+  "imf": 24,
+  "n_occurrences": 40
+ },
+ "futi": {
+  "cha": 60,
+  "cha_bytes": 7561602448,
+  "ctx": 24,
+  "first_off": 663624,
+  "imf": 25,
+  "n_occurrences": 109
+ },
+ "gakj": {
+  "cha": 12,
+  "cha_bytes": 11150839460,
+  "ctx": 10,
+  "first_off": 682056,
+  "imf": 21,
+  "n_occurrences": 43
+ },
+ "gauu": {
+  "cha": 34,
+  "cha_bytes": 7418327444,
+  "ctx": 18,
+  "first_off": 700488,
+  "imf": 25,
+  "n_occurrences": 77
+ },
+ "geki": {
+  "cha": 7,
+  "cha_bytes": 7478263244,
+  "ctx": 8,
+  "first_off": 718920,
+  "imf": 22,
+  "n_occurrences": 37
+ },
+ "guli": {
+  "cha": 23,
+  "cha_bytes": 5472256,
+  "ctx": 16,
+  "first_off": 737352,
+  "imf": 25,
+  "n_occurrences": 64
+ },
+ "gyom": {
+  "cha": 21,
+  "cha_bytes": 7683974592,
+  "ctx": 8,
+  "first_off": 755784,
+  "imf": 21,
+  "n_occurrences": 50
+ },
+ "hata": {
+  "cha": 12,
+  "cha_bytes": 10114918566,
+  "ctx": 10,
+  "first_off": 774216,
+  "imf": 21,
+  "n_occurrences": 43
+ },
+ "hole": {
+  "cha": 36,
+  "cha_bytes": 7890699704,
+  "ctx": 26,
+  "first_off": 792648,
+  "imf": 25,
+  "n_occurrences": 87
+ },
+ "hono": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 9,
+  "first_off": 811080,
+  "imf": 1,
+  "n_occurrences": 13
+ },
+ "hrec": {
+  "cha": 35,
+  "cha_bytes": 7484357076,
+  "ctx": 24,
+  "first_off": 829512,
+  "imf": 28,
+  "n_occurrences": 87
+ },
+ "hrhh": {
+  "cha": 16,
+  "cha_bytes": 3997696,
+  "ctx": 22,
+  "first_off": 66103372,
+  "imf": 0,
+  "n_occurrences": 38
+ },
+ "iiku": {
+  "cha": 8,
+  "cha_bytes": 7275919816,
+  "ctx": 8,
+  "first_off": 847944,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "jack": {
+  "cha": 34,
+  "cha_bytes": 6543418832,
+  "ctx": 28,
+  "first_off": 866376,
+  "imf": 26,
+  "n_occurrences": 88
+ },
+ "jien": {
+  "cha": 8,
+  "cha_bytes": 7080871340,
+  "ctx": 8,
+  "first_off": 884808,
+  "imf": 25,
+  "n_occurrences": 41
+ },
+ "jimb": {
+  "cha": 21,
+  "cha_bytes": 6542135696,
+  "ctx": 10,
+  "first_off": 903240,
+  "imf": 21,
+  "n_occurrences": 52
+ },
+ "jyan": {
+  "cha": 36,
+  "cha_bytes": 7352018332,
+  "ctx": 16,
+  "first_off": 921672,
+  "imf": 23,
+  "n_occurrences": 75
+ },
+ "kazi": {
+  "cha": 8,
+  "cha_bytes": 7209401772,
+  "ctx": 7,
+  "first_off": 940104,
+  "imf": 21,
+  "n_occurrences": 36
+ },
+ "kbki": {
+  "cha": 21,
+  "cha_bytes": 7684641256,
+  "ctx": 10,
+  "first_off": 958536,
+  "imf": 21,
+  "n_occurrences": 52
+ },
+ "kkmz": {
+  "cha": 19,
+  "cha_bytes": 4882432,
+  "ctx": 30,
+  "first_off": 976968,
+  "imf": 21,
+  "n_occurrences": 70
+ },
+ "kmk1": {
+  "cha": 3,
+  "cha_bytes": 819200,
+  "ctx": 15,
+  "first_off": 63721548,
+  "imf": 0,
+  "n_occurrences": 18
+ },
+ "kmrj": {
+  "cha": 34,
+  "cha_bytes": 6546835844,
+  "ctx": 22,
+  "first_off": 995400,
+  "imf": 28,
+  "n_occurrences": 84
+ },
+ "koek": {
+  "cha": 8,
+  "cha_bytes": 6538057112,
+  "ctx": 16,
+  "first_off": 1050696,
+  "imf": 21,
+  "n_occurrences": 45
+ },
+ "kogr": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 8,
+  "first_off": 1069128,
+  "imf": 18,
+  "n_occurrences": 26
+ },
+ "koit": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 8,
+  "first_off": 1032264,
+  "imf": 18,
+  "n_occurrences": 26
+ },
+ "koni": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 8,
+  "first_off": 1087560,
+  "imf": 18,
+  "n_occurrences": 26
+ },
+ "kork": {
+  "cha": 44,
+  "cha_bytes": 10092544,
+  "ctx": 16,
+  "first_off": 1013832,
+  "imf": 22,
+  "n_occurrences": 82
+ },
+ "kosn": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 8,
+  "first_off": 1124424,
+  "imf": 18,
+  "n_occurrences": 26
+ },
+ "krg1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 63352908,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "krk1": {
+  "cha": 22,
+  "cha_bytes": 3321026990,
+  "ctx": 27,
+  "first_off": 61571148,
+  "imf": 0,
+  "n_occurrences": 49
+ },
+ "krm1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 62285900,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "kro1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 61950028,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "kru2": {
+  "cha": 6,
+  "cha_bytes": 983040,
+  "ctx": 6,
+  "first_off": 70195276,
+  "imf": 0,
+  "n_occurrences": 12
+ },
+ "krum": {
+  "cha": 14,
+  "cha_bytes": 2359296,
+  "ctx": 12,
+  "first_off": 65880140,
+  "imf": 0,
+  "n_occurrences": 26
+ },
+ "krv1": {
+  "cha": 2,
+  "cha_bytes": 458752,
+  "ctx": 7,
+  "first_off": 63017036,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "krw1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 62652492,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "lba1": {
+  "cha": 2,
+  "cha_bytes": 524288,
+  "ctx": 2,
+  "first_off": 79257676,
+  "imf": 0,
+  "n_occurrences": 4
+ },
+ "lead": {
+  "cha": 34,
+  "cha_bytes": 7754778060,
+  "ctx": 20,
+  "first_off": 1142856,
+  "imf": 26,
+  "n_occurrences": 80
+ },
+ "leoo": {
+  "cha": 64,
+  "cha_bytes": 8164058504,
+  "ctx": 87,
+  "first_off": 1161288,
+  "imf": 27,
+  "n_occurrences": 178
+ },
+ "lett": {
+  "cha": 35,
+  "cha_bytes": 7018513848,
+  "ctx": 18,
+  "first_off": 1179720,
+  "imf": 25,
+  "n_occurrences": 78
+ },
+ "lily": {
+  "cha": 35,
+  "cha_bytes": 6745232816,
+  "ctx": 22,
+  "first_off": 1198152,
+  "imf": 28,
+  "n_occurrences": 85
+ },
+ "loll": {
+  "cha": 63,
+  "cha_bytes": 8160814512,
+  "ctx": 39,
+  "first_off": 1216584,
+  "imf": 26,
+  "n_occurrences": 128
+ },
+ "look": {
+  "cha": 47,
+  "cha_bytes": 7218707990,
+  "ctx": 18,
+  "first_off": 1235016,
+  "imf": 21,
+  "n_occurrences": 86
+ },
+ "luis": {
+  "cha": 8,
+  "cha_bytes": 6941165956,
+  "ctx": 10,
+  "first_off": 1253448,
+  "imf": 29,
+  "n_occurrences": 47
+ },
+ "lulu": {
+  "cha": 16,
+  "cha_bytes": 4194304,
+  "ctx": 9,
+  "first_off": 1271880,
+  "imf": 18,
+  "n_occurrences": 43
+ },
+ "lusi": {
+  "cha": 35,
+  "cha_bytes": 6746425752,
+  "ctx": 26,
+  "first_off": 1290312,
+  "imf": 41,
+  "n_occurrences": 102
+ },
+ "lzk1": {
+  "cha": 22,
+  "cha_bytes": 4230057436,
+  "ctx": 36,
+  "first_off": 64077900,
+  "imf": 0,
+  "n_occurrences": 58
+ },
+ "lzm1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 64446540,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "mama": {
+  "cha": 8,
+  "cha_bytes": 6544008652,
+  "ctx": 8,
+  "first_off": 1308744,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "mask": {
+  "cha": 32,
+  "cha_bytes": 6881280,
+  "ctx": 16,
+  "first_off": 1327176,
+  "imf": 2,
+  "n_occurrences": 50
+ },
+ "meru": {
+  "cha": 37,
+  "cha_bytes": 7085675952,
+  "ctx": 22,
+  "first_off": 1345608,
+  "imf": 25,
+  "n_occurrences": 84
+ },
+ "mgcd": {
+  "cha": 29,
+  "cha_bytes": 10651570270,
+  "ctx": 9,
+  "first_off": 1364040,
+  "imf": 21,
+  "n_occurrences": 59
+ },
+ "mgcg": {
+  "cha": 35,
+  "cha_bytes": 6745234868,
+  "ctx": 16,
+  "first_off": 1382472,
+  "imf": 25,
+  "n_occurrences": 76
+ },
+ "miko": {
+  "cha": 8,
+  "cha_bytes": 7548023220,
+  "ctx": 8,
+  "first_off": 1400904,
+  "imf": 25,
+  "n_occurrences": 41
+ },
+ "mktt": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 8,
+  "first_off": 1419336,
+  "imf": 1,
+  "n_occurrences": 12
+ },
+ "mlpp": {
+  "cha": 8,
+  "cha_bytes": 7816196500,
+  "ctx": 8,
+  "first_off": 1437768,
+  "imf": 23,
+  "n_occurrences": 39
+ },
+ "mlvl": {
+  "cha": 22,
+  "cha_bytes": 7752233348,
+  "ctx": 9,
+  "first_off": 1456200,
+  "imf": 21,
+  "n_occurrences": 52
+ },
+ "mria": {
+  "cha": 54,
+  "cha_bytes": 20299791941,
+  "ctx": 20,
+  "first_off": 1474632,
+  "imf": 25,
+  "n_occurrences": 99
+ },
+ "msg1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 7,
+  "first_off": 73181260,
+  "imf": 0,
+  "n_occurrences": 10
+ },
+ "msk1": {
+  "cha": 19,
+  "cha_bytes": 4554752,
+  "ctx": 14,
+  "first_off": 71127116,
+  "imf": 0,
+  "n_occurrences": 33
+ },
+ "msk2": {
+  "cha": 6,
+  "cha_bytes": 1376256,
+  "ctx": 7,
+  "first_off": 71499852,
+  "imf": 0,
+  "n_occurrences": 13
+ },
+ "mskn": {
+  "cha": 9,
+  "cha_bytes": 2392064,
+  "ctx": 31,
+  "first_off": 1493064,
+  "imf": 1,
+  "n_occurrences": 41
+ },
+ "mskr": {
+  "cha": 24,
+  "cha_bytes": 6553600,
+  "ctx": 62,
+  "first_off": 1511496,
+  "imf": 25,
+  "n_occurrences": 111
+ },
+ "msm1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 7,
+  "first_off": 75864140,
+  "imf": 0,
+  "n_occurrences": 10
+ },
+ "mstk": {
+  "cha": 55,
+  "cha_bytes": 10840391774,
+  "ctx": 18,
+  "first_off": 1529928,
+  "imf": 27,
+  "n_occurrences": 100
+ },
+ "msw1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 7,
+  "first_off": 66447436,
+  "imf": 0,
+  "n_occurrences": 10
+ },
+ "msx1": {
+  "cha": 14,
+  "cha_bytes": 4063232,
+  "ctx": 62,
+  "first_off": 71888972,
+  "imf": 0,
+  "n_occurrences": 76
+ },
+ "msx2": {
+  "cha": 5,
+  "cha_bytes": 1671168,
+  "ctx": 31,
+  "first_off": 72362060,
+  "imf": 0,
+  "n_occurrences": 36
+ },
+ "naru": {
+  "cha": 35,
+  "cha_bytes": 6747200988,
+  "ctx": 22,
+  "first_off": 1548360,
+  "imf": 25,
+  "n_occurrences": 82
+ },
+ "nash": {
+  "cha": 36,
+  "cha_bytes": 7284823432,
+  "ctx": 22,
+  "first_off": 1566792,
+  "imf": 26,
+  "n_occurrences": 84
+ },
+ "news": {
+  "cha": 12,
+  "cha_bytes": 10866945662,
+  "ctx": 9,
+  "first_off": 1585224,
+  "imf": 21,
+  "n_occurrences": 42
+ },
+ "nicl": {
+  "cha": 35,
+  "cha_bytes": 7755145680,
+  "ctx": 26,
+  "first_off": 1603656,
+  "imf": 25,
+  "n_occurrences": 86
+ },
+ "nrth": {
+  "cha": 12,
+  "cha_bytes": 11287226725,
+  "ctx": 9,
+  "first_off": 1622088,
+  "imf": 25,
+  "n_occurrences": 46
+ },
+ "oljm": {
+  "cha": 3,
+  "cha_bytes": 819200,
+  "ctx": 10,
+  "first_off": 1640520,
+  "imf": 1,
+  "n_occurrences": 14
+ },
+ "pig1": {
+  "cha": 2,
+  "cha_bytes": 524288,
+  "ctx": 2,
+  "first_off": 78790732,
+  "imf": 0,
+  "n_occurrences": 4
+ },
+ "pikr": {
+  "cha": 38,
+  "cha_bytes": 10706518148,
+  "ctx": 22,
+  "first_off": 1658952,
+  "imf": 25,
+  "n_occurrences": 85
+ },
+ "psvl": {
+  "cha": 63,
+  "cha_bytes": 7758953864,
+  "ctx": 81,
+  "first_off": 1677384,
+  "imf": 28,
+  "n_occurrences": 172
+ },
+ "quen": {
+  "cha": 34,
+  "cha_bytes": 7215285672,
+  "ctx": 22,
+  "first_off": 1695816,
+  "imf": 27,
+  "n_occurrences": 83
+ },
+ "rba1": {
+  "cha": 2,
+  "cha_bytes": 524288,
+  "ctx": 2,
+  "first_off": 78870604,
+  "imf": 0,
+  "n_occurrences": 4
+ },
+ "riko": {
+  "cha": 35,
+  "cha_bytes": 7083533704,
+  "ctx": 20,
+  "first_off": 1714248,
+  "imf": 26,
+  "n_occurrences": 81
+ },
+ "rnbl": {
+  "cha": 37,
+  "cha_bytes": 6833524310,
+  "ctx": 16,
+  "first_off": 1732680,
+  "imf": 25,
+  "n_occurrences": 78
+ },
+ "robo": {
+  "cha": 14,
+  "cha_bytes": 4718592,
+  "ctx": 182,
+  "first_off": 1751112,
+  "imf": 1,
+  "n_occurrences": 197
+ },
+ "s2hr": {
+  "cha": 58,
+  "cha_bytes": 12494089739,
+  "ctx": 20,
+  "first_off": 1769544,
+  "imf": 23,
+  "n_occurrences": 101
+ },
+ "s2um": {
+  "cha": 11,
+  "cha_bytes": 1933312,
+  "ctx": 6,
+  "first_off": 61177932,
+  "imf": 0,
+  "n_occurrences": 17
+ },
+ "sake": {
+  "cha": 8,
+  "cha_bytes": 6810679760,
+  "ctx": 8,
+  "first_off": 1787976,
+  "imf": 25,
+  "n_occurrences": 41
+ },
+ "sams": {
+  "cha": 34,
+  "cha_bytes": 6813158788,
+  "ctx": 20,
+  "first_off": 1806408,
+  "imf": 26,
+  "n_occurrences": 80
+ },
+ "sana": {
+  "cha": 2,
+  "cha_bytes": 458752,
+  "ctx": 8,
+  "first_off": 1824840,
+  "imf": 7,
+  "n_occurrences": 17
+ },
+ "sarm": {
+  "cha": 34,
+  "cha_bytes": 7286982108,
+  "ctx": 18,
+  "first_off": 1843272,
+  "imf": 42,
+  "n_occurrences": 94
+ },
+ "sera": {
+  "cha": 29,
+  "cha_bytes": 6717440,
+  "ctx": 20,
+  "first_off": 1861704,
+  "imf": 34,
+  "n_occurrences": 83
+ },
+ "situ": {
+  "cha": 8,
+  "cha_bytes": 7881014672,
+  "ctx": 9,
+  "first_off": 1880136,
+  "imf": 35,
+  "n_occurrences": 52
+ },
+ "siza": {
+  "cha": 8,
+  "cha_bytes": 7747524016,
+  "ctx": 8,
+  "first_off": 1898568,
+  "imf": 42,
+  "n_occurrences": 58
+ },
+ "soko": {
+  "cha": 8,
+  "cha_bytes": 6542427552,
+  "ctx": 8,
+  "first_off": 1917000,
+  "imf": 22,
+  "n_occurrences": 38
+ },
+ "ssly": {
+  "cha": 34,
+  "cha_bytes": 7219236276,
+  "ctx": 16,
+  "first_off": 1935432,
+  "imf": 29,
+  "n_occurrences": 79
+ },
+ "syu1": {
+  "cha": 79,
+  "cha_bytes": 8414838398,
+  "ctx": 24,
+  "first_off": 1953864,
+  "imf": 32,
+  "n_occurrences": 135
+ },
+ "syu2": {
+  "cha": 89,
+  "cha_bytes": 9639032702,
+  "ctx": 93,
+  "first_off": 1972296,
+  "imf": 30,
+  "n_occurrences": 212
+ },
+ "syu3": {
+  "cha": 63,
+  "cha_bytes": 15086113588,
+  "ctx": 22,
+  "first_off": 1990728,
+  "imf": 28,
+  "n_occurrences": 113
+ },
+ "takr": {
+  "cha": 8,
+  "cha_bytes": 7479403956,
+  "ctx": 8,
+  "first_off": 2009160,
+  "imf": 22,
+  "n_occurrences": 38
+ },
+ "tato": {
+  "cha": 34,
+  "cha_bytes": 6946987444,
+  "ctx": 18,
+  "first_off": 2027592,
+  "imf": 25,
+  "n_occurrences": 77
+ },
+ "thms": {
+  "cha": 57,
+  "cha_bytes": 16834406088,
+  "ctx": 20,
+  "first_off": 2046024,
+  "imf": 30,
+  "n_occurrences": 107
+ },
+ "thta": {
+  "cha": 8,
+  "cha_bytes": 7012207032,
+  "ctx": 8,
+  "first_off": 2064456,
+  "imf": 25,
+  "n_occurrences": 41
+ },
+ "tiba": {
+  "cha": 41,
+  "cha_bytes": 6816486800,
+  "ctx": 12,
+  "first_off": 2082888,
+  "imf": 28,
+  "n_occurrences": 81
+ },
+ "tnte": {
+  "cha": 8,
+  "cha_bytes": 7816464792,
+  "ctx": 8,
+  "first_off": 2101320,
+  "imf": 21,
+  "n_occurrences": 37
+ },
+ "tsb1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 67498060,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "tskn": {
+  "cha": 12,
+  "cha_bytes": 10864665709,
+  "ctx": 9,
+  "first_off": 2119752,
+  "imf": 22,
+  "n_occurrences": 43
+ },
+ "tsm1": {
+  "cha": 6,
+  "cha_bytes": 2031616,
+  "ctx": 6,
+  "first_off": 66824268,
+  "imf": 0,
+  "n_occurrences": 12
+ },
+ "tsm2": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 6,
+  "first_off": 69873740,
+  "imf": 0,
+  "n_occurrences": 6
+ },
+ "tsv1": {
+  "cha": 2,
+  "cha_bytes": 458752,
+  "ctx": 7,
+  "first_off": 75165772,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "tsw1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 67145804,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "uma1": {
+  "cha": 2,
+  "cha_bytes": 524288,
+  "ctx": 2,
+  "first_off": 78510156,
+  "imf": 0,
+  "n_occurrences": 4
+ },
+ "undo": {
+  "cha": 25,
+  "cha_bytes": 6813662624,
+  "ctx": 8,
+  "first_off": 2138184,
+  "imf": 21,
+  "n_occurrences": 54
+ },
+ "usi1": {
+  "cha": 2,
+  "cha_bytes": 524288,
+  "ctx": 2,
+  "first_off": 78645324,
+  "imf": 0,
+  "n_occurrences": 4
+ },
+ "watl": {
+  "cha": 36,
+  "cha_bytes": 7287845300,
+  "ctx": 22,
+  "first_off": 2156616,
+  "imf": 21,
+  "n_occurrences": 79
+ },
+ "wghd": {
+  "cha": 35,
+  "cha_bytes": 7755024792,
+  "ctx": 18,
+  "first_off": 2175048,
+  "imf": 25,
+  "n_occurrences": 78
+ },
+ "wild": {
+  "cha": 35,
+  "cha_bytes": 7824086448,
+  "ctx": 24,
+  "first_off": 2193480,
+  "imf": 25,
+  "n_occurrences": 84
+ },
+ "yksk": {
+  "cha": 8,
+  "cha_bytes": 7481251224,
+  "ctx": 9,
+  "first_off": 2211912,
+  "imf": 21,
+  "n_occurrences": 38
+ },
+ "yuba": {
+  "cha": 42,
+  "cha_bytes": 10551296,
+  "ctx": 62,
+  "first_off": 2230344,
+  "imf": 37,
+  "n_occurrences": 141
+ },
+ "ziba": {
+  "cha": 35,
+  "cha_bytes": 6544320904,
+  "ctx": 20,
+  "first_off": 2248776,
+  "imf": 26,
+  "n_occurrences": 81
+ },
+ "zkb1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 59347020,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkbu": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 68165708,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkg1": {
+  "cha": 6,
+  "cha_bytes": 2031616,
+  "ctx": 6,
+  "first_off": 59652172,
+  "imf": 0,
+  "n_occurrences": 12
+ },
+ "zkg2": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 6,
+  "first_off": 69531724,
+  "imf": 0,
+  "n_occurrences": 6
+ },
+ "zkgi": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 67817548,
+  "imf": 11,
+  "n_occurrences": 20
+ },
+ "zkhb": {
+  "cha": 16,
+  "cha_bytes": 4128768,
+  "ctx": 16,
+  "first_off": 60414028,
+  "imf": 0,
+  "n_occurrences": 32
+ },
+ "zki1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 76568652,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zki2": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 7,
+  "first_off": 76920908,
+  "imf": 0,
+  "n_occurrences": 10
+ },
+ "zki3": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 77273164,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkk1": {
+  "cha": 33,
+  "cha_bytes": 6651904,
+  "ctx": 96,
+  "first_off": 59994188,
+  "imf": 0,
+  "n_occurrences": 129
+ },
+ "zkk2": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 32,
+  "first_off": 76189772,
+  "imf": 0,
+  "n_occurrences": 35
+ },
+ "zkl1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 74846284,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkm1": {
+  "cha": 6,
+  "cha_bytes": 2031616,
+  "ctx": 6,
+  "first_off": 57997388,
+  "imf": 0,
+  "n_occurrences": 12
+ },
+ "zkm2": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 6,
+  "first_off": 68517964,
+  "imf": 0,
+  "n_occurrences": 6
+ },
+ "zko1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 58335308,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zko2": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 68855884,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkq1": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 77596748,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkq2": {
+  "cha": 3,
+  "cha_bytes": 1015808,
+  "ctx": 6,
+  "first_off": 77910092,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkum": {
+  "cha": 11,
+  "cha_bytes": 1933312,
+  "ctx": 6,
+  "first_off": 60797004,
+  "imf": 0,
+  "n_occurrences": 17
+ },
+ "zkv1": {
+  "cha": 2,
+  "cha_bytes": 458752,
+  "ctx": 7,
+  "first_off": 59013196,
+  "imf": 0,
+  "n_occurrences": 9
+ },
+ "zkw1": {
+  "cha": 6,
+  "cha_bytes": 2031616,
+  "ctx": 6,
+  "first_off": 58681420,
+  "imf": 0,
+  "n_occurrences": 12
+ },
+ "zkw2": {
+  "cha": 0,
+  "cha_bytes": 0,
+  "ctx": 6,
+  "first_off": 69199948,
+  "imf": 0,
+  "n_occurrences": 6
+ },
+ "ztor": {
+  "cha": 34,
+  "cha_bytes": 7488308688,
+  "ctx": 20,
+  "first_off": 2267208,
+  "imf": 25,
+  "n_occurrences": 79
+ }
+}
