@@ -193,6 +193,12 @@ console.log("Guide overlays + xdelta:");
     ? ok : bad)("footer has an always-available Force-refresh button");
   (/async function forceUpdate/.test(app) && /caches\.keys\(\)/.test(app) && /unregister\(\)/.test(app)
     ? ok : bad)("forceUpdate clears caches + unregisters the service worker");
+  // ISO editor: undo/redo engine + skill-cap presets + rune reskin presets
+  (/function undo\(\)/.test(iso) && /function redo\(\)/.test(iso) && /id="isoUndoBtn"/.test(iso) && /function recByte/.test(iso)
+    ? ok : bad)("iso.js has an undo/redo engine + buttons");
+  (/function applyCapPreset/.test(iso) && /data-cap="max"/.test(iso) && /data-cap="guide"/.test(iso)
+    ? ok : bad)("iso.js Growth view has skill-cap presets");
+  (/data-rspreset=/.test(iso) ? ok : bad)("iso.js Spells tab has rune reskin presets");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");

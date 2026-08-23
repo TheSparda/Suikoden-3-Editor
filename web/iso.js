@@ -185,9 +185,44 @@
   function writeW(o, w, v) {
     if (!inBlk(o, w)) return;
     const rel = o - ELF_BASE;
+    for (let i = 0; i < w; i++) recByte(rel + i);          // undo: capture before-image
     if (w === 1) BUF[rel] = v & 0xFF;
     else if (w === 2) DV.setUint16(rel, v & 0xFFFF, true);
     else DV.setUint32(rel, v >>> 0, true);
+  }
+  // ---- undo / redo -----------------------------------------------------------
+  // Every edit funnels through writeW/writeBytes; we record each byte's before-image and
+  // auto-commit the batch on the next microtask, so one user action (a field change, a preset,
+  // a recipe import) becomes one undo step — no per-call-site wrapping needed.
+  let UNDO = [], REDO = [], REC = null;
+  function recByte(rel) {
+    if (REC === null) { REC = new Map(); queueMicrotask(commitEdit); }
+    if (!REC.has(rel)) REC.set(rel, BUF[rel]);
+  }
+  function commitEdit() {
+    const rec = REC; REC = null;
+    if (!rec) return;
+    const entries = [];
+    rec.forEach((before, rel) => { if (before !== BUF[rel]) entries.push({ rel, before, after: BUF[rel] }); });
+    if (!entries.length) return;
+    UNDO.push(entries); if (UNDO.length > 200) UNDO.shift();
+    REDO.length = 0; updateUndoUI();
+  }
+  function undo() {
+    if (!UNDO.length) return;
+    const e = UNDO.pop(); e.forEach((c) => { BUF[c.rel] = c.before; }); REDO.push(e);
+    updateUndoUI(); drawView();
+  }
+  function redo() {
+    if (!REDO.length) return;
+    const e = REDO.pop(); e.forEach((c) => { BUF[c.rel] = c.after; }); UNDO.push(e);
+    updateUndoUI(); drawView();
+  }
+  function resetUndo() { UNDO = []; REDO = []; REC = null; updateUndoUI(); }
+  function updateUndoUI() {
+    const u = q("#isoUndoBtn"), r = q("#isoRedoBtn");
+    if (u) u.disabled = !UNDO.length;
+    if (r) r.disabled = !REDO.length;
   }
   function strAt(vaddr) {
     const rel = vaddr - ELF_VADDR;
@@ -197,7 +232,7 @@
   }
   const vaOff = (v) => v - ELF_VADDR + ELF_BASE;                 // vaddr -> absolute file offset
   const latin1Enc = (s) => { const o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); o[i] = c < 256 ? c : 63; } return o; };
-  function writeBytes(off, bytes) { for (let i = 0; i < bytes.length; i++) if (inBlk(off + i, 1)) BUF[off - ELF_BASE + i] = bytes[i]; }
+  function writeBytes(off, bytes) { for (let i = 0; i < bytes.length; i++) if (inBlk(off + i, 1)) { recByte(off - ELF_BASE + i); BUF[off - ELF_BASE + i] = bytes[i]; } }
   // decode a null-terminated string from a given block copy (BUF or ORIG), bounded by maxlen
   function strFrom(arr, off, maxlen) {
     const rel = off - ELF_BASE; if (rel < 0 || rel >= arr.length) return "";
@@ -423,7 +458,7 @@
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -775,6 +810,8 @@
         <div class="toolbar">
           <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
           <span class="pill" id="isoDirty" hidden></span>
+          <button id="isoUndoBtn" title="Undo (Ctrl/Cmd+Z)" disabled>↶ Undo</button>
+          <button id="isoRedoBtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ Redo</button>
           <button id="isoRecipeBtn">Export recipe…</button>
           <button id="isoXdeltaBtn" title="Standard VCDIFF patch (no checksum — apply ONLY to a pristine USA SLUS-20387 ISO): xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
           <label class="file" style="margin:0"><button type="button" id="isoImportBtn">Import recipe…</button>
@@ -791,7 +828,10 @@
     q("#isoXdeltaBtn").onclick = exportXdelta;
     q("#isoImportBtn").onclick = () => q("#isoRecipeFile").click();
     q("#isoRecipeFile").onchange = (e) => { if (e.target.files[0]) importRecipe(e.target.files[0]); e.target.value = ""; };
-    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); drawView(); setStatus("Reverted all staged changes.", "ok"); };
+    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
+    q("#isoUndoBtn").onclick = undo;
+    q("#isoRedoBtn").onclick = redo;
+    updateUndoUI();
     drawView();
   }
 
@@ -1194,6 +1234,15 @@
         <label class="field"><span>Area of effect</span><select id="rsAoe"><option value="">— no change —</option><option value="1">on</option><option value="0">off</option></select></label>
         <label class="field"><span>Status</span><select id="rsStatus">${statOptsBlank}</select></label>
       </div>
+      <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:4px">
+        <span class="muted">Presets:</span>
+        <button class="chip mini" data-rspreset="buff">Power 3000</button>
+        <button class="chip mini" data-rspreset="max">Power 9999</button>
+        <button class="chip mini" data-rspreset="aoe">Make AOE</button>
+        <button class="chip mini" data-rspreset="instant">Instant cast</button>
+        <button class="chip mini" data-rspreset="poison">Add poison</button>
+        <button class="chip mini" data-rspreset="clear">Clear fields</button>
+        <span class="u">fills the fields — then Apply</span></div>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
         <span class="muted" id="rsInfo"></span></div></div>`;
     const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes</label>`;
@@ -1234,6 +1283,18 @@
 
     q("#spUpd", host).onchange = (e) => { spDescOn = e.target.checked; };
     q("#rsApply", host).onclick = () => runeReskin();
+    qa("[data-rspreset]", host).forEach((b) => (b.onclick = () => {
+      const set = (id, v) => { const el = q(id, host); if (el) el.value = v; };
+      switch (b.dataset.rspreset) {
+        case "buff": set("#rsPower", "3000"); break;
+        case "max": set("#rsPower", "9999"); break;
+        case "aoe": set("#rsAoe", "1"); break;
+        case "instant": set("#rsCast", "0"); break;
+        case "poison": set("#rsStatus", "poison"); break;
+        case "clear": ["#rsPower", "#rsCast", "#rsElem", "#rsTarget", "#rsAoe", "#rsStatus"].forEach((s) => set(s, "")); break;
+      }
+      setStatus("Preset filled — pick a rune and click “Apply to rune”.", "ok");
+    }));
     q("#rsRune", host).onchange = () => { const el = q("#rsInfo", host); el.textContent = "→ " + RUNE_SPELLS[q("#rsRune", host).value].join(", "); };
     q("#rsRune", host).dispatchEvent(new Event("change"));
 
@@ -1660,5 +1721,14 @@
     qa(".mtab").forEach((b) => (b.onclick = () => switchMode(b.dataset.mode)));
     // warn before leaving with unsaved ISO edits (save editor has its own guard)
     window.addEventListener("beforeunload", (e) => { if (anyChanges()) { e.preventDefault(); e.returnValue = ""; } });
+    // Undo/redo keyboard shortcuts (ISO editor only; ignore while typing in a field).
+    document.addEventListener("keydown", (e) => {
+      if (!BUF || q("#mode-iso") && q("#mode-iso").classList.contains("hidden")) return;
+      const t = e.target, typing = t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+      if (typing || !(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
+    });
   });
 })();

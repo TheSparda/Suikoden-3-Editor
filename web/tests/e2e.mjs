@@ -146,7 +146,7 @@ head("Byte-exact edits across every editable view");
   await page.click('#isoTabs [data-v="growth"]'); await openRec(page, "details.char"); await page.waitForTimeout(60);
   const l2rec = +(await page.getAttribute("details.char[open]", "data-rec"));
   await page.fill('details.char[open] input[data-off="' + (l2rec + 4) + '"]', "9"); await page.dispatchEvent('details.char[open] input[data-off="' + (l2rec + 4) + '"]', "change");
-  await page.selectOption('details.char[open] select[data-off="' + (l2rec + 13) + '"]', "3");   // skillmax skill#1 -> D
+  await page.selectOption('details.char[open] select[data-off="' + (l2rec + 16) + '"]', "3");   // skillmax skill#1 -> D (array starts +16)
   // Spells: power/cast/element/target/aoe/status
   await page.click('#isoTabs [data-v="spells"]'); await openRec(page, 'details.char[data-i="0"]');
   await page.fill('details.char[data-i="0"] input[data-k="power"]', "1234"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change");
@@ -175,7 +175,7 @@ head("Byte-exact edits across every editable view");
   check("shop price = 12345", r.u32(SHOP.item2[0]) === 12345);
   check("support skill1 = 0x0A", r.u8(l3rec) === 0x0A);
   check("growth PWR rate = 9", r.u8(l2rec + 4) === 9);
-  check("skillmax#1 = 3 (D)", r.u8(l2rec + 13) === 3);
+  check("skillmax#1 = 3 (D)", r.u8(l2rec + 16) === 3);
   check("spell0 power = 1234", r.u32(SPELL.off + 0x1C) === 1234);
   check("spell0 cast = 40", r.u32(SPELL.off + 0x10) === 40);
   check("spell0 element = Lightning(5)", (r.u16(SPELL.off + SPELL.elem) & 0xFF) === 5);
@@ -430,7 +430,7 @@ head("Recruit section (save editor, Pyodide stubbed)");
   await page.addInitScript(`
     // [name, recruiter, recruited]
     const CHARS = [
-      ['Hugo','Hugo',true], ['Chris','',false], ['Salome','',false],
+      ['Hugo','Hugo',true], ['Chris','',false], ['Jeane','',false],
       ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false]
     ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
       level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
@@ -453,21 +453,53 @@ head("Recruit section (save editor, Pyodide stubbed)");
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector('[data-sub="recruit"]', { timeout: 5000 });
   await page.click('[data-sub="recruit"]'); await page.waitForSelector("#rteam");
+  await page.waitForTimeout(120);   // let s3_recruit_meta.json load + re-render for story shading
   check("recruit roster renders", (await page.locator("#subview .invtbl tbody tr").count()) === 6);
-  // bulk recruit all shown -> Geddoe
-  await page.selectOption("#rteam", "Geddoe");
-  await page.click("#recAllShown"); await page.waitForTimeout(80);
-  check("recruit-all checks every row", (await page.locator("#subview input[data-rec]:checked").count()) === 6);
-  check("recruit-all sets team select to Geddoe", (await page.locator('#subview select[data-team] >> nth=0').inputValue()) === "Geddoe");
-  // canonical preset -> Chris (Chris + Salome)
-  await page.click('[data-canon="Chris"]'); await page.waitForTimeout(80);
-  const salomeTeam = await page.locator('#subview tr:has-text("Salome") select[data-team]').inputValue();
-  check("canonical→Chris assigns Salome to Chris", salomeTeam === "Chris");
-  // review modal lists recruit/team changes
+  // story auto-join units are faded (Hugo/Chris/Geddoe are story); Salome is an optional recruit
+  check("story units get the .story-auto fade", (await page.locator("#subview tr.story-auto").count()) >= 3);
+  check("optional recruit (Jeane) is not faded", !((await page.locator('#subview tr:has-text("Jeane")').first().getAttribute("class")) || "").includes("story-auto"));
+  check("no bulk/canonical buttons remain", (await page.locator("#recAllShown, [data-canon]").count()) === 0);
+  // per-row: recruit Jeane (index 2) into Chris via the default-team dropdown + her checkbox
+  await page.selectOption("#rteam", "Chris");
+  await page.check('#subview input[data-rec="2"]'); await page.waitForTimeout(60);
+  check("ticking recruit enables + sets the team", (await page.locator('#subview select[data-team="2"]').inputValue()) === "Chris");
+  // review modal lists the recruit change
   await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
   const review = await page.textContent(".cf-list");
-  check("review lists recruit/team changes", /Recruited: yes/.test(review) && /Team:/.test(review));
+  check("review lists the recruit/team change", /Jeane/.test(review) && /(Recruited|Team)/.test(review));
   await page.click("#cfCancel");
+  await page.context().close();
+}
+
+head("Undo/redo + skill-cap & rune presets");
+{ const page = await newPage(); await loadIso(page);
+  const [l4b] = TABLES.list4;
+  // undo/redo stack behaviour on a weapon ATK edit
+  await page.click('#isoTabs [data-v="weapons"]'); await openRec(page, "details.char");
+  const l4inp = 'details.char[open] input[data-off="' + l4b + '"]';
+  const orig = +(await page.inputValue(l4inp)), nv = orig === 123 ? 45 : 123;
+  await page.fill(l4inp, String(nv)); await page.dispatchEvent(l4inp, "change"); await page.waitForTimeout(50);
+  check("undo enabled after an edit", !(await page.locator("#isoUndoBtn").isDisabled()));
+  await page.click("#isoUndoBtn"); await page.waitForTimeout(50);
+  check("after undo: undo disabled + redo enabled", (await page.locator("#isoUndoBtn").isDisabled()) && !(await page.locator("#isoRedoBtn").isDisabled()));
+  await page.click("#isoRedoBtn"); await page.waitForTimeout(50);
+  check("after redo: undo enabled again", !(await page.locator("#isoUndoBtn").isDisabled()));
+  const r = await save(page); check("redo restored the edit to disk", r.u8(l4b) === nv);
+  // rune reskin preset fills the reskin field
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#rsPower");
+  await page.click('[data-rspreset="max"]'); await page.waitForTimeout(20);
+  check("rune preset 'Power 9999' fills the reskin field", (await page.locator("#rsPower").inputValue()) === "9999");
+  await page.context().close();
+}
+head("Skill-cap preset (Growth view)");
+{ const page = await newPage(); await loadIso(page);
+  const [l2b] = TABLES.list2;
+  await page.click('#isoTabs [data-v="growth"]'); await openRec(page, "details.char"); await page.waitForTimeout(60);
+  const l2rec = +(await page.getAttribute("details.char[open]", "data-rec"));
+  await page.click('details.char[open] [data-cap="max"]'); await page.waitForTimeout(50);
+  check("Max-all preset sets skillmax#1 select to S(7)", (await page.locator('details.char[open] select[data-off="' + (l2rec + 16) + '"]').inputValue()) === "7");
+  const r = await save(page);
+  check("Max-all preset wrote S(7) across the skillmax array", r.u8(l2rec + 16) === 7 && r.u8(l2rec + 58) === 7);
   await page.context().close();
 }
 
