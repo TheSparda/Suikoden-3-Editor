@@ -146,6 +146,11 @@ input.search, input.picker-search {
 .rm { color:var(--acc2); border-color:var(--line); background:transparent; padding:4px 9px; }
 .warnbox { color:var(--warn); font-size:12px; margin:0 2px 10px; }
 
+/* recruit section: story auto-join units are faded (this tool is for optional recruits) */
+.invtbl tr.story-auto td { opacity:.5; }
+.invtbl tr.story-auto:hover td, .invtbl tr.story-auto:focus-within td { opacity:1; }
+.story-tag { font-size:11px; color:var(--warn); white-space:nowrap; }
+
 /* footer + theme switcher, matching the desktop #themebar credit */
 footer { margin-top:20px; padding-top:14px; border-top:1px solid var(--line);
   display:flex; flex-wrap:wrap; align-items:center; gap:10px; color:var(--mut); font-size:12px; }

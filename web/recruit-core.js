@@ -47,7 +47,27 @@
     return { total, counts };
   }
 
-  const api = { RECRUITERS, recState, setRecruit, applyCanonical, teamCounts };
+  // Dry-run a staging action and return the list of characters it would actually change, as
+  // {rosterIndex, name, kind: "recruit"|"unrecruit"|"move", before, after}. applyFn(map) stages
+  // into the map it's given; we run it on a CLONE so nothing is committed until the caller acts.
+  // Powers the "show me what this does before I apply it" confirm step for bulk/canonical actions.
+  function previewChanges(chars, RECRUIT, applyFn) {
+    const before = {};
+    chars.forEach((c) => { before[c.rosterIndex] = recState(c, RECRUIT); });
+    const clone = {};
+    for (const k in RECRUIT) clone[k] = Object.assign({}, RECRUIT[k]);
+    applyFn(clone);
+    const out = [];
+    chars.forEach((c) => {
+      const b = before[c.rosterIndex], a = recState(c, clone);
+      if (a.recruited === b.recruited && a.team === b.team) return;
+      const kind = a.recruited && !b.recruited ? "recruit" : !a.recruited && b.recruited ? "unrecruit" : "move";
+      out.push({ rosterIndex: c.rosterIndex, name: c.name, kind, before: b, after: a });
+    });
+    return out;
+  }
+
+  const api = { RECRUITERS, recState, setRecruit, applyCanonical, teamCounts, previewChanges };
   if (typeof module !== "undefined" && module.exports) module.exports = api;   // Node (CJS)
   root.RecruitCore = api;                                                       // browser global
 })(typeof self !== "undefined" ? self : globalThis);

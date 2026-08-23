@@ -179,6 +179,17 @@ console.log("Guide overlays + xdelta:");
     ? ok : bad)("save editor merges rune/food descriptions");
   (/skillref\.json/.test(app) && /_skill_effect_text/.test(app)
     ? ok : bad)("save editor shows per-rank skill effects");
+  // recruit: preview-before-apply + story/optional shading
+  (/function previewChanges/.test(fs.readFileSync(path.join(WEB, "recruit-core.js"), "utf8"))
+    ? ok : bad)("recruit-core exports previewChanges (dry-run diff)");
+  (/function previewRecruit/.test(app) && /RecruitCore\.previewChanges/.test(app) && /openConfirm/.test(app)
+    ? ok : bad)("save editor routes bulk/canonical recruit through a preview modal");
+  (/s3_recruit_meta\.json/.test(app) && /isStoryAuto/.test(app) && /story-auto/.test(app)
+    ? ok : bad)("save editor fades story auto-join recruits");
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_meta.json"), "utf8"));
+    const story = Object.values(j).filter((v) => v.auto).length;
+    (Object.keys(j).length > 90 && story > 20 ? ok : bad)(`s3_recruit_meta.json parses (${Object.keys(j).length} chars, ${story} story)`); }
+  catch (e) { bad("s3_recruit_meta.json — " + e.message); }
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");

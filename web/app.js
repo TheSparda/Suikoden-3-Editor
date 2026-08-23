@@ -243,6 +243,26 @@ function openPicker(title, list, current, onPick, idFmt) {
   ov.onclick = (e) => { if (e.target === ov) close(); };
 }
 
+// Preview a bulk/canonical recruit action before staging it: dry-run applyFn, then show the
+// grouped change list (recruit / move / un-recruit) in the app's shared review modal, flagging
+// story auto-join units, and only apply on confirm. Reuses openConfirm(rows,{g,t}).
+const teamText = (t) => (t ? t : "shared/story");
+function previewRecruit(roster, applyFn) {
+  const changes = RecruitCore.previewChanges(roster, RECRUIT, applyFn);
+  if (!changes.length) { toast("No changes — already in that state."); return; }
+  const GROUP = { recruit: "Recruit", move: "Move team", unrecruit: "Un-recruit" };
+  const rows = changes.map((c) => {
+    const verb = c.kind === "recruit" ? `→ ${teamText(c.after.team)}`
+      : c.kind === "unrecruit" ? "(remove)" : `${teamText(c.before.team)} → ${teamText(c.after.team)}`;
+    const flag = isStoryAuto(c.name) ? "  ⚠ story (auto-joins)" : "";
+    return { g: GROUP[c.kind], t: `${c.name}: ${verb}${flag}` };
+  });
+  const story = changes.filter((c) => isStoryAuto(c.name) && c.kind !== "move").length;
+  if (story) rows.unshift({ g: "⚠ Heads-up",
+    t: `${story} story character(s) included — they auto-join via the story; recruiting them manually is unneeded and can soft-lock an early save. This tool is best for optional recruits.` });
+  openConfirm(rows, () => { applyFn(RECRUIT); drawRecruit(); }, `Apply to ${changes.length}`);
+}
+
 // ---- File loading ----------------------------------------------------------
 // Open via the File System Access picker so we retain a writable handle (desktop only).
 async function openViaPicker() {
@@ -547,6 +567,7 @@ function wireChar(c) {
 // so Apply routes them through the tried s3save.write_save_edits path unchanged.
 const TEAM_OPTS = [["", "— shared / story —"], ...RECRUITERS.map((h) => [h, h])];
 let RECRUIT_TEAMS = null, RTEAM = "Hugo";   // canonical map (name->team) + current bulk target
+let RECRUIT_META = {};   // name -> {auto, how}: story auto-join vs optional recruit (char guide)
 async function loadRecruitTeams() {
   if (RECRUIT_TEAMS) return RECRUIT_TEAMS;
   const map = {};
@@ -554,9 +575,15 @@ async function loadRecruitTeams() {
     const j = await (await fetch("../Editor/s3_recruit_teams.json")).json();
     for (const [team, names] of Object.entries(j.teams || {})) for (const n of names) map[n] = team;
   } catch (e) { /* presets just stay unavailable if the file is missing */ }
+  try { RECRUIT_META = await (await fetch("../Editor/s3_recruit_meta.json")).json(); }
+  catch (e) { RECRUIT_META = {}; }   // story/optional shading just stays off if the file is missing
   RECRUIT_TEAMS = map;
   return map;
 }
+// Story characters (Automatic: Yes in the guide) auto-join — recruiting/un-recruiting them
+// manually is pointless and can soft-lock. This tool is meant for OPTIONAL recruits.
+const isStoryAuto = (name) => !!(RECRUIT_META[name] && RECRUIT_META[name].auto);
+const recruitHow = (name) => (RECRUIT_META[name] && RECRUIT_META[name].how) || "";
 
 // recruit staging math lives in recruit-core.js (shared with the Node tests); thin wrappers
 // bind the RECRUIT edit-map so call sites stay terse.
@@ -579,17 +606,18 @@ function drawRecruit() {
     : `<span class="muted">canonical presets unavailable</span>`;
 
   const rows = shown.map((c) => {
-    const st = recState(c), dirty = (c.rosterIndex in RECRUIT);
+    const st = recState(c), dirty = (c.rosterIndex in RECRUIT), story = isStoryAuto(c.name);
     const opts = TEAM_OPTS.map(([v, l]) => `<option value="${v}"${v === st.team ? " selected" : ""}>${esc(l)}</option>`).join("");
-    return `<tr class="${dirty ? "dirtyrow" : ""}">
-        <td><label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-rec="${c.rosterIndex}" ${st.recruited ? "checked" : ""}> <span>${esc(c.name)}</span></label></td>
+    const tag = story ? `<span class="story-tag" title="${esc(recruitHow(c.name) || "Joins automatically via the story")}">⚠ story</span>` : "";
+    return `<tr class="${dirty ? "dirtyrow " : ""}${story ? "story-auto" : ""}">
+        <td><label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-rec="${c.rosterIndex}" ${st.recruited ? "checked" : ""}> <span>${esc(c.name)}</span></label> ${tag}</td>
         <td class="sl">#${c.rosterIndex}</td>
         <td><select data-team="${c.rosterIndex}" ${st.recruited ? "" : "disabled"}>${opts}</select></td>
       </tr>`;
   }).join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`;
 
   $("#subview").innerHTML = `
-    <div class="warnbox" style="margin:0 0 10px">Recruiting a character the story hasn't unlocked yet — or un-recruiting a protagonist — can soft-lock an early save. Keep a backup.</div>
+    <div class="warnbox" style="margin:0 0 10px">Best used for <b>optional</b> recruits. <span class="story-tag">⚠ story</span> characters (faded) auto-join via the story — recruiting or un-recruiting them manually is unneeded and can soft-lock an early save. Keep a backup.</div>
     <div class="row" style="gap:10px;margin-bottom:8px">
       <label class="field" style="max-width:220px"><span>Team for bulk actions</span><select id="rteam">${teamSel}</select></label>
       <span class="muted">Recruited ${total} · Hugo ${counts.Hugo} · Chris ${counts.Chris} · Geddoe ${counts.Geddoe} · Thomas ${counts.Thomas} · shared ${counts[""]}</span>
@@ -603,18 +631,23 @@ function drawRecruit() {
     <table class="invtbl"><thead><tr><th>Character</th><th>#</th><th>Team</th></tr></thead><tbody>${rows}</tbody></table>`;
 
   $("#rteam").onchange = (e) => { RTEAM = e.target.value; };
+  // single-row toggles apply immediately (granular + revertible); bulk/canonical go through preview
   $$("input[data-rec]").forEach((cb) => (cb.onchange = () => {
     const c = charByRoster(+cb.dataset.rec); setRecruit(c, cb.checked, cb.checked ? RTEAM : undefined); drawRecruit();
   }));
   $$("select[data-team]").forEach((se) => (se.onchange = () => {
     const c = charByRoster(+se.dataset.team); setRecruit(c, true, se.value); drawRecruit();
   }));
-  $("#recAllShown").onclick = () => { shown.forEach((c) => setRecruit(c, true, RTEAM)); drawRecruit(); };
-  $("#moveShown").onclick = () => { shown.forEach((c) => { if (recState(c).recruited) setRecruit(c, true, RTEAM); }); drawRecruit(); };
-  $("#unrecShown").onclick = () => { shown.forEach((c) => setRecruit(c, false)); drawRecruit(); };
+  const RC = RecruitCore;
+  $("#recAllShown").onclick = () => previewRecruit(roster,
+    (m) => shown.forEach((c) => RC.setRecruit(c, true, RTEAM, m)));
+  $("#moveShown").onclick = () => previewRecruit(roster,
+    (m) => shown.forEach((c) => { if (RC.recState(c, m).recruited) RC.setRecruit(c, true, RTEAM, m); }));
+  $("#unrecShown").onclick = () => previewRecruit(roster,
+    (m) => shown.forEach((c) => RC.setRecruit(c, false, undefined, m)));
   $$("[data-canon]").forEach((b) => (b.onclick = () => {
-    RecruitCore.applyCanonical(roster, b.dataset.canon, RECRUIT_TEAMS || {}, RECRUIT);
-    drawRecruit();
+    const which = b.dataset.canon;
+    previewRecruit(roster, (m) => RC.applyCanonical(roster, which, RECRUIT_TEAMS || {}, m));
   }));
 }
 function charByRoster(ri) { return saves[curSlot].characters.find((c) => c.rosterIndex === ri) || { rosterIndex: ri, recruited: false, recruiter: "" }; }
