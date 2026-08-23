@@ -1,8 +1,10 @@
 name: web-tests
 
-# Fast, browser-free validation of the web editor (JS syntax, ISO offset bounds,
-# reference-table parsing, app-shell wiring). The full Playwright e2e suite is a local
-# step (see web/tests/README.md) and is intentionally not run here to keep CI light.
+# Validation of the web editor: fast browser-free checks (JS syntax, ISO offset bounds,
+# reference-table parsing, description merge, VCDIFF encoder, app-shell wiring) plus the full
+# Playwright e2e suite against a synthetic in-bounds ISO — including planted-byte assertions
+# that the verified table offsets (skill-max +16, growth HP@+0, rune Head/Right/Left) still
+# decode correctly (see web/tests/synth-iso.mjs / e2e.mjs).
 on:
   push:
     paths: ["web/**", "Editor/**", ".github/workflows/web-tests.yml"]
@@ -21,7 +23,28 @@ jobs:
         run: node web/tests/validate.mjs
       - name: Recruit-core unit tests
         run: node web/tests/recruit-logic.mjs
+      - name: Rename-core unit tests
+        run: node web/tests/rename-core.mjs
+      - name: Save round-trip (synthetic gamedata)
+        run: node web/tests/save-roundtrip.mjs
       - name: VCDIFF (.xdelta) encoder tests
         run: node web/tests/vcdiff.mjs
       - name: Description-merge tests (rune/food/skill)
         run: node web/tests/desc-merge.mjs
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install e2e deps
+        run: npm install
+        working-directory: web/tests
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps chromium
+        working-directory: web/tests
+      - name: Playwright e2e (ISO editor + verified-offset fixture)
+        run: node e2e.mjs
+        working-directory: web/tests

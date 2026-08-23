@@ -24,14 +24,18 @@ fixture can't drift from the engine. The `.mjs` wrapper lets it ride in `npm tes
 node web/tests/save-roundtrip.mjs        # or: python3 web/tests/save_roundtrip.py
 ```
 
-## `e2e.mjs` — full end-to-end in headless Chromium
+## `e2e.mjs` — full end-to-end in headless Chromium (runs in CI)
 Drives the real ISO editor against a synthetic in-bounds ISO (`synth-iso.mjs`): load +
-version check, rune reskin, spell target edit, per-field revert, gear DEF→description
-rewrite, food edit, Balance (hard-mode) preset, Enemies/Reference views, the unsaved badge,
-the backup-nudge → confirm → byte-exact save path, and no horizontal overflow at 320/360px.
+version check, rune reskin + presets, spell target edit, per-field revert, undo/redo, gear
+DEF→description rewrite, food edit, skill-cap presets, Balance (hard-mode) preset, the
+bestiary view, the recruit section (per-character + story fade), the backup-nudge → confirm →
+byte-exact save path, **planted-byte assertions that the verified table offsets still decode
+correctly** (skill-max +16, growth HP@+0, rune Head/Right/Left), and no horizontal overflow at
+320/360px.
 
-Needs `playwright-core` and a Chromium binary; it **skips cleanly (exit 0)** if neither is
-present, so it never breaks minimal CI.
+Runs in CI (a dedicated `e2e` job installs Chromium via `playwright-core install`). Locally it
+needs `playwright-core` + a Chromium binary and **skips cleanly (exit 0)** if neither is
+present, so it never breaks a minimal setup.
 
 ```bash
 npm --prefix web/tests install          # installs playwright-core

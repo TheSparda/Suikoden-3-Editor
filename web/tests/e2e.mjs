@@ -22,7 +22,7 @@ let fails = 0, section = "";
 const check = (name, cond, extra = "") => { console.log(`  ${cond ? "✓" : "✗"} ${name}${extra ? " — " + extra : ""}`); if (!cond) fails++; };
 const head = (s) => { section = s; console.log(s + ":"); };
 
-const { bytes, armor } = buildSynthIso();
+const { bytes, armor, mapping } = buildSynthIso();
 let served = bytes;                       // tests can swap this before loading (bad/short ISOs)
 const setServed = (b) => { served = b; };
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".txt": "text/plain", ".webmanifest": "application/manifest+json", ".png": "image/png" };
@@ -504,6 +504,26 @@ head("Skill-cap preset (Growth view)");
   check("Max-all preset sets skillmax#1 select to S(7)", (await page.locator('details.char[open] select[data-off="' + (l2rec + 16) + '"]').inputValue()) === "7");
   const r = await save(page);
   check("Max-all preset wrote S(7) across the skillmax array", r.u8(l2rec + 16) === 7 && r.u8(l2rec + 58) === 7);
+  await page.context().close();
+}
+
+head("Verified offset mappings (decode of planted bytes)");
+{ const page = await newPage(); await loadIso(page);
+  // Growth: the skill-max array starts at +16 (not +13) and the encoding is 5=B+ / 6=A;
+  // HP growth is at +0 and PWR at +4. We planted these; assert the editor DECODES them.
+  await page.click('#isoTabs [data-v="growth"]'); await openRec(page, `details.char[data-rec="${mapping.l2rec}"]`); await page.waitForTimeout(60);
+  const sel = (off) => page.locator(`details.char[data-rec="${mapping.l2rec}"] select[data-off="${off}"]`);
+  const inp = (off) => page.locator(`details.char[data-rec="${mapping.l2rec}"] input[data-off="${off}"]`);
+  check("skill #1 max decodes at +16 → B+", (await sel(mapping.l2rec + 16).locator("option:checked").textContent()).trim() === mapping.skill1Max);
+  check("skill #2 max decodes at +17 → A", (await sel(mapping.l2rec + 17).locator("option:checked").textContent()).trim() === mapping.skill2Max);
+  check("HP growth is at +0", (await inp(mapping.l2rec + 0).inputValue()) === String(mapping.hpGrowth));
+  check("PWR growth is at +4", (await inp(mapping.l2rec + 4).inputValue()) === String(mapping.pwrGrowth));
+  // Characters: rune slots are Head@+64 / Right@+72 / Left@+80.
+  await page.click('#isoTabs [data-v="chars"]'); await openRec(page, `details.char[data-rec="${mapping.l1rec}"]`); await page.waitForTimeout(60);
+  const btn = (off) => page.locator(`details.char[data-rec="${mapping.l1rec}"] button.picker[data-off="${off}"]`);
+  check("rune Head decodes at +64", (await btn(mapping.l1rec + 64).textContent()).includes(mapping.head.name));
+  check("rune Right decodes at +72", (await btn(mapping.l1rec + 72).textContent()).includes(mapping.right.name));
+  check("rune Left decodes at +80", (await btn(mapping.l1rec + 80).textContent()).includes(mapping.left.name));
   await page.context().close();
 }
 
