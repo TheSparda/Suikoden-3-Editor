@@ -581,7 +581,7 @@
       ORIG = BUF.slice(); ODV = new DataView(ORIG.buffer);       // treat as saved
       drawView();
       setTimeout(() => ifr.remove(), 1000);
-      pg.done(`Streamed a patched copy — check your downloads for “${outName}”. Replace your ISO with it to play the edits.`, false);
+      pg.done(`Streamed a patched copy — check your downloads for “${outName}”. Replace your ISO with it to play the edits.`, false, { bytes: total });
       setStatus(`Saved a patched copy (${fmtSize(total)}) to your downloads: ${outName}.`, "ok");
     } catch (e) {
       pg.done("Save failed: " + e.message + ". Your edits are still staged — retry, or export a recipe instead.", true);
@@ -619,11 +619,19 @@
         bar.classList.toggle("indet", indet);
         if (!indet) fill.style.width = Math.max(2, Math.min(100, pct == null ? 100 : pct)) + "%";
       },
-      done(msg, isErr) {
-        clearInterval(timer); tick();
-        el("pgTitle").textContent = isErr ? "Save failed" : "Saved";
+      done(msg, isErr, extra) {
+        clearInterval(timer);
+        const ms = now() - t0;
+        el("pgTitle").textContent = isErr ? "Save failed" : "Done";
         el("pgMsg").textContent = msg;
         bar.classList.remove("indet"); fill.style.width = "100%"; fill.classList.toggle("err", !!isErr);
+        // Completion readout: time taken, plus size + average throughput when a byte total is given.
+        const parts = [`⏱ ${fmtDuration(ms)}`];
+        if (!isErr && extra && extra.bytes) {
+          parts.push(fmtSize(extra.bytes));
+          const s = ms / 1000; if (s > 0.2) parts.push(`${fmtSize(extra.bytes / s)}/s`);
+        }
+        el("pgMeta").textContent = parts.join("  ·  ");
         el("pgFoot").style.display = "flex"; el("pgClose").onclick = () => ov.remove();
         setTimeout(() => el("pgClose").focus(), 20);
       },
@@ -1312,6 +1320,7 @@
 
   // ---- misc ------------------------------------------------------------------
   function fmtSize(n) { return n >= 1e9 ? (n / 1e9).toFixed(2) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " KB"; }
+  function fmtDuration(ms) { const s = ms / 1000; if (s < 60) return s.toFixed(1) + "s"; const m = Math.floor(s / 60); return `${m}m ${Math.round(s % 60)}s`; }
   function setStatus(msg, kind) { const el = q("#isoStatus"); if (el) { el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); } else { const b = q("#isoBootStatus"); if (b) b.textContent = msg; } }
 
   // ---- loader shell (adapts to how this browser can save) --------------------
