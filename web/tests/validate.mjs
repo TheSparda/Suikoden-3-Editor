@@ -160,6 +160,12 @@ console.log("Guide overlays + xdelta:");
   (/_rune_slot_note/.test(py) && /_growth_note/.test(py) && /_skill_cap_note/.test(py) && /skill_effect_text/.test(py)
     ? ok : bad)("s3editor.py has the guide-overlay helpers");
   (/0x1C <= d\["value"\] <= 0x26/.test(py) ? ok : bad)("s3editor.py fades unused support (list3) combat skills");
+  // rune + food item-description enrichment (blank in the item-desc pool; sourced from the
+  // spell + food tables read live from the ISO)
+  (/function runeDesc/.test(iso) && /function foodDesc/.test(iso) && /const itemDesc =/.test(iso) && /desc: itemDesc\(id\)/.test(iso)
+    ? ok : bad)("iso.js enriches rune + food item descriptions");
+  (/def _enriched_item_descs/.test(py) && /_enriched_item_descs\(\)/.test(py)
+    ? ok : bad)("s3editor.py enriches rune + food item descriptions");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");

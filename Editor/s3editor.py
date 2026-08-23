@@ -285,6 +285,54 @@ def _skill_cap_note(cname, skill_id):
     g = c.get(str(skill_id))
     return f"guide max: {g}" if g else "guide: can't learn"
 
+def _enriched_item_descs():
+    """Descriptions for items that lack a name<->desc record: runes (from the spell table, by
+    matching command-rune names / RUNE_SPELLS) and food (from the food table). Read live from the
+    open ISO; returns {item_id: desc}. Empty if no ISO is loaded. Mirrors the web editor."""
+    import re, struct
+    try:
+        iso = _iso()
+    except Exception:
+        return {}
+    ov = {}
+    try:
+        items = S.load_item_ids(); cats = S.load_item_categories()
+        spell = {}                                   # spell name -> description
+        for i in range(S.SPELL_COUNT):
+            rec = iso.rd(S.SPELL_TABLE_FILE + i * S.SPELL_STRIDE, S.SPELL_STRIDE)
+            nptr = struct.unpack_from("<I", rec, 0x08)[0]; dptr = struct.unpack_from("<I", rec, 0x0C)[0]
+            try:
+                nm = iso.rd(S.va2off(nptr), 48).split(b"\x00")[0].decode("latin1", "replace")
+                d = iso.rd(S.va2off(dptr), 96).split(b"\x00")[0].decode("latin1", "replace")
+            except Exception:
+                continue
+            if nm and nm not in spell:
+                spell[nm] = d
+        for iid, nm in items.items():                # runes
+            if cats.get(iid) != "Runes":
+                continue
+            if spell.get(nm):
+                ov[iid] = spell[nm]; continue
+            key = re.sub(r"rune$", "", re.sub(r"\s+", "", nm.lower()))
+            st = S.RUNE_SPELLS.get(key)
+            if st:
+                d0 = spell.get(st[0], "")
+                ov[iid] = "Grants " + ", ".join(st) + (f" — {st[0]}: {d0}" if d0 else "")
+        food = {}                                    # food name -> description
+        for fr in S.find_food_records(iso):
+            nm = fr.get("name", ""); d = fr.get("desc", "")
+            if d and not all(32 <= ord(c) < 127 for c in d):   # skip non-ASCII "unused" markers
+                d = f"Heals {fr['heal']}HP" if fr.get("heal") else ""
+            if nm and d:
+                food[nm.lower()] = d
+        for iid, nm in items.items():
+            if cats.get(iid) == "Food Items" and nm.lower() in food:
+                ov[iid] = food[nm.lower()]
+    finally:
+        try: iso.close()
+        except Exception: pass
+    return ov
+
 def _load_item_desc():
     try:
         return {int(k): v for k, v in F.res_json("s3_item_desc.json").items()}
@@ -1074,8 +1122,9 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/shop":    return self._send(200, read_shop())
             if p == "/api/items":
                 _ic = S.load_item_categories()
+                _ov = _enriched_item_descs()   # rune (spell-table) + food (food-table) descriptions
                 return self._send(200,
-                    [{"id": k, "name": v, "desc": ITEM_DESC.get(k, ""), "cat": _ic.get(k, "")}
+                    [{"id": k, "name": v, "desc": _ov.get(k) or ITEM_DESC.get(k, ""), "cat": _ic.get(k, "")}
                      for k, v in sorted(S.load_item_ids().items())])
             if p == "/api/skills":  return self._send(200,
                 [{"id": k, "name": v, "desc": skill_effect_text(k) or SKILL_DESC.get(v, "")}
