@@ -943,9 +943,10 @@
   // Shared edit engine for a spell record (used by per-spell controls AND rune reskin).
   function applySpell(idx, f, updateDesc) {
     const off = SPELL.off + idx * SPELL.stride, name = strAt(r32(off + 0x08));
+    let descRes = null;
     if (f.power != null) {
       writeW(off + 0x1C, 4, Math.max(0, f.power)); reg(off + 0x1C, 4, "num", name, "Power");
-      if (updateDesc) rewriteDesc(r32(off + 0x0C), (t) => descPower(t, Math.max(0, f.power)), name, "Description");
+      if (updateDesc) descRes = rewriteDesc(r32(off + 0x0C), (t) => descPower(t, Math.max(0, f.power)), name, "Description");
     }
     if (f.cast != null) { writeW(off + 0x10, 4, Math.max(0, f.cast)); reg(off + 0x10, 4, "num", name, "Cast"); }
     if (f.elementId != null && idx + 1 < SPELL.count) {
@@ -954,6 +955,7 @@
     if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF00FF) | ((f.target & 0xFF) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
     if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
     if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
+    return descRes;
   }
   const targetOptsHTML = (cur) => {
     let html = TARGET_OPTS.map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`).join("");
@@ -992,11 +994,17 @@
       const statCur = f18 === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => f18 === (1 << b)) || [])[1] || "custom";
       const elemSel = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === elVal ? " selected" : ""}>${l}</option>`).join("");
       const statOpts = ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}"${s === statCur ? " selected" : ""}>${s}</option>`).join("");
+      // editable, length-capped description (cap = original slot length; can't grow past it)
+      const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
+      const descField = dmax > 0
+        ? `<label class="field" style="margin:0 0 10px"><span>Description <span class="muted">(max ${dmax} chars)</span></span>
+             <input type="text" class="spdesc" data-i="${i}" maxlength="${dmax}" value="${esc2(dcur)}"></label>`
+        : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
           <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
         <div class="char-body">
-          <div class="muted" style="margin:0 0 8px">${esc2(strAt(r32(off + 0x0C)))}</div>
+          ${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="sp" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
@@ -1016,7 +1024,15 @@
     qa(".sp", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, k = el.dataset.k;
       const f = {}; f[k] = k === "aoe" ? el.value === "1" : k === "status" ? el.value : +el.value;
-      applySpell(i, f, spDescOn && k === "power");
+      const dr = applySpell(i, f, spDescOn && k === "power");
+      updateSpellSummary(host, i);
+      if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn");
+    }));
+    // manual free-text description edit (capped to the slot length via maxlength + setDescText)
+    qa(".spdesc", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, off = SPELL.off + i * SPELL.stride, name = strAt(r32(off + 0x08));
+      const res = setDescText(r32(off + 0x0C), el.value, name, "Description");
+      if (res.tooLong) setStatus(`Description too long — max ${res.max} characters for this spell.`, "warn");
       updateSpellSummary(host, i);
     }));
     qa("details.char", host).forEach((d) => updateSpellSummary(host, +d.dataset.i));   // init ↺/highlight
@@ -1027,6 +1043,13 @@
     d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
     const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"] };
     qa(".sp", d).forEach((el) => { const [o, w, kind] = MAP[el.dataset.k]; markField(el, off + o, w, kind); });
+    // reflect any auto-rewrite of the description (e.g. Power change) inline + highlight if changed
+    const dEl = d.querySelector(".spdesc");
+    if (dEl) {
+      const dptr = r32(off + 0x0C), doff = vaOff(dptr), dmax = origSlotLen(dptr);
+      dEl.value = strFrom(BUF, doff, dmax);
+      markField(dEl, doff, dmax, "text");
+    }
   }
   function runeReskin() {
     const rune = q("#rsRune").value, idx = spellNameIndex();
