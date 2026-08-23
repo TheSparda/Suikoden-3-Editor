@@ -113,10 +113,14 @@
     ["Other item 2", 120, 2, "item"], ["Other item 2 amount", 122, 1, "num"],
     ["Other item 3", 128, 2, "item"], ["Other item 3 amount", 130, 1, "num"],
   ];
+  // Growth-rate byte<->stat mapping VERIFIED by correlation vs suikosource statgrowth across
+  // the roster: PWR/SKL/MAG/REP at +4..+7, MDF/SPD/LUK at +9..+11, HP at +0 (the exe's own
+  // write-set {+0,+4,+5,+6,+7,+9,+10,+11}). Bytes +1..+3 are always 0 (padding) and +8 is a
+  // sparse non-growth field — the old "Head/RH/LH Rune Level" fields at +0/+1/+2 were a
+  // misread (+0 is HP growth; +1/+2 are padding). See github issue #2.
   const LIST2_GROWTH = [
     ["PWR growth", 4, 1, "num"], ["SKL growth", 5, 1, "num"], ["MAG growth", 6, 1, "num"], ["REP growth", 7, 1, "num"],
-    ["MDF growth", 8, 1, "num"], ["SPD growth", 9, 1, "num"], ["LUK growth", 10, 1, "num"], ["HP growth", 11, 1, "num"],
-    ["Head Rune Level", 0, 1, "num"], ["RH Rune Level", 1, 1, "num"], ["LH Rune Level", 2, 1, "num"],
+    ["MDF growth", 9, 1, "num"], ["SPD growth", 10, 1, "num"], ["LUK growth", 11, 1, "num"], ["HP growth", 0, 1, "num"],
   ];
   const LIST2_FIXED = [
     ["Fixed Skill 1 (id)", 80, 1, "skill"], ["Skill 1 level learned", 81, 1, "num"],
@@ -129,7 +133,7 @@
     ["Fixed Skill 8 (id)", 94, 1, "skill"], ["Skill 8 level learned", 95, 1, "num"],
     ["Number of Free Skills", 96, 1, "num"], ["Starting level", 100, 1, "num"], ["Starting level relative (0/1)", 101, 1, "num"],
   ];
-  const LIST2_SKILLMAX_START = 13;          // 43 skills (id 0x01..0x2B) as consecutive bytes
+  const LIST2_SKILLMAX_START = 16;          // 43 skills (id 0x01..0x2B) at +16..+58 (VERIFIED: 90% of known caps match here vs ~12% at +13). See issue #2.
   const LIST3_FIELDS = Array.from({ length: 8 }, (_, i) => [`Support skill ${i + 1} (id)`, i, 1, "skill"]);
   const LIST4_FIELDS = Array.from({ length: 16 }, (_, i) => [`ATK Lv${i + 1}`, i, 1, "num"]);
 
@@ -928,7 +932,7 @@
         const skillmax = [];
         for (let k = 0; k < 43; k++) skillmax.push(fieldHTML(rec + LIST2_SKILLMAX_START + k, 1, "max", "Max: " + skillName(k + 1)));
         body.innerHTML =
-          `<h4>Growth rates &amp; rune levels</h4><div class="grid">${recFields(rec, LIST2_GROWTH, lbl)}</div>
+          `<h4>Growth rates</h4><div class="grid">${recFields(rec, LIST2_GROWTH, lbl)}</div>
            <h4>Fixed skills &amp; start</h4><div class="grid">${recFields(rec, LIST2_FIXED, lbl)}</div>
            <h4>Skill maximum levels</h4><div class="grid">${skillmax.join("")}</div>`;
         wireFields(d, rec, lbl); d.dataset.built = "1";

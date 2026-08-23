@@ -90,5 +90,39 @@ console.log("QoL guards:");
   (/cache:\s*"no-store"/.test(sw) ? ok : bad)("service worker fetches app shell no-store (fresh updates)");
   (/dl-register/.test(sw) ? ok : bad)("service worker supports the streaming-download hand-off"); }
 
+// 7) list2 growth + skill-max offsets (github issue #2 regression guard).
+// These were re-derived + verified against a real ISO (skill-max start +16 matches ~90% of
+// suikosource caps vs ~12% at the old +13; growth stat<->byte by correlation vs statgrowth).
+// The web (iso.js) and desktop (s3fields.py) editors MUST stay in lockstep, so we assert both.
+console.log("list2 offsets (issue #2):");
+{
+  const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
+  const fields = fs.readFileSync(path.join(REPO, "Editor", "s3fields.py"), "utf8");
+  // expected growth stat -> byte offset (HP at +0 is the tell-tale that the fix is in place)
+  const GROWTH = { PWR: 4, SKL: 5, MAG: 6, REP: 7, MDF: 9, SPD: 10, LUK: 11, HP: 0 };
+
+  // skill-max start must be 16 in BOTH editors
+  const jsStart = /LIST2_SKILLMAX_START\s*=\s*(\d+)/.exec(iso);
+  const pyStart = /LIST2_SKILLMAX_START\s*=\s*(\d+)/.exec(fields);
+  (jsStart && +jsStart[1] === 16 ? ok : bad)(`iso.js skill-max start = ${jsStart && jsStart[1]} (want 16)`);
+  (pyStart && +pyStart[1] === 16 ? ok : bad)(`s3fields.py skill-max start = ${pyStart && pyStart[1]} (want 16)`);
+
+  // growth offsets must match the verified map in BOTH editors
+  const jsGrowth = /const LIST2_GROWTH\s*=\s*\[([\s\S]*?)\];/.exec(iso);
+  const pyGrowth = /LIST2_GROWTH\s*=\s*\[([\s\S]*?)\]/.exec(fields);
+  for (const [stat, off] of Object.entries(GROWTH)) {
+    const re = new RegExp(`"${stat} growth[^"]*"\\s*,\\s*${off}\\b`);   // iso.js: ["PWR growth", 4, ...]
+    (jsGrowth && re.test(jsGrowth[1]) ? ok : bad)(`iso.js ${stat} growth @+${off}`);
+    const reP = new RegExp(`"${stat} growth rate"\\s*,\\s*${off}\\b`);  // s3fields: ("PWR growth rate", 4, ...)
+    (pyGrowth && reP.test(pyGrowth[1]) ? ok : bad)(`s3fields.py ${stat} growth @+${off}`);
+  }
+  // the bogus "rune level" fields must be gone from both
+  (jsGrowth && !/Rune Level/.test(jsGrowth[1]) ? ok : bad)("iso.js has no bogus 'Rune Level' growth fields");
+  (pyGrowth && !/Rune Level/.test(pyGrowth[1]) ? ok : bad)("s3fields.py has no bogus 'Rune Level' growth fields");
+
+  // encoding must stay non-monotonic (1=A+), which the ISO verification confirmed is correct
+  (/\[1,\s*"A\+"\]/.test(iso) ? ok : bad)("iso.js MAX_OPTS keeps 1=A+ (verified-correct encoding)");
+}
+
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
 process.exit(failures ? 1 : 0);
