@@ -80,6 +80,8 @@ input[type=file] { display:none; }
 .fnote { font-size:11px; color:var(--mut); opacity:.85; line-height:1.25; }
 .fnote b { color:var(--fg, inherit); font-weight:600; }
 .fnote .dim { opacity:.6; font-style:italic; }
+.field.faded { opacity:.4; }
+.field.faded:focus-within, .field.faded:hover { opacity:1; }   /* reveal on interaction */
 input[type=text], input[type=number], select {
   font:inherit; background:var(--input-bg); color:var(--ink); border:1px solid var(--line);
   border-radius:6px; padding:6px 9px; width:100%; max-width:100%; transition:border-color .12s,box-shadow .12s; }

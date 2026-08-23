@@ -152,6 +152,14 @@ console.log("Guide overlays + xdelta:");
     (/vcdiff\.js/.test(sw) ? ok : bad)("service worker precaches vcdiff.js"); }
   try { execFileSync(process.execPath, ["--check", path.join(WEB, "vcdiff.js")]); ok("vcdiff.js syntax"); }
   catch (e) { bad("vcdiff.js — " + String(e.stderr || e).split("\n")[0]); }
+  // support-skill fade (list3): only utility skills 0x1C..0x26 are "used"; combat slots fade
+  (/const supportActive = \(id\) => id >= 0x1C && id <= 0x26/.test(iso) && /listKey === "list3"/.test(iso)
+    ? ok : bad)("iso.js fades unused combat skills in the Support view");
+  // desktop editor mirrors the overlays + fade
+  const py = fs.readFileSync(path.join(REPO, "Editor", "s3editor.py"), "utf8");
+  (/_rune_slot_note/.test(py) && /_growth_note/.test(py) && /_skill_cap_note/.test(py) && /skill_effect_text/.test(py)
+    ? ok : bad)("s3editor.py has the guide-overlay helpers");
+  (/0x1C <= d\["value"\] <= 0x26/.test(py) ? ok : bad)("s3editor.py fades unused support (list3) combat skills");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
