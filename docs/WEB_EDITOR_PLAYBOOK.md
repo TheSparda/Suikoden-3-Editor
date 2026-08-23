@@ -1,5 +1,12 @@
 # Web Editor Playbook — bringing an editor to parity
 
+> **Superseded by [`WEB_EDITOR_PLAYBOOK_V2.md`](./WEB_EDITOR_PLAYBOOK_V2.md).** v2 is
+> self-contained: it keeps this parity material (Part A) and adds the depth layer built since —
+> offset verification against ground truth, reference-data enrichment, sibling-table description
+> derivation, undo/redo, patch synthesis, presets, and the PWA force-refresh. Read v2. This file
+> is kept for history.
+
+
 A complete feature + implementation brief for the **Suikoden III web editor**
 (`https://thesparda.github.io/Suikoden-3-Editor/web/`), written so another editor — a
 different game, a different tool — can be enhanced to the same quality. Hand this to a Claude
