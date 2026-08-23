@@ -6,7 +6,7 @@
 //     falling back to cache when offline. Keeps dev edits fresh yet works offline.
 //   - cross-origin (the Pyodide CDN — large, immutable, version-pinned URLs):
 //     cache-first, so the ~10MB runtime downloads once and is instant thereafter.
-const CACHE = "s3editor-v16";
+const CACHE = "s3editor-v17";
 const SHELL = [
   "./", "./index.html", "./style.css", "./recruit-core.js", "./rename-core.js", "./vcdiff.js", "./app.js", "./iso.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png",

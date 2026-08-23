@@ -27,7 +27,10 @@ def parse_guide():
         am = re.match(r"^Automatic:\s*(.+)$", l)
         if am and cur and cur not in out:
             rest = am.group(1).strip()
-            auto = rest.lower().startswith("yes")          # Yes = story auto-join; No / conditional = optional
+            # Only an explicit "No" is a normal optional recruit. "Yes" = story auto-join, and a
+            # conditional (e.g. Luc: "recruit all 104 Stars... becomes the main character") is a
+            # special/story-gated unlock, NOT something to bulk-recruit — treat both as story.
+            auto = not rest.lower().startswith("no")
             how = re.sub(r"^(Yes|No)[\.,\s]*", "", rest).strip()
             out[cur] = {"auto": auto, "how": how}
     return out
