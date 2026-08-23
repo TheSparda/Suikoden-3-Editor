@@ -122,6 +122,14 @@ console.log("list2 offsets (issue #2):");
 
   // encoding must stay non-monotonic (1=A+), which the ISO verification confirmed is correct
   (/\[1,\s*"A\+"\]/.test(iso) ? ok : bad)("iso.js MAX_OPTS keeps 1=A+ (verified-correct encoding)");
+
+  // list1 rune slots are Head@+64 / Right@+72 / Left@+80 (verified vs suikosource + save editor).
+  // Guards against the Head<->Left label swap the exe shipped (issue #2).
+  const RUNES = [["Head", 64], ["Right hand", 72], ["Left hand", 80]];
+  for (const [slot, off] of RUNES) {
+    (new RegExp(`"Rune ${slot}"\\s*,\\s*${off}\\b`).test(iso) ? ok : bad)(`iso.js Rune ${slot} @+${off}`);
+    (new RegExp(`"Rune ${slot} \\(hex\\)"\\s*,\\s*${off}\\b`).test(fields) ? ok : bad)(`s3fields.py Rune ${slot} @+${off}`);
+  }
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");

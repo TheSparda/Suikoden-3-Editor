@@ -5,8 +5,10 @@ decompiled Suikoden3EditorV12b.exe (control labels + Patch/Load offsets).
 Each field: (label, offset_within_record, width_bytes, kind)
   kind: "item" = resolve via item id list, "skill" = skill id, "num" = plain number.
 
-Ordering of the 6 equip u16s (rune hands/head, helmet, armor, shield) follows the
-exe's write order in Patch1_Click; treat those labels as the exe's own naming.
+The 6 equip u16s are rune Head/Right/Left, helmet, armor, shield. NOTE: the rune-slot
+labels were corrected vs the exe's write-order naming — the game stores Head@+64,
+Right@+72, Left@+80 (verified vs suikosource + the save editor; the exe had Head/Left
+swapped). Helmet/armor/shield (+88/+96/+104) keep the exe's order.
 Skill rank values: 1=E 2=D 3=C 4=B 5=B+ 6=A 7=A+ 8=S (exe caps at 7).
 Skill-max values : 0=Can't get 1=A+ 2=D 3=C 4=B 5=B+ 6=A 7=S.
 """
@@ -50,9 +52,13 @@ LIST1 = [
     ("Skill 4 (hex)",           18,  1, "skill"), ("Skill 4 rank", 19, 1, "num"),
     ("Skill 5 (hex)",           20,  1, "skill"), ("Skill 5 rank", 21, 1, "num"),
     ("Skill 6 (hex)",           22,  1, "skill"), ("Skill 6 rank", 23, 1, "num"),
-    ("Rune Left hand (hex)",    64,  2, "item"),
+    # Rune slot order VERIFIED vs suikosource/initial.txt (and the save editor): the u16s are
+    # Head/Right/Left, NOT Left/Right/Head. +64=Head (Fubar=Shining Wind, Bright=Spreading Flame),
+    # +72=Right (Aila=Shield, Elaine=Water, Duke=Lightning), +80=Left (Chris=Phoenix, Geddoe=
+    # Lightning, Elaine=Fire). The exe's write-order label had Head and Left swapped. See issue #2.
+    ("Rune Head (hex)",         64,  2, "item"),
     ("Rune Right hand (hex)",   72,  2, "item"),
-    ("Rune Head (hex)",         80,  2, "item"),
+    ("Rune Left hand (hex)",    80,  2, "item"),
     ("Helmet (hex)",            88,  2, "item"),
     ("Armor (hex)",             96,  2, "item"),
     ("Shield (hex)",           104,  2, "item"),

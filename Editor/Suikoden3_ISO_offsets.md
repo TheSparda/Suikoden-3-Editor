@@ -33,7 +33,11 @@ The name lists in the UI are just `NNN Label` lines; the editor parses the first
 - +9  u8   weapon-growth CLASS (list1_2), 0..13. Groups the roster by weapon curve
            (Hugo=3; Chris/Geddoe/Borus/Queen=5). Not a 1:1 index into the 28 list4 curves.
 - +12..+25  14× u8 (list1_3 … list1_14) — skills/runes/equip block
-- +64 u16, +72 u16, +80 u16, +88 u16, +96 u16, +104 u16 (list1_15…20)
+- +64 u16, +72 u16, +80 u16, +88 u16, +96 u16, +104 u16 (list1_15…20) — equip block:
+  **rune Head @+64, rune Right @+72, rune Left @+80**, helmet @+88, armor @+96, shield @+104.
+  *(Rune-slot order VERIFIED vs `suikosource/initial.txt` and the save editor: Fubar Head=Shining
+  Wind, Chris Left=Phoenix, Elaine Right=Water/Left=Fire. The exe's write-order naming had Head
+  and Left swapped — corrected in s3fields.py / iso.js. See issue #2.)*
 - +112 u16 + u8, +120 u16 + u8, +128 u16 + u8 (list1_21…26)
 
 ### List 2 — growth/skill limits (stride 132)
