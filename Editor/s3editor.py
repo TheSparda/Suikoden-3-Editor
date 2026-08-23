@@ -228,6 +228,63 @@ def _load_skill_desc():
         return {}
 SKILL_DESC = _load_skill_desc()   # {skill name: description} from Suikosource skills guide
 
+def _load_ref(name):
+    try:
+        return F.res_json(name)
+    except Exception:
+        return {}
+# Guide reference overlays (same files the web editor uses; verified vs the real ISO — issue #2).
+RUNE_SLOTS = _load_ref("s3_rune_slots.json")   # {char: {head/right/left: {state,...}, lv, wlv}}
+SKILL_CAPS = _load_ref("s3_skill_caps.json")   # {char: {skill_id_str: grade}}
+GROWTH_REF = _load_ref("s3_growth_ref.json")   # {char: {STAT: {rate,start,end}}}
+SKILL_REF  = _load_ref("s3_skill_ref.json")    # {skill_id_str: {name,type,desc,effects:[...]}}
+
+def skill_effect_text(skill_id):
+    """One-line description + a few key per-rank effects for a skill id (for tooltips/notes)."""
+    r = SKILL_REF.get(str(skill_id))
+    if not r:
+        return ""
+    t = r.get("desc", "")
+    effs = r.get("effects") or []
+    if effs:
+        e = effs[0]; ranks = e.get("ranks", {})
+        span = " · ".join(f"{g} {ranks[g]}" for g in ("E", "A", "S") if ranks.get(g))
+        if span:
+            t += f"  [{e.get('label','')}: {span}]"
+    return t
+
+def _rune_slot_note(cname, label):
+    r = RUNE_SLOTS.get(cname or "")
+    if not r:
+        return ""
+    key = "head" if "Head" in label else "right" if "Right" in label else "left" if "Left" in label else None
+    s = r.get(key) if key else None
+    if not s:
+        return ""
+    if s.get("state") == "opens": return f"guide: slot opens at Lv {s['lv']}"
+    if s.get("state") == "rune":  return f"guide: {s['rune']}"
+    return "guide: empty/none"
+
+def _growth_note(cname, label):
+    g = GROWTH_REF.get(cname or "")
+    if not g:
+        return ""
+    stat = label.split(" ")[0]
+    s = g.get(stat)
+    if not s:
+        return ""
+    bits = []
+    if s.get("rate"): bits.append(f"rate {s['rate']}")
+    if s.get("end"):  bits.append(f"Lv99 ≈ {s['end']}")
+    return "guide: " + " · ".join(bits) if bits else ""
+
+def _skill_cap_note(cname, skill_id):
+    c = SKILL_CAPS.get(cname or "")
+    if not c:
+        return ""
+    g = c.get(str(skill_id))
+    return f"guide max: {g}" if g else "guide: can't learn"
+
 def _load_item_desc():
     try:
         return {int(k): v for k, v in F.res_json("s3_item_desc.json").items()}
@@ -695,6 +752,27 @@ def read_charfields(list_no, index):
     skills = S.load_skill_ids()
     icats = S.load_item_categories()
     groups = []
+    cname = (CHAR_NAMES.get(f"list{list_no}", {}) or {}).get(str(index), "")
+
+    def add_guide(d):
+        """Attach a guide-overlay note to a field dict based on its label (verified vs ISO)."""
+        lbl = d["label"]
+        if lbl.startswith("Rune ") and d["kind"] == "item":
+            note = _rune_slot_note(cname, lbl)
+        elif lbl.endswith("growth rate"):
+            note = _growth_note(cname, lbl)
+        elif lbl.endswith(" max"):
+            note = _skill_cap_note(cname, d["off"] - F.LIST2_SKILLMAX_START + 1)
+        else:
+            note = ""
+        if note:
+            d["guide"] = note
+        # Support characters (list3) don't fight, so only utility skills (0x1C..0x26) do anything;
+        # fade the leftover combat skill slots for clarity (verified 27/27 vs the character guide).
+        if list_no == 3 and d["kind"] == "skill" and d["value"] and not (0x1C <= d["value"] <= 0x26):
+            d["faded"] = True
+            d["guide"] = "not used (support characters don't fight)"
+        return d
 
     # map an equip-field label to the item categories that belong in that slot, so the
     # dropdown can be filtered (rune hands/head -> Runes, etc). Starting "Other item"
@@ -719,7 +797,7 @@ def read_charfields(list_no, index):
             d["cats"] = field_cats(label)          # None = allow all (e.g. starting items)
         if kind == "enum":
             d["opts"] = [{"v": ov, "label": ol} for ov, ol in (opts or [])]
-        return d
+        return add_guide(d)
 
     if list_no == 1:
         # "Skill N rank" fields are learned ranks (E..S); item/skill/count fields stay as-is.
@@ -1000,7 +1078,7 @@ class Handler(BaseHTTPRequestHandler):
                     [{"id": k, "name": v, "desc": ITEM_DESC.get(k, ""), "cat": _ic.get(k, "")}
                      for k, v in sorted(S.load_item_ids().items())])
             if p == "/api/skills":  return self._send(200,
-                [{"id": k, "name": v, "desc": SKILL_DESC.get(v, "")}
+                [{"id": k, "name": v, "desc": skill_effect_text(k) or SKILL_DESC.get(v, "")}
                  for k, v in sorted(S.load_skill_ids().items())])
             if p == "/api/char":
                 return self._send(200, read_char(int(q["list"]), int(q["index"])))
@@ -2054,7 +2132,8 @@ async function renderChars(m){
    h+=`<table><tbody>`;
    g.fields.forEach(f=>{
     const note=f.kind==='num'?('= '+f.value):(f.kind==='enum'?enumLabel(f,f.value):(f.kind==='skill'?(SKILLDESC[f.value]||''):(f.kind==='item'?(ITEMDESC[f.value]||''):'')));
-    h+=`<tr><td style="width:230px">${f.label}</td><td>${fieldEditor(f)}</td>
+    const guide=f.guide?`<div class=hint style="opacity:.8">${f.guide.replace(/</g,'&lt;')}</div>`:'';
+    h+=`<tr${f.faded?' style="opacity:.42"':''}><td style="width:230px">${f.label}${guide}</td><td>${fieldEditor(f)}</td>
      <td class="hint" data-descfor="${f.off}">${note}</td></tr>`;});
    h+=`</tbody></table></div>`;});
   $("#rec").innerHTML=h;

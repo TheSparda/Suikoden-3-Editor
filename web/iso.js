@@ -879,45 +879,54 @@
       `<details class="char" data-rec="${r.base}"><summary>
          <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span>
          <span class="muted">#${r.i}</span></summary>
-         <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label)}</div></div>
+         <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label, listKey)}</div></div>
        </details>`).join("");
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
       if (lazy) d.addEventListener("toggle", () => {
-        if (d.open && !d.dataset.built) { d.querySelector(".grid").innerHTML = recFields(rec, fields, lbl); wireFields(d, rec, lbl); d.dataset.built = "1"; }
+        if (d.open && !d.dataset.built) { d.querySelector(".grid").innerHTML = recFields(rec, fields, lbl, listKey); wireFields(d, rec, lbl); d.dataset.built = "1"; }
       });
       else wireFields(d, rec, lbl);
     });
   }
-  function recFields(recBase, fields, group) {
+  // Support characters (list3) don't fight, so only their utility skills (the 0x1C..0x26 block:
+  // Potch Finder..Bath) actually do anything — verified 27/27 vs the character guide. Their
+  // combat skill slots hold leftover data that never activates, so we fade them for clarity.
+  const supportActive = (id) => id >= 0x1C && id <= 0x26;
+  function recFields(recBase, fields, group, listKey) {
     // Records physically abut the next table (e.g. list1's last record overlaps list3).
     // Drop any field whose bytes would spill past that boundary so an edit can't corrupt it.
     const safeEnd = Math.min(recBase + 200, nextBoundary(recBase));
     let dropped = 0;
     const html = fields.map(([label, off, w, kind]) => {
       if (recBase + off + w > safeEnd) { dropped++; return ""; }
-      let note = "";
+      let note = "", faded = false;
       if (kind === "item" && /^Rune (Head|Right|Left)/.test(label)) note = runeSlotNote(group, label);
       else if (kind === "num" && /growth/.test(label)) note = growthNote(group, label);
-      return fieldHTML(recBase + off, w, kind, label, note);
+      else if (kind === "skill" && listKey === "list3") {          // Support view: fade unused combat skills
+        const v = readW(recBase + off, w);
+        if (v && !supportActive(v)) { faded = true; note = `<span class="dim">not used (support characters don't fight)</span>`; }
+      }
+      return fieldHTML(recBase + off, w, kind, label, note, faded);
     }).join("");
     return html + (dropped ? `<div class="muted" style="grid-column:1/-1">${dropped} field(s) hidden — they overlap the next table and aren't safe to edit on this record.</div>` : "");
   }
-  function fieldHTML(off, w, kind, label, note) {
+  function fieldHTML(off, w, kind, label, note, faded) {
     const v = readW(off, w), dirty = isDirty(off, w) ? " dirty" : "";
     const n = note ? `<div class="fnote">${note}</div>` : "";
+    const fc = faded ? " faded" : "";
     if (kind === "item" || kind === "skill") {
       const tip = kind === "skill" ? skillEffectText(v) : (REF.idesc[v] || "");
-      return `<label class="field"><span>${esc2(label)}</span>
+      return `<label class="field${fc}"><span>${esc2(label)}</span>
         <button type="button" class="picker${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}"${tip ? ` title="${esc2(tip)}"` : ""}>${esc2(kind === "item" ? itemLabel(v) : skillLabel(v))}</button>${n}</label>`;
     }
     if (kind === "rank" || kind === "max") {
       const opts = (kind === "rank" ? RANK_OPTS : MAX_OPTS).map(([val, l]) => `<option value="${val}"${val === v ? " selected" : ""}>${l}</option>`).join("");
-      return `<label class="field"><span>${esc2(label)}</span>
+      return `<label class="field${fc}"><span>${esc2(label)}</span>
         <select class="fsel${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}">${opts}</select>${n}</label>`;
     }
     const max = w === 1 ? 255 : w === 2 ? 65535 : 4294967295;
-    return `<label class="field"><span>${esc2(label)}</span>
+    return `<label class="field${fc}"><span>${esc2(label)}</span>
       <input type="number" class="fnum${dirty}" min="0" max="${max}" value="${v}" data-off="${off}" data-w="${w}" data-kind="num">${n}</label>`;
   }
   // ---- guide reference overlays (notes shown under fields) --------------------
