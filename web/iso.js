@@ -244,6 +244,12 @@
     const skillsTxt = await (await grab("../Editor/Suikoden3_skill_ids.txt")).text();
     const idesc = await (await grab("../Editor/s3_item_desc.json")).json();
     const names = await (await grab("../Editor/s3_names.json")).json();
+    // Optional guide reference overlays — never fatal: a missing file just hides its notes.
+    const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch (e) { return {}; } };
+    const [runeSlots, skillRef, skillCaps, growthRef] = await Promise.all([
+      grabOpt("../Editor/s3_rune_slots.json"), grabOpt("../Editor/s3_skill_ref.json"),
+      grabOpt("../Editor/s3_skill_caps.json"), grabOpt("../Editor/s3_growth_ref.json"),
+    ]);
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -256,7 +262,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef };
     return REF;
   }
 
@@ -273,7 +279,7 @@
     return [{ id: 0, name: "— none —" }, ...list];
   }
   function skillOpts() {
-    const list = Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, name: skillName(id) }));
+    const list = Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, name: skillName(id), desc: skillEffectText(id) }));
     return [{ id: 0, name: "— none —" }, ...list];
   }
   // map a list1 item-slot label to its item category, so pickers show the right gear only
@@ -626,7 +632,7 @@
 
   // Disable the toolbar while a write is in flight (prevents double-saves / racing edits).
   function setBusy(b) {
-    ["#isoSaveBtn", "#isoRecipeBtn", "#isoImportBtn", "#isoResetBtn"].forEach((s) => { const el = q(s); if (el) el.disabled = b; });
+    ["#isoSaveBtn", "#isoRecipeBtn", "#isoXdeltaBtn", "#isoImportBtn", "#isoResetBtn"].forEach((s) => { const el = q(s); if (el) el.disabled = b; });
   }
 
   // Non-dismissable progress modal with phase text, a bar (animated or %), and an elapsed timer.
@@ -692,6 +698,28 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     setStatus(`Exported ${patches.length} patch run(s) as a .s3mod recipe.`, "ok");
   }
+  // Export a standard .xdelta (VCDIFF) patch synthesized from the staged edits. Unlike the
+  // desktop tool (which shells out to xdelta3 to diff two 4 GB files), we build the patch
+  // directly from the edits we already track — no diffing, no upload. Apply anywhere with
+  // `xdelta3 -d -s <pristine ISO> file.xdelta out.iso`.
+  function exportXdelta() {
+    if (!anyChanges()) return setStatus("No changes to export.", "warn");
+    if (!isoFile) return setStatus("The original ISO isn't available — reopen it and try again.", "err");
+    if (typeof Vcdiff === "undefined") return setStatus("VCDIFF module didn't load — reload the page.", "err");
+    const edits = diffRuns().map(([s, e]) => ({ off: ELF_BASE + s, data: BUF.slice(s, e) }));
+    let patch;
+    try { patch = Vcdiff.buildXdelta(isoFile.size, edits); }
+    catch (e) { return setStatus("Couldn't build the xdelta patch: " + e.message, "err"); }
+    recipeExported = true;
+    const blob = new Blob([patch], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = (isoName.replace(/\.[^.]+$/, "") || "s3") + ".xdelta";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    const nb = edits.reduce((s, e) => s + e.data.length, 0);
+    const renameNote = Object.keys(RENAMES).length ? " (character renames are NOT included — those only apply via the streaming save)" : "";
+    setStatus(`Exported an .xdelta patch (${fmtSize(patch.length)}, ${nb} byte(s) changed)${renameNote}. Apply with: xdelta3 -d -s "<pristine ISO>" file.xdelta out.iso`, "ok");
+  }
   async function importRecipe(file) {
     let mod;
     try { mod = JSON.parse(await file.text()); } catch (e) { return setStatus("Not a valid recipe file.", "err"); }
@@ -740,6 +768,7 @@
           <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
           <span class="pill" id="isoDirty" hidden></span>
           <button id="isoRecipeBtn">Export recipe…</button>
+          <button id="isoXdeltaBtn" title="Standard VCDIFF patch — apply with: xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
           <label class="file" style="margin:0"><button type="button" id="isoImportBtn">Import recipe…</button>
             <input type="file" id="isoRecipeFile" accept=".s3mod,.json"></label>
           <button id="isoResetBtn">Revert all</button>
@@ -751,6 +780,7 @@
     q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
+    q("#isoXdeltaBtn").onclick = exportXdelta;
     q("#isoImportBtn").onclick = () => q("#isoRecipeFile").click();
     q("#isoRecipeFile").onchange = (e) => { if (e.target.files[0]) importRecipe(e.target.files[0]); e.target.value = ""; };
     q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); drawView(); setStatus("Reverted all staged changes.", "ok"); };
@@ -861,23 +891,69 @@
     let dropped = 0;
     const html = fields.map(([label, off, w, kind]) => {
       if (recBase + off + w > safeEnd) { dropped++; return ""; }
-      return fieldHTML(recBase + off, w, kind, label);
+      let note = "";
+      if (kind === "item" && /^Rune (Head|Right|Left)/.test(label)) note = runeSlotNote(group, label);
+      else if (kind === "num" && /growth/.test(label)) note = growthNote(group, label);
+      return fieldHTML(recBase + off, w, kind, label, note);
     }).join("");
     return html + (dropped ? `<div class="muted" style="grid-column:1/-1">${dropped} field(s) hidden — they overlap the next table and aren't safe to edit on this record.</div>` : "");
   }
-  function fieldHTML(off, w, kind, label) {
+  function fieldHTML(off, w, kind, label, note) {
     const v = readW(off, w), dirty = isDirty(off, w) ? " dirty" : "";
-    if (kind === "item" || kind === "skill")
+    const n = note ? `<div class="fnote">${note}</div>` : "";
+    if (kind === "item" || kind === "skill") {
+      const tip = kind === "skill" ? skillEffectText(v) : (REF.idesc[v] || "");
       return `<label class="field"><span>${esc2(label)}</span>
-        <button type="button" class="picker${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}">${esc2(kind === "item" ? itemLabel(v) : skillLabel(v))}</button></label>`;
+        <button type="button" class="picker${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}"${tip ? ` title="${esc2(tip)}"` : ""}>${esc2(kind === "item" ? itemLabel(v) : skillLabel(v))}</button>${n}</label>`;
+    }
     if (kind === "rank" || kind === "max") {
       const opts = (kind === "rank" ? RANK_OPTS : MAX_OPTS).map(([val, l]) => `<option value="${val}"${val === v ? " selected" : ""}>${l}</option>`).join("");
       return `<label class="field"><span>${esc2(label)}</span>
-        <select class="fsel${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}">${opts}</select></label>`;
+        <select class="fsel${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}">${opts}</select>${n}</label>`;
     }
     const max = w === 1 ? 255 : w === 2 ? 65535 : 4294967295;
     return `<label class="field"><span>${esc2(label)}</span>
-      <input type="number" class="fnum${dirty}" min="0" max="${max}" value="${v}" data-off="${off}" data-w="${w}" data-kind="num"></label>`;
+      <input type="number" class="fnum${dirty}" min="0" max="${max}" value="${v}" data-off="${off}" data-w="${w}" data-kind="num">${n}</label>`;
+  }
+  // ---- guide reference overlays (notes shown under fields) --------------------
+  const GRADE_ORDER = ["E", "D", "C", "B", "B+", "A", "A+", "S"];
+  // growth stat label (e.g. "PWR growth") -> stat key used in s3_growth_ref.json
+  function growthNote(charName, label) {
+    const g = REF.growthRef && REF.growthRef[charName]; if (!g) return "";
+    const m = /^([A-Z]{2,3}) growth/.exec(label); if (!m) return "";
+    const s = g[m[1]]; if (!s) return "";
+    const bits = [];
+    if (s.rate) bits.push(`rate ${s.rate}`);
+    if (s.end) bits.push(`Lv99 ≈ ${s.end}`);
+    return bits.length ? `guide: ${esc2(bits.join(" · "))}` : "";
+  }
+  // per-character skill cap (from the Suikosource skills guide), shown under a Max: field
+  function skillCapNote(charName, skillId) {
+    const c = REF.skillCaps && REF.skillCaps[charName]; if (!c) return "";
+    const g = c[String(skillId)];
+    return g ? `guide max: <b>${esc2(g)}</b>` : `<span class="dim">guide: can't learn</span>`;
+  }
+  // rune-slot state (opens-at level / empty) for a list1 rune field
+  function runeSlotNote(charName, label) {
+    const r = REF.runeSlots && REF.runeSlots[charName]; if (!r) return "";
+    const key = /Head/.test(label) ? "head" : /Right/.test(label) ? "right" : /Left/.test(label) ? "left" : null;
+    if (!key || !r[key]) return "";
+    const s = r[key];
+    if (s.state === "opens") return `guide: slot opens at <b>Lv ${s.lv}</b>`;
+    if (s.state === "rune") return `guide: ${esc2(s.rune)}`;
+    return `<span class="dim">guide: empty/none</span>`;
+  }
+  // one-line skill description + a couple of key per-rank effects (for tooltips / reference)
+  function skillEffectText(skillId) {
+    const r = REF.skillRef && REF.skillRef[String(skillId)]; if (!r) return "";
+    let t = r.desc || "";
+    if (r.effects && r.effects.length) {
+      const e = r.effects[0];
+      const at = (g) => e.ranks && e.ranks[g] ? `${g} ${e.ranks[g]}` : null;
+      const span = [at("E"), at("A"), at("S")].filter(Boolean).join(" · ");
+      if (span) t += `  [${e.label}: ${span}]`;
+    }
+    return t;
   }
   function wireFields(scope, recBase, group) {
     qa("button.picker[data-off]", scope).forEach((btn) => {
@@ -890,6 +966,8 @@
         openPicker(label, opts, cur, (id) => {
           writeW(off, w, id); reg(off, w, kind, group, label);
           btn.textContent = kind === "item" ? itemLabel(id) : skillLabel(id);
+          const tip = kind === "skill" ? skillEffectText(id) : (REF.idesc[id] || "");
+          if (tip) btn.title = tip; else btn.removeAttribute("title");
           markField(btn, off, w, kind);
         }, (id) => hex(id, kind === "item" ? 3 : 2));
       };
@@ -932,7 +1010,7 @@
         if (!d.open || d.dataset.built) return;
         const body = d.querySelector(".char-body");
         const skillmax = [];
-        for (let k = 0; k < 43; k++) skillmax.push(fieldHTML(rec + LIST2_SKILLMAX_START + k, 1, "max", "Max: " + skillName(k + 1)));
+        for (let k = 0; k < 43; k++) skillmax.push(fieldHTML(rec + LIST2_SKILLMAX_START + k, 1, "max", "Max: " + skillName(k + 1), skillCapNote(lbl, k + 1)));
         body.innerHTML =
           `<h4>Growth rates</h4><div class="grid">${recFields(rec, LIST2_GROWTH, lbl)}</div>
            <h4>Fixed skills &amp; start</h4><div class="grid">${recFields(rec, LIST2_FIXED, lbl)}</div>
@@ -1430,7 +1508,7 @@
     const isItems = REF_KIND === "items";
     const list = isItems
       ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: REF.idesc[id] || "" }))
-      : Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 2, nm: skillName(id), sub: "", desc: "" }));
+      : Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 2, nm: skillName(id), sub: (REF.skillRef && REF.skillRef[String(id)] || {}).type || "", desc: skillEffectText(id) }));
     const q2 = SEARCH;
     const rows = list.filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, o.w).toLowerCase().includes(q2))
       .map((o) => `<tr><td class="sl">${hex(o.id, o.w)}</td><td>${esc2(o.nm)}${o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
