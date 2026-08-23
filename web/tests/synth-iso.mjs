@@ -19,18 +19,19 @@ export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [40
 export const SHOP = { item3_a: [4105552, 2], item3_b: [4054224, 2], item2: [3970620, 4], item1: [4136564, 4] };
 export const VERSION_OFF = 4136544, VERSION_VAL = 0x40A69A01;
 
-// first Armor-category item (id + exact name) from the shipped id list — used for a gear record
-export function firstArmor() {
+// items of a category (id + exact name), in id order, from the shipped id list.
+export function catItems(cat, n = 99) {
   const txt = fs.readFileSync(path.join(REPO, "Editor", "Suikoden3_item_ids.txt"), "latin1");
-  let cur = "", found = null;
+  let cur = ""; const out = [];
   for (const line of txt.split(/\r?\n/)) {
     const h = /\*\s*(.+?)\s*\*/.exec(line);
     if (h && line.indexOf("\t") < 0) { cur = h[1].trim(); continue; }
     const re = /([0-9A-Fa-f]{3})\t([^\t\n\r]+)/g; let m;
-    while ((m = re.exec(line))) if (cur === "Armor" && !found) found = { id: parseInt(m[1], 16), name: m[2].trim() };
+    while ((m = re.exec(line))) if (cur === cat && out.length < n) out.push({ id: parseInt(m[1], 16), name: m[2].trim() });
   }
-  return found;
+  return out;
 }
+export const firstArmor = () => catItems("Armor", 1)[0];
 
 export function buildSynthIso() {
   const bytes = new Uint8Array(ELF_END);
@@ -54,7 +55,28 @@ export function buildSynthIso() {
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
   for (let i = 0; i < 16; i++) bytes[TABLES.list4[0] + i] = 20 + i;   // list4 rec0 ATK curve
-  // list2 record #1 (first named char) growth bytes +4..+11, so Balance has values to scale
-  [6, 5, 4, 3, 3, 4, 2, 8].forEach((v, k) => (bytes[TABLES.list2[0] + 1 * 132 + 4 + k] = v));
-  return { bytes, armor };
+
+  // ---- Verified-offset fixture (record #1) -------------------------------------------------
+  // Plants distinctive, known values at the offsets whose mapping was corrected against a real
+  // disc (github issue #2), so e2e can prove the editor DECODES them right (not just writes):
+  //   * skill-max array starts at +16 (skill id N -> +16+(N-1)); encoding 5=B+, 6=A
+  //   * growth: HP is at +0 (not +11), PWR at +4
+  //   * rune slots are Head@+64 / Right@+72 / Left@+80
+  const l2rec = TABLES.list2[0] + 1 * TABLES.list2[1];   // list2 record #1
+  const l1rec = TABLES.list1[0] + 1 * TABLES.list1[1];   // list1 record #1
+  [6, 5, 4, 3, 3, 4, 2].forEach((v, k) => (bytes[l2rec + 4 + k] = v));   // +4..+10 growth (PWR..SPD-ish)
+  bytes[l2rec + 0] = 9;                                   // HP growth lives at +0
+  bytes[l2rec + 16] = 5;                                  // skill #1 (Swing) max = B+ (value 5)
+  bytes[l2rec + 17] = 6;                                  // skill #2 (Accuracy) max = A (value 6)
+  const runes = catItems("Runes", 3);                     // 3 distinct runes for Head/Right/Left
+  w16(l1rec + 64, runes[0].id);                           // Head
+  w16(l1rec + 72, runes[1].id);                           // Right
+  w16(l1rec + 80, runes[2].id);                           // Left
+  const mapping = {
+    l2rec, l1rec,
+    skill1Max: "B+", skill2Max: "A",                     // decoded grades for +16 / +17
+    hpGrowth: 9, pwrGrowth: 6,
+    head: runes[0], right: runes[1], left: runes[2],
+  };
+  return { bytes, armor, mapping };
 }
