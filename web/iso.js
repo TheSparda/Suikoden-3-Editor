@@ -284,9 +284,10 @@
     const names = await (await grab("../Editor/s3_names.json")).json();
     // Optional guide reference overlays — never fatal: a missing file just hides its notes.
     const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch (e) { return {}; } };
-    const [runeSlots, skillRef, skillCaps, growthRef] = await Promise.all([
+    const [runeSlots, skillRef, skillCaps, growthRef, bestiary] = await Promise.all([
       grabOpt("../Editor/s3_rune_slots.json"), grabOpt("../Editor/s3_skill_ref.json"),
       grabOpt("../Editor/s3_skill_caps.json"), grabOpt("../Editor/s3_growth_ref.json"),
+      grabOpt("../Editor/s3_bestiary.json"),
     ]);
     const items = {}, cats = {};
     let cur = "";
@@ -300,7 +301,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary };
     return REF;
   }
 
@@ -859,7 +860,7 @@
       gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
       food: "Consumable / food table: heal amount and proc chance %.",
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
-      enemies: "Enemy name reference (read-only) — Suikoden III has no editable flat enemy-stat table in this ROM.",
+      enemies: "Bestiary reference (read-only): Lv, HP, item/food drops, potch and SP per encounter (Suikosource). Enemy stats aren't an editable flat table in this ROM.",
       ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
     };
     q("#isoHint").textContent = hints[VIEW] || "";
@@ -1638,6 +1639,31 @@
 
   // ---- Enemies (read-only names) ---------------------------------------------
   function drawEnemies(host) {
+    // Bestiary reference (Lv / HP / drops / potch / SP) from the Suikosource guide. Enemy stats
+    // aren't an editable flat table in this ROM, so this is read-only. An enemy can appear at
+    // several levels/areas — each distinct encounter is one row. Falls back to the ROM name
+    // table if the bestiary file isn't available.
+    const best = REF.bestiary || {};
+    const names = Object.keys(best).sort();
+    if (names.length) {
+      const q2 = SEARCH;
+      const rows = [];
+      for (const nm of names) {
+        for (const e of best[nm]) {
+          const drops = (e.drops || []).join(", ");
+          const hay = (nm + " " + drops + " " + (e.food || "")).toLowerCase();
+          if (q2 && !hay.includes(q2)) continue;
+          rows.push(`<tr><td>${esc2(nm)}</td><td class="sl">${e.lv}</td><td class="sl">${e.hp.toLocaleString()}</td>
+            <td>${esc2(drops || "—")}</td><td class="muted">${esc2(e.food || "—")}</td>
+            <td class="sl">${esc2(String(e.potch || "—"))}</td><td class="sl">${esc2(String(e.sp || "—"))}</td></tr>`);
+        }
+      }
+      host.innerHTML = `<div class="muted" style="margin:0 0 8px">Read-only bestiary (Suikoden III has no editable flat enemy-stat table in this ROM). Source: Suikosource. Filter matches enemy, drop, or food names.</div>
+        <table class="invtbl"><thead><tr><th>Enemy</th><th>Lv</th><th>HP</th><th>Drops</th><th>Food</th><th>Potch</th><th>SP</th></tr></thead>
+        <tbody>${rows.join("") || `<tr><td colspan="7" class="muted">no matches</td></tr>`}</tbody></table>`;
+      return;
+    }
+    // fallback: raw ROM name table
     const rows = [];
     for (let i = 0; i < ENEMY.count; i++) {
       const off = ENEMY.off + i * ENEMY.stride;

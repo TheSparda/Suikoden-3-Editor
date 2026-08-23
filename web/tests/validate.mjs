@@ -199,6 +199,11 @@ console.log("Guide overlays + xdelta:");
   (/function applyCapPreset/.test(iso) && /data-cap="max"/.test(iso) && /data-cap="guide"/.test(iso)
     ? ok : bad)("iso.js Growth view has skill-cap presets");
   (/data-rspreset=/.test(iso) ? ok : bad)("iso.js Spells tab has rune reskin presets");
+  // bestiary reference (Enemies tab)
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_bestiary.json"), "utf8"));
+    (Object.keys(j).length >= 50 ? ok : bad)(`s3_bestiary.json parses (${Object.keys(j).length} enemies)`); }
+  catch (e) { bad("s3_bestiary.json — " + e.message); }
+  (/s3_bestiary\.json/.test(iso) && /REF\.bestiary/.test(iso) ? ok : bad)("iso.js Enemies tab renders the bestiary reference");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");

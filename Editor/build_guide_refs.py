@@ -158,12 +158,37 @@ def build_growth_ref():
     return growth
 
 
+def build_bestiary():
+    # Suikosource bestiary rows: Enemy | Lv. | HP | Drop | Drop2 | Drop3 | Food | Potch | SP.
+    # An enemy can appear at several levels/areas; keep each distinct encounter. Enemy stats
+    # aren't editable in this ROM, so this is a read-only reference for the Enemies tab.
+    lines = load("bestiary.txt")
+    out = {}
+    for l in lines:
+        c = [x.strip() for x in l.split("\t")]
+        if len(c) < 9:
+            continue
+        name, lv, hp = c[0], c[1], c[2]
+        if not name or name in ("Enemy", "Enemy Name", "Area Boss", "Treasure Boss") or not lv.isdigit():
+            continue
+        if not hp.replace(",", "").isdigit():
+            continue
+        rec = {"lv": int(lv), "hp": int(hp.replace(",", "")),
+               "drops": [d for d in c[3:6] if d and d != "-"],
+               "food": c[6], "potch": c[7], "sp": c[8]}
+        enc = out.setdefault(name, [])
+        if rec not in enc:
+            enc.append(rec)
+    return out
+
+
 def main():
     outputs = {
         "s3_rune_slots.json": build_rune_slots(),
         "s3_skill_ref.json": build_skill_ref(),
         "s3_skill_caps.json": build_skill_caps(),
         "s3_growth_ref.json": build_growth_ref(),
+        "s3_bestiary.json": build_bestiary(),
     }
     for fname, data in outputs.items():
         with open(os.path.join(HERE, fname), "w", encoding="utf-8") as f:
