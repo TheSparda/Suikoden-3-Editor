@@ -82,7 +82,7 @@ console.log("QoL guards:");
   (/showSaveFilePicker/.test(app) ? ok : bad)("save-editor has a 'Save as…' destination picker");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/function markFlagsField/.test(iso) ? ok : bad)("ISO editor has bit-aware Target/AOE highlight");
-  (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite descriptions");
+  (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) && /class="fddesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite + food descriptions");
   (/<input type="file" id="isoFileInput">/.test(iso) ? ok : bad)("ISO file input has no restrictive accept filter (Android can select .iso)");
   (/doStreamSave/.test(iso) ? ok : bad)("ISO editor has the streaming 'save patched copy' path");
   const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");

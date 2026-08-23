@@ -269,6 +269,21 @@ head("Unite description — editable + length-capped");
   await page.context().close();
 }
 
+head("Food description — editable, auto-updates on heal, length-capped");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
+  const desc = "input.fddesc >> nth=0";
+  check("food description field present", await page.isVisible(desc));
+  check("food description capped to slot (11)", +(await page.getAttribute(desc, "maxlength")) === 11);   // "Heals 100HP"
+  await page.fill('input.fd[data-kind="heal"] >> nth=0', "250"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change"); await page.waitForTimeout(60);
+  check("heal change rewrote food desc inline", (await page.inputValue(desc)) === "Heals 250HP");
+  check("rewritten food desc highlighted", await page.evaluate(() => document.querySelector("input.fddesc").classList.contains("dirty")));
+  await page.evaluate(() => { const e = document.querySelector("input.fddesc"); e.value = "X".repeat(40); e.dispatchEvent(new Event("change", { bubbles: true })); });
+  await page.waitForTimeout(60);
+  check("manual over-length food desc rejected", /too long/i.test(await page.textContent("#isoStatus")));
+  await page.context().close();
+}
+
 head("Per-field revert + Revert all + badge");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');

@@ -1156,21 +1156,41 @@
       const off = FOOD.off + i * FOOD.stride, name = strAt(r32(off + FOOD.name));
       if (SEARCH && !name.toLowerCase().includes(SEARCH)) continue;
       const heal = off + FOOD.heal, proc = off + FOOD.proc, dptr = r32(off + FOOD.desc);
+      const dmax = origSlotLen(dptr), dcur = strAt(dptr);
+      const descCell = dmax > 0
+        ? `<td><input type="text" class="fddesc" maxlength="${dmax}" style="min-width:150px" value="${esc2(dcur)}" data-dptr="${dptr}" data-g="${esc2(name)}" title="max ${dmax} chars"></td>`
+        : `<td class="muted">${esc2(dcur)}</td>`;
       rows.push(`<tr><td class="sl">${i}</td><td class="acc2">${esc2(name || "#" + i)}</td>
         <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(heal)}" data-off="${heal}" data-dptr="${dptr}" data-kind="heal" data-g="${esc2(name)}" data-l="Heal HP"></td>
-        <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-dptr="${dptr}" data-kind="proc" data-g="${esc2(name)}" data-l="Proc %"></td></tr>`);
+        <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-dptr="${dptr}" data-kind="proc" data-g="${esc2(name)}" data-l="Proc %"></td>
+        ${descCell}</tr>`);
     }
     host.innerHTML = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
-      <table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+      <div style="overflow-x:auto"><table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th><th>Description</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table></div>`;
     q("#fUpd", host).onchange = (e) => { foodDescOn = e.target.checked; };
+    // reflect a food row's description string back into its editable cell (+ highlight)
+    const refreshFoodDesc = (dptr, row) => {
+      const de = row && row.querySelector("input.fddesc"); if (!de) return;
+      const doff = vaOff(dptr), dmax = origSlotLen(dptr); de.value = strFrom(BUF, doff, dmax); markField(de, doff, dmax, "text");
+    };
     qa("input.fd", host).forEach((inp) => {
       const off = +inp.dataset.off, nm = inp.dataset.g;
       inp.onchange = () => {
         const v = Math.max(0, Math.min(+inp.value || 0, 65535));
         writeW(off, 2, v); reg(off, 2, "num", nm, inp.dataset.l); markField(inp, off, 2, "num");
-        if (foodDescOn && inp.dataset.dptr) rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description");
+        if (foodDescOn && inp.dataset.dptr) { rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description"); refreshFoodDesc(+inp.dataset.dptr, inp.closest("tr")); }
       };
       markField(inp, off, 2, "num");
+    });
+    // manual, length-capped description edit per food item
+    qa("input.fddesc", host).forEach((el) => {
+      const dptr = +el.dataset.dptr, doff = vaOff(dptr), dmax = origSlotLen(dptr);
+      el.onchange = () => {
+        const res = setDescText(dptr, el.value, el.dataset.g, "Description");
+        if (res.tooLong) setStatus(`Description too long — max ${res.max} characters for this item.`, "warn");
+        el.value = strFrom(BUF, doff, dmax); markField(el, doff, dmax, "text");
+      };
+      markField(el, doff, dmax, "text");
     });
   }
 
