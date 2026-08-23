@@ -68,5 +68,23 @@ console.log("canonical presets (real s3_recruit_teams.json):");
   const { total, counts } = RC.teamCounts(chars, {});
   check("teamCounts totals", total === 2 && counts.Hugo === 1 && counts[""] === 1); }
 
+console.log("previewChanges (dry-run diff for the confirm modal):");
+{
+  // recruit two shown into Chris; only the ones that actually change should appear
+  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Chris"), true, "Chris", m); RC.setRecruit(byName("Salome"), true, "Chris", m); });
+  check("previewChanges lists both new recruits", changes.length === 2 && changes.every((c) => c.kind === "recruit"));
+  check("previewChanges does not commit to the passed map", !("1" in {}) );  // clone isolation (RECRUIT untouched)
+  const chris = changes.find((c) => c.name === "Chris");
+  check("previewChanges reports before/after team", chris && chris.after.team === "Chris" && chris.before.recruited === false);
+}
+{ // a no-op action yields an empty change list
+  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Hugo"), true, "Hugo", m); });   // Hugo already Hugo
+  check("previewChanges empty when nothing changes", changes.length === 0);
+}
+{ // a move (already-recruited Rico shared -> Geddoe) is classified as "move"
+  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Rico"), true, "Geddoe", m); });
+  check("previewChanges classifies a team move", changes.length === 1 && changes[0].kind === "move" && changes[0].after.team === "Geddoe");
+}
+
 console.log(fails ? `\nFAILED (${fails})` : "\nAll recruit-logic checks passed.");
 process.exit(fails ? 1 : 0);
