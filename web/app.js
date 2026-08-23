@@ -933,7 +933,7 @@ function showUpdateBar(cur, latest) {
   if (b) b.onclick = forceUpdate;
 }
 async function forceUpdate() {
-  const b = document.getElementById("forceUpd"); if (b) { b.disabled = true; b.textContent = "Refreshing…"; }
+  ["forceUpd", "forceRefreshBtn"].forEach((id) => { const b = document.getElementById(id); if (b) { b.disabled = true; b.textContent = "Refreshing…"; } });
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -987,7 +987,8 @@ window.addEventListener("DOMContentLoaded", () => {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register failed", e));
   }
-  checkForUpdate();   // reveal a "Force refresh" button in the footer if a newer version is live
+  checkForUpdate();   // reveal a version-behind note in the footer if a newer version is live
+  { const fr = $("#forceRefreshBtn"); if (fr) fr.onclick = forceUpdate; }   // always-available manual cache reset
 
   // Install affordance. Chrome fires beforeinstallprompt only after the PWA is installable AND
   // a ~30s engagement heuristic — and never on iOS, or on some Android browsers — so a button

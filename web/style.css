@@ -161,6 +161,10 @@ footer .tb.on { background:var(--acc); color:var(--accink); border-color:var(--a
 footer .credit { margin-left:auto; color:var(--mut); font-size:13px; }
 footer .credit a { color:var(--acc2); text-decoration:none; }
 footer .credit a:hover { text-decoration:underline; }
+/* a text link styled from a <button> (keeps the force-refresh action accessible/keyboard-friendly) */
+.linklike { background:none; border:0; padding:0; font:inherit; color:var(--acc2); cursor:pointer; }
+.linklike:hover { text-decoration:underline; }
+.linklike:disabled { color:var(--mut); cursor:default; text-decoration:none; }
 footer .note { flex-basis:100%; color:var(--mut); font-size:12px; }
 
 /* picker button — looks like an input, opens a searchable modal */

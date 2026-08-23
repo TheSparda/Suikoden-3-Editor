@@ -188,6 +188,11 @@ console.log("Guide overlays + xdelta:");
     const story = Object.values(j).filter((v) => v.auto).length;
     (Object.keys(j).length > 90 && story > 20 ? ok : bad)(`s3_recruit_meta.json parses (${Object.keys(j).length} chars, ${story} story)`); }
   catch (e) { bad("s3_recruit_meta.json — " + e.message); }
+  // manual "Force refresh" escape hatch: footer button that clears SW + caches and reloads
+  (/id="forceRefreshBtn"/.test(html) && /#forceRefreshBtn/.test(app)
+    ? ok : bad)("footer has an always-available Force-refresh button");
+  (/async function forceUpdate/.test(app) && /caches\.keys\(\)/.test(app) && /unregister\(\)/.test(app)
+    ? ok : bad)("forceUpdate clears caches + unregisters the service worker");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
