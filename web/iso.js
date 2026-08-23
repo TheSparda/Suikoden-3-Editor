@@ -717,8 +717,13 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     const nb = edits.reduce((s, e) => s + e.data.length, 0);
-    const renameNote = Object.keys(RENAMES).length ? " (character renames are NOT included — those only apply via the streaming save)" : "";
-    setStatus(`Exported an .xdelta patch (${fmtSize(patch.length)}, ${nb} byte(s) changed)${renameNote}. Apply with: xdelta3 -d -s "<pristine ISO>" file.xdelta out.iso`, "ok");
+    const renameNote = Object.keys(RENAMES).length ? " Character renames are NOT included — those only apply via the streaming save." : "";
+    // No integrity checksum (that would need reading the whole 4 GB source), so the patch must
+    // be applied to the ORIGINAL pristine disc or it will corrupt silently. Make that explicit.
+    setStatus(`Exported an .xdelta patch (${fmtSize(patch.length)}, ${nb} byte(s) changed).${renameNote} ` +
+      `⚠ Apply ONLY to a pristine USA SLUS-20387 ISO — this patch has no integrity check, so a wrong or ` +
+      `already-modified source corrupts silently (use the .s3mod recipe if you want source-verified edits). ` +
+      `Apply with: xdelta3 -d -s "<pristine ISO>" file.xdelta out.iso`, "warn");
   }
   async function importRecipe(file) {
     let mod;
@@ -768,7 +773,7 @@
           <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
           <span class="pill" id="isoDirty" hidden></span>
           <button id="isoRecipeBtn">Export recipe…</button>
-          <button id="isoXdeltaBtn" title="Standard VCDIFF patch — apply with: xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
+          <button id="isoXdeltaBtn" title="Standard VCDIFF patch (no checksum — apply ONLY to a pristine USA SLUS-20387 ISO): xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
           <label class="file" style="margin:0"><button type="button" id="isoImportBtn">Import recipe…</button>
             <input type="file" id="isoRecipeFile" accept=".s3mod,.json"></label>
           <button id="isoResetBtn">Revert all</button>
