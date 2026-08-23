@@ -37,7 +37,9 @@ nothing is uploaded).
   Android — handy for editing a memory card on the same device you emulate on
   (AetherSX2 / NetherSX2 / PCSX2).
 - **Installable app / offline.** It's a PWA: use your browser's **Install app** / **Add to
-  Home Screen** and, after the first visit, it works fully offline.
+  Home Screen** and, after the first visit, it works fully offline. It updates itself, and a
+  footer **↻ Force refresh** button clears the cache and reloads the latest build if one ever
+  gets stuck.
 - **Your data stays put.** No server, no upload. Saves and ISOs are read and written on
   your device only.
 
@@ -64,11 +66,16 @@ Editable per save:
   (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
   per-character recruitment (recruited toggle + "recruited by").
 - **Party** — the active battle party (up to 6), by character name.
-- **Recruit** — bulk recruitment: recruit / move / un-recruit everyone shown to a team, plus
-  **canonical presets** ("Canonical → Hugo / Chris / Geddoe / Thomas / everyone") that assign
-  each Star of Destiny to its story-correct recruiter.
+- **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
+  (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
+  characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
+  manually is unneeded and can soft-lock an early save (the story/optional split is derived
+  from the character guide).
 - **Inventory** — every bag (Hugo / Chris / Geddoe / Thomas / Storage), split into Party Items
   vs Key/Valuables, with name-resolved item pickers, quantities, add and remove.
+
+Item and skill pickers throughout the save editor show **guide details** — rune effects and
+food heals (which lack an in-game description record), plus per-rank skill effects.
 
 Quality-of-life: **searchable pickers** (type-to-filter, with id + name + in-game
 description + category), a **review-changes** confirmation (an explicit old → new list before
@@ -79,25 +86,43 @@ also **Apply & share…** the edited file straight to your file manager or emula
 
 ### ISO Editor (web)
 
-Edit the disc image directly. This tab needs a **Chromium desktop browser**
-(Chrome / Edge / Brave / Opera) for the File System Access API used to write in place — it's
-blocked with an explanation on unsupported browsers. The editor only reads the ~3.75 MB
-executable region of the disc, verifies it's a USA `SLUS-20387` image, and writes just the
-changed bytes back in place (the multi-GB disc is never fully loaded or uploaded).
+Edit the disc image directly. The editor only reads the ~3.75 MB executable region of the
+disc, verifies it's a USA `SLUS-20387` image, and never fully loads or uploads the multi-GB
+file. How edits are saved depends on the browser:
 
-Views: **Characters** (starting stats, equipment, skills + ranks), **Growth** (stat-growth
-rates, rune levels, fixed skills, skill-max caps), **Support**, **Weapons** (ATK across all
-16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE / status,
-plus a **rune reskin** that edits every spell a rune grants at once and optional description
-rewrites), **Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Balance**
-(idempotent hard-mode multiplier presets), **Enemies** (name reference), and **Reference**
-(item/skill id → name lists).
+- **Chromium desktop** (Chrome / Edge / Brave / Opera) — writes just the changed bytes back
+  **in place** via the File System Access API.
+- **Other browsers** (Firefox / Safari / Android) — **stream a patched copy** to your
+  downloads that you swap in, or **export a recipe / `.xdelta`** to apply elsewhere.
 
-**Share a mod without the disc.** Export a **mod recipe (`.s3mod`)** — a tiny JSON of the
-exact byte changes (with original bytes, so it's reversible and **version-checked**; a recipe
-for the wrong game/region is rejected). Recipes are built from your staged edits directly, so
-you don't have to write the ISO first. Others import it to replay the edits on **their own**
-clean disc.
+Views: **Characters** (starting stats, equipment — rune Head/Right/Left, skills + ranks),
+**Growth** (stat-growth rates, fixed skills, and the 43-skill maximum-level caps with
+one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weapons** (ATK
+across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
+status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
+poison* — that edits every spell a rune grants at once, and optional description rewrites),
+**Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Balance** (idempotent hard-mode
+multiplier presets), **Enemies** (a read-only **bestiary**: Lv, HP, item/food drops, potch and
+SP per encounter), and **Reference** (item/skill id → name lists).
+
+**Guide overlays.** Fields show verified reference data inline: per-character skill caps and
+Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food
+effect descriptions in the item pickers, and full per-rank skill effects. All of it is
+cross-checked against the Suikosource guides (and the fields were re-verified against a real
+disc — see `Editor/Suikoden3_ISO_offsets.md`).
+
+**Undo/redo.** Every edit is undoable (toolbar ↶/↷ or Ctrl/Cmd+Z / Shift+Z), on top of the
+existing per-field **↺** restore and **Revert all**.
+
+**Share a mod without the disc.** Two export formats, both built from your staged edits (no
+need to write the ISO first):
+
+- **Mod recipe (`.s3mod`)** — a tiny, reversible, **version-checked** JSON of the exact byte
+  changes (a recipe for the wrong game/region is rejected). Import it to replay the edits on a
+  clean disc. This is the safe, source-verified option.
+- **`.xdelta` patch** — a standard VCDIFF patch synthesized directly from the edits (no 4 GB
+  diff needed). Apply with any VCDIFF tool: `xdelta3 -d -s "<pristine ISO>" file.xdelta out.iso`.
+  ⚠ It carries **no integrity checksum**, so apply it only to a pristine USA `SLUS-20387` disc.
 
 ---
 
@@ -126,9 +151,11 @@ has a **↺** restore and there's a light/dark theme toggle.
   error text and character blurbs), each capped to its original length. (Story **dialogue**
   lives in packed event files outside the executable and is not editable.) This is **not**
   available in the web ISO editor.
-- **xdelta patches (`.xdelta`)** — a whole-ISO binary diff that captures *everything*,
-  including in-place text edits. Needs a pristine ISO to create/apply; the wrong source is
-  detected, not silently mis-patched (requires `xdelta3`: macOS `brew install xdelta`).
+- **Full-diff xdelta patches, and applying them** — a whole-ISO binary diff that captures
+  *everything*, including in-place text edits, **plus** applying any `.xdelta` back onto a
+  pristine disc. These carry a checksum (wrong source is detected, not silently mis-patched)
+  and require `xdelta3` (macOS `brew install xdelta`). The web editor can *export* a checksum-less
+  `.xdelta` of its own edits, but only the desktop app diffs the whole disc and applies patches.
 - **CLI** — `Editor/s3patch.py` exposes the same engine for scripting:
 
   ```bash
@@ -146,12 +173,16 @@ has a **↺** restore and there's a light/dark theme toggle.
 
 ```
 Editor/
-  s3editor.py   local web app (all tabs + JSON API)
-  s3patch.py    ISO engine + CLI (verify / set / recipe / xdelta)
-  s3save.py     save engine (card / .psu / .psv / gamedata / .sps / .xps / .cbs)
-  s3fields.py   verified ISO field tables + schema
-  s3_*.json / *_ids.txt   verified id→name / description reference data
+  s3editor.py         local web app (all tabs + JSON API)
+  s3patch.py          ISO engine + CLI (verify / set / recipe / xdelta)
+  s3save.py           save engine (card / .psu / .psv / gamedata / .sps / .xps / .cbs)
+  s3fields.py         verified ISO field tables + schema
+  build_*.py          regenerate the guide reference data (skills, caps, growth, rune slots,
+                      bestiary, recruit story/optional flags, rune/food descriptions)
+  suikosource/        saved Suikosource guide text the generators parse
+  s3_*.json / *_ids.txt   verified id→name / description / guide reference data
 web/            the browser editor (also deployed to GitHub Pages)
+web/tests/      Node checks + a Playwright e2e suite (npm test / npm run test:e2e)
 Start Editor (Mac).command / (Windows).bat   launchers
 ```
 
