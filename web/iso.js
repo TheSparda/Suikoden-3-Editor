@@ -107,7 +107,9 @@
     ["Skill 4 (id)", 18, 1, "skill"], ["Skill 4 rank", 19, 1, "rank"],
     ["Skill 5 (id)", 20, 1, "skill"], ["Skill 5 rank", 21, 1, "rank"],
     ["Skill 6 (id)", 22, 1, "skill"], ["Skill 6 rank", 23, 1, "rank"],
-    ["Rune Left hand", 64, 2, "item"], ["Rune Right hand", 72, 2, "item"], ["Rune Head", 80, 2, "item"],
+    // Rune slots are Head/Right/Left (VERIFIED vs suikosource + save editor), not Left/Right/Head:
+    // +64=Head, +72=Right, +80=Left. The exe's write-order label swapped Head and Left. See issue #2.
+    ["Rune Head", 64, 2, "item"], ["Rune Right hand", 72, 2, "item"], ["Rune Left hand", 80, 2, "item"],
     ["Helmet", 88, 2, "item"], ["Armor", 96, 2, "item"], ["Shield", 104, 2, "item"],
     ["Other item 1", 112, 2, "item"], ["Other item 1 amount", 114, 1, "num"],
     ["Other item 2", 120, 2, "item"], ["Other item 2 amount", 122, 1, "num"],
