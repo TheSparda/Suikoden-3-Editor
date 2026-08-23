@@ -969,8 +969,12 @@ above: only the applied element/status is data, its strength is code.
 
 ### Consumable / food table (editable — heal amount + proc chance)
 The "foods get weird" items live in their OWN record array, distinct from gear:
-- BASE (file) 0x3E91D0, STRIDE 0x48, ~62 records (first record is a header/sentinel
-  with a garbage desc — skip it).
+- BASE (file) 0x3E91D0, STRIDE 0x48, **60 recipe/dish records (0..59)**. Records 60-61
+  are NOT dishes: their +0x44 name pointers resolve to consumable ITEMS (Sacrificial Jizo =
+  Curative 0x09E, Escape Scroll = Spell Scroll 0x0A0), i.e. the walk has run past the recipe
+  table into adjacent item strings — so their name/desc/heal don't correspond and must be
+  excluded. Verified: records 0-59 all have "Food Items"-category names with heal matching the
+  "Heals NNN HP" desc; 60+ do not. (FOOD_COUNT was 62 → corrected to 60.)
 - +0x00  u32 -> description string (vaddr)      [CONFIRMED]
 - +0x14  u16  heal amount (HP)                   [CONFIRMED: 7/7 + clean run vs "Heals NNN HP"]
 - +0x1E  u16  proc chance %  (e.g. 30/60)        [CONFIRMED: 7/7 vs "NN% chance of ..."]

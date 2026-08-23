@@ -27,7 +27,7 @@ const ELF_BASE = 0xA4800, ELF_END = 0x465DF0;
 const TABLES = {
   list1: [4078716, 140, 80], list2: [4068152, 132, 80], list3: [4089904, 8, 35], list4: [4061704, 28, 28],
   item3_a: [4105552, 2, 10], item3_b: [4054224, 2, 16], item2: [3970620, 4, 15], item1: [4136564, 4, 3],
-  spell: [0x3EC2A0, 0x20, 94], unite: [0x3ECF90, 0x28, 38], food: [0x3E91D0, 0x48, 62], enemy: [0x3E74E0, 0x14, 100],
+  spell: [0x3EC2A0, 0x20, 94], unite: [0x3ECF90, 0x28, 38], food: [0x3E91D0, 0x48, 60], enemy: [0x3E74E0, 0x14, 100],
   versionword: [4136544, 4, 1],
 };
 for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
@@ -166,6 +166,19 @@ console.log("Guide overlays + xdelta:");
     ? ok : bad)("iso.js enriches rune + food item descriptions");
   (/def _enriched_item_descs/.test(py) && /_enriched_item_descs\(\)/.test(py)
     ? ok : bad)("s3editor.py enriches rune + food item descriptions");
+  // food/recipe table is 60 dishes (recs 60-61 resolve to consumable items, not dishes)
+  (/count: 60,/.test(iso) ? ok : bad)("iso.js FOOD.count = 60 (drops non-dish tail records)");
+  const sp = fs.readFileSync(path.join(REPO, "Editor", "s3patch.py"), "utf8");
+  (/FOOD_COUNT\s*=\s*60\b/.test(sp) ? ok : bad)("s3patch.py FOOD_COUNT = 60");
+  // save editor (no ISO) uses the pre-extracted rune/food descriptions + rich skill effects
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_rune_food_desc.json"), "utf8"));
+    (Object.keys(j).length > 50 ? ok : bad)(`s3_rune_food_desc.json parses (${Object.keys(j).length} entries)`); }
+  catch (e) { bad("s3_rune_food_desc.json — " + e.message); }
+  const app = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
+  (/itemdescextra\.json/.test(app) && /extra\.get\(k\) or idesc\.get/.test(app)
+    ? ok : bad)("save editor merges rune/food descriptions");
+  (/skillref\.json/.test(app) && /_skill_effect_text/.test(app)
+    ? ok : bad)("save editor shows per-rank skill effects");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
