@@ -356,10 +356,9 @@
   async function openIso() {
     let handle;
     try {
-      [handle] = await window.showOpenFilePicker({
-        multiple: false,
-        types: [{ description: "Disc images", accept: { "application/octet-stream": [".iso", ".bin", ".img"] } }],
-      });
+      // No type filter: some platforms (notably Android's picker) map .iso to a MIME the
+      // filter doesn't list and grey it out. Allow any file; the version-word check validates.
+      [handle] = await window.showOpenFilePicker({ multiple: false });
     } catch (e) { if (e && e.name !== "AbortError") setStatus("Could not open ISO: " + e.message, "err"); return; }
     loadFromHandle(handle);
   }
