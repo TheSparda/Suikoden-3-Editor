@@ -85,11 +85,14 @@ blocked with an explanation on unsupported browsers. The editor only reads the ~
 executable region of the disc, verifies it's a USA `SLUS-20387` image, and writes just the
 changed bytes back in place (the multi-GB disc is never fully loaded or uploaded).
 
-Views: **Characters** (starting stats, equipment, skills + ranks), **Growth** (stat-growth
-rates, rune levels, fixed skills, skill-max caps), **Support**, **Weapons** (ATK across all
-16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE / status,
-plus a **rune reskin** that edits every spell a rune grants at once and optional description
-rewrites), **Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Balance**
+Views: **Characters** (starting stats, equipment, skills + ranks, plus an **experimental
+disc-wide rename** of the main cast — Hugo / Chris / Geddoe — written everywhere on the disc
+by the streaming save; same-length only, so it can't shift a single byte), **Growth**
+(stat-growth rates, rune levels, fixed skills, skill-max caps), **Support**, **Weapons** (ATK
+across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
+status, plus a **rune reskin** that edits every spell a rune grants at once and optional
+description rewrites), **Unites** (with editable descriptions), **Gear** (DEF, price, 5 effect
+slots), **Food** (effects **and** editable, length-capped descriptions), **Balance**
 (idempotent hard-mode multiplier presets), **Enemies** (name reference), and **Reference**
 (item/skill id → name lists).
 
@@ -124,8 +127,9 @@ has a **↺** restore and there's a light/dark theme toggle.
 
 - **Text editing** — an in-place editor for the boot-ELF strings (UI / battle / menu / prize /
   error text and character blurbs), each capped to its original length. (Story **dialogue**
-  lives in packed event files outside the executable and is not editable.) This is **not**
-  available in the web ISO editor.
+  lives in packed event files outside the executable and is not editable.) The web ISO editor
+  can only rename the main cast disc-wide (Hugo / Chris / Geddoe, same-length); this full
+  string editor is desktop-only.
 - **xdelta patches (`.xdelta`)** — a whole-ISO binary diff that captures *everything*,
   including in-place text edits. Needs a pristine ISO to create/apply; the wrong source is
   detected, not silently mis-patched (requires `xdelta3`: macOS `brew install xdelta`).
