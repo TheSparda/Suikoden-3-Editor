@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node validate.mjs && node recruit-logic.mjs && node rename-core.mjs && node save-roundtrip.mjs",
+    "test": "node validate.mjs && node recruit-logic.mjs && node rename-core.mjs && node save-roundtrip.mjs && node vcdiff.mjs",
     "test:e2e": "node e2e.mjs"
   },
   "devDependencies": {

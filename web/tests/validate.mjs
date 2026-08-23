@@ -132,5 +132,27 @@ console.log("list2 offsets (issue #2):");
   }
 }
 
+// 8) guide reference overlays + .xdelta export wiring.
+console.log("Guide overlays + xdelta:");
+{
+  for (const f of ["s3_rune_slots.json", "s3_skill_ref.json", "s3_skill_caps.json", "s3_growth_ref.json"]) {
+    try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", f), "utf8"));
+      (Object.keys(j).length > 0 ? ok : bad)(`${f} parses (${Object.keys(j).length} entries)`); }
+    catch (e) { bad(`${f} — ${e.message}`); }
+  }
+  const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
+  (/s3_rune_slots\.json/.test(iso) && /s3_skill_ref\.json/.test(iso) && /s3_skill_caps\.json/.test(iso) && /s3_growth_ref\.json/.test(iso)
+    ? ok : bad)("iso.js loadRef fetches all four reference overlays");
+  (/function runeSlotNote/.test(iso) && /function skillCapNote/.test(iso) && /function growthNote/.test(iso) && /function skillEffectText/.test(iso)
+    ? ok : bad)("iso.js defines the overlay note helpers");
+  (/function exportXdelta/.test(iso) && /Vcdiff\.buildXdelta/.test(iso) && /id="isoXdeltaBtn"/.test(iso)
+    ? ok : bad)("iso.js has the Export .xdelta button + handler");
+  (/src=["']vcdiff\.js["']/.test(html) ? ok : bad)("index.html loads vcdiff.js");
+  { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
+    (/vcdiff\.js/.test(sw) ? ok : bad)("service worker precaches vcdiff.js"); }
+  try { execFileSync(process.execPath, ["--check", path.join(WEB, "vcdiff.js")]); ok("vcdiff.js syntax"); }
+  catch (e) { bad("vcdiff.js — " + String(e.stderr || e).split("\n")[0]); }
+}
+
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
 process.exit(failures ? 1 : 0);

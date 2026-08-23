@@ -21,3 +21,5 @@ jobs:
         run: node web/tests/validate.mjs
       - name: Recruit-core unit tests
         run: node web/tests/recruit-logic.mjs
+      - name: VCDIFF (.xdelta) encoder tests
+        run: node web/tests/vcdiff.mjs
