@@ -223,6 +223,52 @@ head("Rune reskin + description rewrite");
   await page.context().close();
 }
 
+head("Target / Area-of-effect independent highlight + AOE-preserving Target write");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]'); await openRec(page, 'details.char[data-i="0"]');
+  const dirty = (k) => page.evaluate((k) => document.querySelector(`details.char[data-i="0"] select[data-k="${k}"]`).classList.contains("dirty"), k);
+  // synth spell0 flags14 = 0x0A00 (target single 0x0A, AOE off). Turn AOE on → only AOE flags.
+  await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1"); await page.waitForTimeout(60);
+  check("AOE change highlights AOE only", (await dirty("aoe")) === true && (await dirty("target")) === false);
+  // Change Target → Target flags; the write must PRESERVE the AOE bit.
+  await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2"); await page.waitForTimeout(60);
+  check("Target change highlights Target", (await dirty("target")) === true);
+  { const r = await save(page); const f14 = r.u32(SPELL.off + 0x14);
+    check("Target write preserved AOE bit", ((f14 >> 8) & 0x7F) === 0x02 && !!(f14 & 0x8000)); }
+  await page.context().close();
+}
+
+head("Spell description — editable, auto-updates on Power, length-capped");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]'); await openRec(page, 'details.char[data-i="0"]');
+  const desc = 'details.char[data-i="0"] input.spdesc';
+  check("spell description field present", await page.isVisible(desc));
+  check("spell description capped to slot (12)", +(await page.getAttribute(desc, "maxlength")) === 12);   // "Deals 100DMG"
+  await page.fill('details.char[data-i="0"] input[data-k="power"]', "300"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change"); await page.waitForTimeout(60);
+  check("Power change rewrote description inline", (await page.inputValue(desc)) === "Deals 300DMG");
+  check("rewritten description is highlighted", await page.evaluate((s) => document.querySelector(s).classList.contains("dirty"), desc));
+  await page.fill('details.char[data-i="0"] input[data-k="power"]', "100000"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change"); await page.waitForTimeout(60);
+  check("over-length auto-rewrite is skipped", (await page.inputValue(desc)) === "Deals 300DMG");
+  check("over-length auto-rewrite warns", /length limit/i.test(await page.textContent("#isoStatus")));
+  await page.evaluate((s) => { const e = document.querySelector(s); e.value = "X".repeat(40); e.dispatchEvent(new Event("change", { bubbles: true })); }, desc);
+  await page.waitForTimeout(60);
+  check("manual over-length description rejected", /too long/i.test(await page.textContent("#isoStatus")));
+  check("manual over-length not applied", (await page.inputValue(desc)) === "Deals 300DMG");
+  await page.context().close();
+}
+
+head("Unite description — editable + length-capped");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="unites"]'); await openRec(page, 'details.char[data-i="0"]');
+  const desc = 'details.char[data-i="0"] input.undesc';
+  check("unite description field present", await page.isVisible(desc));
+  check("unite description capped to slot (4)", +(await page.getAttribute(desc, "maxlength")) === 4);   // "coop"
+  await page.evaluate((s) => { const e = document.querySelector(s); e.value = "X".repeat(10); e.dispatchEvent(new Event("change", { bubbles: true })); }, desc);
+  await page.waitForTimeout(60);
+  check("unite over-length description rejected", /too long/i.test(await page.textContent("#isoStatus")));
+  await page.context().close();
+}
+
 head("Per-field revert + Revert all + badge");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
@@ -318,8 +364,8 @@ head("Save-progress UX + backup nudge (export path)");
   check("backup nudge export produced a recipe", (await dl.suggestedFilename()).endsWith(".s3mod"));
   await page.waitForSelector("#cfOk"); await page.click("#cfOk");
   await page.waitForSelector("#pgClose:visible", { timeout: 5000 });
-  check("progress modal reaches Saved", /Saved/i.test(await page.textContent("#pgTitle")));
-  check("elapsed timer shown", /elapsed \d/.test(await page.textContent("#pgMeta")));
+  check("progress modal reaches completion", /Done/i.test(await page.textContent("#pgTitle")));
+  check("completion readout shows time taken", /⏱\s*[\d.]+\s*s/.test(await page.textContent("#pgMeta")));
   await page.click("#pgClose");
   check("status ok after save", /Saved/.test(await page.textContent("#isoStatus")));
   check("badge cleared after save", await page.locator("#isoDirty").isHidden());

@@ -151,7 +151,7 @@
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...} }
   let VIEW = "chars", SEARCH = "";
-  let spDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
+  let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
   let gearCache = null;                     // {itemId: absStatsOffset}
   const FIELD_REG = {};                     // absOff -> {group,label,off:absOff,width,kind}
   const dec = new TextDecoder("latin1");
@@ -322,6 +322,22 @@
       btn.title = `Restore original (${ov})`;
       btn.setAttribute("aria-label", `Restore original value (${ov})`);
     }
+    scheduleBadge();
+  }
+  // Like markField, but only the bits in `mask` of a u32 field count as "this control's".
+  // Lets Target and Area-of-effect (which share one flags word) highlight/revert independently.
+  function markFlagsField(el, off, mask) {
+    const cur = readW(off, 4) >>> 0, orig = origW(off, 4) >>> 0, dirty = ((cur ^ orig) & mask) !== 0;
+    el.classList.toggle("dirty", dirty);
+    let btn = el._revBtn;
+    if (!btn) {
+      if (!dirty) { scheduleBadge(); return; }
+      btn = document.createElement("button"); btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+      btn.onclick = (e) => { e.preventDefault(); e.stopPropagation();
+        const c = readW(off, 4) >>> 0, o = origW(off, 4) >>> 0; writeW(off, 4, ((c & ~mask) | (o & mask)) >>> 0); drawView(); };
+      el.insertAdjacentElement("afterend", btn); el._revBtn = btn;
+    }
+    btn.classList.toggle("show", dirty);
     scheduleBadge();
   }
   // Coalesce dirty-badge refreshes to once per frame — markField fires many times per render.
@@ -952,8 +968,8 @@
     if (f.elementId != null && idx + 1 < SPELL.count) {
       const eo = off + SPELL.elem; writeW(eo, 2, (r16(eo) & 0xFF00) | (f.elementId & 0xFF)); reg(eo, 2, "elem", name, "Element");
     }
-    if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF00FF) | ((f.target & 0xFF) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
-    if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
+    if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((f.target & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
+    if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
     if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
     return descRes;
   }
@@ -990,7 +1006,7 @@
     }
     const body = rows.map(({ i, off, name }) => {
       const canElem = i + 1 < SPELL.count, elVal = canElem ? (r16(off + SPELL.elem) & 0xFF) : 0;
-      const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0xFF, f18 = r32(off + 0x18);
+      const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F, f18 = r32(off + 0x18);
       const statCur = f18 === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => f18 === (1 << b)) || [])[1] || "custom";
       const elemSel = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === elVal ? " selected" : ""}>${l}</option>`).join("");
       const statOpts = ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}"${s === statCur ? " selected" : ""}>${s}</option>`).join("");
@@ -1042,7 +1058,11 @@
     const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
     d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
     const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"] };
-    qa(".sp", d).forEach((el) => { const [o, w, kind] = MAP[el.dataset.k]; markField(el, off + o, w, kind); });
+    qa(".sp", d).forEach((el) => {
+      const [o, w, kind] = MAP[el.dataset.k];
+      if (kind === "flags14") markFlagsField(el, off + o, el.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
+      else markField(el, off + o, w, kind);
+    });
     // reflect any auto-rewrite of the description (e.g. Power change) inline + highlight if changed
     const dEl = d.querySelector(".spdesc");
     if (dEl) {
@@ -1076,31 +1096,54 @@
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, off, name });
     }
-    host.innerHTML = rows.map(({ i, off, name }) => {
-      const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0xFF;
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes</label>`;
+    host.innerHTML = updBox + (rows.map(({ i, off, name }) => {
+      const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
+      const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
+      const descField = dmax > 0
+        ? `<label class="field" style="margin:0 0 10px"><span>Description <span class="muted">(max ${dmax} chars)</span></span>
+             <input type="text" class="undesc" data-i="${i}" maxlength="${dmax}" value="${esc2(dcur)}"></label>`
+        : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
           <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
-        <div class="char-body"><div class="muted" style="margin:0 0 8px">${esc2(strAt(r32(off + 0x0C)))}</div>
+        <div class="char-body">${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
             <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
           </div></div></details>`;
-    }).join("") || `<div class="muted">no matches</div>`;
+    }).join("") || `<div class="muted">no matches</div>`);
     const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"] };
     const markUnite = (i) => {
       const off = UNITE.off + i * UNITE.stride, d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
       d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
-      qa(".un", d).forEach((c) => { const [o, w, kind] = UMAP[c.dataset.k]; markField(c, off + o, w, kind); });
+      qa(".un", d).forEach((c) => {
+        const [o, w, kind] = UMAP[c.dataset.k];
+        if (kind === "flags14") markFlagsField(c, off + o, c.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
+        else markField(c, off + o, w, kind);
+      });
+      const dEl = d.querySelector(".undesc");
+      if (dEl) { const dptr = r32(off + 0x0C), doff = vaOff(dptr), dmax = origSlotLen(dptr); dEl.value = strFrom(BUF, doff, dmax); markField(dEl, doff, dmax, "text"); }
     };
+    const un = q("#unUpd", host); if (un) un.onchange = (e) => { unDescOn = e.target.checked; };
     qa(".un", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, k = el.dataset.k, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
-      if (k === "power") { writeW(off + 0x1C, 4, Math.max(0, +el.value || 0)); reg(off + 0x1C, 4, "num", name, "Power"); }
+      if (k === "power") {
+        writeW(off + 0x1C, 4, Math.max(0, +el.value || 0)); reg(off + 0x1C, 4, "num", name, "Power");
+        if (unDescOn) { const dr = rewriteDesc(r32(off + 0x0C), (t) => descPower(t, Math.max(0, +el.value || 0)), name, "Description");
+          if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn"); }
+      }
       else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
-      else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF00FF) | ((+el.value & 0xFF) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
-      else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target/AOE"); }
+      else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
+      else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
+      markUnite(i);
+    }));
+    qa(".undesc", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
+      const res = setDescText(r32(off + 0x0C), el.value, name, "Description");
+      if (res.tooLong) setStatus(`Description too long — max ${res.max} characters for this unite.`, "warn");
       markUnite(i);
     }));
     qa("details.char", host).forEach((d) => markUnite(+d.dataset.i));   // init ↺/highlight

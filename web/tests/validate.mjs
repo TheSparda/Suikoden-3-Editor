@@ -72,5 +72,22 @@ try {
   (dupes.length === 0 ? ok : bad)("no character listed on two teams" + (dupes.length ? " (dupes: " + dupes.join(", ") + ")" : ""));
 } catch (e) { bad("s3_recruit_teams.json — " + e.message); }
 
+// 6) QoL guards — styling + save-editor bits headless e2e can't reach (it aborts Pyodide)
+console.log("QoL guards:");
+{ const css = fs.readFileSync(path.join(WEB, "style.css"), "utf8");
+  (/input\.search[^{]*\{[^}]*font-size:\s*16px/.test(css) && /input\.search[^{]*\{[^}]*min-height:\s*44px/.test(css)
+    ? ok : bad)("filter inputs sized for touch (min-height 44px, 16px font)");
+  const app = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
+  (/s3suffix"\)\s*===\s*"on"/.test(app) ? ok : bad)("save-editor '.edited' suffix defaults OFF (overwrite-friendly)");
+  (/showSaveFilePicker/.test(app) ? ok : bad)("save-editor has a 'Save as…' destination picker");
+  const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
+  (/function markFlagsField/.test(iso) ? ok : bad)("ISO editor has bit-aware Target/AOE highlight");
+  (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite descriptions");
+  (/<input type="file" id="isoFileInput">/.test(iso) ? ok : bad)("ISO file input has no restrictive accept filter (Android can select .iso)");
+  (/doStreamSave/.test(iso) ? ok : bad)("ISO editor has the streaming 'save patched copy' path");
+  const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
+  (/cache:\s*"no-store"/.test(sw) ? ok : bad)("service worker fetches app shell no-store (fresh updates)");
+  (/dl-register/.test(sw) ? ok : bad)("service worker supports the streaming-download hand-off"); }
+
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
 process.exit(failures ? 1 : 0);
