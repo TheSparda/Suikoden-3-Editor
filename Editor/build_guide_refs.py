@@ -79,9 +79,18 @@ def build_skill_ref():
     sid = skill_ids(); name2id = {norm(n): i for i, n in sid.items()}
     lines = load("skills.txt"); ref = {}; i = 0
     while i < len(lines):
+        # Two header formats in the guide: "Name<TAB>Mundane/Unique Skill" (combat/magic), and a
+        # bare "Name" line (the utility/teacher skills: Cook, Appraisal, …). Both are followed by
+        # a description line and (optionally) an E..S per-rank effect table.
         m = re.match(r"^(.+?)\t(Mundane|Unique) Skill\s*$", lines[i])
+        gname = typ = None
         if m:
             gname, typ = m.group(1).strip(), m.group(2)
+        elif "\t" not in lines[i] and norm(lines[i]) in name2id and name2id[norm(lines[i])] not in {int(k) for k in ref} \
+                and i + 1 < len(lines) and lines[i + 1].strip() and "\t" not in lines[i + 1] \
+                and not re.match(r"^(Initial|Max|Rank)\b", lines[i + 1]):
+            gname, typ = lines[i].strip(), "Utility"
+        if gname:
             skid = name2id.get(norm(gname))
             desc = lines[i + 1].strip() if i + 1 < len(lines) else ""
             effects = []; j = i + 2
@@ -95,9 +104,9 @@ def build_skill_ref():
                         effects.append({"label": label, "ranks": dict(zip(RANKS, vals[:8]))}); j += 1
                     else:
                         break
-            if skid:
+            if skid and str(skid) not in ref:
                 ref[str(skid)] = {"name": sid[skid], "type": typ, "desc": desc, "effects": effects}
-            i = j; continue
+            i = j if j > i else i + 1; continue
         i += 1
     return ref
 
