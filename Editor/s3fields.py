@@ -62,19 +62,24 @@ LIST1 = [
 ]
 
 # list2 — Stat Growth + Skill Max Levels (stride 132). Growth block from Patch offsets.
-# +0 and +4..+8 are growth/rune-level bytes; +9.. is the skill-max array (0..7 each).
+# Growth rates occupy the exe's own write-set {+0, +4,+5,+6,+7, +9,+10,+11} (8 bytes).
+# Byte<->stat mapping VERIFIED by correlation vs suikosource/statgrowth.txt across the
+# roster: +4=PWR +5=SKL +6=MAG +7=REP +9=MDF +10=SPD +11=LUK, and +0=HP. Bytes +1..+3
+# are always 0 (unused padding) and +8 is a sparse non-growth field — NONE of these are
+# rune levels. (The old "Head/RH/LH Rune Level" fields at +0/+1/+2 were a misread: +0 is
+# actually HP growth, and +1/+2 are padding. See github issue #2.)
 LIST2_GROWTH = [
     ("PWR growth rate",   4, 1, "num"), ("SKL growth rate",   5, 1, "num"),
     ("MAG growth rate",   6, 1, "num"), ("REP growth rate",   7, 1, "num"),
-    ("MDF growth rate",   8, 1, "num"), ("SPD growth rate",   9, 1, "num"),
-    ("LUK growth rate",  10, 1, "num"), ("HP growth rate",   11, 1, "num"),
-    ("Head Rune Level",   0, 1, "num"),
-    ("RH Rune Level",     1, 1, "num"),
-    ("LH Rune Level",     2, 1, "num"),
+    ("MDF growth rate",   9, 1, "num"), ("SPD growth rate",  10, 1, "num"),
+    ("LUK growth rate",  11, 1, "num"), ("HP growth rate",    0, 1, "num"),
 ]
-# Skill-max array: 43 skills (0x01..0x2B) as consecutive bytes starting at +13.
-# We surface them named from the skill list so each maps to a skill.
-LIST2_SKILLMAX_START = 13
+# Skill-max array: 43 skills (ids 0x01..0x2B) as consecutive bytes starting at +16
+# (skill id N -> byte +16+(N-1); array spans +16..+58). VERIFIED vs suikosource/skills.txt:
+# 988/1100 known caps match at +16 (~90%; the rest are guide-vs-data variance / a few
+# lead chars whose caps are all-S), vs ~12% at the old +13. Encoding is unchanged and
+# correct (see SKILL_MAX_OPTS: 0=Can't get,1=A+,2=D,3=C,4=B,5=B+,6=A,7=S). See issue #2.
+LIST2_SKILLMAX_START = 16
 
 # list2 — Fixed Skills block (skills view). Offsets exact from Patch1_Click:
 #   list2_60..76 -> +80..+96 (17 bytes), list2_80..81 -> +100..+101 (2 bytes).

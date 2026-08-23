@@ -37,10 +37,23 @@ The name lists in the UI are just `NNN Label` lines; the editor parses the first
 - +112 u16 + u8, +120 u16 + u8, +128 u16 + u8 (list1_21…26)
 
 ### List 2 — growth/skill limits (stride 132)
-- +0 u8; +4..+8 5×u8; +9..+11 3×u8; +13..+66 54×u8 (list2_9…54);
-  +80..+96 17×u8 (list2_60…76); +100..+101 2×u8 (list2_80,81)
-- Skill max-level encoding: 0=Can't get, 1=A+, 2=D, 3=C, 4=B, 5=B+, 6=A, 7=S.
-  **Max is 7** as of v1.2b (8 caused in-game problems).
+- **Growth rates** (u8 each), stat↔byte VERIFIED by correlation vs `suikosource/statgrowth.txt`
+  across the roster: `+4`=PWR `+5`=SKL `+6`=MAG `+7`=REP `+9`=MDF `+10`=SPD `+11`=LUK `+0`=HP.
+  This is the exe's own Patch write-set `{+0,+4,+5,+6,+7,+9,+10,+11}`. `+1..+3` are always 0
+  (padding) and `+8` is a sparse non-growth field (nonzero on only ~12/79 records).
+  *(Correction: earlier notes labeled `+0/+1/+2` as Head/RH/LH "rune level" — WRONG. `+0` is HP
+  growth; `+1/+2` are padding; there are no per-character rune-level bytes here. See issue #2.)*
+- **Skill max-level array**: 43 skills (ids `0x01..0x2B`) as consecutive u8 at **`+16..+58`**
+  (skill id N → byte `+16+(N-1)`). VERIFIED vs `suikosource/skills.txt`: 988/1100 known caps
+  match at `+16` (~90%; remainder is guide-vs-data variance plus a few lead chars stored as
+  all-S), vs ~12% at the old `+13`. *(The exe exposed `+13..+58` as generic fields `list2_9..54`;
+  `+13/+14/+15` are 3 non-cap bytes before the array — do not treat them as skills 1-3.)*
+- Skill max-level encoding (UNCHANGED, correct): 0=Can't get, 1=A+, 2=D, 3=C, 4=B, 5=B+, 6=A, 7=S.
+  Note 1=A+ is non-monotonic: A+ ranks between A (6) and S (7) but is stored as 1.
+  **Max is 7** as of v1.2b (8 caused in-game problems). Rank ladder confirmed vs the Suikosource
+  Skills List guide: E<D<C<B<B+<A<A+<S.
+- `+12` u8 (unknown; values like 5/9/17/18/34/81/98). `+80..+96` 17×u8 (list2_60…76, fixed-skills
+  block); `+100..+101` 2×u8 (list2_80,81, starting level + relative flag).
 
 ### List 3 — support skills (stride 8): 8 consecutive bytes.
 ### List 4 — (stride 28): 16 consecutive bytes at record start.

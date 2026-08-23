@@ -732,7 +732,7 @@ def read_charfields(list_no, index):
         groups.append({"title": "Starting Stats / Equipment",
                        "help": F.SKILL_RANK_HELP, "fields": l1})
     elif list_no == 2:
-        groups.append({"title": "Growth Rates / Rune Levels", "help": "higher = faster growth",
+        groups.append({"title": "Growth Rates", "help": "higher = faster growth",
                        "fields": [field(*f) for f in F.LIST2_GROWTH]})
         smax = []
         for k in range(43):
