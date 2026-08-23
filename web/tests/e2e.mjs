@@ -284,6 +284,20 @@ head("Food description — editable, auto-updates on heal, length-capped");
   await page.context().close();
 }
 
+head("Character rename panel — scoped, same-length-capped, staged");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="chars"]'); await page.waitForTimeout(80);
+  check("rename inputs present (Hugo/Chris/Geddoe)", (await page.locator("input.rename").count()) === 3);
+  check("Hugo rename capped to 4 chars", +(await page.getAttribute('input.rename[data-orig="Hugo"]', "maxlength")) === 4);
+  check("Geddoe rename capped to 6 chars", +(await page.getAttribute('input.rename[data-orig="Geddoe"]', "maxlength")) === 6);
+  await page.fill('input.rename[data-orig="Geddoe"]', "Gideon"); await page.dispatchEvent('input.rename[data-orig="Geddoe"]', "input"); await page.waitForTimeout(40);
+  check("staged rename highlights", await page.evaluate(() => document.querySelector('input.rename[data-orig="Geddoe"]').classList.contains("dirty")));
+  // this harness uses the FS-Access (in-place) path, where renames can't reach disc-wide copies
+  await page.click("#isoSaveBtn"); await page.waitForTimeout(80);
+  check("rename-only in-place save warns it needs streaming", /streaming/i.test(await page.textContent("#isoStatus")));
+  await page.context().close();
+}
+
 head("Per-field revert + Revert all + badge");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');

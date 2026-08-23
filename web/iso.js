@@ -147,6 +147,7 @@
 
   // ---- state -----------------------------------------------------------------
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
+  let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...} }
@@ -408,7 +409,7 @@
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
-    recipeExported = false; saveNudged = false;
+    recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
     renderEditor(file.size);
@@ -461,7 +462,13 @@
   }
   let recipeExported = false, saveNudged = false;
   function saveIso() {
-    if (!anyChanges()) return setStatus("No changes to save.", "warn");
+    const hasRename = Object.keys(RENAMES).length > 0;
+    if (!anyChanges() && !hasRename) return setStatus("No changes to save.", "warn");
+    // Renames are disc-wide and only the streaming save can reach every copy.
+    if (hasRename && saveMode() !== "stream") {
+      setStatus("Character renames apply disc-wide and are only written by the streaming “save patched copy” (Android/Firefox/Safari, or a full rebuild) — the in-place desktop save can't include them.", "warn");
+      if (!anyChanges()) return;   // nothing else to write in place → stop
+    }
     if (saveMode() === "none")
       return setStatus("This browser can't write the ISO. Use “Export recipe…” and apply it on a desktop Chromium browser (or the desktop app).", "warn");
     // One-time nudge to export a reversible recipe before the first write of a session.
@@ -471,6 +478,7 @@
   function confirmAndSave() {
     const rows = buildReview();
     const bytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
+    RenameCore.buildRenames(RENAMES).list.forEach((r) => rows.push({ g: "Rename", t: `${r.origName} → ${r.newName} (disc-wide)` }));
     if (!rows.length) rows.push({ g: "Raw", t: `${bytes} byte(s)` });
     if (saveMode() === "stream") {
       openConfirm(rows, doStreamSave,
@@ -549,9 +557,14 @@
     const outName = (m ? isoName.slice(0, isoName.length - m[0].length) : isoName || "s3") + ".patched" + (m ? m[0] : ".iso");
     const total = isoFile.size;
     const region = BUF.slice();          // snapshot so mid-save edits can't corrupt the copy
+    // Staged character renames → a same-length disc-wide replacer (empty list = pass-through).
+    const rn = RenameCore.buildRenames(RENAMES);
+    rn.warnings.forEach((w) => setStatus(w, "warn"));
+    const replacer = RenameCore.streamReplacer(rn.list);
+    const renameNote = rn.list.length ? ` Renaming ${rn.list.map((r) => `${r.origName}→${r.newName.trim()}`).join(", ")}.` : "";
     const pg = progressModal(); setBusy(true);
     try {
-      pg.phase("Preparing", `Building a patched copy of ${isoName} (~${fmtSize(total)}). ` +
+      pg.phase("Preparing", `Building a patched copy of ${isoName} (~${fmtSize(total)}).${renameNote} ` +
         `This can take a few minutes for a full disc — keep this tab open and your screen awake. ` +
         `It streams straight to your downloads; nothing is uploaded.`, { indet: true });
 
@@ -563,7 +576,7 @@
           let r;
           try { r = await reader.read(); }
           catch (e) { controller.error(e); failed(e); return; }
-          if (r.done) { controller.close(); finished(); return; }
+          if (r.done) { const tail = replacer.flush(); if (tail.length) controller.enqueue(tail); controller.close(); finished(); return; }
           let chunk = r.value;                                  // bytes at [pos, pos+len)
           const start = pos, end = pos + chunk.length;
           if (end > ELF_BASE && start < ELF_END) {              // overlaps the editable region
@@ -571,7 +584,7 @@
             const a = Math.max(start, ELF_BASE), b = Math.min(end, ELF_END);
             for (let i = a; i < b; i++) chunk[i - start] = region[i - ELF_BASE];
           }
-          controller.enqueue(chunk);
+          controller.enqueue(replacer.push(chunk));             // disc-wide same-length rename
           pos = end;
           pg.phase("Writing", `Streaming patched ISO to your downloads… ${fmtSize(pos)} / ${fmtSize(total)}`,
             { pct: total ? (pos / total) * 100 : 0 });
@@ -771,7 +784,7 @@
     const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
     const open = new Set(qa("details.char[open]", host).map(detKey));
     const y = window.scrollY;
-    if (VIEW === "chars") drawRecords(host, "list1", REF.names.list1, LIST1_FIELDS, true);
+    if (VIEW === "chars") { drawCharsView(host); }
     else if (VIEW === "growth") drawGrowth(host);
     else if (VIEW === "support") drawRecords(host, "list3", REF.names.list3, LIST3_FIELDS, false);
     else if (VIEW === "weapons") drawRecords(host, "list4", REF.names.list4, LIST4_FIELDS, false);
@@ -791,6 +804,24 @@
   }
 
   // ---- generic record editor (list1 / list3 / list4) ------------------------
+  // Characters view = a global "rename character" panel (streaming save applies it disc-wide)
+  // followed by the list1 stat records.
+  function drawCharsView(host) {
+    const rn = (RenameCore.RENAMEABLE || []).map((nm) =>
+      `<label class="field" style="max-width:220px"><span>${nm} <span class="muted">(max ${nm.length})</span></span>
+         <input type="text" class="rename${RENAMES[nm] ? " dirty" : ""}" data-orig="${nm}" maxlength="${nm.length}" placeholder="${esc2(nm)}" value="${esc2(RENAMES[nm] || "")}"></label>`).join("");
+    host.innerHTML = `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Rename characters <span class="u">experimental · same length only</span></div>
+        <div class="warnbox" style="margin:0 0 8px">Replaces the name <b>everywhere on the disc</b> (menus, battle, dialogue). Written by the streaming <b>“save patched copy”</b> — the desktop in-place save can't reach most copies. Same length only (shorter is space-padded). Back up first.</div>
+        <div class="grid">${rn}</div></div>
+      <div id="charRecs"></div>`;
+    qa("input.rename", host).forEach((el) => (el.oninput = () => {
+      const orig = el.dataset.orig, v = el.value.trim();
+      if (v && v !== orig) RENAMES[orig] = v; else delete RENAMES[orig];
+      el.classList.toggle("dirty", !!RENAMES[orig]);
+    }));
+    drawRecords(q("#charRecs", host), "list1", REF.names.list1, LIST1_FIELDS, true);
+  }
   function drawRecords(host, listKey, names, fields, lazy) {
     const [base, stride] = TABLES[listKey];
     const cnt = LIST_COUNT[listKey];
