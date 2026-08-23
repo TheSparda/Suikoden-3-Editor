@@ -23,3 +23,5 @@ jobs:
         run: node web/tests/recruit-logic.mjs
       - name: VCDIFF (.xdelta) encoder tests
         run: node web/tests/vcdiff.mjs
+      - name: Description-merge tests (rune/food/skill)
+        run: node web/tests/desc-merge.mjs

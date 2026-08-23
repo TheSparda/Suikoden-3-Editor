@@ -498,6 +498,8 @@ head("Skill-cap preset (Growth view)");
   const [l2b] = TABLES.list2;
   await page.click('#isoTabs [data-v="growth"]'); await openRec(page, "details.char"); await page.waitForTimeout(60);
   const l2rec = +(await page.getAttribute("details.char[open]", "data-rec"));
+  // guide-overlay notes render (skill caps / growth ranges from the reference JSONs)
+  check("growth view shows guide reference notes", (await page.locator('details.char[open] .fnote:has-text("guide")').count()) > 0);
   await page.click('details.char[open] [data-cap="max"]'); await page.waitForTimeout(50);
   check("Max-all preset sets skillmax#1 select to S(7)", (await page.locator('details.char[open] select[data-off="' + (l2rec + 16) + '"]').inputValue()) === "7");
   const r = await save(page);
