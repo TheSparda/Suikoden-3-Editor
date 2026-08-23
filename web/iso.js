@@ -275,7 +275,7 @@
   const maxLabel = (v) => (MAX_OPTS.find((t) => t[0] === v) || [v, "?"])[1];
   function itemOpts(cat) {
     const list = Object.keys(REF.items).map(Number).filter((id) => !cat || REF.cats[id] === cat)
-      .sort((a, b) => a - b).map((id) => ({ id, name: itemName(id), cat: REF.cats[id], desc: REF.idesc[id] || "" }));
+      .sort((a, b) => a - b).map((id) => ({ id, name: itemName(id), cat: REF.cats[id], desc: itemDesc(id) }));
     return [{ id: 0, name: "— none —" }, ...list];
   }
   function skillOpts() {
@@ -420,7 +420,7 @@
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -916,7 +916,7 @@
     const n = note ? `<div class="fnote">${note}</div>` : "";
     const fc = faded ? " faded" : "";
     if (kind === "item" || kind === "skill") {
-      const tip = kind === "skill" ? skillEffectText(v) : (REF.idesc[v] || "");
+      const tip = kind === "skill" ? skillEffectText(v) : itemDesc(v);
       return `<label class="field${fc}"><span>${esc2(label)}</span>
         <button type="button" class="picker${dirty}" data-off="${off}" data-w="${w}" data-kind="${kind}"${tip ? ` title="${esc2(tip)}"` : ""}>${esc2(kind === "item" ? itemLabel(v) : skillLabel(v))}</button>${n}</label>`;
     }
@@ -969,6 +969,55 @@
     }
     return t;
   }
+  // Runes have no name<->desc record (the item-desc pool drifts — that's the stray "no" text),
+  // but command/attack runes share their name with a spell-table entry and magic runes grant a
+  // known spell set — both carry accurate descriptions we read live from the loaded ISO.
+  let SPELL_DESC_BY_NAME = null;   // cache; cleared on ISO load (resetState)
+  function spellDescByName() {
+    if (SPELL_DESC_BY_NAME) return SPELL_DESC_BY_NAME;
+    const m = {};
+    for (let i = 0; i < SPELL.count; i++) {
+      const o = SPELL.off + i * SPELL.stride, nm = strAt(r32(o + 0x08));
+      if (nm && !(nm in m)) m[nm] = strAt(r32(o + 0x0C));
+    }
+    return (SPELL_DESC_BY_NAME = m);
+  }
+  function runeDesc(id) {
+    if (!BUF || REF.cats[id] !== "Runes") return "";     // only runes; avoids name clashes (e.g. Fire Amulet)
+    const nm = REF.items[id]; if (!nm) return "";
+    const byName = spellDescByName();
+    if (byName[nm]) return byName[nm];                    // command/attack rune (name == spell)
+    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");   // magic rune → RUNE_SPELLS
+    const set = RUNE_SPELLS[key];
+    if (set && set.length) {
+      const d0 = byName[set[0]];
+      return `Grants ${set.join(", ")}` + (d0 ? ` — ${set[0]}: ${d0}` : "");
+    }
+    return "";
+  }
+  // Food items also lack a name<->desc record, but the Food effect table (0x3E91D0) has a name
+  // pointer + desc/heal — so we map food item -> its dish record and show "Heals NNN HP" (live,
+  // and it reflects Food-tab edits). Unused dishes carry a non-ASCII placeholder; we skip those.
+  let FOOD_DESC_BY_NAME = null;   // cache; cleared on ISO load
+  function foodDescByName() {
+    if (FOOD_DESC_BY_NAME) return FOOD_DESC_BY_NAME;
+    const m = {};
+    for (let i = 0; i < FOOD.count; i++) {
+      const o = FOOD.off + i * FOOD.stride, nm = strAt(r32(o + FOOD.name));
+      if (!nm) continue;
+      let d = strAt(r32(o + FOOD.desc));
+      if (!/^[\x20-\x7E]+$/.test(d)) { const heal = readW(o + FOOD.heal, 2); d = heal ? `Heals ${heal}HP` : ""; }
+      if (d && !(nm.toLowerCase() in m)) m[nm.toLowerCase()] = d;
+    }
+    return (FOOD_DESC_BY_NAME = m);
+  }
+  function foodDesc(id) {
+    if (!BUF || REF.cats[id] !== "Food Items") return "";
+    const nm = REF.items[id]; return nm ? (foodDescByName()[nm.toLowerCase()] || "") : "";
+  }
+  // desc to show for an item id in pickers/tooltips: rune effect (spell table) or food effect
+  // (food table) win for those categories, otherwise the equipment name<->desc record.
+  const itemDesc = (id) => runeDesc(id) || foodDesc(id) || REF.idesc[id] || "";
   function wireFields(scope, recBase, group) {
     qa("button.picker[data-off]", scope).forEach((btn) => {
       const off = +btn.dataset.off, w = +btn.dataset.w, kind = btn.dataset.kind;
@@ -980,7 +1029,7 @@
         openPicker(label, opts, cur, (id) => {
           writeW(off, w, id); reg(off, w, kind, group, label);
           btn.textContent = kind === "item" ? itemLabel(id) : skillLabel(id);
-          const tip = kind === "skill" ? skillEffectText(id) : (REF.idesc[id] || "");
+          const tip = kind === "skill" ? skillEffectText(id) : itemDesc(id);
           if (tip) btn.title = tip; else btn.removeAttribute("title");
           markField(btn, off, w, kind);
         }, (id) => hex(id, kind === "item" ? 3 : 2));
@@ -1521,7 +1570,7 @@
   function drawReference(host) {
     const isItems = REF_KIND === "items";
     const list = isItems
-      ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: REF.idesc[id] || "" }))
+      ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))
       : Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 2, nm: skillName(id), sub: (REF.skillRef && REF.skillRef[String(id)] || {}).type || "", desc: skillEffectText(id) }));
     const q2 = SEARCH;
     const rows = list.filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, o.w).toLowerCase().includes(q2))
