@@ -619,13 +619,8 @@ function drawRecruit() {
   $("#subview").innerHTML = `
     <div class="warnbox" style="margin:0 0 10px">Best used for <b>optional</b> recruits. <span class="story-tag">⚠ story</span> characters (faded) auto-join via the story — recruiting or un-recruiting them manually is unneeded and can soft-lock an early save. Keep a backup.</div>
     <div class="row" style="gap:10px;margin-bottom:8px">
-      <label class="field" style="max-width:220px"><span>Team for bulk actions</span><select id="rteam">${teamSel}</select></label>
+      <label class="field" style="max-width:240px"><span>Default team for new recruits</span><select id="rteam">${teamSel}</select></label>
       <span class="muted">Recruited ${total} · Hugo ${counts.Hugo} · Chris ${counts.Chris} · Geddoe ${counts.Geddoe} · Thomas ${counts.Thomas} · shared ${counts[""]}</span>
-    </div>
-    <div class="subtabs" style="margin-bottom:8px">
-      <button class="chip" id="recAllShown">Recruit all shown → team</button>
-      <button class="chip" id="moveShown">Move all shown → team</button>
-      <button class="chip" id="unrecShown">Un-recruit all shown</button>
     </div>
     <div class="subtabs" style="margin-bottom:10px">${presetBtns}</div>
     <table class="invtbl"><thead><tr><th>Character</th><th>#</th><th>Team</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -639,12 +634,6 @@ function drawRecruit() {
     const c = charByRoster(+se.dataset.team); setRecruit(c, true, se.value); drawRecruit();
   }));
   const RC = RecruitCore;
-  $("#recAllShown").onclick = () => previewRecruit(roster,
-    (m) => shown.forEach((c) => RC.setRecruit(c, true, RTEAM, m)));
-  $("#moveShown").onclick = () => previewRecruit(roster,
-    (m) => shown.forEach((c) => { if (RC.recState(c, m).recruited) RC.setRecruit(c, true, RTEAM, m); }));
-  $("#unrecShown").onclick = () => previewRecruit(roster,
-    (m) => shown.forEach((c) => RC.setRecruit(c, false, undefined, m)));
   $$("[data-canon]").forEach((b) => (b.onclick = () => {
     const which = b.dataset.canon;
     previewRecruit(roster, (m) => RC.applyCanonical(roster, which, RECRUIT_TEAMS || {}, m));
@@ -955,6 +944,43 @@ function applyTheme(t) {
   try { localStorage.setItem("s3theme", t); } catch (e) {}
 }
 
+// If a newer build is deployed but this tab is running a cached one, reveal a footer button
+// to nuke the caches + SW and reload. Compares the loaded footer version against a fresh,
+// cache-busted index.html (bypasses both the HTTP cache and the service worker).
+const appVersion = (txt) => ((txt || "").match(/v(\d+\.\d+\.\d+)/) || [])[1] || "";
+async function checkForUpdate() {
+  try {
+    const cur = appVersion(document.querySelector(".credit") && document.querySelector(".credit").textContent);
+    const html = await (await fetch(`./index.html?cb=${Date.now()}`, { cache: "no-store" })).text();
+    const latest = appVersion(html);
+    if (cur && latest && cur !== latest) showUpdateBar(cur, latest);
+  } catch (e) { /* offline or blocked — just don't prompt */ }
+}
+function showUpdateBar(cur, latest) {
+  // Create the bar if this (possibly stale) page's HTML predates the #updateBar element.
+  let bar = document.getElementById("updateBar");
+  if (!bar) {
+    bar = document.createElement("span"); bar.id = "updateBar"; bar.className = "note";
+    (document.querySelector("footer") || document.body).appendChild(bar);
+  }
+  bar.hidden = false;
+  bar.innerHTML = `⟳ A newer version is available (v${esc(cur)} → <b>v${esc(latest)}</b>). ` +
+    `<button class="chip" id="forceUpd">Force refresh</button>`;
+  const b = document.getElementById("forceUpd");
+  if (b) b.onclick = forceUpdate;
+}
+async function forceUpdate() {
+  const b = document.getElementById("forceUpd"); if (b) { b.disabled = true; b.textContent = "Refreshing…"; }
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); }
+  } catch (e) { /* best-effort — reload anyway */ }
+  location.reload();
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   let theme = "crimson";
   try { theme = localStorage.getItem("s3theme") || "crimson"; } catch (e) {}
@@ -998,6 +1024,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW register failed", e));
   }
+  checkForUpdate();   // reveal a "Force refresh" button in the footer if a newer version is live
 
   // Install affordance. Chrome fires beforeinstallprompt only after the PWA is installable AND
   // a ~30s engagement heuristic — and never on iOS, or on some Android browsers — so a button
