@@ -26,6 +26,12 @@ let ITEM_BY_ID = {}, saves = [], curSlot = 0, origName = "save.bin";
 // instead of downloading a copy. Absent on Android/Firefox/Safari → we fall back to download.
 let fileHandle = null;
 const SUPPORTS_FS = typeof window !== "undefined" && "showOpenFilePicker" in window;
+// "Save as…" (desktop Chromium): a native save dialog to choose the destination/name — lets
+// you overwrite the original card or save a copy anywhere. Absent on Android/Firefox/Safari.
+const SUPPORTS_SAVE_PICKER = typeof window !== "undefined" && "showSaveFilePicker" in window;
+// Whether downloaded/shared copies get a ".edited" suffix. Default OFF — the download/share
+// keeps the original filename so it can overwrite the source card; tick the box to add ".edited".
+let ADD_SUFFIX = (() => { try { return localStorage.getItem("s3suffix") === "on"; } catch (e) { return false; } })();
 // Web Share with files (Android Chrome): send the edited save straight to another app.
 const CAN_SHARE_FILES = (() => {
   try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob([1])], "t.bin")] })); }
@@ -368,10 +374,16 @@ function drawSlot() {
       <div class="toolbar">
         ${SUPPORTS_FS && fileHandle
           ? `<button class="primary" id="saveFileBtn">Apply &amp; save to file</button>
+             ${SUPPORTS_SAVE_PICKER ? `<button id="saveAsBtn">Save as…</button>` : ""}
              <button id="saveBtn">Download copy</button>`
-          : `<button class="primary" id="saveBtn">Apply &amp; download</button>`}
+          : SUPPORTS_SAVE_PICKER
+            ? `<button class="primary" id="saveAsBtn">Apply &amp; save…</button>
+               <button id="saveBtn">Download copy</button>`
+            : `<button class="primary" id="saveBtn">Apply &amp; download</button>`}
         ${CAN_SHARE_FILES ? `<button id="shareBtn">Apply &amp; share…</button>` : ""}
         <button id="resetBtn">Reset</button>
+        <label class="row" style="gap:6px;cursor:pointer;font-size:12px;color:var(--mut)" title="Off = keep the original filename, so a download/share can overwrite the source card">
+          <input type="checkbox" id="suffixChk"${ADD_SUFFIX ? " checked" : ""}> add “.edited” to copies</label>
         <span class="status" id="status"></span>
       </div>
     </div>`;
@@ -388,7 +400,9 @@ function drawSlot() {
   $("#sq").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); showSub(); };
   $("#saveBtn").onclick = () => applyEdits("download");
   const sfb = $("#saveFileBtn"); if (sfb) sfb.onclick = () => applyEdits("file");
+  const sab = $("#saveAsBtn"); if (sab) sab.onclick = () => applyEdits("saveas");
   const shb = $("#shareBtn"); if (shb) shb.onclick = () => applyEdits("share");
+  $("#suffixChk").onchange = (e) => { ADD_SUFFIX = e.target.checked; try { localStorage.setItem("s3suffix", ADD_SUFFIX ? "on" : "off"); } catch (err) {} };
   $("#resetBtn").onclick = drawSlot;
   showSub();
 }
@@ -745,6 +759,7 @@ function applyEdits(mode) {   // mode: "download" | "file" | "share"
   const diff = buildDiff();
   if (!diff.length) return setStatus("No effective changes (values match the save).", "warn");
   const okLabel = mode === "file" ? `Apply & save to ${origName}`
+    : mode === "saveas" ? "Apply & choose destination…"
     : mode === "share" ? "Apply & share…" : "Apply & download";
   openConfirm(diff, () => doApply(mode), okLabel);
 }
@@ -775,6 +790,23 @@ async function doApply(mode) {
       downloadBytes(bytes, downloadName());          // share unavailable → download instead
       msg = `Applied ${res.changed} field(s). Share failed, downloaded ${downloadName()}.`;
     }
+  } else if (mode === "saveas") {
+    // Native save dialog: choose where + the filename (defaults to the original, so you can
+    // overwrite the source card) — must stay in the confirm-click's user activation, so this
+    // runs before any awaited work above returns to the event loop.
+    let handle;
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: origName, types: saveTypes() });
+    } catch (e) {
+      if (e && e.name === "AbortError") return setStatus("Save cancelled — nothing was written.", "warn");
+      return setStatus("Could not open the save dialog: " + e.message, "err");
+    }
+    try {
+      const w = await handle.createWritable();
+      await w.write(bytes); await w.close();
+    } catch (e) { return setStatus("Could not write file: " + e.message, "err"); }
+    fileHandle = handle; origName = handle.name || origName;   // adopt as the in-place target
+    msg = `Saved — ${res.changed} field(s) changed, written to ${handle.name}.`;
   } else if (mode === "file" && fileHandle) {
     try {
       if (!(await ensureWritable(fileHandle))) return setStatus("Save cancelled — write permission denied.", "warn");
@@ -799,10 +831,19 @@ function refreshAfterApply(py) {
 }
 
 function downloadName() {
+  if (!ADD_SUFFIX) return origName;             // keep the original name (overwrite-friendly)
   const dot = origName.lastIndexOf(".");
   const stem = dot > 0 ? origName.slice(0, dot) : origName;
   const ext = dot > 0 ? origName.slice(dot) : "";
   return `${stem}.edited${ext}`;
+}
+// Accept types for the "Save as…" dialog, derived from the original extension so the picker
+// preserves it (and offers a sensible default name). Empty extension → any file.
+function saveTypes() {
+  const dot = origName.lastIndexOf(".");
+  const ext = dot > 0 ? origName.slice(dot).toLowerCase() : "";
+  if (!ext) return [];
+  return [{ description: "Save file", accept: { "application/octet-stream": [ext] } }];
 }
 function downloadBytes(bytes, name) {
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
