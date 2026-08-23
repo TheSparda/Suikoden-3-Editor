@@ -6,7 +6,7 @@
 //     falling back to cache when offline. Keeps dev edits fresh yet works offline.
 //   - cross-origin (the Pyodide CDN — large, immutable, version-pinned URLs):
 //     cache-first, so the ~10MB runtime downloads once and is instant thereafter.
-const CACHE = "s3editor-v6";
+const CACHE = "s3editor-v7";
 const SHELL = [
   "./", "./index.html", "./style.css", "./recruit-core.js", "./app.js", "./iso.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png",
@@ -80,7 +80,9 @@ self.addEventListener("fetch", (e) => {
     const cache = await caches.open(CACHE);
     if (sameOrigin) {
       try {
-        const res = await fetch(req);
+        // no-store: bypass the browser HTTP cache so each online launch pulls the freshest app
+        // shell/engine (GitHub Pages sets max-age; without this, updates can lag ~10 min).
+        const res = await fetch(req, { cache: "no-store" });
         if (res && res.status === 200) cache.put(req, res.clone());
         return res;
       } catch (err) {
