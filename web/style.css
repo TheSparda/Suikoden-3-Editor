@@ -156,6 +156,23 @@ input.search, input.picker-search {
 .tmbox input { margin:0; }
 .tmbox:has(input:checked) { color:var(--fg,inherit); border-color:var(--acc); background:var(--changed-bg,transparent); }
 
+/* 108 Stars dashboard */
+.starshead { margin:0 0 10px; }
+.starsnum { font-size:18px; font-family:var(--titlefont); color:var(--acc2); }
+.starsnum b { font-size:24px; }
+.starsbar { height:9px; border:1px solid var(--line); border-radius:999px; background:var(--changed-bg); overflow:hidden; margin:6px 0 4px; }
+.starsbar span { display:block; height:100%; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .25s; }
+.opt-tag { font-size:11px; color:var(--mut); white-space:nowrap; }
+.starstbl .ok { color:var(--ok); font-size:12px; white-space:nowrap; }
+.starstbl .miss { color:var(--mut); font-size:12px; white-space:nowrap; }
+.starstbl tr.howrow td { padding-top:0; border-top:0; }
+.howto { color:var(--mut); font-size:11px; line-height:1.4; max-width:70ch; }
+/* team pills: single-letter team badges (Hugo/Chris/Geddoe/Thomas/Shared) */
+.tpill { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:5px; font-size:11px;
+  font-weight:700; color:var(--accink); border:1px solid transparent; }
+.tpill.tH { background:#c96a3a; } .tpill.tC { background:#c9a83a; } .tpill.tG { background:#5a9d6a; }
+.tpill.tT { background:#6a7dc9; } .tpill.tS { background:transparent; color:var(--mut); border-color:var(--line); }
+
 /* footer + theme switcher, matching the desktop #themebar credit */
 footer { margin-top:20px; padding-top:14px; border-top:1px solid var(--line);
   display:flex; flex-wrap:wrap; align-items:center; gap:10px; color:var(--mut); font-size:12px; }
