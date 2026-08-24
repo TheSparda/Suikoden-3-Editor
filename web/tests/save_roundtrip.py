@@ -115,6 +115,14 @@ def main():
     check("recruit persisted (recruited + recruiter)", r1["recruited"] and r1["recruiter"] == "Chris")
     check("checksum invariant holds after write", sum_words(open(path, "rb").read()) == 0)
 
+    # --- multi-team: a character can carry several protagonists' team bits (0x3C) at once ---
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+        recruit_edits={1: {"recruited": True, "teams": ["Hugo", "Chris", "Geddoe"]}})
+    r1b = next(c for c in s3save.read_all_s3_saves(path)[0]["characters"] if c["rosterIndex"] == 1)
+    check("multi-team persisted (all three team bits set)",
+          set(r1b["recruiters"]) == {"Hugo", "Chris", "Geddoe"} and r1b["recruited"])
+    check("checksum invariant holds after multi-team write", sum_words(open(path, "rb").read()) == 0)
+
     # --- rejection paths (what the web loader turns into a friendly message) ---
     # An unrecognized/garbage file raises; the web app catches it -> "Failed to read save".
     bad = os.path.join(tmp, "short.bin")

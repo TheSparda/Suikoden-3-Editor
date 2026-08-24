@@ -461,15 +461,21 @@ head("Recruit section (save editor, Pyodide stubbed)");
   check("story units get the .story-auto fade", (await page.locator("#subview tr.story-auto").count()) >= 3);
   check("optional recruit (Jeane) is not faded", !((await page.locator('#subview tr:has-text("Jeane")').first().getAttribute("class")) || "").includes("story-auto"));
   check("no bulk/canonical buttons remain", (await page.locator("#recAllShown, [data-canon]").count()) === 0);
-  // per-row: recruit Jeane (index 2) into Chris via the default-team dropdown + her checkbox
+  // per-row: recruit Jeane (index 2) with default team Chris via her checkbox
   await page.selectOption("#rteam", "Chris");
   await page.check('#subview input[data-rec="2"]'); await page.waitForTimeout(60);
-  check("ticking recruit enables + sets the team", (await page.locator('#subview select[data-team="2"]').inputValue()) === "Chris");
-  // review modal lists the recruit change
+  check("ticking recruit sets the default team checkbox", await page.locator('#subview input[data-tm="2"][value="Chris"]').isChecked());
+  // MULTI-TEAM: also put her on Hugo's team (a unit can be on several teams at once)
+  await page.check('#subview input[data-tm="2"][value="Hugo"]'); await page.waitForTimeout(60);
+  check("can add a second team (Hugo + Chris)", (await page.locator('#subview input[data-tm="2"]:checked').count()) === 2);
+  // review modal lists the multi-team change
   await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
   const review = await page.textContent(".cf-list");
-  check("review lists the recruit/team change", /Jeane/.test(review) && /(Recruited|Team)/.test(review));
+  check("review lists the multi-team change", /Jeane/.test(review) && /Teams:.*(Hugo.*Chris|Chris.*Hugo)/.test(review));
   await page.click("#cfCancel");
+  // "All" button puts a character on every team
+  await page.click('#subview button[data-tmall="2"]'); await page.waitForTimeout(60);
+  check("'All' checks every team", (await page.locator('#subview input[data-tm="2"]:checked').count()) === 4);
   await page.context().close();
 }
 
