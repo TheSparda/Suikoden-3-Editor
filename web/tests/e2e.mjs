@@ -479,6 +479,54 @@ head("Recruit section (save editor, Pyodide stubbed)");
   await page.context().close();
 }
 
+head("108 Stars dashboard (save editor, Pyodide stubbed)");
+{ const page = await newPage();
+  // Same stub shape as the Recruit section. Hugo/Geddoe/Rico recruited; Chris (story),
+  // Jeane + Lulu are optional recruits that should land in the "missing" worklist.
+  await page.addInitScript(`
+    const CHARS = [
+      ['Hugo','Hugo',true], ['Chris','',false], ['Jeane','',false],
+      ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false]
+    ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
+      level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
+      stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
+    const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
+      global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
+      carryover: {}, names: [], characters: CHARS, party: [0,0,0,0,0,0], inventory: [] }];
+    window.loadPyodide = async () => ({
+      FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
+      runPython(code) {
+        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {} });
+        if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
+        if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
+        return undefined;
+      },
+    });
+  `);
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
+  await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
+  await page.waitForSelector('[data-sub="stars"]', { timeout: 5000 });
+  await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
+  await page.waitForTimeout(150);   // let s3_recruit_meta.json load + re-render (story/how)
+  // progress header counts recruited over the tracked set (Hugo/Geddoe/Rico = 3 recruited)
+  check("stars progress shows recruited count", /\b3\b/.test(await page.textContent(".starsnum")));
+  check("progress bar renders", (await page.locator(".starsbar > span").count()) === 1);
+  // default filter is "missing": recruited stars should be hidden
+  check("default 'missing' filter hides recruited stars", (await page.locator('.starstbl tbody tr:has-text("Hugo")').count()) === 0);
+  // an optional missing star carries its guide how-to as a full-width row
+  check("optional missing star shows a how-to row", (await page.locator(".starstbl tr.howrow .howto").count()) >= 1);
+  // the per-row +recruit action stages a recruit and bumps the count to 4
+  await page.selectOption("#rteam", "Chris").catch(() => {});
+  const before = await page.textContent(".starsnum");
+  await page.click(".starstbl [data-starsadd]"); await page.waitForTimeout(60);
+  check("+recruit stages a recruit (count goes up)", (await page.textContent(".starsnum")) !== before && /\b4\b/.test(await page.textContent(".starsnum")));
+  // the Recruited view renders team pills (multi-letter where a star is on several teams)
+  await page.click('[data-starsf="recruited"]'); await page.waitForTimeout(40);
+  check("recruited view shows team pills", (await page.locator(".starstbl .tpill").count()) >= 3);
+  await page.context().close();
+}
+
 head("Undo/redo + skill-cap & rune presets");
 { const page = await newPage(); await loadIso(page);
   const [l4b] = TABLES.list4;

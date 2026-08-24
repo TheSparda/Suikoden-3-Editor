@@ -383,6 +383,7 @@ function drawSlot() {
       <div class="subtabs">
         <button class="chip" data-sub="chars">Characters (${live})</button>
         <button class="chip" data-sub="recruit">Recruit</button>
+        <button class="chip" data-sub="stars">108 Stars</button>
         <button class="chip" data-sub="party">Party</button>
         <button class="chip" data-sub="items">Inventory (${invCount})</button>
       </div>
@@ -438,6 +439,11 @@ function showSub() {
       `Pick a team, then use the bulk buttons or the canonical presets — no need to open each character. ` +
       `Team only matters before the parties merge (Flame Champion); after that it's cosmetic. Changes are staged until you Apply.`;
     drawRecruit();
+  } else if (SUB === "stars") {
+    $("#subhint").innerHTML = `Recruitment completion across the <b>108 Stars of Destiny</b>. ` +
+      `Filter to <b>missing</b> to see who's left, with the guide's <i>how-to-recruit</i> for each optional star. ` +
+      `Team pills show which protagonist(s) a recruited star is on (a star can be on several at once).`;
+    drawStars();
   } else if (SUB === "party") {
     $("#subhint").innerHTML = `Active battle party (up to 6). Leaving story-required leaders in place avoids soft-locks.`;
     drawParty();
@@ -547,6 +553,8 @@ function wireChar(c) {
 // so Apply routes them through the tried s3save.write_save_edits path unchanged.
 const TEAM_OPTS = [["", "— shared / story —"], ...RECRUITERS.map((h) => [h, h])];
 let RTEAM = "Hugo";                 // default team applied when a character is ticked recruited
+let STARS_FILTER = "missing";       // 108-Stars dashboard: all | recruited | missing
+let STARS_KIND = "all";             // all | optional | story
 let RECRUIT_META = null;            // name -> {auto, how}: story auto-join vs optional recruit
 async function loadRecruitMeta() {
   if (RECRUIT_META) return RECRUIT_META;
@@ -611,6 +619,89 @@ function drawRecruit() {
   }));
 }
 function charByRoster(ri) { return saves[curSlot].characters.find((c) => c.rosterIndex === ri) || { rosterIndex: ri, recruited: false, recruiter: "" }; }
+
+// ---- 108 Stars dashboard ----------------------------------------------------
+// A recruitment-completion tracker over the Stars of Destiny: who's in, who's left,
+// which team(s) each recruited star sits on, and the guide's how-to for missing
+// optional stars. Reflects staged (un)recruits live, so it doubles as a worklist.
+function drawStars() {
+  if (RECRUIT_META === null) loadRecruitMeta().then(() => { if (SUB === "stars") drawStars(); });
+  const s = saves[curSlot];
+  // The tracked set = characters the guide knows as recruitable stars (in the meta),
+  // plus anyone actually recruited in this save (covers roster/name drift either way).
+  const stars = s.characters.filter((c) => (RECRUIT_META && c.name in RECRUIT_META) || c.recruited);
+  const rows0 = stars.map((c) => ({ c, st: recState(c), story: isStoryAuto(c.name), how: recruitHow(c.name) }));
+
+  const total = rows0.length;
+  const got = rows0.filter((x) => x.st.recruited).length;
+  const pct = total ? Math.round((got / total) * 100) : 0;
+  const missingOpt = rows0.filter((x) => !x.st.recruited && !x.story).length;
+  const multi = rows0.filter((x) => x.st.recruited && x.st.teams.length > 1).length;
+  const { counts } = RecruitCore.teamCounts(stars, RECRUIT);
+
+  const rows = rows0.filter((x) => {
+    if (STARS_FILTER === "recruited" && !x.st.recruited) return false;
+    if (STARS_FILTER === "missing" && x.st.recruited) return false;
+    if (STARS_KIND === "optional" && x.story) return false;
+    if (STARS_KIND === "story" && !x.story) return false;
+    if (SEARCH && !x.c.name.toLowerCase().includes(SEARCH) && String(x.c.rosterIndex) !== SEARCH) return false;
+    return true;
+  });
+
+  const teamPills = (st) => st.teams.length
+    ? st.teams.map((t) => `<span class="tpill t${t[0]}">${t[0]}</span>`).join("")
+    : `<span class="tpill tS" title="shared / story">S</span>`;
+
+  const body = rows.map((x) => {
+    const rec = x.st.recruited;
+    const kind = x.story ? `<span class="story-tag" title="Joins automatically via the story">⚠ story</span>` : `<span class="opt-tag">optional</span>`;
+    const status = rec ? `<span class="ok">✓ recruited</span>` : `<span class="miss">✗ missing</span>`;
+    const teamCell = rec ? teamPills(x.st) : "";
+    const addBtn = (!rec && !x.story)
+      ? `<button class="chip mini" data-starsadd="${x.c.rosterIndex}" title="Stage recruit (default team: ${RTEAM || "shared"})">＋ recruit</button>` : "";
+    const dirty = (x.c.rosterIndex in RECRUIT) ? "dirtyrow " : "";
+    const main = `<tr class="${dirty}${x.story ? "story-auto" : ""}">
+        <td><span>${esc(x.c.name)}</span> ${kind}</td>
+        <td class="sl">#${x.c.rosterIndex}</td>
+        <td>${status}</td>
+        <td class="teamcell">${teamCell}</td>
+        <td>${addBtn}</td>
+      </tr>`;
+    // guide how-to spans the full table width so it reads cleanly at any pane size
+    const howRow = (!rec && !x.story && x.how)
+      ? `<tr class="${dirty}howrow"><td colspan="5"><div class="howto">${esc(x.how)}</div></td></tr>` : "";
+    return main + howRow;
+  }).join("") || `<tr><td colspan="5" class="muted">no stars match this filter</td></tr>`;
+
+  const fbtn = (v, l) => `<button class="chip${STARS_FILTER === v ? " on" : ""}" data-starsf="${v}">${l}</button>`;
+  const kbtn = (v, l) => `<button class="chip${STARS_KIND === v ? " on" : ""}" data-starsk="${v}">${l}</button>`;
+
+  $("#subview").innerHTML = `
+    <div class="starshead">
+      <div class="starsnum"><b>${got}</b> / ${total} <span class="muted">stars recruited</span></div>
+      <div class="starsbar"><span style="width:${pct}%"></span></div>
+      <div class="muted" style="font-size:12px">${pct}% · ${missingOpt} optional star${missingOpt === 1 ? "" : "s"} still gettable · ${multi} on multiple teams</div>
+    </div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin:2px 0 4px">
+      <span class="muted">Team spread:</span>
+      <span class="tpill tH">H</span> ${counts.Hugo}
+      <span class="tpill tC">C</span> ${counts.Chris}
+      <span class="tpill tG">G</span> ${counts.Geddoe}
+      <span class="tpill tT">T</span> ${counts.Thomas}
+      <span class="tpill tS">S</span> ${counts[""]}
+    </div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0 10px">
+      <span class="row" style="gap:4px">${fbtn("all", "All")}${fbtn("recruited", "Recruited")}${fbtn("missing", "Missing")}</span>
+      <span class="row" style="gap:4px">${kbtn("all", "Any")}${kbtn("optional", "Optional")}${kbtn("story", "Story")}</span>
+    </div>
+    <table class="invtbl starstbl"><thead><tr><th>Star</th><th>#</th><th>Status</th><th>Team(s)</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+
+  $$("[data-starsf]").forEach((b) => (b.onclick = () => { STARS_FILTER = b.dataset.starsf; drawStars(); }));
+  $$("[data-starsk]").forEach((b) => (b.onclick = () => { STARS_KIND = b.dataset.starsk; drawStars(); }));
+  $$("[data-starsadd]").forEach((b) => (b.onclick = () => {
+    const c = charByRoster(+b.dataset.starsadd); setRecruit(c, true, RTEAM ? [RTEAM] : []); drawStars();
+  }));
+}
 
 // ---- Party -----------------------------------------------------------------
 function drawParty() {
