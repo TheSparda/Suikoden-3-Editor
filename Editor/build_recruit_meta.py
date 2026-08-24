@@ -18,21 +18,35 @@ ALIAS = {
     "Viki": "Viki (Big)", "Viki (Young)": "Viki (Little)",
 }
 
+# A guide field header at column 0 ("Name:", "Automatic:", "Battle Fighting Style:", ...) —
+# the recruitment blurb ends at the next such header or a blank line.
+FIELD_RE = re.compile(r"^[A-Z][A-Za-z]*(?: [A-Za-z]+)*:")
+
 def parse_guide():
     lines = [l.rstrip() for l in open(os.path.join(HERE, "suikosource", "characters.txt"), encoding="utf-8")]
-    out = {}; cur = None
-    for l in lines:
+    out = {}; cur = None; i = 0
+    while i < len(lines):
+        l = lines[i]
         m = re.match(r"^Name:\s*(.+?)\s*$", l)
         if m: cur = m.group(1).strip()
-        am = re.match(r"^Automatic:\s*(.+)$", l)
+        am = re.match(r"^Automatic:\s*(.*)$", l)
         if am and cur and cur not in out:
-            rest = am.group(1).strip()
+            # The recruitment blurb starts after "Automatic:" and continues across wrapped
+            # lines until the next field header or a blank line — grab the whole thing, not
+            # just the first line (which cut instructions off mid-sentence).
+            parts = [am.group(1).strip()]
+            j = i + 1
+            while j < len(lines) and lines[j].strip() and not FIELD_RE.match(lines[j]):
+                parts.append(lines[j].strip()); j += 1
+            rest = re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
             # Only an explicit "No" is a normal optional recruit. "Yes" = story auto-join, and a
             # conditional (e.g. Luc: "recruit all 104 Stars... becomes the main character") is a
             # special/story-gated unlock, NOT something to bulk-recruit — treat both as story.
             auto = not rest.lower().startswith("no")
             how = re.sub(r"^(Yes|No)[\.,\s]*", "", rest).strip()
             out[cur] = {"auto": auto, "how": how}
+            i = j; continue
+        i += 1
     return out
 
 def match(rname, guide):
