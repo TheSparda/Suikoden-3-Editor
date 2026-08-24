@@ -527,6 +527,65 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   await page.context().close();
 }
 
+head("Save <-> JSON round-trip (save editor, Pyodide stubbed)");
+{ const page = await newPage();
+  await page.addInitScript(`
+    const CHARS = [
+      ['Hugo','Hugo',true], ['Chris','',false], ['Geddoe','Geddoe',true]
+    ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
+      level: 20, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
+      stats: { PWR: 50, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 },
+      equip: { headRune: 5 }, skills: [{ slot: 0, id: 6, rank: 3 }] }));
+    const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
+      global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
+      carryover: {}, names: [{ key: 'flameChampion', label: 'Flame Champion', value: 'Brian', max: 8 }],
+      characters: CHARS, party: [1,0,0,0,0,0], inventory: [{ region: 'Party', items: [{ slot: 0, id: 5, qty: 1, category: 'consumable' }] }] }];
+    window.loadPyodide = async () => ({
+      FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
+      runPython(code) {
+        if (code.includes('load_reference()')) return JSON.stringify({ items: [{id:5,name:'Fire Rune',cat:'Runes'},{id:9,name:'Rage Rune',cat:'Runes'}], skills: [{id:6,name:'Attack'}], charById: {1:'Hugo',2:'Chris',3:'Geddoe'} });
+        if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
+        if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
+        return undefined;
+      },
+    });
+  `);
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
+  await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
+  await page.waitForSelector("#exportJson");
+  // EXPORT: capture the JSON the download would contain
+  const exp = await page.evaluate(() => {
+    let out = null; const orig = window.downloadBytes;
+    window.downloadBytes = (bytes) => { out = new TextDecoder().decode(bytes); };
+    exportSaveJSON(); window.downloadBytes = orig;
+    const p = JSON.parse(out);
+    return { format: p._format, gold: p.gold, chars: p.characters.length,
+      hugoRune: p.characters[0].equip.headRune?.id, hugoName: p.characters[0].name, exported: out };
+  });
+  check("export produces a suikoden3-save JSON", exp.format === "suikoden3-save");
+  check("export includes gold + characters (with equip ids)", exp.gold === 1000 && exp.chars === 3 && exp.hugoRune === 5);
+  // IMPORT: edit gold + Hugo level/rune, re-import -> review modal lists exactly those diffs
+  await page.evaluate((raw) => {
+    const p = JSON.parse(raw);
+    p.gold = 999999; p.characters[0].level = 50; p.characters[0].equip.headRune = { id: 9 };
+    p.names.flameChampion = "Zephon";
+    return importSaveJSON(new File([JSON.stringify(p)], "edited.json", { type: "application/json" }));
+  }, exp.exported);
+  await page.waitForSelector(".modal .cf-list", { timeout: 3000 });
+  const rows = await page.textContent(".modal .cf-list");
+  check("import opens review modal with the gold change", /1000\s*→\s*999999/.test(rows));
+  check("import lists the level change", /Level:\s*20\s*→\s*50/.test(rows));
+  check("import lists the rune change (id->label)", /Rage Rune/.test(rows));
+  check("import lists the name change", /Brian.*→.*Zephon/.test(rows));
+  check("import ignores unchanged fields (no Geddoe/Chris rows)", !/Geddoe|Chris/.test(rows));
+  // a non-save JSON is rejected
+  await page.click("#cfCancel").catch(() => {});
+  const rej = await page.evaluate(() => importSaveJSON(new File(['{"hello":1}'], "x.json")).then(() => document.querySelector("#status")?.textContent));
+  check("non-save JSON is rejected with a message", /not a Suikoden III save JSON/.test(rej || ""));
+  await page.context().close();
+}
+
 head("Undo/redo + skill-cap & rune presets");
 { const page = await newPage(); await loadIso(page);
   const [l4b] = TABLES.list4;
