@@ -1242,6 +1242,7 @@
         <button class="chip mini" data-rspreset="aoe">Make AOE</button>
         <button class="chip mini" data-rspreset="instant">Instant cast</button>
         <button class="chip mini" data-rspreset="poison">Add poison</button>
+        <button class="chip mini" data-rspreset="nostatus">Remove status</button>
         <button class="chip mini" data-rspreset="clear">Clear fields</button>
         <span class="u">fills the fields — then Apply</span></div>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
@@ -1268,7 +1269,7 @@
         : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
-          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
+          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
         <div class="char-body">
           ${descField}
           <div class="grid">
@@ -1292,6 +1293,7 @@
         case "aoe": set("#rsAoe", "1"); break;
         case "instant": set("#rsCast", "0"); break;
         case "poison": set("#rsStatus", "poison"); break;
+        case "nostatus": set("#rsStatus", "none"); break;   // clears the inflicted status (flags18)
         case "clear": ["#rsPower", "#rsCast", "#rsElem", "#rsTarget", "#rsAoe", "#rsStatus"].forEach((s) => set(s, "")); break;
       }
       setStatus("Preset filled — pick a rune and click “Apply to rune”.", "ok");
@@ -1318,7 +1320,8 @@
   function updateSpellSummary(host, i) {
     const d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
     const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
-    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
+    const f18 = r32(off + 0x18);
+    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${f18 ? " · " + decodeF18(f18) : ""}`;
     const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"] };
     qa(".sp", d).forEach((el) => {
       const [o, w, kind] = MAP[el.dataset.k];

@@ -487,10 +487,18 @@ head("Undo/redo + skill-cap & rune presets");
   await page.click("#isoRedoBtn"); await page.waitForTimeout(50);
   check("after redo: undo enabled again", !(await page.locator("#isoUndoBtn").isDisabled()));
   const r = await save(page); check("redo restored the edit to disk", r.u8(l4b) === nv);
-  // rune reskin preset fills the reskin field
+  // rune reskin presets fill the reskin fields
   await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#rsPower");
   await page.click('[data-rspreset="max"]'); await page.waitForTimeout(20);
   check("rune preset 'Power 9999' fills the reskin field", (await page.locator("#rsPower").inputValue()) === "9999");
+  await page.click('[data-rspreset="nostatus"]'); await page.waitForTimeout(20);
+  check("rune preset 'Remove status' sets Status → none", (await page.locator("#rsStatus").inputValue()) === "none");
+  // spell #1 inflicts unbalance → summary shows it, and clearing its Status zeroes flags18
+  check("spell summary shows the inflicted status", (await page.textContent('details.char[data-i="1"] .sp-sum')).includes("unbalance"));
+  await openRec(page, 'details.char[data-i="1"]');
+  await page.selectOption('details.char[data-i="1"] select[data-k="status"]', "none");
+  const rs = await save(page);
+  check("clearing status zeroes flags18 (removes unbalance)", rs.u32(SPELL.off + 1 * 0x20 + 0x18) === 0);
   await page.context().close();
 }
 head("Skill-cap preset (Growth view)");
