@@ -378,6 +378,13 @@ function drawSlot() {
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"
                value="${s.global.gold || 0}" data-def="${s.global.gold || 0}"></label>
+      <h3 class="sec">Backup / templates <span class="muted" style="font-size:11px;font-weight:400">JSON</span></h3>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <button id="exportJson">⬇ Export JSON</button>
+        <button id="importJson">⬆ Import JSON…</button>
+        <input type="file" id="importJsonFile" accept=".json,application/json" hidden>
+        <span class="muted" style="font-size:12px;flex:1;min-width:180px">A human-readable snapshot of this save — edit or share it, then re-import to stage the changes for Apply.</span>
+      </div>
     </div>
     <div class="card">
       <div class="subtabs">
@@ -415,6 +422,9 @@ function drawSlot() {
     e.target.classList.toggle("dirty", e.target.value !== e.target.dataset.def);
     GOLD = +e.target.value;
   };
+  $("#exportJson").onclick = exportSaveJSON;
+  $("#importJson").onclick = () => $("#importJsonFile").click();
+  $("#importJsonFile").onchange = (e) => { const f = e.target.files[0]; if (f) importSaveJSON(f); e.target.value = ""; };
   $$("[data-sub]").forEach((b) => (b.onclick = () => { SUB = b.dataset.sub; SEARCH = ""; $("#sq").value = ""; showSub(); }));
   $("#sq").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); showSub(); };
   $("#saveBtn").onclick = () => applyEdits("download");
@@ -857,6 +867,83 @@ function openConfirm(rows, onConfirm, okLabel) {
   $(".modal-x", ov).onclick = () => close(); $("#cfCancel", ov).onclick = () => close();
   ov.onclick = (e) => { if (e.target === ov) close(); };
   $("#cfOk", ov).onclick = () => { close(); onConfirm(); };
+}
+
+// ---- Save <-> JSON round-trip ----------------------------------------------
+// Export a human-readable snapshot of the loaded save; re-import stages the diffs
+// through the normal Apply pipeline (review modal + checksum + backup). Numeric ids
+// drive import; every *name field (and keys starting with _) is a label, ignored.
+const SAVE_JSON_FORMAT = "suikoden3-save";
+
+function exportSaveJSON() {
+  const s = saves[curSlot];
+  const chars = s.characters.filter((c) => c.hasData || c.recruited).map((c) => {
+    const equip = {}; EQ.forEach(([k]) => { const id = c.equip?.[k] || 0; if (id) equip[k] = { id, name: ITEM_BY_ID[id]?.name || ("#" + id) }; });
+    const skills = (c.skills || []).filter((sk) => sk.id).map((sk) => ({ slot: sk.slot, id: sk.id, rank: sk.rank, name: SKILL_BY_ID[sk.id]?.name || ("#" + sk.id) }));
+    return { rosterIndex: c.rosterIndex, name: c.name, recruited: !!c.recruited, teams: (c.recruiters || []),
+      level: c.level, curHP: c.curHP, maxHP: c.maxHP, expToNext: c.expToNext,
+      stats: Object.assign({}, c.stats), equip, skills };
+  });
+  const names = {}; (s.names || []).forEach((n) => (names[n.key] = n.value));
+  const party = (s.party || []).map((id) => ({ id, name: id ? (REF.charById[id] || ("id " + id)) : null }));
+  const inventory = (s.inventory || []).map((b) => ({ region: b.region,
+    items: b.items.map((it) => ({ slot: it.slot, id: it.id, name: ITEM_BY_ID[it.id]?.name || ("#" + it.id), qty: it.qty })) }));
+  const out = { _format: SAVE_JSON_FORMAT, _schema: 1,
+    _note: "Human-readable snapshot. Edit numeric ids/values, then re-import to stage them for Apply. Keys starting with _ and every *name field are read-only labels, ignored on import.",
+    _folder: s.folder, _label: s.label, _playtime: s.global.playtime, _storyPhase: s.global.storyPhase,
+    gold: s.global.gold, names, party, characters: chars, inventory };
+  const json = JSON.stringify(out, null, 2);
+  const base = (origName || "save").replace(/\.[^.]+$/, "");
+  downloadBytes(new TextEncoder().encode(json), `${base}.${s.folder || "slot"}.json`);
+  setStatus(`Exported ${chars.length} characters + gold/names/party/inventory to JSON.`, "ok");
+}
+
+async function importSaveJSON(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch (e) { return setStatus("Import failed: file is not valid JSON.", "err"); }
+  if (!data || data._format !== SAVE_JSON_FORMAT)
+    return setStatus('Import failed: not a Suikoden III save JSON (missing "_format").', "err");
+
+  const s = saves[curSlot];
+  const byRi = {}; s.characters.forEach((c) => (byRi[c.rosterIndex] = c));
+  const nameToCharId = {}; Object.entries(REF.charById).forEach(([id, nm]) => (nameToCharId[String(nm).toLowerCase()] = +id));
+  // Ids drive edits: accept a raw number, an {id} object, or (for party) a character name.
+  const idOf = (v) => v == null ? 0 : typeof v === "object" ? (v.id | 0)
+    : typeof v === "string" ? (nameToCharId[v.toLowerCase()] || 0) : (v | 0);
+  let staged = 0;
+
+  if (typeof data.gold === "number") { GOLD = data.gold; staged++; }
+  if (data.names && typeof data.names === "object") Object.entries(data.names).forEach(([k, v]) => {
+    if (typeof v === "string" && (s.names || []).some((n) => n.key === k)) { NAMES[k] = v; staged++; }
+  });
+  if (Array.isArray(data.party)) data.party.forEach((p, slot) => { PARTY[slot] = idOf(p); staged++; });
+  if (Array.isArray(data.characters)) data.characters.forEach((jc) => {
+    const ri = jc && jc.rosterIndex;
+    if (typeof ri !== "number" || !(ri in byRi)) return;   // skip unknown/guest roster slots
+    const e = (EDITS[ri] = EDITS[ri] || {});
+    ["level", "curHP", "maxHP", "expToNext"].forEach((k) => { if (typeof jc[k] === "number") { e[k] = jc[k]; staged++; } });
+    if (jc.stats && typeof jc.stats === "object") { e.stats = e.stats || {}; Object.entries(jc.stats).forEach(([st, val]) => { if (typeof val === "number") e.stats[st] = val; }); staged++; }
+    if (jc.equip && typeof jc.equip === "object") { e.equip = e.equip || {}; EQ.forEach(([k]) => { if (k in jc.equip) e.equip[k] = idOf(jc.equip[k]); }); staged++; }
+    if (Array.isArray(jc.skills)) { e.skills = e.skills || {}; jc.skills.forEach((sk) => { if (sk && typeof sk.slot === "number") e.skills[sk.slot] = { id: idOf(sk.id), rank: sk.rank | 0 }; }); staged++; }
+    if (typeof jc.recruited === "boolean" || Array.isArray(jc.teams)) {
+      RECRUIT[ri] = { recruited: jc.recruited !== false,
+        teams: RecruitCore.RECRUITERS.filter((t) => (jc.teams || []).includes(t)) };
+      staged++;
+    }
+  });
+  if (Array.isArray(data.inventory)) data.inventory.forEach((b) => (b && Array.isArray(b.items) ? b.items : []).forEach((it) => {
+    if (it && typeof it.slot === "number") { INV[it.slot] = { id: idOf(it.id), qty: it.qty | 0 }; staged++; }
+  }));
+
+  if (!staged) return setStatus("Import: nothing recognized to apply in that JSON.", "warn");
+  const diff = buildDiff();
+  if (!diff.length) return setStatus("Import: the JSON already matches this save — no changes.", "warn");
+  const mode = (SUPPORTS_FS && fileHandle) ? "file" : SUPPORTS_SAVE_PICKER ? "saveas" : "download";
+  const okLabel = mode === "file" ? `Apply import & save to ${origName}`
+    : mode === "saveas" ? "Apply import & choose destination…" : "Apply import & download";
+  setStatus(`Imported ${diff.length} change(s) — review to apply.`, "");
+  openConfirm(diff, () => doApply(mode), okLabel);
 }
 
 function applyEdits(mode) {   // mode: "download" | "file" | "share"
