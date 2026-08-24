@@ -150,6 +150,11 @@ input.search, input.picker-search {
 .invtbl tr.story-auto td { opacity:.5; }
 .invtbl tr.story-auto:hover td, .invtbl tr.story-auto:focus-within td { opacity:1; }
 .story-tag { font-size:11px; color:var(--warn); white-space:nowrap; }
+/* recruit team multi-select: a character can be on several protagonists' teams (save bitmask) */
+.teamcell { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.tmbox { display:inline-flex; align-items:center; gap:3px; font-size:12px; color:var(--mut); cursor:pointer; padding:2px 5px; border:1px solid var(--line); border-radius:6px; }
+.tmbox input { margin:0; }
+.tmbox:has(input:checked) { color:var(--fg,inherit); border-color:var(--acc); background:var(--changed-bg,transparent); }
 
 /* footer + theme switcher, matching the desktop #themebar credit */
 footer { margin-top:20px; padding-top:14px; border-top:1px solid var(--line);

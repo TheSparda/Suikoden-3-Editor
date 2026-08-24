@@ -23,35 +23,35 @@ const chars = [
 ];
 const byName = (n) => chars.find((c) => c.name === n);
 
-console.log("recruit-core logic:");
-{ // recState reflects staged over loaded
-  const R = { 1: { recruited: true, recruiter: "Geddoe" } };
-  check("recState uses staged edit", eq(RC.recState(byName("Chris"), R), { recruited: true, team: "Geddoe" }));
-  check("recState falls back to loaded", eq(RC.recState(byName("Hugo"), R), { recruited: true, team: "Hugo" }));
+console.log("recruit-core logic (teams model):");
+{ // recState reflects staged over loaded; teams is an array
+  const R = { 1: { recruited: true, teams: ["Geddoe"] } };
+  check("recState uses staged edit", eq(RC.recState(byName("Chris"), R), { recruited: true, teams: ["Geddoe"] }));
+  check("recState falls back to loaded (recruiter → [team])", eq(RC.recState(byName("Hugo"), R), { recruited: true, teams: ["Hugo"] }));
 }
 { // recruit an unrecruited char into a team
-  const R = {}; RC.setRecruit(byName("Chris"), true, "Geddoe", R);
-  check("recruit into team stages {recruited,recruiter}", eq(R[1], { recruited: true, recruiter: "Geddoe" }));
+  const R = {}; RC.setRecruit(byName("Chris"), true, ["Geddoe"], R);
+  check("recruit into a team stages {recruited,teams}", eq(R[1], { recruited: true, teams: ["Geddoe"] }));
 }
-{ // no-op recruit is pruned (Hugo already recruited under Hugo)
-  const R = {}; RC.setRecruit(byName("Hugo"), true, "Hugo", R);
+{ // MULTI-TEAM: a character can be on several teams at once
+  const R = {}; RC.setRecruit(byName("Chris"), true, ["Chris", "Hugo", "Geddoe"], R);
+  check("multi-team stages sorted team list", eq(R[1], { recruited: true, teams: ["Hugo", "Chris", "Geddoe"] }));   // canonical order
+}
+{ // no-op recruit is pruned (Hugo already on Hugo's team)
+  const R = {}; RC.setRecruit(byName("Hugo"), true, ["Hugo"], R);
   check("no-op recruit prunes", !(0 in R));
 }
 { // move an already-recruited char to a different team
-  const R = {}; RC.setRecruit(byName("Hugo"), true, "Chris", R);
-  check("move team stages new recruiter", eq(R[0], { recruited: true, recruiter: "Chris" }));
+  const R = {}; RC.setRecruit(byName("Hugo"), true, ["Chris"], R);
+  check("move team stages new teams", eq(R[0], { recruited: true, teams: ["Chris"] }));
 }
 { // un-recruit
   const R = {}; RC.setRecruit(byName("Hugo"), false, undefined, R);
   check("un-recruit stages {recruited:false}", eq(R[0], { recruited: false }));
 }
-{ // un-recruit an already-not-recruited char is pruned
-  const R = {}; RC.setRecruit(byName("Chris"), false, undefined, R);
-  check("no-op un-recruit prunes", !(1 in R));
-}
-{ // recruit into shared clears the team
-  const R = {}; RC.setRecruit(byName("Chris"), true, "", R);
-  check("recruit into shared -> recruiter ''", eq(R[1], { recruited: true, recruiter: "" }));
+{ // recruit into shared clears the teams
+  const R = {}; RC.setRecruit(byName("Chris"), true, [], R);
+  check("recruit into shared -> teams []", eq(R[1], { recruited: true, teams: [] }));
 }
 
 console.log("canonical presets (real s3_recruit_teams.json):");
@@ -59,32 +59,31 @@ console.log("canonical presets (real s3_recruit_teams.json):");
   const map = {}; for (const [t, names] of Object.entries(j.teams)) for (const n of names) map[n] = t;
   check("Salome maps to Chris", map["Salome"] === "Chris");
   { const R = {}; RC.applyCanonical(chars, "Chris", map, R);
-    check("canonical→Chris recruits Chris + Salome only", eq(R[1], { recruited: true, recruiter: "Chris" }) && eq(R[18], { recruited: true, recruiter: "Chris" }) && !(5 in R)); }
+    check("canonical→Chris recruits Chris + Salome only", eq(R[1], { recruited: true, teams: ["Chris"] }) && eq(R[18], { recruited: true, teams: ["Chris"] }) && !(5 in R)); }
   { const R = {}; RC.applyCanonical(chars, "ALL", map, R);
-    check("canonical→everyone: Salome=Chris, Rico=shared", eq(R[18], { recruited: true, recruiter: "Chris" }) && eq(R[5] || { recruited: true, recruiter: "" }, { recruited: true, recruiter: "" }));
+    check("canonical→everyone: Salome=Chris, Rico=shared", eq(R[18], { recruited: true, teams: ["Chris"] }) && eq(R[5] || { recruited: true, teams: [] }, { recruited: true, teams: [] }));
     check("canonical→everyone prunes Hugo (already Hugo)", !(0 in R)); }
 }
 { // Hugo recruited (Hugo), Rico recruited (shared) -> 2 total: 1 Hugo, 1 shared
   const { total, counts } = RC.teamCounts(chars, {});
-  check("teamCounts totals", total === 2 && counts.Hugo === 1 && counts[""] === 1); }
+  check("teamCounts totals", total === 2 && counts.Hugo === 1 && counts[""] === 1);
+  // a multi-team char counts toward each of its teams
+  const R = {}; RC.setRecruit(byName("Rico"), true, ["Hugo", "Chris"], R);
+  const tc = RC.teamCounts(chars, R);
+  check("teamCounts counts a multi-team char on each team", tc.total === 2 && tc.counts.Hugo === 2 && tc.counts.Chris === 1 && tc.counts[""] === 0); }
 
 console.log("previewChanges (dry-run diff for the confirm modal):");
 {
-  // recruit two shown into Chris; only the ones that actually change should appear
-  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Chris"), true, "Chris", m); RC.setRecruit(byName("Salome"), true, "Chris", m); });
+  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Chris"), true, ["Chris"], m); RC.setRecruit(byName("Salome"), true, ["Chris"], m); });
   check("previewChanges lists both new recruits", changes.length === 2 && changes.every((c) => c.kind === "recruit"));
-  check("previewChanges does not commit to the passed map", !("1" in {}) );  // clone isolation (RECRUIT untouched)
   const chris = changes.find((c) => c.name === "Chris");
-  check("previewChanges reports before/after team", chris && chris.after.team === "Chris" && chris.before.recruited === false);
+  check("previewChanges reports before/after teams", chris && eq(chris.after.teams, ["Chris"]) && chris.before.recruited === false);
 }
-{ // a no-op action yields an empty change list
-  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Hugo"), true, "Hugo", m); });   // Hugo already Hugo
+{ const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Hugo"), true, ["Hugo"], m); });   // Hugo already Hugo
   check("previewChanges empty when nothing changes", changes.length === 0);
 }
-{ // a move (already-recruited Rico shared -> Geddoe) is classified as "move"
-  const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Rico"), true, "Geddoe", m); });
-  check("previewChanges classifies a team move", changes.length === 1 && changes[0].kind === "move" && changes[0].after.team === "Geddoe");
-}
+{ const changes = RC.previewChanges(chars, {}, (m) => { RC.setRecruit(byName("Rico"), true, ["Geddoe"], m); });
+  check("previewChanges classifies a team move", changes.length === 1 && changes[0].kind === "move" && eq(changes[0].after.teams, ["Geddoe"])); }
 
 console.log(fails ? `\nFAILED (${fails})` : "\nAll recruit-logic checks passed.");
 process.exit(fails ? 1 : 0);

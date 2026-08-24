@@ -106,13 +106,22 @@ RECRUIT_DEFAULT = 0x1D
 # Thomas -> his Chisha castle crew. bit0 (0x01) = recruited; 0x40/0x80 = status/away.
 RECRUITER_BITS  = {0x04: "Hugo", 0x08: "Chris", 0x10: "Geddoe", 0x20: "Thomas"}
 RECRUITER_MASK  = 0x3C   # bits 2..5
+# These are a MASK, not a single value: a character can carry several teams' bits at once.
+# Confirmed on real saves — post-merge, the game itself sets shared characters to
+# Hugo+Chris+Geddoe (0x1C) simultaneously. So writing multiple bits is a legitimate mechanic,
+# not a hack (the editor exposes it as a per-team multi-select).
 
 def recruiter_of(recruit_word):
-    """Name of the protagonist who recruited this character, or '' (shared/story)."""
+    """Name of the FIRST protagonist whose team-bit is set, or '' (shared/story)."""
     for bit, nm in RECRUITER_BITS.items():
         if recruit_word & bit:
             return nm
     return ""
+
+def recruiters_of(recruit_word):
+    """ALL protagonist team-bits set on this character. Bits 2..5 are a mask, so a character
+    can carry several at once — the data-side of "show this recruit on multiple teams"."""
+    return [nm for bit, nm in sorted(RECRUITER_BITS.items()) if recruit_word & bit]
 
 # Equipped-gear slots (u16 item ids), located empirically in the save block and matching
 # the herrvillain RAM map's 8-byte spacing. Verified: each decodes to a real rune/armor/
@@ -393,6 +402,7 @@ def decode_character(gamedata, roster_index):
         "recruited": recruit_word != 0,
         "recruitWord": recruit_word,
         "recruiter": recruiter_of(recruit_word),
+        "recruiters": recruiters_of(recruit_word),
         "hasData": lvl > 0 or sum(stats) > 0,
         "raw": list(rec),
     }
@@ -502,10 +512,14 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         cur = struct.unpack_from("<H", b, ro)[0]
         want = val.get("recruited", True) if isinstance(val, dict) else bool(val)
         recruiter = val.get("recruiter") if isinstance(val, dict) else None
+        teams = val.get("teams") if isinstance(val, dict) else None
         if want:
             word = cur if cur != 0 else RECRUIT_DEFAULT
-            if recruiter is not None:            # rewrite the recruiter bits (2..5)
+            if teams is not None:                # multi-team: OR the bits (2..5) — a char can be on several
+                word = (word & ~RECRUITER_MASK) | sum(name_to_bit.get(n, 0) for n in teams)
+            elif recruiter is not None:          # single team (backward compat)
                 word = (word & ~RECRUITER_MASK) | name_to_bit.get(recruiter, 0)
+            word |= 0x01                          # keep the recruited bit set
             struct.pack_into("<H", b, ro, word)
         else:
             struct.pack_into("<H", b, ro, 0)

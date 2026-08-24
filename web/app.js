@@ -486,11 +486,9 @@ function charCard(c) {
     <div class="char-body" data-roster="${c.rosterIndex}">
       <div class="row" style="gap:16px;margin-top:4px">
         <label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-recruit="${c.rosterIndex}" ${c.recruited ? "checked" : ""}> recruited</label>
-        <label class="row" style="gap:6px">recruited by
-          <select data-recruiter="${c.rosterIndex}">
-            <option value="">— shared / story —</option>
-            ${RECRUITERS.map((h) => `<option value="${h}"${c.recruiter === h ? " selected" : ""}>${h}</option>`).join("")}
-          </select></label></div>
+        <span class="row" style="gap:4px;align-items:center">team(s)
+          ${RECRUITERS.map((h) => `<label class="tmbox" title="${h}"><input type="checkbox" data-recteam="${c.rosterIndex}" value="${h}" ${(c.recruiters || []).includes(h) ? "checked" : ""}>${h[0]}</label>`).join("")}
+          <span class="muted">none = shared</span></span></div>
       <h4>Core</h4><div class="grid">${core}</div>
       <h4>Stats</h4><div class="grid">${statCells}</div>
       <h4>Equipment</h4><div class="grid eq">${equip}</div>
@@ -533,10 +531,12 @@ function wireChar(c) {
   }));
   const recEntry = (ri) => (RECRUIT[ri] = RECRUIT[ri] || {});
   $$("input[data-recruit]", body).forEach((cb) => (cb.onchange = () => { recEntry(+cb.dataset.recruit).recruited = cb.checked; }));
-  $$("select[data-recruiter]", body).forEach((se) => (se.onchange = () => {
-    const ri = +se.dataset.recruiter, e = recEntry(ri); e.recruiter = se.value;
+  $$("input[data-recteam]", body).forEach((box) => (box.onchange = () => {
+    const ri = +box.dataset.recteam, e = recEntry(ri);
+    e.teams = $$(`input[data-recteam="${ri}"]:checked`, body).map((b) => b.value);
+    e.recruited = true;
     const cb = $(`input[data-recruit="${ri}"]`, body);
-    if (cb && !cb.checked) { cb.checked = true; e.recruited = true; }
+    if (cb && !cb.checked) { cb.checked = true; }
   }));
 }
 
@@ -576,30 +576,38 @@ function drawRecruit() {
 
   const rows = shown.map((c) => {
     const st = recState(c), dirty = (c.rosterIndex in RECRUIT), story = isStoryAuto(c.name);
-    const opts = TEAM_OPTS.map(([v, l]) => `<option value="${v}"${v === st.team ? " selected" : ""}>${esc(l)}</option>`).join("");
+    const dis = st.recruited ? "" : "disabled";
+    const boxes = RECRUITERS.map((h) => `<label class="tmbox" title="${h}"><input type="checkbox" data-tm="${c.rosterIndex}" value="${h}" ${st.teams.includes(h) ? "checked" : ""} ${dis}>${h[0]}</label>`).join("");
     const tag = story ? `<span class="story-tag" title="${esc(recruitHow(c.name) || "Joins automatically via the story")}">⚠ story</span>` : "";
     return `<tr class="${dirty ? "dirtyrow " : ""}${story ? "story-auto" : ""}">
         <td><label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-rec="${c.rosterIndex}" ${st.recruited ? "checked" : ""}> <span>${esc(c.name)}</span></label> ${tag}</td>
         <td class="sl">#${c.rosterIndex}</td>
-        <td><select data-team="${c.rosterIndex}" ${st.recruited ? "" : "disabled"}>${opts}</select></td>
+        <td class="teamcell">${boxes}<button class="chip mini" data-tmall="${c.rosterIndex}" ${dis}>All</button></td>
       </tr>`;
   }).join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`;
 
   $("#subview").innerHTML = `
     <div class="warnbox" style="margin:0 0 10px">Best used for <b>optional</b> recruits. <span class="story-tag">⚠ story</span> characters (faded) auto-join via the story — recruiting or un-recruiting them manually is unneeded and can soft-lock an early save. Keep a backup.</div>
+    <div class="muted" style="margin:0 0 8px">Tick a character's <b>team(s)</b> — a unit can be on <b>several</b> protagonists' teams at once (H/C/G/T, or <b>All</b>), so e.g. a Hugo recruit can also show up while you play Chris. This is a real game mechanic: after the parties merge, the game itself puts shared characters on Hugo + Chris + Geddoe at once. Keep a backup.</div>
     <div class="row" style="gap:10px;margin-bottom:8px">
       <label class="field" style="max-width:240px"><span>Default team for new recruits</span><select id="rteam">${teamSel}</select></label>
       <span class="muted">Recruited ${total} · Hugo ${counts.Hugo} · Chris ${counts.Chris} · Geddoe ${counts.Geddoe} · Thomas ${counts.Thomas} · shared ${counts[""]}</span>
     </div>
-    <table class="invtbl"><thead><tr><th>Character</th><th>#</th><th>Team</th></tr></thead><tbody>${rows}</tbody></table>`;
+    <table class="invtbl"><thead><tr><th>Character</th><th>#</th><th>Team(s)</th></tr></thead><tbody>${rows}</tbody></table>`;
 
   $("#rteam").onchange = (e) => { RTEAM = e.target.value; };
+  const teamsChecked = (ri) => $$(`input[data-tm="${ri}"]:checked`).map((b) => b.value);
   // per-character edits apply immediately (granular + revertible via "Revert all")
   $$("input[data-rec]").forEach((cb) => (cb.onchange = () => {
-    const c = charByRoster(+cb.dataset.rec); setRecruit(c, cb.checked, cb.checked ? RTEAM : undefined); drawRecruit();
+    const c = charByRoster(+cb.dataset.rec);
+    setRecruit(c, cb.checked, cb.checked ? (RTEAM ? [RTEAM] : []) : undefined); drawRecruit();
   }));
-  $$("select[data-team]").forEach((se) => (se.onchange = () => {
-    const c = charByRoster(+se.dataset.team); setRecruit(c, true, se.value); drawRecruit();
+  // team checkboxes: a character can be on several teams at once (the save stores a bitmask)
+  $$("input[data-tm]").forEach((box) => (box.onchange = () => {
+    const ri = +box.dataset.tm, c = charByRoster(ri); setRecruit(c, true, teamsChecked(ri)); drawRecruit();
+  }));
+  $$("button[data-tmall]").forEach((btn) => (btn.onclick = () => {
+    const c = charByRoster(+btn.dataset.tmall); setRecruit(c, true, [...RECRUITERS]); drawRecruit();
   }));
 }
 function charByRoster(ri) { return saves[curSlot].characters.find((c) => c.rosterIndex === ri) || { rosterIndex: ri, recruited: false, recruiter: "" }; }
@@ -723,8 +731,11 @@ function buildDiff() {
   Object.entries(RECRUIT).forEach(([ri, v]) => {
     const c = byRi[ri] || byRi[+ri] || {}, who = c.name || `#${ri}`;
     if ("recruited" in v && v.recruited !== !!c.recruited) rows.push({ g: who, t: `Recruited: ${v.recruited ? "yes" : "no"}` });
-    if (v.recruited && "recruiter" in v && v.recruiter !== (c.recruiter || ""))
-      rows.push({ g: who, t: `Team: ${(c.recruiter || "shared")} → ${v.recruiter || "shared"}` });
+    if (v.recruited && "teams" in v) {
+      const before = (c.recruiters && c.recruiters.length ? c.recruiters.join(" + ") : "shared");
+      const after = (v.teams && v.teams.length ? v.teams.join(" + ") : "shared");
+      if (before !== after) rows.push({ g: who, t: `Teams: ${before} → ${after}` });
+    }
   });
   Object.entries(PARTY).forEach(([slot, cid]) => {
     const old = (s.party || [])[+slot] || 0;
