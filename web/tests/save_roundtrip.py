@@ -49,10 +49,14 @@ def build_synth():
     struct.pack_into("<H", b, s3save.RECRUIT_OFF + 0 * 2, s3save.RECRUIT_DEFAULT)
     # active party slot 0 = Hugo
     struct.pack_into("<H", b, s3save.PARTY_OFF + 0 * 2, 1)
-    # a name field
+    # a name field (player-entered = half-width ASCII)
     nm = "TESTHERO".encode("latin1")
     off, n = s3save.NAME_OFF["flameChampion"]
     b[off:off + len(nm)] = nm
+    # a carryover name stored full-width Shift-JIS, like a real save's imported S1 hero
+    fw = s3save._to_fullwidth("McDohl").encode("shift_jis")
+    o2, _ = s3save.NAME_OFF["s1Hero"]
+    b[o2:o2 + len(fw)] = fw
     return s3save.fix_gamedata_checksum(bytes(b))
 
 
@@ -82,6 +86,8 @@ def main():
     check("roster 0 recruited, roster 1 not",
           hugo["recruited"] and not next(c for c in s["characters"] if c["rosterIndex"] == 1)["recruited"])
     check("name decoded", any(n["value"] == "TESTHERO" for n in s.get("names", [])))
+    check("full-width Shift-JIS carryover name decodes to half-width",
+          any(n["key"] == "s1Hero" and n["value"] == "McDohl" for n in s.get("names", [])))
     check("synth checksum is valid (words sum to 0)", sum_words(open(path, "rb").read()) == 0)
 
     # --- edit (mirrors the web app's payload shape) ---
@@ -90,7 +96,7 @@ def main():
         {0: {"level": 50, "maxHP": 9999, "stats": {"PWR": 250},
              "skills": {0: {"id": 7, "rank": 8}}}},
         make_backup=False,
-        name_edits={"flameChampion": "Zephon"},
+        name_edits={"flameChampion": "Zephon", "s1Hero": "Tir"},
         party_edits={1: 63},
         recruit_edits={1: {"recruited": True, "recruiter": "Chris"}},
         gold=999999,
@@ -111,6 +117,11 @@ def main():
     check("PWR persisted", hugo2["stats"]["PWR"] == 250)
     check("skill edit persisted", hugo2["skills"][0]["id"] == 7 and hugo2["skills"][0]["rank"] == 8)
     check("name persisted", any(n["value"] == "Zephon" for n in s2.get("names", [])))
+    check("edit to a full-width name re-reads as half-width",
+          any(n["key"] == "s1Hero" and n["value"] == "Tir" for n in s2.get("names", [])))
+    _o, _n = s3save.NAME_OFF["s1Hero"]
+    _raw = open(path, "rb").read()[_o:_o + _n].split(b"\x00")[0]
+    check("edit to a full-width name stays full-width Shift-JIS", any(byte >= 0x80 for byte in _raw))
     check("party slot persisted", s2["party"][1] == 63)
     check("recruit persisted (recruited + recruiter)", r1["recruited"] and r1["recruiter"] == "Chris")
     check("checksum invariant holds after write", sum_words(open(path, "rb").read()) == 0)

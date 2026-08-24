@@ -21,7 +21,7 @@ WRITING is intentionally not implemented yet: gamedata word@0 is a checksum whos
 algorithm is not yet cracked, so writing a modified save could make it fail to load.
 This module is the read-only foundation; write support is gated on solving that.
 """
-import struct, os, glob, shutil
+import struct, os, glob, shutil, unicodedata
 
 MAGIC = b"Sony PS2 Memory Card Format"
 S3_PREFIX = "BASLUS-20387"     # USA Suikoden III save-folder prefix on the memcard
@@ -158,7 +158,22 @@ NAME_FIELDS = [
 ]
 
 def _read_str(data, off, n):
-    return data[off:off+n].split(b"\x00")[0].decode("latin1", "replace")
+    raw = data[off:off+n].split(b"\x00")[0]
+    # Player-entered names (Flame Champion, castle) are half-width ASCII; the carryover
+    # S1/S2 hero/country names are stored full-width Shift-JIS (e.g. "ＭｃＤｏｈｌ"). Decode as
+    # Shift-JIS (ASCII is a subset, so half-width names are unaffected) and NFKC-normalize
+    # so full-width forms read as plain "McDohl"/"Toran"/"Riou" instead of latin1 garbage.
+    try:
+        s = raw.decode("shift_jis")
+    except Exception:
+        s = raw.decode("latin1", "replace")
+    return unicodedata.normalize("NFKC", s)
+
+
+def _to_fullwidth(s):
+    """ASCII -> full-width (the form S3 uses for imported S1/S2 carryover names)."""
+    return "".join("　" if c == " " else chr(ord(c) + 0xFEE0) if 0x21 <= ord(c) <= 0x7E else c
+                   for c in s)
 
 # Suikoden III seeds these carryover name fields with canonical DEFAULTS unless a real
 # Suikoden I / II memory-card save is loaded (which overwrites them with that save's
@@ -528,7 +543,14 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         if key not in NAME_OFF:
             continue
         off, n = NAME_OFF[key]
-        enc = str(val).encode("latin1", "replace")[:n]
+        val = unicodedata.normalize("NFKC", str(val))     # accept full- or half-width input
+        existing = bytes(b[off:off + n]).split(b"\x00")[0]
+        if any(byte >= 0x80 for byte in existing):
+            # field is stored full-width Shift-JIS (imported S1/S2 names) — write the edit in
+            # the same form so the game renders it like its own carryover names
+            enc = _to_fullwidth(val[:n // 2]).encode("shift_jis", "replace")[:n]
+        else:
+            enc = val.encode("latin1", "replace")[:n]
         b[off:off + n] = enc + b"\x00" * (n - len(enc))   # fixed-width, null-padded
         changed += 1
     for ridx, fields in (edits or {}).items():
