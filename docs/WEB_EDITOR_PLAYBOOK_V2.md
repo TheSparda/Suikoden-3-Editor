@@ -52,6 +52,7 @@ with the gotchas. Suikoden-III specifics are marked as *examples* — swap your 
 index.html         # app shell: dual-mode tabs, PWA meta, script load order
 style.css          # one stylesheet, mobile-first, two themes, safe-area aware
 recruit-core.js    # PURE logic module (no DOM/Pyodide) → unit-testable in Node
+guide-core.js      # PURE reference-data join (guide key ↔ roster name) → unit-testable  (v2)
 vcdiff.js          # PURE VCDIFF (.xdelta) encoder → unit-testable in Node   (v2)
 app.js             # Save Editor: Pyodide bootstrap + full UI + update check
 iso.js             # ISO Editor: ranged-read disc editor + undo/redo + overlays (v2)
@@ -217,6 +218,20 @@ alias map for the stubborn few (S3: "Sgt. Joe" ↔ "Sgt. Jordi (Joe)"). Guides h
 ("Bujitsu"); fold them. Accept < 100% coverage gracefully (2 characters had no guide entry →
 they simply show no note). A guide's displayed number may be a *derived class*, not the raw byte
 (see B12 §4) — label it as "guide" context, don't assert equality.
+
+**Two editors will key the same reference data differently — test the join, not the file.**
+Reusing a reference file across editors is the cheapest quality win available (S3: the ISO
+editor's skill caps / growth ranges / rune-slot levels dropped straight into the save editor),
+but each editor names its records from its *own* table. S3's guide JSON is keyed by the ISO's
+`list1` names while a save's characters carry the save engine's `ROSTER` names; they mostly
+agree, differ on a couple by punctuation, and diverge entirely for the 33 support characters
+that live in a different table. A rename on either side breaks the join **silently** — no
+exception, no log, the notes just stop appearing. So: put the join in a pure module, and have
+the test assert **coverage counts** against the real committed data (`caps 71/109`), not just
+that individual lookups work. A count is the thing that moves when a name drifts. And prefer a
+genuine miss to a clever fallback: an id-based join looked tempting here and recovered nothing
+measurable, while risking one character's caps under another's name — correct-or-blank (B14)
+applies to the *key* as much as to the value.
 
 ## B14. Derive missing descriptions from *sibling* tables — and pre-extract for the no-ROM editor
 

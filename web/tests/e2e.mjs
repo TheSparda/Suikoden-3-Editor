@@ -667,6 +667,53 @@ head("Save editor tab still boots (structural)");
   await page.context().close();
 }
 
+// Guide overlays in the save editor. guide-core.mjs proves the *join*; this proves the notes
+// actually reach the DOM. Pyodide is aborted here, so we hand drawSlot() a synthetic decoded
+// save (the same shape s3save.decode_save returns) and drive the real render path.
+head("Save editor — guide overlays on character cards");
+{ const page = await newPage();
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  const built = await page.evaluate(async () => {
+    const mk = (rosterIndex, name) => ({
+      rosterIndex, name, addr: 0, id: 0, level: 30, curHP: 200, maxHP: 200, expToNext: 500,
+      stats: { PWR: 100, SKL: 100, MAG: 100, REP: 100, PDF: 100, MDF: 100, SPD: 100, LUK: 100 },
+      equip: { headRune: 0, rightRune: 0, leftRune: 0, helm: 0, armor: 0, shield: 0, boots: 0, gloves: 0, accessory: 0 },
+      skills: [{ slot: 0, id: 10, rank: 4 }, { slot: 1, id: 40, rank: 0 }],
+      recruited: true, recruitWord: 1, recruiter: "", recruiters: [], hasData: true,
+    });
+    REF = { items: [], skills: [], charById: {} };
+    OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+    saves = [{
+      label: "slot", folder: "BASLUS-20387", checksumWord: 0, meta: {}, names: [], inventory: [],
+      global: { gold: 100, storyPhase: 1, partyLeader: 0, playtime: "1:00" },
+      characters: [mk(0, "Hugo"), mk(15, "Ace"), mk(76, "Apple")],
+    }];
+    curSlot = 0;
+    renderEditor();
+    RECRUIT_META = {};                     // skip the recruit-meta fetch/redraw
+    await loadGuideRefs();                 // resolve before we read the DOM
+    drawChars();
+    const card = (nm) => [...document.querySelectorAll("details.char")].find((d) => d.querySelector(".nm").textContent === nm);
+    const notes = (nm) => card(nm) ? [...card(nm).querySelectorAll(".fnote")].map((n) => n.textContent.trim()).filter(Boolean) : null;
+    return { hugo: notes("Hugo"), ace: notes("Ace"), apple: notes("Apple"),
+             guideLoaded: !!(GUIDE && Object.keys(GUIDE.caps).length) };
+  });
+  check("guide files fetched", built.guideLoaded);
+  const has = (arr, re) => !!arr && arr.some((t) => re.test(t));
+  check("stat field shows the guide's Lv-99 growth range", has(built.hugo, /rate 04 · Lv99 ≈ 90-188/));
+  check("Max HP shows the HP growth row", has(built.hugo, /Lv99 ≈ 470-626/));
+  check("Level shows the guide's join level", has(built.hugo, /joins at Lv 12/));
+  check("rune slot shows its unlock level", has(built.hugo, /slot opens at Lv 35/));
+  check("rune slot shows an innate rune", has(built.hugo, /starts with Wind/));
+  check("skill slot shows the per-character cap", has(built.hugo, /guide max: S/));
+  check("a skill the character can't learn is called out", has(built.hugo, /can't learn/));
+  check("a different character gets different notes (not a constant)",
+    has(built.ace, /starts with Double Tusk/) && has(built.ace, /slot opens at Lv 32/) && !has(built.ace, /joins at Lv 12/));
+  check("a support character the guide doesn't cover shows no notes",
+    Array.isArray(built.apple) && built.apple.length === 0);
+  await page.context().close();
+}
+
 for (const [w, h] of [[360, 640], [320, 480]]) {
   head(`Mobile ${w}px — no horizontal overflow`);
   const page = await newPage({ width: w, height: h });

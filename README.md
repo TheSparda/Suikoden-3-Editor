@@ -64,7 +64,11 @@ Editable per save:
   story phase, party leader, and Suikoden I/II carryover detection.
 - **Characters** — level, current/max HP, EXP, all 8 stats, equipped runes + armour
   (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
-  per-character recruitment (recruited toggle + "recruited by").
+  per-character recruitment (recruited toggle + "recruited by"). Fields carry the same
+  **guide overlays** as the ISO editor: each stat shows its growth rate and expected Lv-99
+  range, Max HP the HP row, Level the level that character joins at, each rune slot whether
+  it's innate or **opens at Lv N**, and each skill slot that character's **maximum grade**
+  (or a note that they can't learn it at all).
 - **Party** — the active battle party (up to 6), by character name.
 - **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
   (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
@@ -75,7 +79,9 @@ Editable per save:
   vs Key/Valuables, with name-resolved item pickers, quantities, add and remove.
 
 Item and skill pickers throughout the save editor show **guide details** — rune effects and
-food heals (which lack an in-game description record), plus per-rank skill effects.
+food heals (which lack an in-game description record), plus per-rank skill effects. The
+guide data has no entry for the support characters (they don't fight) or for a handful of
+units the guides omit; those simply show no note rather than a guess.
 
 Quality-of-life: **searchable pickers** (type-to-filter, with id + name + in-game
 description + category), a **review-changes** confirmation (an explicit old → new list before

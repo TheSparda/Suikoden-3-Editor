@@ -1,6 +1,6 @@
 # Web editor tests
 
-Three layers, all runnable with plain Node (v18+):
+Four layers, all runnable with plain Node (v18+):
 
 ## `validate.mjs` — fast, no browser (runs in CI + on session start)
 Checks the client JS parses, every ISO table offset stays inside the read block, the
@@ -9,6 +9,23 @@ wired (loads `iso.js`, both mode tabs present, service worker precaches `iso.js`
 
 ```bash
 node web/tests/validate.mjs
+```
+
+## `guide-core.mjs` — the guide-overlay name join, no browser
+The save editor annotates character cards with the Suikosource guide data (skill caps, Lv-99
+growth ranges, rune-slot unlock levels). Those files are keyed by the ISO's **list1** names
+while a save's characters carry **`s3save.ROSTER`** names, so a rename on either side would
+silently drop every note with no error anywhere. This drives the real `web/guide-core.js`
+against the **committed** JSON and the **real** ROSTER (parsed out of `s3save.py`) and asserts
+both the individual lookups and the **coverage counts** — the number that actually moves when
+a name drifts.
+
+Coverage today is 71/109 (caps, rune slots) and 70/109 (growth). The rest are list3 support
+characters, who don't fight and have no entry in the combat guides, plus a few fighters the
+guides omit — all of which correctly render no note.
+
+```bash
+node web/tests/guide-core.mjs
 ```
 
 ## `save_roundtrip.py` (via `save-roundtrip.mjs`) — save engine, no browser
@@ -32,6 +49,11 @@ bestiary view, the recruit section (per-character + story fade), the backup-nudg
 byte-exact save path, **planted-byte assertions that the verified table offsets still decode
 correctly** (skill-max +16, growth HP@+0, rune Head/Right/Left), and no horizontal overflow at
 320/360px.
+
+It also covers the save editor's **guide overlays** end-to-end: Pyodide is aborted, so the
+suite hands `drawSlot()` a synthetic decoded save (the shape `s3save.decode_save` returns) and
+asserts the notes reach the DOM — growth range, join level, rune-slot unlock, per-character
+skill cap, "can't learn", and that an uncovered support character renders none.
 
 Runs in CI (a dedicated `e2e` job installs Chromium via `playwright-core install`). Locally it
 needs `playwright-core` + a Chromium binary and **skips cleanly (exit 0)** if neither is
