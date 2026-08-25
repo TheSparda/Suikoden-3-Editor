@@ -1591,7 +1591,7 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  <span class=hint style="margin:0 0 0 6px">Suikoden III-inspired styling (not official art).</span>
  <span class=credit>Made by <b>Sparda</b> ·
   <a href="https://github.com/TheSparda/Suikoden-3-Editor" target=_blank rel="noopener noreferrer">GitHub</a>
-  · <span class=hint>v1.15.0</span></span>
+  · <span class=hint>v1.18.0</span></span>
 </footer>
 <div id=toast></div>
 <script>
@@ -1672,9 +1672,9 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",sets:"Sets",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",patch:"Share / Patch",saves:"Save Editor"};
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",sets:"Sets",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",encounter:"Encounter",enemies:"Enemies",reference:"Reference",patch:"Share / Patch",saves:"Save Editor"};
  // top-level bar; "Other" is a hover dropdown holding the less-used tabs
- const topTabs=["characters","spells","runes","unites","gear","sets","weapons","hardmode"];
+ const topTabs=["characters","spells","runes","unites","gear","sets","weapons","hardmode","encounter"];
  const otherTabs=["foods","shop","enemies","text","reference","patch"];
  const btn=t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`;
  window.OTHER_TABS=otherTabs;
@@ -1763,6 +1763,7 @@ async function render(){
  if(TAB==="shop")return renderShop(m);
  if(TAB==="characters")return renderChars(m);
  if(TAB==="hardmode")return renderHardMode(m);
+ if(TAB==="encounter")return renderEncounter(m);
  if(TAB==="enemies")return renderEnemies(m);
  if(TAB==="reference")return renderRef(m);
  if(TAB==="text")return renderText(m);
@@ -2381,7 +2382,6 @@ const HM_PRESETS={
 
 async function renderHardMode(m){
  const g=await api("/api/growth");
- const enc=await api("/api/encounter");
  const cur={}; HM_STATS.forEach(s=>cur[s]=1); // slider state (multipliers)
  m.innerHTML=`<div class=card>
    <div class=row style="justify-content:space-between;align-items:center">
@@ -2393,21 +2393,6 @@ async function renderHardMode(m){
     <label class=hint style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;font-size:13px">
      <input type=checkbox id=hmMaster> <b>Enable Hard Mode</b></label>
    </div></div>
-  <div class=card><h3 style="margin:0 0 4px">Random encounter rate <span class=pill>global</span></h3>
-   <div class=hint style=margin:0>How often random battles trigger, as a percentage of the game's
-    stock rate — <b>100</b> = unchanged, <b>50</b> = half as often, <b>200</b> = twice as often,
-    <b>0</b> = no random encounters at all. This scales every area by the same factor, so the
-    relative difference between a quiet field and a dangerous dungeon is preserved. Separate from
-    Hard Mode: it works whether or not the toggle above is on.</div>
-   <div class=row style="margin-top:10px;align-items:center">
-    <input type=range id=encRange min=0 max=300 step=5 style=width:240px>
-    <label>Rate %<input type=number id=encPct min=0 max=${enc.max} step=1 style=width:80px></label>
-    <button class=act id=encApply>Apply</button>
-    <button class="act sec" id=encReset>Restore (100%)</button>
-    <span class=hint id=encOut style=margin:0></span></div>
-   ${enc.pct===null?`<div class=hint style="margin-top:8px;color:var(--warn)">These
-    instructions don't match a stock or editor-written value (words ${enc.words.join(' ')}) —
-    applying a rate will overwrite them.</div>`:""}</div>
   <div id=hmBody style="opacity:.45;pointer-events:none">
    <div class=card><h3 style="margin:0 0 8px">Difficulty preset</h3>
     <div class=row id=hmPresets></div>
@@ -2458,22 +2443,6 @@ async function renderHardMode(m){
  $("#hmMaster").onchange=()=>{const on=$("#hmMaster").checked;
   $("#hmBody").style.opacity=on?"1":".45";$("#hmBody").style.pointerEvents=on?"":"none";
   if(on&&!$("#hmPresetDesc").textContent){$("#hmPresets [data-p=hard]").click();}};
- // ---- encounter rate (independent of the Hard Mode master toggle) ----
- {const pctEl=$("#encPct"),rngEl=$("#encRange"),outEl=$("#encOut");
-  const shown=enc.pct===null?100:enc.pct;
-  pctEl.value=shown; rngEl.value=Math.min(+rngEl.max,shown);
-  const note=v=>v===100?"stock rate":v===0?"random encounters off":
-    v<100?`${(100/v).toFixed(v>=10?1:0)}x fewer battles`:`${(v/100).toFixed(2)}x more battles`;
-  const sync=v=>{pctEl.value=v;rngEl.value=Math.min(+rngEl.max,v);outEl.textContent=note(v);};
-  sync(shown);
-  rngEl.oninput=()=>sync(+rngEl.value);
-  pctEl.oninput=()=>{const v=Math.max(0,Math.min(+pctEl.max,+pctEl.value||0));rngEl.value=Math.min(+rngEl.max,v);outEl.textContent=note(v);};
-  const send=async v=>{const r=await api("/api/encounter",{method:"POST",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({pct:v})});
-   if(r.error){outEl.textContent="error: "+r.error;return;}
-   markDirty();sync(v);toast(`encounter rate ${v}% staged — hit Save to ISO`);};
-  $("#encApply").onclick=()=>send(Math.max(0,Math.min(+pctEl.max,+pctEl.value||0)));
-  $("#encReset").onclick=()=>send(100);}
  $("#hmApply").onclick=async()=>{
   const growth={};HM_STATS.forEach(s=>growth[s]=cur[s]);
   const body={growth};const sp=+$("#hmSpell").value,up=+$("#hmUnite").value;
@@ -2488,6 +2457,47 @@ async function renderHardMode(m){
   await api("/api/hardmode",{method:"POST",headers:{"Content-Type":"application/json"},
    body:JSON.stringify({growth,partyPower:1,unitePower:1})});
   toast("player stats restored to default (staged)");markDirty();render();};}
+
+async function renderEncounter(m){
+ const enc=await api("/api/encounter");
+ m.innerHTML=`<div class=card>
+   <h3 style="margin:0 0 4px">Random encounter rate <span class=pill>global</span></h3>
+   <div class=hint style=margin:0>How often random battles trigger, as a percentage of the game's
+    stock rate — <b>100</b> = unchanged, <b>50</b> = half as often, <b>200</b> = twice as often,
+    <b>0</b> = no random encounters at all. Every area scales by the same factor, so a quiet field
+    stays quieter than a dungeon. Edits are staged — hit <b>Save to ISO</b> to write.</div></div>
+  <div class=card>
+   <div class=row style="align-items:center">
+    <input type=range id=encRange min=0 max=300 step=5 style=width:260px>
+    <label>Rate %<input type=number id=encPct min=0 max=${enc.max} step=1 style=width:80px></label>
+    <button class=act id=encApply>Apply</button>
+    <button class="act sec" id=encReset>Restore (100%)</button>
+    <span class=hint id=encOut style=margin:0></span></div>
+   <div class=row id=encPresets style=margin-top:10px></div>
+   ${enc.pct===null?`<div class=hint style="margin-top:10px;color:var(--warn)">These instructions
+    don't match a stock or editor-written value (${enc.words.join(" ")}) — applying a rate will
+    overwrite them.</div>`:""}</div>
+  <div class=card><div class=hint style=margin:0>Only the <b>global</b> rate is editable. Each area's
+   own base rate lives in the packed map archives (<code>DATA/*.BIN</code>), not in the executable, so
+   it can't be retuned per-zone here — but scaling globally keeps every area's relative difference intact.</div></div>`;
+ const ENC_PRESETS=[["None",0],["Quarter",25],["Half",50],["Stock",100],["Double",200],["Triple",300]];
+ const pctEl=$("#encPct"),rngEl=$("#encRange"),outEl=$("#encOut");
+ const note=v=>v===100?"stock rate":v===0?"random encounters off":
+   v<100?`${(100/v).toFixed(v>=10?1:0)}x fewer battles`:`${(v/100).toFixed(2)}x more battles`;
+ const sync=v=>{pctEl.value=v;rngEl.value=Math.min(+rngEl.max,v);outEl.textContent=note(v);
+   $("#encPresets").querySelectorAll("[data-p]").forEach(b=>b.style.outline=(+b.dataset.p===v)?"2px solid var(--acc)":"");};
+ $("#encPresets").innerHTML=ENC_PRESETS.map(([lbl,v])=>`<button class="act sec" data-p="${v}">${lbl}</button>`).join("");
+ const clamp=v=>Math.max(0,Math.min(+pctEl.max,Math.round(+v||0)));
+ const send=async v=>{const r=await api("/api/encounter",{method:"POST",
+   headers:{"Content-Type":"application/json"},body:JSON.stringify({pct:v})});
+  if(r.error){outEl.textContent="error: "+r.error;return;}
+  markDirty();sync(v);toast(`encounter rate ${v}% staged — hit Save to ISO`);};
+ sync(enc.pct===null?100:enc.pct);
+ rngEl.oninput=()=>sync(+rngEl.value);
+ pctEl.oninput=()=>sync(clamp(pctEl.value));
+ $("#encPresets").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>send(+b.dataset.p));
+ $("#encApply").onclick=()=>send(clamp(pctEl.value));
+ $("#encReset").onclick=()=>send(100);}
 
 async function renderEnemies(m){const en=await api("/api/enemies");
  m.innerHTML=`<div class=card><h3 style=margin-top:0>Enemies <span class=pill>reference</span></h3>
