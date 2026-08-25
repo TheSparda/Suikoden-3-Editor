@@ -113,13 +113,52 @@ heal share — and **which set grants which effect**, since each bonus is a hard
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Balance** (idempotent hard-mode multiplier presets), **Encounter**
-(a **global random-encounter rate** as a plain percentage — 100 = stock, 50 = half as often,
-200 = twice, 0 = none at all), **Enemies** (a
-read-only **bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and
-**Reference** (item/skill id → name lists).
+(a global **random-encounter rate** as a plain percentage — see below), **Enemies** (a read-only
+**bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and **Reference**
+(item/skill id → name lists).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
+
+**Random encounter rate — the Encounter tab.** One number controls how often random battles
+trigger across the whole game, as a percentage of the stock rate:
+
+| Rate | Effect |
+|---|---|
+| **0** | no random encounters at all |
+| **25 / 50** | a quarter / half as often |
+| **100** | unchanged (the disc's own rate) |
+| **200 / 300** | twice / three times as often |
+
+Presets (*None · Quarter · Half · Stock · Double · Triple*) sit next to a free-form box that
+takes anything from 0 to 1000. It's a single global multiplier, so **each area keeps its own
+character** — a quiet field stays quieter than a dungeon, everything just shifts together.
+
+Useful for a replay where you already know the story and don't want to be stopped every ten
+steps, for grinding runs in the other direction, or — at 0 — for walking a dungeon to map it
+without fighting. Like every other edit it's *staged*: undoable, revertible, and carried into
+a `.s3mod` recipe or `.xdelta` patch. Setting it back to **100** restores the original bytes
+exactly, so a round trip leaves nothing pending rather than re-writing a "default".
+
+<details>
+<summary>How it works, and what it can't do</summary>
+
+Suikoden III has no encounter-rate table to edit. Every field encounter is one roll inside the
+executable — roughly *rate = area\_rate × multiplier ÷ 100*, sampled as you move, then
+`rand(100) < rate`. The editor rewrites the multiplier, so the tab patches game **code**, not
+data (four instruction words; see `Editor/Suikoden3_ISO_offsets.md` for the full
+reverse-engineering write-up).
+
+There are three separate multipliers, one per movement mode — walking, running, and riding —
+and the riding path originally had no multiplier at all, taking an implicit ×1.00. It gets one
+grafted in and pointed at the shared divide, which is why 100% still behaves exactly like the
+unmodified game: it computes ×100÷100.
+
+**What it can't do: per-area rates.** Each zone's *own* base rate isn't in the executable — it
+lives in the packed map archives (`DATA/*.BIN`), the same undecoded container that keeps enemy
+stats out of reach. So there's no per-zone tuning here, only the global scale.
+
+</details>
 
 **Guide overlays.** Fields show verified reference data inline: per-character skill caps and
 Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food
