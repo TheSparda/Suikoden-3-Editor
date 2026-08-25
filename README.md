@@ -113,22 +113,10 @@ heal share — and **which set grants which effect**, since each bonus is a hard
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Balance** (idempotent hard-mode multiplier presets), **Encounter**
-(a global **random-encounter rate** as a plain percentage — see below), **Enemies** (a full
-per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the 5-slot
-drop table for every encounter variant, decoded from each area's battle packs and written
-back to **every streaming copy** on the disc, plus **bulk multipliers** (HP ×N, stats,
-EXP/SP/potch, drop weights — recomputed from the disc's original values so re-applying
-never compounds), and **spawn zones & formations** — each map zone's spawn slots (which
-monster + which stat variant, swappable within the pack's roster) and its weighted encounter
-groups, all written through to every streaming copy — with the Suikosource bestiary kept as
-a reference table), **War** (every war/major-battle combatant on the disc — Zexen Knights &
-Infantry, Karaya/Lizard/Duck Fighters, Mantor Legionnaires, Harmonian Soldiers, the chapter-5
-war monsters and the enemy **leader units** (Leo, Sarah, Franz, Ruby identified exactly against
-the Suikosource guide) — editable level, HP and all 8 combat stats, grouped per region archive
-so the same soldier can be tuned per battle; your own units use the characters' save stats, and
-the RPGClassics army-skill list (Riding / Tactics / Valor / Control / rune skills per character)
-ships as a read-only reference since war skills are code-embedded), and **Reference**
-(item/skill id → name lists).
+(a global **random-encounter rate** as a plain percentage — see below), **Enemies** (the full
+per-area enemy editor — stats, rewards, drops, bulk multipliers, and each zone's spawns &
+formations; see below), **War** (every war/major-battle unit on the disc; see below), and
+**Reference** (item/skill id → name lists).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
@@ -174,6 +162,61 @@ but the room records specifically haven't been pinned down, so for now the tab o
 global scale only.
 
 </details>
+
+**Enemies — the per-area enemy editor.** Suikoden III keeps no global monster table: every
+area's battle pack carries its own copies of each enemy, so the *same* Blade Bunny is a
+different record — different level, HP, rewards, drops — in every region it appears in. The
+Enemies tab decodes all of it, straight from the disc (**81 packs, ~1,960 encounter
+variants**, indexed by `Editor/build_enemy_index.py` and cross-checked against the
+Suikosource bestiary at 97%+ on potch/SP), and lets you edit per variant:
+
+- **Level** and **HP**, the **8 combat stats** (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK — monsters
+  are character records in this engine, same stat order),
+- **rewards**: EXP value, SP and potch,
+- the **5-slot drop table** — item (full item picker) and weight out of 1000 (128 ≈ 12.8%),
+  so a rare rune can become a guaranteed drop or vice versa.
+
+**Bulk tuning** sits at the top of the tab: multipliers for HP / stats / level / EXP / SP /
+potch / drop weights, applied to every variant (or only the packs matching the filter box —
+type `LAST` to buff just the final dungeon). Every value recomputes from the disc's original
+numbers, so Apply is idempotent: running it twice changes nothing, and ×3 after ×2 gives ×3
+of the original, not ×6. Fields left at ×1 aren't touched, and a Reset button returns the
+scope to the disc's own values.
+
+**Spawn zones & formations** turn the same tab into an encounter designer. Each map zone
+(shown under the game's own names — `mori_101`, `icew_105` …) has **spawn slots** (which
+monster occupies the slot, and *which stat variant* of it) and **formations** — the actual
+encounter groups, each with a relative weight and one member pick per slot. Swap a slot's
+monster and every formation using it spawns the new one; raise a formation's weight and that
+group shows up more often. The slot picker is restricted to the pack's own roster on purpose:
+monsters from other packs would spawn without their models loaded and crash the game.
+
+<details>
+<summary>How it works, and the fine print</summary>
+
+Enemy data lives duplicated across the disc — each area pack exists as several **streaming
+copies** (and separate chapter variants with genuinely different stats). Every edit is
+written through to *every byte-verified copy* automatically, and the save review says so
+("Potch: 33000 → 44444 (×4 copies)"). Bulk edits are summarized as a byte count instead of
+thousands of rows. A pack whose offsets can't be verified ships read-only rather than wrong
+— the same correct-or-absent rule as the rest of the editor. Formation sizes can shrink but
+not grow past the group's original size (fixed allocation on disc). The full
+reverse-engineering trail — record layout, reward blocks, zone objects, the multi-pass copy
+indexer — is in `Editor/Suikoden3_ISO_offsets.md`.
+
+</details>
+
+**War battles — the War tab.** Every war/major-battle combatant on the disc is editable:
+Zexen Knights & Infantry, Karaya/Lizard/Duck Fighters, Mantor Legionnaires, Harmonian
+Soldiers, the chapter-5 war monsters, and the enemy **leader units** (Leo, Sarah, Franz and
+Ruby, identified exactly against the Suikosource guide) — **level, HP and all 8 combat
+stats** per unit. Units are grouped per region archive, so the same soldier type can be
+tuned battle-by-battle (make the Brass Castle defense brutal but leave Chisha winnable).
+Your *own* army units draw their strength from the characters' save-file stats, so they're
+edited in the Save Editor instead; the RPGClassics army-skill list (Riding / Tactics /
+Valor / Control and rune skills per character) ships as a read-only reference, since war
+skills are embedded in code rather than data. War-unit edits ride the same machinery as
+everything else: staged, undoable, written to every copy, and exportable in a recipe.
 
 **Guide overlays.** Fields show verified reference data inline: per-character skill caps and
 Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food
