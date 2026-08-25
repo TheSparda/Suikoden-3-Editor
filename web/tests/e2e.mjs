@@ -365,6 +365,47 @@ head("Enemies editor — decode, edit, write-through both copies");
   await page.context().close();
 }
 
+head("Enemies bulk tuning — idempotent multipliers + reset");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("#ebApply", { timeout: 3000 });
+  const apply = async (id, v) => { await page.fill(`#${id}`, String(v)); await page.dispatchEvent(`#${id}`, "change"); await page.click("#ebApply"); await page.waitForTimeout(100); };
+  // x2 -> 80, applying again must NOT compound, x3 replaces (from orig 40 -> 120)
+  await apply("ebHp", 2);
+  await page.click("details.epack summary"); await page.waitForSelector('input.en-num[data-f="hp"]');
+  check("HP x2 = 80", (await page.inputValue('input.en-num[data-f="hp"]')) === "80");
+  await page.click("#ebApply"); await page.waitForTimeout(100);
+  check("re-apply does not compound", (await page.inputValue('input.en-num[data-f="hp"]')) === "80");
+  await apply("ebHp", 3);
+  check("x3 replaces, from originals (120)", (await page.inputValue('input.en-num[data-f="hp"]')) === "120");
+  // fields at x1 stay untouched: level still 7
+  check("level untouched at x1", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
+  // sp x0.5 rounds from orig 9 -> 5 (Math.round(4.5))
+  await apply("ebSp", 0.5);
+  check("SP x0.5 rounds to 5 (hp x3 kept)", (await page.inputValue('input.en-num[data-f="sp"]')) === "5"
+    && (await page.inputValue('input.en-num[data-f="hp"]')) === "120");
+  // drop weight x2 scales the used slot, leaves empty slots empty
+  await apply("ebDropw", 2);
+  check("drop weight x2 = 256", (await page.inputValue('input.en-num[data-f="drop0w"]')) === "256");
+  check("empty drop slot stays 0", (await page.inputValue('input.en-num[data-f="drop1w"]')) === "0");
+  // reset (pre-save) returns everything to disc originals -> no unsaved changes
+  await page.click("#ebReset"); await page.waitForTimeout(150);
+  check("reset restores originals", (await page.inputValue('input.en-num[data-f="hp"]')) === "40");
+  const clean = await page.evaluate(() => !document.querySelector("#isoDirty") || document.querySelector("#isoDirty").hidden);
+  check("reset leaves no staged bytes", clean);
+  // re-apply the kept multipliers and make sure the SAVED bytes hit every copy
+  await page.click("#ebApply"); await page.waitForTimeout(150);
+  const r = await save(page);
+  for (const [nm, rec, aux] of [["copy A", ENEMY_REC_A, ENEMY_AUX_A], ["copy B", ENEMY_REC_B, ENEMY_AUX_B]]) {
+    check(`${nm}: HP saved = 120 (both fields)`, r.u16(rec + 48) === 120 && r.u16(rec + 50) === 120);
+    check(`${nm}: SP saved = 5`, r.u16(aux + 12) === 5);
+    check(`${nm}: drop weight saved = 256`, r.u16(aux + 34) === 256);
+  }
+  await page.context().close();
+}
+
 head("Enemies editor — recipe export covers enemy bytes");
 { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
