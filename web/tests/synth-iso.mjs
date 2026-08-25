@@ -51,11 +51,15 @@ export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
 // injects ENEMY_TEST_PACKS via window.S3_TEST_ENEMY_PACKS before the ISO loads.
 export const ENEMY_REC_A = 0x465E00, ENEMY_AUX_A = 0x465F00;   // copy 1
 export const ENEMY_REC_B = 0x466000, ENEMY_AUX_B = 0x466100;   // copy 2
+export const ZONE_SLOTS_A = 0x466200, ZONE_PARTY_A = 0x466240, ZONE_MEM_A = 0x466290;
+export const ZONE_SLOTS_B = 0x466300, ZONE_PARTY_B = 0x466340, ZONE_MEM_B = 0x466390;
 export const SYNTH_EXTRA = 0x800;                              // file = ELF_END + this
 export const ENEMY_TEST_PACKS = {
   format: "s3enemy", version: 1,
   recLayout: { hp: 48, maxhp: 50, lv: 64, stats: 32, size: 0x8C },
   auxLayout: { exp: 4, sp: 12, mark: 14, potch: 16, drops: 32, nDrops: 5, size: 0x34 },
+  zoneLayout: { slotSize: 0x14, slotId: 0, slotVariant: 4,
+                partySize: 0x1C, partyType: 0, partyProb: 2, partyFormId: 0x10, partyCount: 0x12 },
   packs: [{
     archive: "TEST", copies: 2, label: "BladeBunny",
     enemies: [{ id: 0x1F7, name: "BladeBunny", variants: [{
@@ -63,6 +67,19 @@ export const ENEMY_TEST_PACKS = {
       drops: [[1, 128], [0, 0], [0, 0], [0, 0], [0, 0]],
       rec: [ENEMY_REC_A, ENEMY_REC_B], aux: [ENEMY_AUX_A, ENEMY_AUX_B],
     }] }],
+    zones: [{
+      name: "test_101",
+      slots: [
+        { id: 0x1F7, variant: 0, off: [ZONE_SLOTS_A, ZONE_SLOTS_B] },
+        { id: 0x1F7, variant: 1, off: [ZONE_SLOTS_A + 0x14, ZONE_SLOTS_B + 0x14] },
+      ],
+      parties: [
+        { type: 0, prob: 50, formId: 0x1211, members: [0, 1],
+          off: [ZONE_PARTY_A, ZONE_PARTY_B], memOff: [ZONE_MEM_A, ZONE_MEM_B] },
+        { type: 0, prob: 25, formId: 0x1213, members: [1],
+          off: [ZONE_PARTY_A + 0x1C, ZONE_PARTY_B + 0x1C], memOff: [ZONE_MEM_A + 8, ZONE_MEM_B + 8] },
+      ],
+    }],
   }],
 };
 
@@ -115,6 +132,16 @@ export function buildSynthIso() {
     w16(recO + 48, v.hp); w16(recO + 50, v.hp); w16(recO + 64, v.lv);
     w32(auxO + 4, v.exp); w16(auxO + 12, v.sp); w16(auxO + 14, 1000); w32(auxO + 16, v.potch);
     v.drops.forEach((dp, di) => { w16(auxO + 32 + di * 4, dp[0]); w16(auxO + 34 + di * 4, dp[1]); });
+  }
+  // zone fixture (spawn slots + formations), two copies like the records
+  for (const [slO, paO, meO] of [[ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A], [ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B]]) {
+    const z = ENEMY_TEST_PACKS.packs[0].zones[0];
+    z.slots.forEach((s, si) => { w32(slO + si * 0x14, s.id); w32(slO + si * 0x14 + 4, s.variant); });
+    z.parties.forEach((pa, pi) => {
+      const b = paO + pi * 0x1C;
+      w16(b, pa.type); w16(b + 2, pa.prob); w16(b + 0x10, pa.formId); w16(b + 0x12, pa.members.length);
+      pa.members.forEach((m, mi) => { bytes[meO + pi * 8 + mi] = m; });
+    });
   }
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));

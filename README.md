@@ -118,8 +118,10 @@ per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and t
 drop table for every encounter variant, decoded from each area's battle packs and written
 back to **every streaming copy** on the disc, plus **bulk multipliers** (HP ×N, stats,
 EXP/SP/potch, drop weights — recomputed from the disc's original values so re-applying
-never compounds) — with the Suikosource bestiary kept as a
-reference table), and **Reference** (item/skill id → name lists).
+never compounds), and **spawn zones & formations** — each map zone's spawn slots (which
+monster + which stat variant, swappable within the pack's roster) and its weighted encounter
+groups, all written through to every streaming copy — with the Suikosource bestiary kept as
+a reference table), and **Reference** (item/skill id → name lists).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.

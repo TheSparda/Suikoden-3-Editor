@@ -237,6 +237,22 @@ console.log("Guide overlays + xdelta:");
       .flatMap((e) => e.variants).find((v) => v.lv === 46 && v.hp === 3800);
     (gh && gh.sp === 490 && gh.potch === 33000 ? ok : bad)(
       "index spot-check: GhostHolly Lv46 = SP 490 / potch 33,000 (Suikosource)");
+    // zones: every slot/party/member offset on-disc + out-of-block; members index real slots
+    let zn = 0, zbad = 0, ztot = 0, ftot = 0;
+    for (const p of j.packs) for (const z of (p.zones || [])) {
+      ztot++;
+      for (const s of z.slots) for (const o of s.off) { zn++; if (o < ELF_HI || o + 0x14 > ISO_MAX) zbad++; }
+      for (const pa of z.parties) {
+        ftot++;
+        if (pa.members.some((m) => m >= z.slots.length)) zbad++;
+        for (const o of [...pa.off, ...pa.memOff]) { zn++; if (o < ELF_HI || o + 4 > ISO_MAX) zbad++; }
+      }
+    }
+    (ztot >= 40 && zbad === 0 ? ok : bad)(`zones sane: ${ztot} zones, ${ftot} formations, ${zn} offsets checked`);
+    // mori_101 exists as chapter variants; the HollyShrub-era one has 5 slots / 16 formations
+    const moris = j.packs.flatMap((p) => p.zones || []).filter((z) => z.name === "mori_101");
+    (moris.some((z) => z.slots.length === 5 && z.parties.length === 16 && z.slots[0].id === 0x1F5)
+      ? ok : bad)(`zone spot-check: a mori_101 variant has 5 slots / 16 formations (${moris.length} variants)`);
     (/s3_enemy_packs\.json/.test(iso) && /S3_TEST_ENEMY_PACKS/.test(iso) ? ok : bad)(
       "iso.js loads the pack index (with the test override hook)");
   } catch (e) { bad("s3_enemy_packs.json — " + e.message); }
