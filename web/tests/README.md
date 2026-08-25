@@ -28,6 +28,26 @@ guides omit — all of which correctly render no note.
 node web/tests/guide-core.mjs
 ```
 
+## `text-core.mjs` — the in-ELF string scanner, no browser
+The ISO editor's Text tab has no table of contents to work from: it *finds* editable strings
+by scanning the block for printable-ASCII runs and filtering to the ones that read as prose.
+That heuristic is the whole feature — a run that slips through is a format string the user can
+corrupt, and one wrongly rejected is text they can't reach. This drives the real
+`web/text-core.js` over both halves: the filter (prose accepted; format specifiers, paths, hex
+literals, identifiers and ALL-CAPS labels rejected) and the scanner (absolute offsets, on-disk
+slot lengths, runs split by control bytes, and the safety property that **every returned slot
+is entirely printable**, since the editor writes `max` bytes back over it).
+
+`validate.mjs` additionally asserts the heuristic stays in lockstep with the desktop's
+`_looks_like_text` in `Editor/s3editor.py` — min length, reject pattern, prose punctuation,
+ratio and scan range are compared literal by literal, so the two editors can't drift into
+offering different strings for the same disc. The JS port was differential-tested against the
+Python over 6,000 randomized strings (0 mismatches).
+
+```bash
+node web/tests/text-core.mjs
+```
+
 ## `save_roundtrip.py` (via `save-roundtrip.mjs`) — save engine, no browser
 The Save Editor runs `Editor/s3save.py` unchanged in the browser (Pyodide). This drives that
 same module directly against a **synthetic** 53264-byte `gamedata` payload (the repo ships no

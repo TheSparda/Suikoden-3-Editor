@@ -348,6 +348,63 @@ head("Gear description overflow is rejected");
   await page.context().close();
 }
 
+head("Text tab — in-ELF strings: filtered, editable, length-capped, byte-exact");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="text"]');
+  await page.waitForSelector("input.txt", { timeout: 5000 });
+  const T = mapping.text;
+  // the scanner must offer the planted prose string and NOT the planted format string
+  await page.fill("#isoSearch", "everyone survived"); await page.waitForTimeout(80);
+  const row = page.locator(`input.txt[data-off="${T.off}"]`);
+  check("planted prose string is offered", (await row.count()) === 1);
+  check("slot cap is the on-disk length", +(await row.getAttribute("maxlength")) === T.max);
+  check("current value decodes from the disc", (await row.inputValue()) === T.value);
+  await page.fill("#isoSearch", "arg1"); await page.waitForTimeout(80);
+  check("format string is filtered out (not editable)", (await page.locator("input.txt").count()) === 0);
+
+  // over-length is rejected outright — the slot can't grow
+  await page.fill("#isoSearch", "everyone survived"); await page.waitForTimeout(80);
+  await row.evaluate((el, n) => { el.value = "X".repeat(n + 4); el.dispatchEvent(new Event("change", { bubbles: true })); }, T.max);
+  await page.waitForTimeout(60);
+  check("over-length text warns", /too long/i.test(await page.textContent("#isoStatus")));
+  check("over-length text is not staged", (await row.inputValue()) === T.value);
+
+  // a shorter edit is written over the whole slot and NUL-padded
+  const NEW = "Everyone made it home";
+  await row.fill(NEW); await row.dispatchEvent("change"); await page.waitForTimeout(60);
+  check("edited field highlights dirty", await row.evaluate((el) => el.classList.contains("dirty")));
+  check("the change is counted as one labelled field", /1 unsaved/.test(await page.textContent("#isoDirty")));
+  const r = await save(page);
+  let got = ""; for (let i = 0; i < T.max; i++) { const c = r.at(T.off + i); if (!c) break; got += String.fromCharCode(c); }
+  check("new text written byte-exact", got === NEW);
+  check("tail of the slot is NUL-padded, not left over",
+    r.at(T.off + NEW.length) === 0 && r.at(T.off + T.max - 1) === 0);
+  check("the write never runs past the slot", !r.wrote(T.off + T.max, 1));
+  await page.context().close();
+}
+
+head("Text tab — undo and per-field revert");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="text"]');
+  await page.waitForSelector("input.txt", { timeout: 5000 });
+  const T = mapping.text;
+  // Filter by OFFSET, not by content: undo/redo re-render and re-filter, and a
+  // content filter would drop the row the moment the edit changes the text.
+  await page.fill("#isoSearch", T.off.toString(16)); await page.waitForTimeout(80);
+  const row = () => page.locator(`input.txt[data-off="${T.off}"]`);
+  check("a string can be found by its offset", (await row().count()) === 1);
+  await row().fill("Short text"); await row().dispatchEvent("change"); await page.waitForTimeout(60);
+  check("undo is enabled after a text edit", !(await page.locator("#isoUndoBtn").isDisabled()));
+  await page.click("#isoUndoBtn"); await page.waitForTimeout(80);
+  check("undo restores the original string", (await row().inputValue()) === T.value);
+  await page.click("#isoRedoBtn"); await page.waitForTimeout(80);
+  check("redo re-applies the edit", (await row().inputValue()) === "Short text");
+  await page.locator(`input.txt[data-off="${T.off}"] ~ button.revert`).click(); await page.waitForTimeout(80);
+  check("per-field revert restores the original", (await row().inputValue()) === T.value);
+  check("nothing staged after revert", await page.locator("#isoDirty").isHidden());
+  await page.context().close();
+}
+
 head("Recipe export → reset → import round-trip");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
