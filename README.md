@@ -116,7 +116,9 @@ original byte length), **Balance** (idempotent hard-mode multiplier presets), **
 (a global **random-encounter rate** as a plain percentage — see below), **Enemies** (a full
 per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the 5-slot
 drop table for every encounter variant, decoded from each area's battle packs and written
-back to **every streaming copy** on the disc — with the Suikosource bestiary kept as a
+back to **every streaming copy** on the disc, plus **bulk multipliers** (HP ×N, stats,
+EXP/SP/potch, drop weights — recomputed from the disc's original values so re-applying
+never compounds) — with the Suikosource bestiary kept as a
 reference table), and **Reference** (item/skill id → name lists).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
