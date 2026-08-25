@@ -220,6 +220,26 @@ console.log("Guide overlays + xdelta:");
     (Object.keys(j).length >= 50 ? ok : bad)(`s3_bestiary.json parses (${Object.keys(j).length} enemies)`); }
   catch (e) { bad("s3_bestiary.json — " + e.message); }
   (/s3_bestiary\.json/.test(iso) && /REF\.bestiary/.test(iso) ? ok : bad)("iso.js Enemies tab renders the bestiary reference");
+  // Enemy pack index: the Enemies editor's ground truth. Every offset must sit inside the
+  // 4.3 GB disc and past the ELF block (in-block offsets would double-edit through BUF).
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_enemy_packs.json"), "utf8"));
+    (j.format === "s3enemy" && Array.isArray(j.packs) && j.packs.length >= 30 ? ok : bad)(
+      `s3_enemy_packs.json parses (${j.packs.length} packs)`);
+    const ISO_MAX = 0x100008000, ELF_HI = 0x465DF0;
+    let n = 0, badOff = 0, vtot = 0;
+    for (const p of j.packs) for (const e of p.enemies) for (const v of e.variants) {
+      vtot++;
+      for (const o of [...v.rec, ...v.aux]) { n++; if (o < ELF_HI || o + 0x8C > ISO_MAX) badOff++; }
+    }
+    (badOff === 0 ? ok : bad)(`all ${n} enemy offsets are out-of-block and on-disc (${vtot} variants)`);
+    const gh = j.packs.flatMap((p) => p.enemies).filter((e) => e.name === "GhostHolly")
+      .flatMap((e) => e.variants).find((v) => v.lv === 46 && v.hp === 3800);
+    (gh && gh.sp === 490 && gh.potch === 33000 ? ok : bad)(
+      "index spot-check: GhostHolly Lv46 = SP 490 / potch 33,000 (Suikosource)");
+    (/s3_enemy_packs\.json/.test(iso) && /S3_TEST_ENEMY_PACKS/.test(iso) ? ok : bad)(
+      "iso.js loads the pack index (with the test override hook)");
+  } catch (e) { bad("s3_enemy_packs.json — " + e.message); }
 }
 
 // 8) In-ELF text heuristic must stay in lockstep with the desktop editor.

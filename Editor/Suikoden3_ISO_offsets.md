@@ -1404,3 +1404,42 @@ different, smaller record type; tutorial-forest values lv2/hp10; layout TBD).
 pack's K via the node-pointer delta trick), id→name via the 0x3B1168 mapping,
 then expose per-area enemy HP/level/stats/rewards with all-copies write-through.
 Formations/zone-spawn lists likely sit near the node tables in the same packs.
+
+---
+
+## Enemies EDITOR shipped (v1.19.0, 2026-08-25) — full pack decode
+
+Follow-up to "ENEMY STATS — FOUND": the per-monster container is now fully
+decoded and the web editor edits it.
+
+**True node layout** (supersedes the first guess): each monster is stored as
+`[count × 0x8C stat records][count × 0x34 aux blocks][node {u32 id, u32 count,
+u32 recsVa, u32 auxVa}]` — the node FOLLOWS its arrays, and rewards are PER
+VARIANT, not per node. Aux block (0x34 bytes):
+| Off | Field |
+|---|---|
+| +0x04 u32 | EXP value |
+| +0x0C u16 | SP · +0x0E u16 = 1000 constant (drop-rate denominator, used as a validation marker) |
+| +0x10 u32 | potch |
+| +0x14 | 12 AI/resist bytes |
+| +0x20 | 5 × (u16 item id, u16 weight/1000) drop slots |
+Verified vs Suikosource: GhostHolly's three Kuput/Mountain variants read SP
+55/460/490 and potch 5,500/30,000/33,000 — exact; drops decode to Byakko Chain
+Mail (0xD4, w64) + Guardian Casque (0xA7, w5) etc. Index-wide crosscheck: 736
+of 752 (lv,hp)-matched variants agree with the guide on BOTH potch and SP; the
+16 outliers are distinct in-game variants the guide conflates.
+
+**Pipeline:** `Editor/build_enemy_index.py <pristine ISO>` fingerprints records
+(hp==maxhp @+48/+50, bestiary (lv,hp) @+64), recovers each pack copy's
+file↔vaddr delta K by exact-cover voting of (recordBase − recsVa), decodes
+nodes with three validations (record sanity, the 1000 marker per variant, and
+K-consistency), and merges byte-identical streaming copies. Output:
+`Editor/s3_enemy_packs.json` — 41 logical packs, 1,071 variants, 4,592
+offsets, every one out-of-block and on-disc (validate.mjs asserts this).
+
+**Web editor:** aux windows generalized to tagged variable-length spans
+("potch" | "enemy"); enemy spans are coalesced and read once at ISO load, ride
+every save/export/import path like the potch pair, and every edit fans out to
+all pack copies. Enemies view = per-pack collapsible editor (lazy-rendered) +
+the Suikosource bestiary as reference. Fields registered for the save review
+with old → new formatting and a ×copies note.

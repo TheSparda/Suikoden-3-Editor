@@ -44,6 +44,28 @@ export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
 export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
 export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
 
+// ---- Enemies editor fixture -------------------------------------------------
+// A miniature enemy pack planted PAST the ELF block (real packs live ~1 GB into the
+// disc; the synth file is extended by one sector to host this). Two byte-identical
+// "streaming copies" so the write-through-all-copies path is exercised. The e2e
+// injects ENEMY_TEST_PACKS via window.S3_TEST_ENEMY_PACKS before the ISO loads.
+export const ENEMY_REC_A = 0x465E00, ENEMY_AUX_A = 0x465F00;   // copy 1
+export const ENEMY_REC_B = 0x466000, ENEMY_AUX_B = 0x466100;   // copy 2
+export const SYNTH_EXTRA = 0x800;                              // file = ELF_END + this
+export const ENEMY_TEST_PACKS = {
+  format: "s3enemy", version: 1,
+  recLayout: { hp: 48, maxhp: 50, lv: 64, stats: 32, size: 0x8C },
+  auxLayout: { exp: 4, sp: 12, mark: 14, potch: 16, drops: 32, nDrops: 5, size: 0x34 },
+  packs: [{
+    archive: "TEST", copies: 2, label: "BladeBunny",
+    enemies: [{ id: 0x1F7, name: "BladeBunny", variants: [{
+      lv: 7, hp: 40, stats: [11, 12, 13, 14, 15, 16, 17, 18], exp: 5, sp: 9, potch: 60,
+      drops: [[1, 128], [0, 0], [0, 0], [0, 0], [0, 0]],
+      rec: [ENEMY_REC_A, ENEMY_REC_B], aux: [ENEMY_AUX_A, ENEMY_AUX_B],
+    }] }],
+  }],
+};
+
 // items of a category (id + exact name), in id order, from the shipped id list.
 export function catItems(cat, n = 99) {
   const txt = fs.readFileSync(path.join(REPO, "Editor", "Suikoden3_item_ids.txt"), "latin1");
@@ -59,7 +81,7 @@ export function catItems(cat, n = 99) {
 export const firstArmor = () => catItems("Armor", 1)[0];
 
 export function buildSynthIso() {
-  const bytes = new Uint8Array(ELF_END);
+  const bytes = new Uint8Array(ELF_END + SYNTH_EXTRA);
   const dv = new DataView(bytes.buffer);
   dv.setUint32(VERSION_OFF, VERSION_VAL, false);            // big-endian USA version word
   const enc = (s) => Uint8Array.from([...s].map((c) => c.charCodeAt(0)));
@@ -86,6 +108,14 @@ export function buildSynthIso() {
   SETS.counterOwnerSites.forEach((o) => w32(o, STOCK_OWNER_COUNTER));
   w32(SETS.healOwnerSite, STOCK_OWNER_HEAL); w32(SETS.squeakOwnerSite, STOCK_OWNER_SQUEAK);
   w32(SETS.halveMaskSite, STOCK_HALVE_MASK); w32(SETS.healDivRepair, STOCK_HEAL_DIV_SLOT);
+  // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
+  for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
+    const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
+    v.stats.forEach((sv, si) => w16(recO + 32 + si * 2, sv));
+    w16(recO + 48, v.hp); w16(recO + 50, v.hp); w16(recO + 64, v.lv);
+    w32(auxO + 4, v.exp); w16(auxO + 12, v.sp); w16(auxO + 14, 1000); w32(auxO + 16, v.potch);
+    v.drops.forEach((dp, di) => { w16(auxO + 32 + di * 4, dp[0]); w16(auxO + 34 + di * 4, dp[1]); });
+  }
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
   for (let i = 0; i < 16; i++) bytes[TABLES.list4[0] + i] = 20 + i;   // list4 rec0 ATK curve
