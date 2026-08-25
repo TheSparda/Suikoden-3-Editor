@@ -2392,9 +2392,9 @@
              <input type="number" class="en-num" min="0" max="65535" data-k="${key}" data-f="stat${si}"></label>`).join("");
         const drops = [];
         for (let di = 0; di < al.nDrops; di++) {
-          drops.push(`<span class="en-drop" style="white-space:nowrap">
-            <button type="button" class="picker en-item" data-k="${key}" data-f="drop${di}i">—</button>
-            <input type="number" class="en-num" style="width:70px" min="0" max="1000" title="weight / 1000" data-k="${key}" data-f="drop${di}w"></span>`);
+          drops.push(`<div class="en-drop" style="display:flex;gap:6px;align-items:center;max-width:520px;margin:4px 0">
+            <button type="button" class="picker en-item" style="flex:1;min-width:0" data-k="${key}" data-f="drop${di}i">—</button>
+            <input type="number" class="en-num" style="width:84px;flex:none" min="0" max="1000" title="weight / 1000" data-k="${key}" data-f="drop${di}w"></div>`);
         }
         html.push(`<div class="card" style="margin:0 0 10px">
           <div class="bag-h">${esc2(e.name)}${tag} <span class="u">id ${hex(e.id, 3)} · ×${v.rec.length} cop${v.rec.length === 1 ? "y" : "ies"}</span></div>
@@ -2406,7 +2406,7 @@
             <label class="field enfld"><span>Potch</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="potch"></label>
           </div>
           <div class="grid" style="margin-top:6px">${stats}</div>
-          <div style="margin-top:6px"><span class="muted">Drops (item · weight/1000):</span><br>${drops.join(" ")}</div>
+          <div style="margin-top:6px"><span class="muted">Drops (item · weight/1000):</span>${drops.join("")}</div>
         </div>`);
       }
     }
