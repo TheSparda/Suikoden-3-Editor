@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS } from "./synth-iso.mjs";
+import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -441,6 +441,66 @@ head("Balance (Hard Mode) — idempotent + reset");
   // reset to 1.00x -> no changes staged
   await page.click('#isoTabs [data-v="balance"]'); await page.click('[data-preset="reset"]'); await page.click("#hm-apply"); await page.waitForTimeout(120);
   check("reset preset stages nothing", await page.locator("#isoDirty").isHidden());
+  await page.context().close();
+}
+
+head("Global encounter rate — scale all three movement paths");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="balance"]');
+  await page.waitForSelector("#encPct", { timeout: 3000 });
+  check("stock words decode to 100%", (await page.inputValue("#encPct")) === "100");
+  check("100% reads as the stock rate", /stock rate/.test(await page.textContent("#encOut")));
+  // 50%: the ride path gains its own multiplier and branches into the shared MULT/100 block
+  await page.fill("#encPct", "50"); await page.dispatchEvent("#encPct", "change");
+  check("50% is described as fewer battles", /fewer battles/.test(await page.textContent("#encOut")));
+  const r = await save(page);
+  check("50%: ride mult = addiu $v0,zero,50", r.u32(ENC_SITES[0]) === 0x24020032);
+  check("50%: ride branch joins the scale block", r.u32(ENC_SITES[1]) === 0x10000008);
+  check("50%: run mult = addiu $v0,zero,75", r.u32(ENC_SITES[2]) === 0x2402004B);
+  check("50%: walk mult = addiu $v0,zero,60", r.u32(ENC_SITES[3]) === 0x2402003C);
+  await page.context().close();
+}
+
+head("Global encounter rate — 0% disables, 200% doubles");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="balance"]');
+  await page.waitForSelector("#encPct", { timeout: 3000 });
+  await page.fill("#encPct", "0"); await page.dispatchEvent("#encPct", "change");
+  check("0% is described as off", /off/.test(await page.textContent("#encOut")));
+  let r = await save(page);
+  // every multiplier zero -> `rate <= 0` bails out of the roll before it can trigger
+  check("0%: all three multipliers are zero",
+    r.u32(ENC_SITES[0]) === 0x24020000 && r.u32(ENC_SITES[2]) === 0x24020000 && r.u32(ENC_SITES[3]) === 0x24020000);
+  await page.context().close();
+}
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="balance"]');
+  await page.waitForSelector("#encPct", { timeout: 3000 });
+  await page.fill("#encPct", "200"); await page.dispatchEvent("#encPct", "change");
+  check("200% is described as more battles", /more battles/.test(await page.textContent("#encOut")));
+  const r = await save(page);
+  check("200%: ride 200, run 300, walk 240",
+    r.u32(ENC_SITES[0]) === 0x240200C8 && r.u32(ENC_SITES[2]) === 0x2402012C && r.u32(ENC_SITES[3]) === 0x240200F0);
+  await page.context().close();
+}
+
+head("Global encounter rate — 100% is a byte-exact restore, input clamps");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="balance"]');
+  await page.waitForSelector("#encPct", { timeout: 3000 });
+  await page.fill("#encPct", "25"); await page.dispatchEvent("#encPct", "change");
+  check("25% stages a change", await page.locator("#isoDirty").isVisible());
+  // going back to 100% must rewrite the stock words exactly, leaving nothing staged
+  await page.fill("#encPct", "100"); await page.dispatchEvent("#encPct", "change");
+  check("back at 100% nothing is staged", await page.locator("#isoDirty").isHidden());
+  // the Restore button does the same from an arbitrary value
+  await page.fill("#encPct", "300"); await page.dispatchEvent("#encPct", "change");
+  await page.click("#encReset");
+  check("Restore 100% clears the staged words", await page.locator("#isoDirty").isHidden());
+  check("Restore 100% resets the field", (await page.inputValue("#encPct")) === "100");
+  // out-of-range input clamps instead of encoding a bogus instruction immediate
+  await page.fill("#encPct", "99999"); await page.dispatchEvent("#encPct", "change");
+  check("out-of-range rate clamps to the max", (await page.inputValue("#encPct")) === "1000");
   await page.context().close();
 }
 

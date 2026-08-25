@@ -77,6 +77,36 @@
   };
   // MIPS re-encoders for the three editable constants (little-endian words).
   const ADDU_S6_V0_S6 = (2 << 21) | (22 << 16) | (22 << 11) | 0x21;
+  // ---- global random-encounter rate (boot ELF) --------------------------------
+  // Every field encounter is one roll at ELF va 0x17023A8:
+  //   rate = area_rate * MULT / 100 ; ... ; if (rand(100) < rate) -> battle
+  // Three movement modes reach that multiply. Walk and run each load their own MULT
+  // immediate; the third ("ride") skips the block with `move $s5,$s1` = an implicit
+  // x1.00. To scale all three from one percentage we give ride its own multiplier and
+  // branch it into the shared MULT/100 block — behaviour-preserving, since at 100% it
+  // computes s1*100/100 == s1. 100% restores the stock words byte-for-byte.
+  const ENC = {
+    sites: [0x149C3C, 0x149C40, 0x149C5C, 0x149C60],  // ride mult, ride branch, run mult, walk mult
+    stock: [0x0220A82D, 0x10000012, 0x24020096, 0x24020078],
+    brJoin: 0x10000008,          // b 0x1702464 — ride path joins the scale block
+    addiuV0: 0x24020000,         // addiu $v0,$zero,imm
+    max: 1000,
+  };
+  const encWords = (pct) => {
+    const p = Math.round(pct);
+    if (!(p >= 0 && p <= ENC.max)) return null;
+    if (p === 100) return ENC.stock.slice();
+    const sc = (b) => Math.floor((b * p + 50) / 100);
+    return [(ENC.addiuV0 | sc(100)) >>> 0, ENC.brJoin,
+            (ENC.addiuV0 | sc(150)) >>> 0, (ENC.addiuV0 | sc(120)) >>> 0];
+  };
+  const decodeEnc = (w) => {
+    if (ENC.stock.every((x, i) => x === w[i])) return 100;
+    if (w[1] !== ENC.brJoin || (w[0] & 0xFFFF0000) >>> 0 !== ENC.addiuV0) return null;
+    const p = w[0] & 0xFFFF, enc = encWords(p);
+    return enc && enc.every((x, i) => x === w[i]) ? p : null;
+  };
+
   const mipsSll = (rd, rt, sa) => (rt << 16) | (rd << 11) | (sa << 6);
   function potchWords(m) {      // -> [sll word, addu word] or null if unsupported
     if (m === 1) return [0, 0];
@@ -2090,7 +2120,18 @@
       `<label class="field"><span>${s} growth ×</span>
         <input type="number" class="hm-g" data-stat="${s}" min="0" max="4" step="0.05" value="1"></label>`).join("");
     host.innerHTML = `
-      <div class="warnbox" style="margin-bottom:10px">This is a party <b>nerf</b> tool. It lowers how fast your characters grow (and optionally your spell/unite power) to make the game harder. Enemies can't be buffed directly in this ROM. Values scale from the ISO's originals, so presets don't stack.</div>
+      <div class="bag-h">Random encounter rate <span class="u">global</span></div>
+      <div class="muted" style="margin:0 0 8px">How often random battles trigger, as a percentage of the game's stock rate.
+        <b>100</b> = unchanged &middot; <b>50</b> = half as often &middot; <b>200</b> = twice as often &middot; <b>0</b> = no random encounters.
+        Every area scales by the same factor, so a quiet field stays quieter than a dungeon.</div>
+      <div class="row" style="align-items:center;margin-bottom:6px">
+        <input type="range" id="encRange" min="0" max="300" step="5" value="100" style="width:240px">
+        <label class="field" style="max-width:110px"><span>Rate %</span><input type="number" id="encPct" min="0" max="${ENC.max}" step="1" value="100"></label>
+        <button class="chip" id="encReset">Restore 100%</button>
+        <span class="muted" id="encOut"></span>
+      </div>
+      <div class="muted" id="encWarn" style="margin:0 0 14px"></div>
+      <div class="warnbox" style="margin-bottom:10px">The rest of this tab is a party <b>nerf</b> tool. It lowers how fast your characters grow (and optionally your spell/unite power) to make the game harder. Enemies can't be buffed directly in this ROM. Values scale from the ISO's originals, so presets don't stack.</div>
       <div class="bag-h">Presets</div>
       <div class="subtabs" style="margin-bottom:12px">${presetBtns}<button class="chip" data-preset="reset">Reset to 1.00×</button></div>
       <div class="bag-h">Growth-rate multipliers <span class="u">1.00 = unchanged</span></div>
@@ -2103,6 +2144,41 @@
         <button class="primary" id="hm-apply">Stage these multipliers</button>
         <span class="muted" id="hm-out"></span>
       </div>`;
+    // ---- encounter rate: 4 whole-instruction words, staged like any other field ----
+    (function wireEncounter() {
+      const pctEl = q("#encPct", host), rngEl = q("#encRange", host), outEl = q("#encOut", host);
+      if (!pctEl) return;
+      const cur = decodeEnc(ENC.sites.map((o) => readW(o, 4)));
+      const orig = decodeEnc(ENC.sites.map((o) => origW(o, 4)));
+      const dirty = () => ENC.sites.some((o) => isDirty(o, 4));
+      const note = (v) => v === 100 ? "stock rate" : v === 0 ? "random encounters off"
+        : v < 100 ? `${(100 / v).toFixed(v >= 10 ? 1 : 0)}\u00d7 fewer battles`
+        : `${(v / 100).toFixed(2)}\u00d7 more battles`;
+      const warnEl = q("#encWarn", host);
+      if (cur === null) {
+        warnEl.innerHTML = `<span style="color:var(--warn)">These instructions aren't stock and weren't written by this editor
+          (${ENC.sites.map((o) => hex(readW(o, 4), 8)).join(" ")}) — applying a rate overwrites them.</span>`;
+      }
+      const shown = cur === null ? 100 : cur;
+      const sync = (v) => {
+        pctEl.value = v; rngEl.value = Math.min(+rngEl.max, v);
+        outEl.textContent = note(v) + (dirty() ? ` \u00b7 staged (was ${orig === null ? "?" : orig + "%"})` : "");
+      };
+      const apply = (v) => {
+        v = Math.max(0, Math.min(ENC.max, Math.round(+v || 0)));
+        const w = encWords(v); if (!w) return;
+        ENC.sites.forEach((o, i) => {
+          writeW(o, 4, w[i]);
+          reg(o, 4, "num", "Encounters", ["ride multiplier", "ride branch", "running multiplier", "walking multiplier"][i]);
+        });
+        sync(v); updateDirtyBadge();
+      };
+      sync(shown);
+      rngEl.oninput = () => { pctEl.value = rngEl.value; outEl.textContent = note(+rngEl.value); };
+      rngEl.onchange = () => apply(rngEl.value);
+      pctEl.onchange = () => apply(pctEl.value);
+      q("#encReset", host).onclick = () => { ENC.sites.forEach((o) => revertRange(o, 4)); sync(orig === null ? 100 : orig); updateDirtyBadge(); };
+    })();
     const gInputs = qa(".hm-g", host);
     const setMults = (g, sp, up) => {
       gInputs.forEach((i) => { i.value = g[i.dataset.stat] != null ? g[i.dataset.stat] : 1; });
