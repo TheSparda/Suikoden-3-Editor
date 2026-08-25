@@ -119,7 +119,7 @@ def archive_of(pos):
             return n
     return None
 
-def parse_cluster(f, hitlist, monster_ids):
+def parse_cluster(f, hitlist, monster_ids, exclude_ks=()):
     """Recover K, then decode + triple-validate every node near this record cluster."""
     recbases = sorted({h - R_HP for h in hitlist})
     lo, hi = recbases[0] - 0x8000, recbases[-1] + 0x8000
@@ -141,21 +141,21 @@ def parse_cluster(f, hitlist, monster_ids):
             continue
         cand.append((o, nid, cnt, rp, ap))
     if not cand:
-        return []
+        return [], None, lo, hi
     # K by exact-cover voting: recsPtr + K must equal a fingerprinted record base
     votes = collections.Counter()
     rset = set(recbases)
     for o, nid, cnt, rp, ap in cand:
         for R in recbases:
             votes[R - rp] += 1
-    Ks = [k for k, c in votes.most_common(12)]
+    Ks = [k for k, c in votes.most_common(24) if k not in exclude_ks]
     bestK, bestcov = None, 0
     for K in Ks:
         cov = sum(1 for o, nid, cnt, rp, ap in cand if rp + K in rset)
         if cov > bestcov:
             bestK, bestcov = K, cov
     if bestK is None or bestcov < 1:
-        return []
+        return [], None, lo, hi
     K = bestK
     nodes = []
     for o, nid, cnt, rp, ap in cand:
@@ -190,7 +190,80 @@ def parse_cluster(f, hitlist, monster_ids):
         if not ok:
             continue
         nodes.append({"id": nid, "cnt": cnt, "node": lo + o, "variants": variants})
-    return nodes
+    return nodes, K, lo, hi
+
+
+# ---- zones & formations ------------------------------------------------------
+# Each map zone is a battle-area object embedded in the pack:
+#   { u32 slotListVa, u32 partyListVa, u32 extraVa, u32 0, char name[] }   ("mori_101")
+#   slotList  = {u32 count, u32 arrayVa} -> 0x14-stride spawn slots:
+#               {u32 monsterId, u32 variant, f32 a, f32 b, u32 nodeVa}
+#   partyList = {u32 count, u32 arrayVa} -> 0x1C-stride formations:
+#               {u16 type, u16 probWeight, u32 ?, u64 -1, u16 formationId,
+#                u16 memberCount, u32 membersVa -> u8 slotIndex[count]}
+# Pointers are pack-local vaddrs; validated with the SAME K as the copy's monster
+# nodes, so a zone only ever attaches to the pack copy it belongs to.
+import re as _re
+ZNAME = _re.compile(rb"[a-z][a-z0-9_]{3,11}\x00")
+
+def parse_zones(f, lo, hi, K, monster_ids):
+    f.seek(lo); img = f.read(hi - lo)
+    L = len(img)
+    u32 = lambda o: struct.unpack_from("<I", img, o)[0]
+    u16 = lambda o: struct.unpack_from("<H", img, o)[0]
+    zones = []
+    for o in range(0, L - 0x20, 4):
+        if u32(o + 0x0C) != 0:
+            continue
+        m = ZNAME.match(img, o + 0x10)
+        if not m:
+            continue
+        slv, pav = u32(o), u32(o + 4)
+        slf, paf = slv + K - lo, pav + K - lo
+        if not (0 <= slf <= L - 8 and 0 <= paf <= L - 8):
+            continue
+        scnt, sarr = u32(slf), u32(slf + 4)
+        pcnt, parr = u32(paf), u32(paf + 4)
+        if not (1 <= scnt <= 32 and 1 <= pcnt <= 64):
+            continue
+        sao, pao = sarr + K - lo, parr + K - lo
+        if not (0 <= sao and sao + scnt * 0x14 <= L and 0 <= pao and pao + pcnt * 0x1C <= L):
+            continue
+        slots = []
+        ok = True
+        known = 0
+        for i in range(scnt):
+            b = sao + i * 0x14
+            mid, var = u32(b), u32(b + 4)
+            # monsters, or character ids (bosses fight as characters); require at
+            # least one known monster so text/junk can't masquerade as a zone
+            if not ((mid in monster_ids) or (1 <= mid <= 0xD7)) or var > 7:
+                ok = False; break
+            if mid in monster_ids:
+                known += 1
+            slots.append({"id": mid, "variant": var, "off": lo + b})
+        if not ok or known == 0:
+            continue
+        parties = []
+        for i in range(pcnt):
+            b = pao + i * 0x1C
+            typ, prob = u16(b), u16(b + 2)
+            fid, mcnt = u16(b + 0x10), u16(b + 0x12)
+            mv = u32(b + 0x14)
+            mo = mv + K - lo
+            if not (mcnt <= 6 and 0 <= mo and mo + max(mcnt, 1) <= L):
+                ok = False; break
+            members = list(img[mo:mo + mcnt])
+            if any(x >= scnt for x in members):
+                ok = False; break
+            parties.append({"type": typ, "prob": prob, "formId": fid,
+                            "members": members, "off": lo + b, "memOff": lo + mo})
+        if not ok or not parties:
+            continue
+        zones.append({"name": m.group()[:-1].decode(), "off": lo + o,
+                      "slots": slots, "parties": parties})
+    return zones
+
 
 def main():
     iso_path = sys.argv[1] if len(sys.argv) > 1 else None
@@ -204,14 +277,43 @@ def main():
     hits = fingerprint_scan(f, pairs)
     print(f"fingerprint hits: {len(hits)}")
     packs = []
+    zone_pool = {}
     for cl in clusters_of(hits):
         arch = archive_of(cl[0])
         if arch is None:
             continue   # ELF-resident cluster (different record type) or unknown region
-        nodes = parse_cluster(f, cl, monster_ids)
-        if nodes:
-            packs.append({"archive": arch, "nodes": nodes})
-    print(f"decoded packs: {len(packs)}  nodes: {sum(len(p['nodes']) for p in packs)}")
+        # A region can hold SEVERAL streaming copies whose fingerprints merged into
+        # one cluster (copies < 0x8000 apart, e.g. MORI). Each copy has its own K, so
+        # peel them off one at a time: decode with the best K, drop the record hits
+        # that copy explains, and re-vote until nothing decodes.
+        remaining = list(cl)
+        seen_ks = set()
+        for _pass in range(8):
+            nodes, K, lo, hi = parse_cluster(f, remaining, monster_ids, exclude_ks=seen_ks)
+            if not nodes:
+                break
+            seen_ks.add(K)
+            packs.append({"archive": arch, "nodes": nodes, "K": K, "lo": lo, "hi": hi, "zones": []})
+            for z in parse_zones(f, max(0, lo - 0x80000), hi + 0x80000, K, monster_ids):
+                z["K"] = K
+                zone_pool.setdefault(z["off"], z)
+            explained = set()
+            for n in nodes:
+                for v in n["variants"]:
+                    explained.add(v["off"] + R_HP)
+            remaining = [h for h in remaining if h not in explained]
+            if not remaining:
+                break   # dedupe by absolute position
+    # each zone attaches to exactly ONE cluster-pack: the nearest one decoded with
+    # the same K (same physical copy), so overlapping scan windows can't duplicate
+    # zones or fragment the byte-identical-copy merge below.
+    for z in zone_pool.values():
+        cands = [p for p in packs if p["K"] == z["K"] and p["lo"] - 0x80000 <= z["off"] <= p["hi"] + 0x80000]
+        if not cands:
+            continue
+        best = min(cands, key=lambda p: min(abs(z["off"] - p["lo"]), abs(z["off"] - p["hi"])))
+        best["zones"].append(z)
+    print(f"decoded packs: {len(packs)}  nodes: {sum(len(p['nodes']) for p in packs)}  zones: {sum(len(p['zones']) for p in packs)}")
 
     # merge byte-identical pack copies (streaming duplicates within an archive)
     def pack_sig(f, p):
@@ -243,16 +345,65 @@ def main():
                                  "drops": v["drops"], "rec": rec_offs, "aux": aux_offs})
             enemies.append({"id": n["id"], "name": id2name.get(n["id"], f"#{n['id']:X}"),
                             "variants": variants})
+        # Zones: copies are byte-identical, so a zone found in ANY copy exists in every
+        # copy at (off + copy delta). Normalize to copy 0, dedupe, then derive per-copy
+        # offsets and BYTE-VERIFY each derived span; a pack whose verification fails
+        # ships without zones rather than with wrong offsets.
+        # copy deltas come straight from each copy's file<->vaddr K: node OBJECTS can
+        # alias across copies (byte-identical regions validate under every copy's K),
+        # so node positions are NOT a reliable delta source — K differences are exact.
+        deltas = [cp["K"] - base["K"] for cp in copies]
+        norm = {}
+        for ci, cp in enumerate(copies):
+            for z in cp["zones"]:
+                norm.setdefault(z["off"] - deltas[ci], z)
+        def span(off0, length):
+            f.seek(off0); return f.read(length)
+        zones = []
+        zseen = set()
+        for zoff0 in sorted(norm):
+            z = norm[zoff0]
+            # rebase the zone's inner offsets to copy-0 coordinates
+            zdelta0 = zoff0 - z["off"]
+            # A zone is written through only to the copies whose bytes actually match:
+            # packs merged on identical MONSTER data can still differ in zone data
+            # (chapter variants of the same area), so per-zone copy matching is the
+            # correct-or-absent rule here.
+            ref_slots = span(z["slots"][0]["off"], 0x14 * len(z["slots"]))
+            ref_parties = span(z["parties"][0]["off"], 0x1C * len(z["parties"]))
+            okd = [d for d in deltas
+                   if span(z["slots"][0]["off"] + zdelta0 + d, len(ref_slots)) == ref_slots
+                   and span(z["parties"][0]["off"] + zdelta0 + d, len(ref_parties)) == ref_parties]
+            if not okd:
+                continue
+            slots = [{"id": s["id"], "variant": s["variant"],
+                      "off": [s["off"] + zdelta0 + d for d in okd]} for s in z["slots"]]
+            parties = [{"type": pa["type"], "prob": pa["prob"], "formId": pa["formId"],
+                        "members": pa["members"],
+                        "off": [pa["off"] + zdelta0 + d for d in okd],
+                        "memOff": [pa["memOff"] + zdelta0 + d for d in okd]} for pa in z["parties"]]
+            # several zone HEADERS can point at the same slot/party arrays (in-file
+            # duplicates); the data offsets are the identity, so dedupe on those.
+            zkey = (z["name"], slots[0]["off"][0], parties[0]["off"][0])
+            if zkey in zseen:
+                continue
+            zseen.add(zkey)
+            zones.append({"name": z["name"], "slots": slots, "parties": parties})
         label = ", ".join(sorted({e["name"] for e in enemies})[:4])
         out_packs.append({"archive": base["archive"], "copies": len(copies),
-                          "label": label, "enemies": enemies})
+                          "label": label, "enemies": enemies, "zones": zones})
     out_packs.sort(key=lambda p: (p["archive"], p["label"]))
     total_v = sum(len(e["variants"]) for p in out_packs for e in p["enemies"])
-    print(f"logical packs: {len(out_packs)}  variants: {total_v}")
+    total_z = sum(len(p["zones"]) for p in out_packs)
+    total_pa = sum(len(z["parties"]) for p in out_packs for z in p["zones"])
+    print(f"logical packs: {len(out_packs)}  variants: {total_v}  zones: {total_z}  formations: {total_pa}")
     out = {"format": "s3enemy", "version": 1, "game": "SLUS-20387",
            "recLayout": {"hp": R_HP, "maxhp": R_MAXHP, "lv": R_LV, "stats": R_STATS, "size": REC},
            "auxLayout": {"exp": A_EXP, "sp": A_SP, "mark": A_MARK, "potch": A_POTCH,
                          "drops": A_DROPS, "nDrops": N_DROPS, "size": AUX},
+           "zoneLayout": {"slotSize": 0x14, "slotId": 0, "slotVariant": 4,
+                          "partySize": 0x1C, "partyType": 0, "partyProb": 2,
+                          "partyFormId": 0x10, "partyCount": 0x12},
            "packs": out_packs}
     dst = os.path.join(HERE, "s3_enemy_packs.json")
     json.dump(out, open(dst, "w"), separators=(",", ":"))
