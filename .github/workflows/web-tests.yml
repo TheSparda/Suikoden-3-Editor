@@ -25,6 +25,8 @@ jobs:
         run: node web/tests/recruit-logic.mjs
       - name: Rename-core unit tests
         run: node web/tests/rename-core.mjs
+      - name: Guide-core unit tests (guide-overlay name join + coverage)
+        run: node web/tests/guide-core.mjs
       - name: Save round-trip (synthetic gamedata)
         run: node web/tests/save-roundtrip.mjs
       - name: VCDIFF (.xdelta) encoder tests

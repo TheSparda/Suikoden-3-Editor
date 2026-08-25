@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "vcdiff.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -50,9 +50,11 @@ console.log("App shell:");
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
 (/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
+(/src=["']guide-core\.js["']/.test(html) ? ok : bad)("index.html loads guide-core.js before app.js");
 (/data-mode="iso"/.test(html) && /data-mode="save"/.test(html) ? ok : bad)("both mode tabs present");
 { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
-  (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js"); }
+  (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
+  (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js"); }
 
 // 5) canonical recruit-team map: parses, teams valid, every name is in s3save.py ROSTER
 console.log("Recruit teams:");
@@ -80,6 +82,13 @@ console.log("QoL guards:");
   const app = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
   (/s3suffix"\)\s*===\s*"on"/.test(app) ? ok : bad)("save-editor '.edited' suffix defaults OFF (overwrite-friendly)");
   (/showSaveFilePicker/.test(app) ? ok : bad)("save-editor has a 'Save as…' destination picker");
+  // Guide overlays: the join itself is covered behaviorally by guide-core.mjs; these assert the
+  // save editor actually fetches the three files and renders a note for each kind of field.
+  (/s3_skill_caps\.json/.test(app) && /s3_growth_ref\.json/.test(app) && /s3_rune_slots\.json/.test(app)
+    ? ok : bad)("save-editor fetches the skill-cap / growth / rune-slot guides");
+  (/GuideCore\./.test(app) ? ok : bad)("save-editor uses the pure GuideCore join (not an inline copy)");
+  (/growthNoteSave\(c\.name, n\)/.test(app) && /runeSlotNoteSave\(c\.name, key\)/.test(app) && /capNote\(c\.name, sk\.id\)/.test(app)
+    ? ok : bad)("save-editor renders guide notes on stats, rune slots and skill slots");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/RenameCore\.streamReplacer/.test(iso) && /src=["']rename-core\.js["']/.test(html) ? ok : bad)("ISO editor wires the character-rename streaming replacer");
   (/function markFlagsField/.test(iso) ? ok : bad)("ISO editor has bit-aware Target/AOE highlight");
