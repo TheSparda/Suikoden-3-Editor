@@ -200,6 +200,105 @@ def find_gear_records(iso):
 
 
 # ---------------------------------------------------------------------------
+# Armor sets (verified 2026-08-24 vs the Suikosource Rare Armor guide + disassembly).
+# The set-composition table lives in the boot ELF: 5 records x 8 bytes, each record
+# = 4 x u16 item ids in equip-slot order (Head, Body, Shield, Accessory); 0 = slot
+# not part of the set. Single copy in the whole 4GB ISO. The set-detect routine
+# (ELF va 0x16CAD90) walks this table and returns the 1-based row number, so the
+# in-code set numbers are: 1=Mole 2=Prosperity 3=Destiny 4=Guardian 5=Pale Moon.
+SET_TABLE_FILE = 0x3DDAB8
+SET_COUNT      = 5
+SET_STRIDE     = 8
+SET_SLOTS      = ("Head", "Body", "Shield", "Accessory")
+
+# What the CODE actually does with each set (disassembled, call-site verified):
+# - Potch:   battle-result overlay multiplies potch x3 for EVERY party member whose
+#            set number has bit 1 set (`andi 2`) -> Prosperity (2) and Destiny (3).
+#            Two identical overlay copies of the sll/addu pair perform the x3.
+# - Counter: counter routine (ELF 0x17FD580): a character withOUT the Counter Attack
+#            skill who wears set 3 (Destiny) gets a 30% chance to counter anyway
+#            (`slti v0,v0,30` at two sites; damage = (PWR+partner PWR)/3).
+# - Heal:    on-hit routine: set 5 (Pale Moon) heals 25% of damage dealt
+#            (`addiu v0,s1,3; sra v0,v0,2` = signed /4).
+# - Halving: counter-damage path tests `set & 4` (matches Guardian 4 AND Pale Moon 5)
+#            and halves the amount — informational only, not exposed for editing.
+# - Squeak:  field code checks set 1 (Mole) for the squeaky-footsteps SFX.
+# Note the Suikosource guide attributes the counter bonus to Guardian and claims
+# Prosperity is x7 — the code says Destiny counters and both potch sets are x3/wearer.
+ARMOR_SETS = [
+    {"name": "Mole Set",
+     "bonus": "Squeaky footsteps when walking (not in battle)",
+     "guide": "Make squeaky noises when you walk (not in battle)."},
+    {"name": "Prosperity Set",
+     "bonus": "Potch won after battle ×3 per wearer (stacks)",
+     "guide": "Potch won after battle multiplied by 7."},
+    {"name": "Destiny Set",
+     "bonus": "Potch ×3 per wearer (stacks) + 30% counter chance if the wearer "
+              "lacks the Counter Attack skill",
+     "guide": "Potch won after battle multiplied by 3."},
+    {"name": "Guardian Set",
+     "bonus": "Counter-related damage involving the wearer is halved (set & 4 check)",
+     "guide": "Counter rate +50%."},
+    {"name": "Pale Moon Set",
+     "bonus": "Heal 25% of damage dealt after each standard attack "
+              "(also matches the Guardian halving check)",
+     "guide": "Heal 25% of damage dealt after each standard attack."},
+]
+
+# Instruction patch points for the editable set-bonus constants (raw ISO offsets;
+# every word below verified byte-exact against a pristine SLUS-20387 dump).
+# Potch multiplier: `sll $v0,$s6,1` + `addu $s6,$v0,$s6` (= x3) at two overlay copies.
+SET_POTCH_SITES = (0x3F3E699C, 0x3F3EF19C)     # each site: sll word, then addu word at +4
+# Destiny bonus-counter chance: `slti $v0,$v0,30` (rand(100) < imm) at two ELF sites.
+SET_COUNTER_SITES = (0x244F8C, 0x2452F8)
+# Pale Moon heal fraction: bias `addiu $v0,$s1,(2^k)-1` then `sra $v0,$v0,k` (k=2 = /4).
+SET_HEAL_BIAS_OFF  = 0x245DA8
+SET_HEAL_SHIFT_OFF = 0x245DB4
+
+def set_potch_words(mult):
+    """Encode the 2-instruction multiply for a supported potch multiplier.
+    x2^k is a bare sll; x(2^k)+1 is sll+addu (the stock x3). Returns (sll, addu)."""
+    NOP = 0
+    def sll(rd, rt, sa): return (rt << 16) | (rd << 11) | (sa << 6)
+    ADDU_S6 = (2 << 21) | (22 << 16) | (22 << 11) | 0x21     # addu $s6,$v0,$s6
+    m = int(mult)
+    if m == 1:
+        return (NOP, NOP)
+    for k in range(1, 5):
+        if m == (1 << k):          # 2,4,8,16 -> sll $s6,$s6,k
+            return (sll(22, 22, k), NOP)
+        if m == (1 << k) + 1:      # 3,5,9,17 -> sll $v0,$s6,k ; addu $s6,$v0,$s6
+            return (sll(2, 22, k), ADDU_S6)
+    raise ValueError(f"unsupported potch multiplier {mult}")
+
+SET_POTCH_CHOICES = (1, 2, 3, 4, 5, 8, 9, 16, 17)
+
+def decode_potch_words(w1, w2):
+    """Reverse of set_potch_words; returns the multiplier or None if unrecognized."""
+    for m in SET_POTCH_CHOICES:
+        if set_potch_words(m) == (w1, w2):
+            return m
+    return None
+
+def set_heal_words(shift):
+    """Encode the Pale Moon heal-fraction pair for divisor 2^shift (shift 0..4)."""
+    k = int(shift)
+    if not 0 <= k <= 4:
+        raise ValueError(f"bad heal shift {shift}")
+    bias = (1 << k) - 1
+    addiu = (9 << 26) | (17 << 21) | (2 << 16) | bias        # addiu $v0,$s1,bias
+    sra   = (2 << 16) | (2 << 11) | (k << 6) | 3             # sra  $v0,$v0,k
+    return (addiu, sra)
+
+def set_counter_word(pct):
+    """Encode `slti $v0,$v0,pct` for the Destiny bonus-counter chance (0..100)."""
+    p = int(pct)
+    if not 0 <= p <= 100:
+        raise ValueError(f"bad counter chance {pct}")
+    return (0x0A << 26) | (2 << 21) | (2 << 16) | p
+
+
+# ---------------------------------------------------------------------------
 # Consumable / food table (verified v12). Distinct array from gear: name ptr is at
 # +0x44 (gear uses +0x40), and — unlike gear — name/desc/stats are SAME-record aligned
 # (60/60 desc "Heals NNN HP" == heal field; no off-by-one). Medicines, Antitoxin, stat
