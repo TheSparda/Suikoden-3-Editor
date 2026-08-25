@@ -140,23 +140,31 @@
   //   +8 sll / +12 addu      (the multiplier)
   // Read once on ISO load, then ride along every save/export path. No undo integration:
   // the Sets view gives each aux field its own restore control instead.
-  const AUX_WINDOWS = [0x3F3E6994, 0x3F3EF194];
+  const AUX_WINDOWS = [0x3F3E6994, 0x3F3EF194];   // the potch overlay pair (16 bytes each)
   const AUX_LEN = 16;
-  const AUX_MASK = 0, AUX_MULT = 8;        // offsets within a window
-  let AUX = [];       // [{off, buf, orig}] — empty until an ISO loads (or if unreadable)
-  const inAux = (off, n) => AUX.some((w) => off >= w.off && off + n <= w.off + AUX_LEN);
-  function auxWin(off, n) { return AUX.find((w) => off >= w.off && off + n <= w.off + AUX_LEN) || null; }
+  const AUX_MASK = 0, AUX_MULT = 8;        // offsets within a potch window
+  // AUX now holds two kinds of windows, told apart by `tag`:
+  //   "potch" — the two fixed 16-byte overlay windows (Sets view)
+  //   "enemy" — coalesced spans covering enemy stat records + reward blocks,
+  //             built from Editor/s3_enemy_packs.json at load (Enemies view)
+  let AUX = [];       // [{off, len, tag, buf, orig}] — empty until an ISO loads
+  const auxHasPotch = () => AUX.some((w) => w.tag === "potch");
+  const inAux = (off, n) => AUX.some((w) => off >= w.off && off + n <= w.off + w.len);
+  function auxWin(off, n) { return AUX.find((w) => off >= w.off && off + n <= w.off + w.len) || null; }
   function auxR32(off) { const w = auxWin(off, 4); return w ? new DataView(w.buf.buffer).getUint32(off - w.off, true) : null; }
   function auxO32(off) { const w = auxWin(off, 4); return w ? new DataView(w.orig.buffer).getUint32(off - w.off, true) : null; }
   function auxW32(off, v) { const w = auxWin(off, 4); if (w) new DataView(w.buf.buffer).setUint32(off - w.off, v >>> 0, true); }
+  function auxR16(off) { const w = auxWin(off, 2); return w ? new DataView(w.buf.buffer).getUint16(off - w.off, true) : null; }
+  function auxO16(off) { const w = auxWin(off, 2); return w ? new DataView(w.orig.buffer).getUint16(off - w.off, true) : null; }
+  function auxW16(off, v) { const w = auxWin(off, 2); if (w) new DataView(w.buf.buffer).setUint16(off - w.off, v & 0xFFFF, true); }
   function auxWriteBytes(off, bytes) { const w = auxWin(off, bytes.length); if (w) w.buf.set(bytes, off - w.off); }
   function auxRuns() {          // dirty runs across all windows, ABSOLUTE offsets
     const out = [];
     for (const w of AUX) {
       let i = 0;
-      while (i < AUX_LEN) {
+      while (i < w.len) {
         if (w.buf[i] !== w.orig[i]) {
-          const s = i; while (i < AUX_LEN && w.buf[i] !== w.orig[i]) i++;
+          const s = i; while (i < w.len && w.buf[i] !== w.orig[i]) i++;
           out.push({ off: w.off + s, old: w.orig.slice(s, i), bytes: w.buf.slice(s, i) });
         } else i++;
       }
@@ -165,14 +173,28 @@
   }
   const auxDirty = () => auxRuns().length > 0;
   const auxRevertAll = () => AUX.forEach((w) => w.buf.set(w.orig));
-  // Per-field variants: the same relative span across every window (each window is an
-  // identical copy of the same code), so one control's ↺ can't revert another's edit.
+  // Potch-only per-field variants: the same relative span across the two potch windows
+  // (identical code copies), so one control's ↺ can't revert another's edit.
   const auxDirtyAt = (rel, len) => AUX.some((w) => {
+    if (w.tag !== "potch") return false;
     for (let i = rel; i < rel + len; i++) if (w.buf[i] !== w.orig[i]) return true;
     return false;
   });
-  const auxRevertAt = (rel, len) => AUX.forEach((w) => w.buf.set(w.orig.subarray(rel, rel + len), rel));
+  const auxRevertAt = (rel, len) => AUX.forEach((w) => { if (w.tag === "potch") w.buf.set(w.orig.subarray(rel, rel + len), rel); });
   const auxMarkSaved = () => AUX.forEach((w) => { w.orig = w.buf.slice(); });
+  // Multi-offset field helpers for enemy edits: one logical field lives at the same
+  // relative spot in every pack copy; write all, dirty/revert consider all.
+  function eRead(offs, w) { return w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
+  function eOrig(offs, w) { return w === 2 ? auxO16(offs[0]) : auxO32(offs[0]); }
+  function eWrite(offs, w, v) { for (const o of offs) (w === 2 ? auxW16(o, v) : auxW32(o, v)); }
+  function eDirty(offs, w) {
+    return offs.some((o) => { const win = auxWin(o, w); if (!win) return false;
+      for (let i = 0; i < w; i++) if (win.buf[o - win.off + i] !== win.orig[o - win.off + i]) return true;
+      return false; });
+  }
+  function eRevert(offs, w) {
+    for (const o of offs) { const win = auxWin(o, w); if (win) win.buf.set(win.orig.subarray(o - win.off, o - win.off + w), o - win.off); }
+  }
 
   // Known table starts, sorted — used to stop a record write from spilling into the next
   // table (list1's last record physically abuts list3; see nextBoundary/drawRecords).
@@ -295,6 +317,8 @@
   // ---- state -----------------------------------------------------------------
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
+  let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
+  const EREG = {};    // enemy-field review registry: key -> {group,label,offs,w,fmt}
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...} }
@@ -422,10 +446,10 @@
     const names = await (await grab("../Editor/s3_names.json")).json();
     // Optional guide reference overlays — never fatal: a missing file just hides its notes.
     const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch (e) { return {}; } };
-    const [runeSlots, skillRef, skillCaps, growthRef, bestiary] = await Promise.all([
+    const [runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks] = await Promise.all([
       grabOpt("../Editor/s3_rune_slots.json"), grabOpt("../Editor/s3_skill_ref.json"),
       grabOpt("../Editor/s3_skill_caps.json"), grabOpt("../Editor/s3_growth_ref.json"),
-      grabOpt("../Editor/s3_bestiary.json"),
+      grabOpt("../Editor/s3_bestiary.json"), grabOpt("../Editor/s3_enemy_packs.json"),
     ]);
     const items = {}, cats = {};
     let cur = "";
@@ -439,7 +463,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks };
     return REF;
   }
 
@@ -600,13 +624,53 @@
     try {
       for (const off of AUX_WINDOWS) {
         const a = new Uint8Array(await file.slice(off, off + AUX_LEN).arrayBuffer());
-        if (a.length === AUX_LEN) aux.push({ off, buf: a, orig: a.slice() });
+        if (a.length === AUX_LEN) aux.push({ off, len: AUX_LEN, tag: "potch", buf: a, orig: a.slice() });
       }
       if (aux.length !== AUX_WINDOWS.length) aux = [];
     } catch (e) { aux = []; }
+    // enemy windows: coalesced spans over every stat record + reward block listed in
+    // s3_enemy_packs.json (all pack copies). Optional the same way — a pack whose
+    // offsets can't be read (short disc / test fixture) is skipped, and the Enemies
+    // view reports it as unavailable instead of showing wrong data.
+    let epacks = [], eskipped = 0;
+    const epsrc = (typeof window !== "undefined" && window.S3_TEST_ENEMY_PACKS) || (REF && REF.enemyPacks);
+    if (epsrc && Array.isArray(epsrc.packs)) {
+      setStatus("Reading enemy data…", "");
+      const rl = epsrc.recLayout, al = epsrc.auxLayout;
+      const spans = [];
+      for (const p of epsrc.packs) {
+        const offs = [];
+        for (const e of p.enemies) for (const v of e.variants) {
+          for (const o of v.rec) offs.push([o, rl.size]);
+          for (const o of v.aux) offs.push([o, al.size]);
+        }
+        if (offs.some(([o, n]) => o + n > file.size)) { eskipped++; continue; }
+        epacks.push(p); spans.push(...offs);
+      }
+      spans.sort((a, b) => a[0] - b[0]);
+      const ranges = [];
+      for (const [o, n] of spans) {
+        if (ranges.length && o - ranges[ranges.length - 1][1] <= 0x2000) {
+          ranges[ranges.length - 1][1] = Math.max(ranges[ranges.length - 1][1], o + n);
+        } else ranges.push([o, o + n]);
+      }
+      try {
+        for (const [s, e] of ranges) {
+          const a = new Uint8Array(await file.slice(s, e).arrayBuffer());
+          if (a.length !== e - s) throw new Error("short read");
+          aux.push({ off: s, len: e - s, tag: "enemy", buf: a, orig: a.slice() });
+        }
+      } catch (err) {
+        // drop every enemy window on any failure — a half-loaded set would lie
+        aux = aux.filter((w) => w.tag !== "enemy");
+        epacks = []; eskipped = epsrc.packs.length;
+      }
+    }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     AUX = aux;
+    EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped;
+    Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
@@ -656,7 +720,7 @@
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}` });
     }
     // Aux windows (potch overlay pair): decode the multiplier for a readable review row.
-    if (auxDirty()) {
+    if (auxHasPotch() && auxDirty()) {
       const w0 = AUX_WINDOWS[0];
       const oldM = decodePotch(auxO32(w0 + AUX_MULT), auxO32(w0 + AUX_MULT + 4));
       const newM = decodePotch(auxR32(w0 + AUX_MULT), auxR32(w0 + AUX_MULT + 4));
@@ -665,6 +729,13 @@
       const oldMask = auxO32(w0 + AUX_MASK) & 0xFFFF, newMask = auxR32(w0 + AUX_MASK) & 0xFFFF;
       if (oldMask !== newMask)
         rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
+    }
+    // Enemy fields (registered on edit; dirty state re-checked live so reverts drop out)
+    for (const k in EREG) {
+      const m = EREG[k];
+      if (!eDirty(m.offs, m.w)) continue;
+      const ov = m.fmt(eOrig(m.offs, m.w)), nv = m.fmt(eRead(m.offs, m.w));
+      if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}${m.offs.length > 1 ? ` (×${m.offs.length} copies)` : ""}` });
     }
     // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
@@ -1085,7 +1156,7 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; renderLoader(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoXdeltaBtn").onclick = exportXdelta;
@@ -1133,7 +1204,7 @@
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable.",
-      enemies: "Bestiary reference (read-only): Lv, HP, item/food drops, potch and SP per encounter (Suikosource). Enemy stats aren't an editable flat table in this ROM.",
+      enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
     };
     q("#isoHint").textContent = hints[VIEW] || "";
@@ -1860,9 +1931,9 @@
     const curHeal = (readW(SETS.healShift, 4) >>> 6) & 0x1F,
       origHeal = (origW(SETS.healShift, 4) >>> 6) & 0x1F;
     const w0 = AUX_WINDOWS[0];
-    const curPotch = AUX.length ? decodePotch(auxR32(w0 + AUX_MULT), auxR32(w0 + AUX_MULT + 4)) : null;
-    const origPotch = AUX.length ? decodePotch(auxO32(w0 + AUX_MULT), auxO32(w0 + AUX_MULT + 4)) : null;
-    const potchCtl = AUX.length
+    const curPotch = auxHasPotch() ? decodePotch(auxR32(w0 + AUX_MULT), auxR32(w0 + AUX_MULT + 4)) : null;
+    const origPotch = auxHasPotch() ? decodePotch(auxO32(w0 + AUX_MULT), auxO32(w0 + AUX_MULT + 4)) : null;
+    const potchCtl = auxHasPotch()
       ? `<label class="field"><span>Potch multiplier per wearer <span class="muted">(stacks)</span></span>
            <select id="setPotch">${SETS.potchChoices.map((c) =>
              `<option value="${c}"${c === curPotch ? " selected" : ""}>×${c}${c === 1 ? " (off)" : ""}</option>`).join("")}
@@ -1882,7 +1953,7 @@
       origSqueakOwner = origW(SETS.squeakOwnerSite, 4) & 0xFFFF;
     const curHalveMask = readW(SETS.halveMaskSite, 4) & 0xFFFF,
       origHalveMask = origW(SETS.halveMaskSite, 4) & 0xFFFF;
-    const potchMaskCtl = AUX.length
+    const potchMaskCtl = auxHasPotch()
       ? `<label class="field"><span>Potch bonus</span><select id="ownPotch">${maskOpts(auxR32(w0 + AUX_MASK) & 0xFFFF, auxO32(w0 + AUX_MASK) & 0xFFFF)}</select></label>`
       : "";
     const setCards = [];
@@ -2235,40 +2306,169 @@
   }
 
   // ---- Enemies (read-only names) ---------------------------------------------
+  // Shared custom dirty-marker for multi-site fields (enemy fields; same shape as the
+  // Sets view's markPair): highlight + ↺ that reverts every copy at once.
+  function markMulti(el, dirty, revert, origLabel) {
+    el.classList.toggle("dirty", dirty);
+    let btn = el._revBtn;
+    if (!btn) {
+      if (!dirty) { scheduleBadge(); return; }
+      btn = document.createElement("button"); btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+      btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); revert(); drawView(); };
+      el.insertAdjacentElement("afterend", btn); el._revBtn = btn;
+    }
+    btn.classList.toggle("show", dirty);
+    if (dirty) btn.title = `Restore original (${origLabel})`;
+    scheduleBadge();
+  }
+
+  // ---- Enemies (per-area stat/reward editor + bestiary reference) -------------
+  const STAT_NAMES8 = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"];
   function drawEnemies(host) {
-    // Bestiary reference (Lv / HP / drops / potch / SP) from the Suikosource guide. Enemy stats
-    // aren't an editable flat table in this ROM, so this is read-only. An enemy can appear at
-    // several levels/areas — each distinct encounter is one row. Falls back to the ROM name
-    // table if the bestiary file isn't available.
-    const best = REF.bestiary || {};
-    const names = Object.keys(best).sort();
-    if (names.length) {
+    const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
+    const parts = [];
+    if (EPACKS.length && rl && al) {
+      parts.push(`<div class="muted" style="margin:0 0 8px">Per-area enemy packs decoded straight from the disc
+        (${EPACKS.length} pack${EPACKS.length === 1 ? "" : "s"}${EPACKS_SKIPPED ? `, ${EPACKS_SKIPPED} unavailable on this disc` : ""}).
+        Each pack exists as several streaming copies — edits write <b>every copy</b> at once. Stat order is the
+        character convention (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK); drop weights are out of 1000 (128 ≈ 12.8%).
+        Filter matches enemy or archive names.</div>`);
       const q2 = SEARCH;
-      const rows = [];
-      for (const nm of names) {
-        for (const e of best[nm]) {
-          const drops = (e.drops || []).join(", ");
-          const hay = (nm + " " + drops + " " + (e.food || "")).toLowerCase();
-          if (q2 && !hay.includes(q2)) continue;
-          rows.push(`<tr><td>${esc2(nm)}</td><td class="sl">${e.lv}</td><td class="sl">${e.hp.toLocaleString()}</td>
-            <td>${esc2(drops || "—")}</td><td class="muted">${esc2(e.food || "—")}</td>
-            <td class="sl">${esc2(String(e.potch || "—"))}</td><td class="sl">${esc2(String(e.sp || "—"))}</td></tr>`);
-        }
+      for (let pi = 0; pi < EPACKS.length; pi++) {
+        const p = EPACKS[pi];
+        const hay = (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
+        if (q2 && !hay.includes(q2)) continue;
+        const nvar = p.enemies.reduce((a, e) => a + e.variants.length, 0);
+        parts.push(`<details class="char epack" data-ep="${pi}"><summary><span class="chev">▸</span>
+            <span class="nm">${esc2(p.archive)} · ${esc2(p.label)}</span>
+            <span class="lv">${p.enemies.length} enemies · ${nvar} variants · ×${p.copies} on disc</span></summary>
+          <div class="char-body"><div class="muted">expanding…</div></div></details>`);
       }
-      host.innerHTML = `<div class="muted" style="margin:0 0 8px">Read-only bestiary (Suikoden III has no editable flat enemy-stat table in this ROM). Source: Suikosource. Filter matches enemy, drop, or food names.</div>
-        <table class="invtbl"><thead><tr><th>Enemy</th><th>Lv</th><th>HP</th><th>Drops</th><th>Food</th><th>Potch</th><th>SP</th></tr></thead>
-        <tbody>${rows.join("") || `<tr><td colspan="7" class="muted">no matches</td></tr>`}</tbody></table>`;
-      return;
+      if (EPACKS_SKIPPED && !EPACKS.length)
+        parts.push(`<div class="warnbox">Enemy packs are indexed for the full USA disc — none of their offsets exist in this file, so nothing is editable here.</div>`);
+    } else if (EPACKS_META && EPACKS_SKIPPED) {
+      parts.push(`<div class="warnbox">Enemy packs are indexed for the full USA disc — none of their offsets exist in this file, so nothing is editable here.</div>`);
     }
-    // fallback: raw ROM name table
-    const rows = [];
-    for (let i = 0; i < ENEMY.count; i++) {
-      const off = ENEMY.off + i * ENEMY.stride;
-      const nm = strFrom(BUF, off, ENEMY.stride).replace(/[^\x20-\x7e].*$/, "").trim();
-      if (SEARCH && !nm.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
-      rows.push(`<tr><td class="sl">${i}</td><td>${esc2(nm || "—")}</td></tr>`);
+    // Bestiary reference (Suikosource) — collapsed under the editor; honors the filter box
+    // (and auto-opens while a filter is active so the matches are visible).
+    const best = REF.bestiary || {};
+    const brows = [];
+    for (const nm of Object.keys(best).sort()) {
+      for (const e of best[nm]) {
+        const drops = (e.drops || []).join(", ");
+        const hay = (nm + " " + drops + " " + (e.food || "")).toLowerCase();
+        if (SEARCH && !hay.includes(SEARCH)) continue;
+        brows.push(`<tr><td>${esc2(nm)}</td><td class="sl">${e.lv}</td><td class="sl">${e.hp.toLocaleString()}</td>
+          <td>${esc2(drops || "—")}</td><td class="muted">${esc2(e.food || "—")}</td>
+          <td class="sl">${esc2(String(e.potch || "—"))}</td><td class="sl">${esc2(String(e.sp || "—"))}</td></tr>`);
+      }
     }
-    host.innerHTML = `<table class="invtbl"><thead><tr><th>#</th><th>Enemy</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="2" class="muted">no matches</td></tr>`}</tbody></table>`;
+    if (brows.length || SEARCH)
+      parts.push(`<details class="char" style="margin-top:10px"${SEARCH ? " open" : ""}><summary><span class="chev">▸</span>
+          <span class="nm">Suikosource bestiary reference</span><span class="lv">read-only guide data</span></summary>
+        <div class="char-body"><table class="invtbl"><thead><tr><th>Enemy</th><th>Lv</th><th>HP</th><th>Drops</th><th>Food</th><th>Potch</th><th>SP</th></tr></thead>
+        <tbody>${brows.join("") || `<tr><td colspan="7" class="muted">no matches</td></tr>`}</tbody></table></div></details>`);
+    host.innerHTML = parts.join("") || `<div class="muted">no enemy data available</div>`;
+    // lazy-render pack bodies on first expand (1000+ variants would swamp the DOM otherwise)
+    qa("details.epack", host).forEach((det) => {
+      det.addEventListener("toggle", () => {
+        if (!det.open || det._built) return;
+        det._built = true;
+        buildPackBody(det, EPACKS[+det.dataset.ep], rl, al);
+      });
+    });
+  }
+  function buildPackBody(det, p, rl, al) {
+    const body = det.querySelector(".char-body");
+    const html = [];
+    for (let ei = 0; ei < p.enemies.length; ei++) {
+      const e = p.enemies[ei];
+      for (let vi = 0; vi < e.variants.length; vi++) {
+        const v = e.variants[vi];
+        const tag = e.variants.length > 1 ? ` <span class="muted">variant ${vi + 1}/${e.variants.length}</span>` : "";
+        const key = `${det.dataset.ep}:${ei}:${vi}`;
+        const stats = STAT_NAMES8.map((sn, si) =>
+          `<label class="field enfld"><span>${sn}</span>
+             <input type="number" class="en-num" min="0" max="65535" data-k="${key}" data-f="stat${si}"></label>`).join("");
+        const drops = [];
+        for (let di = 0; di < al.nDrops; di++) {
+          drops.push(`<span class="en-drop" style="white-space:nowrap">
+            <button type="button" class="picker en-item" data-k="${key}" data-f="drop${di}i">—</button>
+            <input type="number" class="en-num" style="width:70px" min="0" max="1000" title="weight / 1000" data-k="${key}" data-f="drop${di}w"></span>`);
+        }
+        html.push(`<div class="card" style="margin:0 0 10px">
+          <div class="bag-h">${esc2(e.name)}${tag} <span class="u">id ${hex(e.id, 3)} · ×${v.rec.length} cop${v.rec.length === 1 ? "y" : "ies"}</span></div>
+          <div class="grid">
+            <label class="field enfld"><span>Level</span><input type="number" class="en-num" min="1" max="99" data-k="${key}" data-f="lv"></label>
+            <label class="field enfld"><span>HP</span><input type="number" class="en-num" min="1" max="65535" data-k="${key}" data-f="hp"></label>
+            <label class="field enfld"><span>EXP value</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="exp"></label>
+            <label class="field enfld"><span>SP</span><input type="number" class="en-num" min="0" max="65535" data-k="${key}" data-f="sp"></label>
+            <label class="field enfld"><span>Potch</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="potch"></label>
+          </div>
+          <div class="grid" style="margin-top:6px">${stats}</div>
+          <div style="margin-top:6px"><span class="muted">Drops (item · weight/1000):</span><br>${drops.join(" ")}</div>
+        </div>`);
+      }
+    }
+    body.innerHTML = html.join("") || `<div class="muted">empty pack</div>`;
+    wireEnemyFields(body, p, det.dataset.ep, rl, al);
+  }
+  // field key -> {offs (all copies), width, group, label, kind}
+  function enemyField(p, e, v, f, rl, al) {
+    const grp = `${p.archive} ${e.name}`;
+    const F = {
+      lv:    { offs: v.rec.map((o) => o + rl.lv), w: 2, label: "Level" },
+      hp:    { offs: [...v.rec.map((o) => o + rl.hp), ...v.rec.map((o) => o + rl.maxhp)], w: 2, label: "HP" },
+      exp:   { offs: v.aux.map((o) => o + al.exp), w: 4, label: "EXP value" },
+      sp:    { offs: v.aux.map((o) => o + al.sp), w: 2, label: "SP" },
+      potch: { offs: v.aux.map((o) => o + al.potch), w: 4, label: "Potch" },
+    };
+    for (let si = 0; si < 8; si++) F["stat" + si] = { offs: v.rec.map((o) => o + rl.stats + si * 2), w: 2, label: STAT_NAMES8[si] };
+    for (let di = 0; di < al.nDrops; di++) {
+      F["drop" + di + "i"] = { offs: v.aux.map((o) => o + al.drops + di * 4), w: 2, label: `Drop ${di + 1} item`, kind: "item" };
+      F["drop" + di + "w"] = { offs: v.aux.map((o) => o + al.drops + di * 4 + 2), w: 2, label: `Drop ${di + 1} weight` };
+    }
+    const d = F[f];
+    d.group = grp;
+    return d;
+  }
+  function wireEnemyFields(scope, p, ep, rl, al) {
+    const lookup = (key) => {
+      const [, ei, vi] = key.split(":").map(Number);
+      return [p.enemies[ei], p.enemies[ei].variants[vi]];
+    };
+    qa("input.en-num", scope).forEach((inp) => {
+      const [e, v] = lookup(inp.dataset.k);
+      const fd = enemyField(p, e, v, inp.dataset.f, rl, al);
+      const mark = () => markMulti(inp, eDirty(fd.offs, fd.w), () => eRevert(fd.offs, fd.w), String(eOrig(fd.offs, fd.w)));
+      inp.value = eRead(fd.offs, fd.w);
+      inp.onchange = () => {
+        const max = fd.w === 2 ? 65535 : 4294967295;
+        const val = Math.max(0, Math.min(+inp.value || 0, max));
+        inp.value = val;
+        eWrite(fd.offs, fd.w, val);
+        EREG[`${p.archive}:${inp.dataset.k}:${inp.dataset.f}`] = { group: fd.group, label: `${e.name} ${fd.label}`, offs: fd.offs, w: fd.w, fmt: String };
+        mark();
+      };
+      mark();
+    });
+    qa("button.en-item", scope).forEach((btn) => {
+      const [e, v] = lookup(btn.dataset.k);
+      const fd = enemyField(p, e, v, btn.dataset.f, rl, al);
+      const refresh = () => { btn.textContent = itemLabel(eRead(fd.offs, fd.w)); };
+      const mark = () => markMulti(btn, eDirty(fd.offs, fd.w), () => eRevert(fd.offs, fd.w), itemLabel(eOrig(fd.offs, fd.w)));
+      refresh();
+      btn.onclick = () => {
+        const cur = eRead(fd.offs, fd.w);
+        const opts = itemOpts("");
+        openPicker(`${e.name} — ${fd.label}`, opts, cur, (id) => {
+          eWrite(fd.offs, fd.w, id);
+          EREG[`${p.archive}:${btn.dataset.k}:${btn.dataset.f}`] = { group: fd.group, label: `${e.name} ${fd.label}`, offs: fd.offs, w: fd.w, fmt: (x) => itemLabel(x) };
+          refresh(); mark();
+        });
+      };
+      mark();
+    });
   }
 
   // ---- Reference (read-only item / skill browser) ----------------------------

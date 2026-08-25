@@ -113,9 +113,11 @@ heal share — and **which set grants which effect**, since each bonus is a hard
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Balance** (idempotent hard-mode multiplier presets), **Encounter**
-(a global **random-encounter rate** as a plain percentage — see below), **Enemies** (a read-only
-**bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and **Reference**
-(item/skill id → name lists).
+(a global **random-encounter rate** as a plain percentage — see below), **Enemies** (a full
+per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the 5-slot
+drop table for every encounter variant, decoded from each area's battle packs and written
+back to **every streaming copy** on the disc — with the Suikosource bestiary kept as a
+reference table), and **Reference** (item/skill id → name lists).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
