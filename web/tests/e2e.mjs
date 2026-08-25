@@ -288,8 +288,8 @@ head("Armor set effect ownership — reassign which set grants what");
   check("squeak owner decodes to Mole", (await page.inputValue("#ownSqueak")) === "1");
   check("halving mask decodes to 4", (await page.inputValue("#ownHalve")) === "4");
   // the mask dropdown must name the sets a bit test actually selects (4 -> Guardian + Pale Moon)
-  check("mask option names its real set group",
-    (await page.textContent("#ownHalve option[value='4']")).trim() === "Guardian + Pale Moon");
+  check("mask option names its real set group (and flags the stock value)",
+    (await page.textContent("#ownHalve option[value='4']")).trim() === "Guardian + Pale Moon (stock)");
   check("mask 1 names the odd-numbered sets",
     (await page.textContent("#ownHalve option[value='1']")).trim() === "Mole + Destiny + Pale Moon");
   // reassign: counter -> Mole(1), heal -> Guardian(4), squeak -> off(6), halving -> mask 2
