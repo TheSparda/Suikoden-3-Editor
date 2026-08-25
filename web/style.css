@@ -122,8 +122,14 @@ details[open] .chev { transform:rotate(90deg); }
 .invtbl td.ty { color:var(--mut); font-size:12px; }
 .invtbl tr.dirtyrow td { background:var(--changed-bg); }
 .bag { margin-bottom:16px; }
-.bag .bag-h { font-weight:600; color:var(--acc2); font-family:var(--titlefont); margin:0 2px 6px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-.bag .bag-h .u { font-weight:400; color:var(--mut); font-size:12px; font-family:inherit; }
+.bag-h { font-weight:600; color:var(--acc2); font-family:var(--titlefont); margin:0 2px 6px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.bag-h .u { font-weight:400; color:var(--mut); font-size:12px; font-family:inherit; }
+details.note { margin:8px 2px 0; font-size:12px; color:var(--mut); }
+details.note > summary { list-style:none; cursor:pointer; user-select:none; color:var(--acc2); }
+details.note > summary::-webkit-details-marker { display:none; }
+details.note > summary::before { content:"▸ "; color:var(--acc); }
+details.note[open] > summary::before { content:"▾ "; }
+details.note > summary:hover { text-decoration:underline; }
 .search { width:100%; margin-bottom:10px; }
 /* Filter/search boxes are primary controls — size them as comfortable touch targets.
    16px font also stops iOS from zooming the page when they're focused. */
