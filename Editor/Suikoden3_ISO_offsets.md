@@ -1168,9 +1168,46 @@ copies patched together), Destiny counter % (0–100), Pale Moon heal share
 normal staging layer, so .s3mod export/restore-to-default work as usual. Every
 patched word byte-verified against a pristine dump before shipping.
 
+### Effect OWNERSHIP — which set grants which effect (2026-08-24)
+
+There is no table of set effects; each is a hard-coded comparison against the set
+number returned by `which_set`. Those comparisons are patchable, so any effect can
+be moved onto any set (and several can be stacked on one). All 7 selector words
+verified byte-exact on a pristine dump:
+
+| Effect | ISO offset(s) | Stock word | Shape |
+|---|---|---|---|
+| Potch bonus | 0x3F3E6994, 0x3F3EF194 | `30420002` andi $v0,$v0,2 | MASK |
+| Bonus counter | 0x244F78, 0x2452E4 | `24020003` addiu $v0,$zero,3 | EQ (Destiny) |
+| Heal on hit | 0x245D98 | `24140005` addiu $s4,$zero,5 | EQ (Pale Moon) |
+| Counter-dmg halving | 0x246E28 | `30420004` andi $v0,$v0,4 | MASK |
+| Squeaky footsteps | 0x131354 | `24110001` addiu $s1,$zero,1 | EQ (Mole) |
+
+**MASK sites are bit tests, not equality** — the game computes `setNumber & mask`.
+With sets numbered 1–5 the reachable groups are only: bit0→{1,3,5}, bit1→{2,3},
+bit2→{4,5}, so exactly 8 subsets exist. (Stock mask 2 = {2,3} = Prosperity +
+Destiny, which independently confirms the row order.) EQ sites take a set number;
+6 is unreachable, so writing 6 disables the effect. Writing **0 does NOT disable**
+it — `which_set` returns 0 for "wearing no set", so 0 would grant the effect to
+everyone not wearing one.
+
+**Two behavioral couplings, both inherent to the original code:**
+- *Counter damage is divided by the set number itself* (the routine reuses the
+  register holding `which_set`'s return). Stock Destiny = #3 → ÷3. Moving the
+  effect to Mole (#1) means no division; Pale Moon (#5) divides by 5.
+- *`$s4` is dual-use in the heal routine*: the set-number comparison at 0x245D98
+  AND the divisor of `div $zero,$v0,$s4` at 0x245E20 (the compiler's guard
+  constant proves the intended divisor is 5). Changing the owner alone would
+  silently corrupt that second calculation. The fix: 0x245E1C holds a **dead
+  store** (`addiu $a0,$zero,0x64` — $a0 is next *written* at 0x17FE650, never
+  read, and no branch targets that address; both verified by scan), so the editor
+  repurposes it as `addiu $s4,$zero,5` whenever the heal owner moves off 5, and
+  reverts it when the owner moves back (round-trip leaves zero bytes changed).
+
 **Web editor note — AUX WINDOWS.** The web ISO editor only holds the ~3.75 MB ELF
 block, but the two potch instruction pairs live ~1 GB into the disc. iso.js now
-also reads two 8-byte "aux windows" (0x3F3E699C, 0x3F3EF19C) on load and threads
+also reads two 16-byte "aux windows" (0x3F3E6994, 0x3F3EF194 — each covering the
+set-ownership `andi` mask at +0 and the multiplier sll/addu pair at +8) on load and threads
 them through every write path: in-place save, streaming save, .s3mod export AND
 import, .xdelta export AND import, Revert all, and the save review (which decodes
 them into a "Potch multiplier ×3 → ×5" row). If a disc can't serve those ranges the
