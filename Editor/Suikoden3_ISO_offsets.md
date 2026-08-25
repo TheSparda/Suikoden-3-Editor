@@ -1212,3 +1212,49 @@ them through every write path: in-place save, streaming save, .s3mod export AND
 import, .xdelta export AND import, Revert all, and the save review (which decodes
 them into a "Potch multiplier ×3 → ×5" row). If a disc can't serve those ranges the
 control degrades to "unavailable" rather than silently doing nothing.
+
+---
+
+## Enemy stats / drops / formations — WHERE THEY ARE NOT (2026-08-24)
+
+Investigated making enemy HP, drops, formations and zone placement editable.
+**Result: they are not plain data anywhere on the disc.** Recording the evidence so
+nobody repeats these scans — each one is a multi-GB pass.
+
+**What was ruled out (all four are exhaustive, not spot checks):**
+1. **Whole-disc 4-field fingerprint.** Using s3_bestiary.json's `(lv, hp, potch, sp)`
+   tuples as a correlated probe (e.g. Ghost Knight 58 / 6700 / 9500 / 700), scanned
+   all 4.3 GB for an HP u16 with the matching SP and potch within ±96 bytes. **One**
+   hit, at 0xE6F706A5 — inside SD/STR.BIN, and visibly ADPCM audio (a `24 00`/`44 00`
+   cadence every 15 bytes). No real match.
+2. **u32 encoding.** Same probe with HP and potch as u32, ±128-byte window: **zero** hits.
+3. **Flat table keyed to the enemy index.** The enemy NAME table (0x3E74E0, 100 × 0x14,
+   names truncated to ~10 chars — "BladeBunny", not "Blade Bunny", which is why a plain
+   text search for guide names finds nothing) was fuzzy-matched to the bestiary, giving
+   69/100 indices with known HP. Then every `(base, stride)` pair implied by any two
+   anchors was scored across strides 4–0x100 over the whole ELF. **Best score: 5/69** —
+   indistinguishable from chance. There is no index-keyed enemy stat array in the ELF.
+   (This supersedes the older "+0x0A/+0x0C gets 10-14/100" note: that was also noise.)
+4. **Name adjacency.** Enemy names appear ONLY in that ELF table — nowhere else on the
+   disc — so there is no name-plus-stats record anywhere.
+
+**Conclusion:** enemy stats live compressed/encoded inside the per-area archives. Making
+them editable requires cracking that container format first; it is not a table-offset job.
+
+**Disc layout (ISO9660 walk) — the actual lead for anyone continuing.** `/DATA` holds
+one archive per game area plus two shared ones, and the names are Japanese-derived
+(MORI ≈ 森 forest, HAKA ≈ 墓 tomb, ICEW ice, RVER river, LAST final dungeon — inferred,
+not confirmed), which is exactly where per-zone encounter tables would live:
+
+| File | ISO offset | Size |
+|---|---|---|
+| FSECT.BIN | 0x4F6000 | 89,388 — small; looks like a sector//directory index for the rest |
+| ETC.BIN | 0x375AD800 | 386 MB — shared assets; **has a `PS2\0` magic + named TLV entries** |
+| VDZK / KRVI / LZVI / DKVI / TSVI / IKVI / MSVI / ZKTR / AKVI / CRRA / CVIS / HNKT / MORI / SOGE / KTDO / YMMT / KSKR / AKMT / HGB1 / HGB2 / HAKA / FAKE / ICEW / RVER / LAST / SKBN / GDOP / LKOE | see the walk in git history | 1.8 MB – 648 MB each |
+
+Two different container formats: ETC.BIN is the `PS2\0` TLV one (its first 64 MB is
+character animation assets — `face`, `walk_start`, `run_stop`, `skin`, `atari`), while
+every zone archive starts with a u32 (0x21F0A8, 0x220DA8, 0x22F828 …) followed by small
+u16 fields — a consistent, still-undecoded directory header. **Start there:** decode the
+zone-archive header, then look for encounter tables inside a small area like SKBN.BIN
+(1.8 MB) rather than fighting HNKT.BIN (648 MB).
