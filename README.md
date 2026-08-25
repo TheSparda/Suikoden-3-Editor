@@ -112,7 +112,9 @@ set-bonus constants patched straight into the game code — potch multiplier, co
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
-original byte length), **Balance** (idempotent hard-mode multiplier presets), **Enemies** (a
+original byte length), **Balance** (a **global random-encounter rate** as a plain percentage —
+100 = stock, 50 = half as often, 200 = twice, 0 = none at all — plus idempotent hard-mode
+multiplier presets), **Enemies** (a
 read-only **bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and
 **Reference** (item/skill id → name lists).
 

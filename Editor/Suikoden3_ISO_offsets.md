@@ -1258,3 +1258,88 @@ every zone archive starts with a u32 (0x21F0A8, 0x220DA8, 0x22F828 …) followed
 u16 fields — a consistent, still-undecoded directory header. **Start there:** decode the
 zone-archive header, then look for encounter tables inside a small area like SKBN.BIN
 (1.8 MB) rather than fighting HNKT.BIN (648 MB).
+
+---
+
+## Random encounter rate — SOLVED as a global multiplier (2026-08-24, v1.17.0)
+
+The encounter *formula* is in the boot ELF and is now editable; the per-area *base rate*
+is still map data (see the caveat at the end).
+
+**Anchors that cracked it.** Retail still ships the development debug menu, including
+`Toggle Random Encounter ON/OFF` (ELF va 0x19CAD38) and `Random Encounters: AUTHORIZED`
+(0x19CA9F0) — proof of a global switch. The Champion's Rune description is in plain text
+too: `No encounters with foes weaker than you.` (0x19DD6B0). The encounter module's own
+debug printfs sit at 0x19BC388-0x19BC3C0 (`enable Num %d`, `partyInfo %d prob %d`,
+`selectProb %d`, `selectPartyNo %d`) — the monster-party picker, one caller down.
+
+**The roll — ELF va 0x17023A8** (single caller, 0x1774014):
+
+```
+rate = area_rate * MULT / 100          MULT = 150 running / 120 walking / 100 riding
+if (rate <= 0) return NO_BATTLE        <- 0 disables encounters outright
+accum += distance_moved
+if (accum <= 0.5) return NO_BATTLE     <- one sample per 0.5 units travelled
+accum = 0
+<5-slot ring buffer of positions; take the centroid>
+if (all 5 samples within 1.5 walking / 3.5 running of the centroid)
+    rate = rate * 130 / 100            <- +30% for milling around in one spot
+if (dist_since_last_battle <= grace) return NO_BATTLE
+if (rand(100) < rate) -> pick monster party (0x1702290), start battle
+```
+
+Note `mult` here is the R5900 3-operand form (`mult $v0,$s1,$v0` writes LO to rd), which
+is why the following `div $zero,$v0,$v1` divides the *product*.
+
+**Which movement mode is which.** `$s4` = dash flag (`0x16E7B48(obj, 0x80000)`). The mode
+split comes from two disjoint id classifiers on (obj+2, obj+0xE): 0x16F3860 matches
+id 2 / [2,13] / [0x42,0x44] and takes the RAW path (`move $s5,$s1`, an implicit x1.00,
+plus `$s7=1` which swaps the cluster threshold for a gp-relative float); 0x16F38A8 matches
+id 2 / [0x0E,0x13] / [0x45,0x46] and takes the 120/150 path. If neither matches, `$s5`
+stays 0 and no encounter can fire.
+
+**Editable constants (raw ISO offsets, all byte-verified against a pristine dump):**
+
+| ISO offset | Stock word | Instruction | Meaning |
+|---|---|---|---|
+| 0x149C3C | 0x0220A82D | `move $s5,$s1` | ride path, implicit x1.00 |
+| 0x149C40 | 0x10000012 | `b 0x170248C` | ride path skips the scale block |
+| 0x149C5C | 0x24020096 | `addiu $v0,$zero,150` | running multiplier |
+| 0x149C60 | 0x24020078 | `addiu $v0,$zero,120` | walking multiplier |
+| 0x149E44 | 0x24020082 | `addiu $v0,$zero,130` | loiter-in-one-spot bonus |
+| 0x149E84 | 0x24040064 | `addiu $a0,$zero,100` | `rand()` modulus |
+
+**How the editor's single percentage works.** Scaling only 0x149C5C/0x149C60 would leave
+the ride path at 100%, so the patch gives ride its own multiplier and branches it into the
+shared `MULT/100` block:
+
+```
+0x149C3C:  addiu $v0,$zero,MULT_ride     (was `move $s5,$s1`)
+0x149C40:  b 0x1702464                   (was `b 0x170248C`)  -> $v1=100; $v0=$s1*$v0; /100
+```
+
+This is behaviour-preserving: at 100% it computes `s1*100/100 == s1`, exactly stock. The
+three multipliers are then `round(base * pct / 100)` for base 100/150/120, and **pct=100
+writes the stock words back byte-for-byte**, so "restore" leaves zero staged bytes rather
+than merely emulating the default. pct=0 zeroes all three, and `rate <= 0` bails out of
+the roll — that's the "no random encounters" case. Cap is 1000% (`addiu`'s immediate is
+sign-extended, so the real ceiling is ~21800; 1000 is far past where `rand(100) < rate`
+saturates anyway). Encoder/decoder: `s3patch.encounter_words` / `decode_encounter_words`,
+mirrored in `web/iso.js` as `encWords` / `decodeEnc` (parity-tested 0..1000 both ways).
+
+Exposed as **Balance tab → "Random encounter rate"** in the web editor and in the
+s3editor server UI (`GET/POST /api/encounter`).
+
+**Still NOT editable: per-area base rates.** `area_rate` and the post-battle grace
+distance are read from a **60-byte room record** — `+0x02` = grace (u16), `+0x04` = rate
+(u16) — fetched by `0x17B7750`:
+
+```
+work = *(0x196A4D0); idx = work->[7]; tbl = *(work->[0x12D0] + 0xC); return tbl + idx*0x3C
+```
+
+`work->0x12D0` is set at 0x1773D44 from resource type 5 (`0x188B758(5)`), i.e. the loaded
+town data — inside the `DATA/*.BIN` area archives, the same undecoded container that has
+blocked enemy stats. There is also a script opcode (0x1791148) that sets both fields at
+runtime from a 6-byte operand stream, which is why they're script-driven rather than a flat
+ELF table. Listing every area's rate needs the zone-archive header decoded first.

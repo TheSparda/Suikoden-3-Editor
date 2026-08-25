@@ -1116,6 +1116,30 @@ def apply_hard_mode(cfg):
     return {"ok": True, **res}
 
 
+def read_encounter():
+    """Decode the staged/on-disk global random-encounter rate (percent of stock)."""
+    iso = _iso()
+    words = tuple(iso.u32(off) for off in S.ENC_SITES)
+    iso.close()
+    pct = S.decode_encounter_words(words)
+    return {"pct": pct, "max": S.ENC_MAX_PCT,
+            "words": ["%08X" % w for w in words],
+            "sites": ["0x%06X" % o for o in S.ENC_SITES]}
+
+
+def write_encounter(pct):
+    """Stage the 4-word instruction patch for a global encounter rate of `pct`%."""
+    try:
+        words = S.encounter_words(pct)
+    except (ValueError, TypeError) as e:
+        return {"error": str(e)}
+    iso = _iso(write=True)
+    for off, w in zip(S.ENC_SITES, words):
+        iso.wr(off, struct.pack("<I", w))
+    iso.close()
+    return {"ok": True, "pct": int(pct)}
+
+
 # --------------------------------------------------------------------- HTTP
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -1180,6 +1204,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/gear":    return self._send(200, read_gear())
             if p == "/api/sets":    return self._send(200, read_sets())
             if p == "/api/foods":   return self._send(200, read_foods())
+            if p == "/api/encounter": return self._send(200, read_encounter())
             if p == "/api/shop":    return self._send(200, read_shop())
             if p == "/api/items":
                 _ic = S.load_item_categories()
@@ -1289,6 +1314,8 @@ class Handler(BaseHTTPRequestHandler):
                                                        int(body.get("width", 1))))
             if self.path == "/api/hardmode":
                 return self._send(200, apply_hard_mode(body))
+            if self.path == "/api/encounter":
+                return self._send(200, write_encounter(body["pct"]))
             if self.path == "/api/weapon":
                 return self._send(200, write_weapon(int(body["index"]), body["levels"]))
             if self.path == "/api/text":
@@ -2354,6 +2381,7 @@ const HM_PRESETS={
 
 async function renderHardMode(m){
  const g=await api("/api/growth");
+ const enc=await api("/api/encounter");
  const cur={}; HM_STATS.forEach(s=>cur[s]=1); // slider state (multipliers)
  m.innerHTML=`<div class=card>
    <div class=row style="justify-content:space-between;align-items:center">
@@ -2365,6 +2393,21 @@ async function renderHardMode(m){
     <label class=hint style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;font-size:13px">
      <input type=checkbox id=hmMaster> <b>Enable Hard Mode</b></label>
    </div></div>
+  <div class=card><h3 style="margin:0 0 4px">Random encounter rate <span class=pill>global</span></h3>
+   <div class=hint style=margin:0>How often random battles trigger, as a percentage of the game's
+    stock rate — <b>100</b> = unchanged, <b>50</b> = half as often, <b>200</b> = twice as often,
+    <b>0</b> = no random encounters at all. This scales every area by the same factor, so the
+    relative difference between a quiet field and a dangerous dungeon is preserved. Separate from
+    Hard Mode: it works whether or not the toggle above is on.</div>
+   <div class=row style="margin-top:10px;align-items:center">
+    <input type=range id=encRange min=0 max=300 step=5 style=width:240px>
+    <label>Rate %<input type=number id=encPct min=0 max=${enc.max} step=1 style=width:80px></label>
+    <button class=act id=encApply>Apply</button>
+    <button class="act sec" id=encReset>Restore (100%)</button>
+    <span class=hint id=encOut style=margin:0></span></div>
+   ${enc.pct===null?`<div class=hint style="margin-top:8px;color:var(--warn)">These
+    instructions don't match a stock or editor-written value (words ${enc.words.join(' ')}) —
+    applying a rate will overwrite them.</div>`:""}</div>
   <div id=hmBody style="opacity:.45;pointer-events:none">
    <div class=card><h3 style="margin:0 0 8px">Difficulty preset</h3>
     <div class=row id=hmPresets></div>
@@ -2415,6 +2458,22 @@ async function renderHardMode(m){
  $("#hmMaster").onchange=()=>{const on=$("#hmMaster").checked;
   $("#hmBody").style.opacity=on?"1":".45";$("#hmBody").style.pointerEvents=on?"":"none";
   if(on&&!$("#hmPresetDesc").textContent){$("#hmPresets [data-p=hard]").click();}};
+ // ---- encounter rate (independent of the Hard Mode master toggle) ----
+ {const pctEl=$("#encPct"),rngEl=$("#encRange"),outEl=$("#encOut");
+  const shown=enc.pct===null?100:enc.pct;
+  pctEl.value=shown; rngEl.value=Math.min(+rngEl.max,shown);
+  const note=v=>v===100?"stock rate":v===0?"random encounters off":
+    v<100?`${(100/v).toFixed(v>=10?1:0)}x fewer battles`:`${(v/100).toFixed(2)}x more battles`;
+  const sync=v=>{pctEl.value=v;rngEl.value=Math.min(+rngEl.max,v);outEl.textContent=note(v);};
+  sync(shown);
+  rngEl.oninput=()=>sync(+rngEl.value);
+  pctEl.oninput=()=>{const v=Math.max(0,Math.min(+pctEl.max,+pctEl.value||0));rngEl.value=Math.min(+rngEl.max,v);outEl.textContent=note(v);};
+  const send=async v=>{const r=await api("/api/encounter",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({pct:v})});
+   if(r.error){outEl.textContent="error: "+r.error;return;}
+   markDirty();sync(v);toast(`encounter rate ${v}% staged — hit Save to ISO`);};
+  $("#encApply").onclick=()=>send(Math.max(0,Math.min(+pctEl.max,+pctEl.value||0)));
+  $("#encReset").onclick=()=>send(100);}
  $("#hmApply").onclick=async()=>{
   const growth={};HM_STATS.forEach(s=>growth[s]=cur[s]);
   const body={growth};const sp=+$("#hmSpell").value,up=+$("#hmUnite").value;
