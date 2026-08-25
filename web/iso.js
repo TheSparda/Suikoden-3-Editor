@@ -731,12 +731,23 @@
         rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
     }
     // Enemy fields (registered on edit; dirty state re-checked live so reverts drop out)
+    let enemyCovered = 0;
     for (const k in EREG) {
       const m = EREG[k];
       if (!eDirty(m.offs, m.w)) continue;
+      enemyCovered += m.offs.length * m.w;
       const ov = m.fmt(eOrig(m.offs, m.w)), nv = m.fmt(eRead(m.offs, m.w));
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}${m.offs.length > 1 ? ` (×${m.offs.length} copies)` : ""}` });
     }
+    // Bulk enemy multipliers touch thousands of bytes without per-field registration —
+    // summarize whatever enemy dirt the labeled rows don't account for.
+    const enemyDirty = AUX.reduce((a, w) => {
+      if (w.tag !== "enemy") return a;
+      let n = 0; for (let i = 0; i < w.len; i++) if (w.buf[i] !== w.orig[i]) n++;
+      return a + n;
+    }, 0);
+    if (enemyDirty > enemyCovered)
+      rows.push({ g: "Enemies", t: `${enemyDirty - enemyCovered} more enemy byte(s) changed (bulk multipliers), all pack copies included` });
     // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
     if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. Balance multipliers)` });
@@ -2324,6 +2335,53 @@
 
   // ---- Enemies (per-area stat/reward editor + bestiary reference) -------------
   const STAT_NAMES8 = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"];
+  // Bulk multipliers (kept across redraws). Every apply recomputes from the PRISTINE
+  // disc values, so re-applying never compounds; a field left at ×1 is not touched.
+  const ENBULK = { hp: 1, stats: 1, lv: 1, exp: 1, sp: 1, potch: 1, dropw: 1, scope: "all" };
+  function enemyPacksInScope(scope) {
+    const q2 = SEARCH;
+    return EPACKS.filter((p) => {
+      if (scope !== "filtered" || !q2) return true;
+      return (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase().includes(q2);
+    });
+  }
+  function applyEnemyBulk() {
+    const rl = EPACKS_META.recLayout, al = EPACKS_META.auxLayout;
+    const mul = (offs, w, m, min, max) => {
+      if (m === 1) return;
+      const nv = Math.max(min, Math.min(max, Math.round(eOrig(offs, w) * m)));
+      eWrite(offs, w, nv);
+    };
+    let nv = 0;
+    for (const p of enemyPacksInScope(ENBULK.scope)) {
+      for (const e of p.enemies) for (const v of e.variants) {
+        nv++;
+        mul([...v.rec.map((o) => o + rl.hp), ...v.rec.map((o) => o + rl.maxhp)], 2, ENBULK.hp, 1, 65535);
+        mul(v.rec.map((o) => o + rl.lv), 2, ENBULK.lv, 1, 99);
+        for (let si = 0; si < 8; si++) mul(v.rec.map((o) => o + rl.stats + si * 2), 2, ENBULK.stats, 0, 65535);
+        mul(v.aux.map((o) => o + al.exp), 4, ENBULK.exp, 0, 4294967295);
+        mul(v.aux.map((o) => o + al.sp), 2, ENBULK.sp, 0, 65535);
+        mul(v.aux.map((o) => o + al.potch), 4, ENBULK.potch, 0, 4294967295);
+        for (let di = 0; di < al.nDrops; di++) {
+          const woffs = v.aux.map((o) => o + al.drops + di * 4 + 2);
+          if (eOrig(woffs, 2)) mul(woffs, 2, ENBULK.dropw, 0, 1000);   // leave empty slots empty
+        }
+      }
+    }
+    return nv;
+  }
+  function resetEnemyBulk() {
+    const rl = EPACKS_META.recLayout, al = EPACKS_META.auxLayout;
+    let nv = 0;
+    for (const p of enemyPacksInScope(ENBULK.scope)) {
+      for (const e of p.enemies) for (const v of e.variants) {
+        nv++;
+        eRevert(v.rec, rl.size);
+        eRevert(v.aux, al.size);
+      }
+    }
+    return nv;
+  }
   function drawEnemies(host) {
     const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
     const parts = [];
@@ -2333,13 +2391,33 @@
         Each pack exists as several streaming copies — edits write <b>every copy</b> at once. Stat order is the
         character convention (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK); drop weights are out of 1000 (128 ≈ 12.8%).
         Filter matches enemy or archive names.</div>`);
+      const mfld = (id, label) =>
+        `<label class="field"><span>${label} ×</span><input type="number" id="${id}" class="eb-mul" min="0" max="100" step="0.05" value="${ENBULK[id.slice(2).toLowerCase()]}"></label>`;
+      parts.push(`<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Bulk tuning <span class="u">recomputed from the disc's original values — re-applying never compounds</span></div>
+        <div class="grid">
+          ${mfld("ebHp", "HP")}${mfld("ebStats", "All 8 stats")}${mfld("ebLv", "Level")}${mfld("ebExp", "EXP value")}
+          ${mfld("ebSp", "SP")}${mfld("ebPotch", "Potch")}${mfld("ebDropw", "Drop weights")}
+          <label class="field"><span>Scope</span><select id="ebScope">
+            <option value="all"${ENBULK.scope === "all" ? " selected" : ""}>all packs</option>
+            <option value="filtered"${ENBULK.scope === "filtered" ? " selected" : ""}>packs matching filter</option></select></label>
+        </div>
+        <div class="row" style="margin-top:8px;gap:8px;align-items:center">
+          <button class="primary" id="ebApply">Apply multipliers</button>
+          <button id="ebReset">Reset scope to disc originals</button>
+        </div>
+        <div class="muted" style="margin-top:6px">Every value is computed from the pristine disc number, so running Apply twice
+          changes nothing and a new multiplier replaces the old one instead of stacking. Fields left at ×1 are not touched
+          (your per-enemy edits to them survive); Reset reverts <b>every</b> enemy field in the scope, including manual edits.
+          Empty drop slots stay empty. HP floors at 1, Level caps at 99, drop weights at 1000.</div>
+      </div>`);
       const q2 = SEARCH;
       for (let pi = 0; pi < EPACKS.length; pi++) {
         const p = EPACKS[pi];
         const hay = (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
         if (q2 && !hay.includes(q2)) continue;
         const nvar = p.enemies.reduce((a, e) => a + e.variants.length, 0);
-        parts.push(`<details class="char epack" data-ep="${pi}"><summary><span class="chev">▸</span>
+        parts.push(`<details class="char epack" data-ep="${pi}" data-i="ep${pi}"><summary><span class="chev">▸</span>
             <span class="nm">${esc2(p.archive)} · ${esc2(p.label)}</span>
             <span class="lv">${p.enemies.length} enemies · ${nvar} variants · ×${p.copies} on disc</span></summary>
           <div class="char-body"><div class="muted">expanding…</div></div></details>`);
@@ -2377,6 +2455,27 @@
         buildPackBody(det, EPACKS[+det.dataset.ep], rl, al);
       });
     });
+    // bulk tuning controls
+    qa("input.eb-mul", host).forEach((inp) => {
+      inp.onchange = () => { ENBULK[inp.id.slice(2).toLowerCase()] = Math.max(0, +inp.value || 0); };
+    });
+    const scopeSel = q("#ebScope", host);
+    if (scopeSel) scopeSel.onchange = () => { ENBULK.scope = scopeSel.value; };
+    const applyBtn = q("#ebApply", host);
+    if (applyBtn) applyBtn.onclick = () => {
+      const n = applyEnemyBulk();
+      const touched = ["hp", "stats", "lv", "exp", "sp", "potch", "dropw"].filter((k) => ENBULK[k] !== 1);
+      setStatus(touched.length
+        ? `Applied ${touched.map((k) => `${k} ×${ENBULK[k]}`).join(", ")} to ${n} variant(s). Review, then Save to write.`
+        : "All multipliers are ×1 — nothing to apply.", touched.length ? "ok" : "warn");
+      drawView();
+    };
+    const resetBtn = q("#ebReset", host);
+    if (resetBtn) resetBtn.onclick = () => {
+      const n = resetEnemyBulk();
+      setStatus(`Reverted ${n} variant(s) in scope to the disc's original values.`, "ok");
+      drawView();
+    };
   }
   function buildPackBody(det, p, rl, al) {
     const body = det.querySelector(".char-body");
