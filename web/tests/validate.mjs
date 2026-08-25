@@ -96,6 +96,12 @@ console.log("QoL guards:");
   (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) && /class="fddesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite + food descriptions");
   (/<input type="file" id="isoFileInput">/.test(iso) ? ok : bad)("ISO file input has no restrictive accept filter (Android can select .iso)");
   (/doStreamSave/.test(iso) ? ok : bad)("ISO editor has the streaming 'save patched copy' path");
+  // Applying patches: sniff the format by magic, walk windows, stage rather than write.
+  (/async function applyXdelta/.test(iso) && /Vcdiff\.eachWindow/.test(iso)
+    ? ok : bad)("ISO editor can apply an .xdelta patch");
+  (/0xd6 && head\[1\] === 0xc3/.test(iso) ? ok : bad)("import sniffs VCDIFF magic (not the file extension)");
+  (/w\.plan\(\)\.length/.test(iso) ? ok : bad)("apply-patch skips untouched windows (no whole-disc read)");
+  (/outside the region/.test(iso) ? ok : bad)("apply-patch refuses a patch that reaches outside the editable block");
   const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
   (/cache:\s*"no-store"/.test(sw) ? ok : bad)("service worker fetches app shell no-store (fresh updates)");
   (/dl-register/.test(sw) ? ok : bad)("service worker supports the streaming-download hand-off"); }

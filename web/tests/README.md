@@ -1,6 +1,6 @@
 # Web editor tests
 
-Four layers, all runnable with plain Node (v18+):
+Five layers, all runnable with plain Node (v18+):
 
 ## `validate.mjs` — fast, no browser (runs in CI + on session start)
 Checks the client JS parses, every ISO table offset stays inside the read block, the
@@ -48,6 +48,27 @@ Python over 6,000 randomized strings (0 mismatches).
 node web/tests/text-core.mjs
 ```
 
+## `vcdiff.mjs` — the .xdelta encoder **and** decoder
+The encoder synthesizes a patch from known edits; the decoder reads patches back, which is
+what lets the editor apply a community mod. Those are very different problems: the encoder
+only has to emit one shape, while the decoder must cope with whatever xdelta3 produced — the
+full RFC 3284 default code table, all nine address modes with both caches, RUN, app headers
+and the VCD_ADLER32 extension. So the decode tests run **real xdelta3 output** (nine file
+shapes × four encoder settings) rather than our own encoder's, and the encoder round-trips now
+go through the *shipped* decoder so the two halves check each other.
+
+Also asserted: the derived-diff property the ISO editor depends on (skipping windows whose
+`plan()` is empty and diffing the rest must reproduce the true diff **exactly**, while reading
+a fraction of the file), and the refusals — LZMA-compressed patches (xdelta3's default) are
+reported with the `-S none` fix rather than mis-decoded, and a patch applied to the wrong
+source fails its stored checksum.
+
+Install `xdelta3` to get any of that; without it those checks self-skip (CI installs it).
+
+```bash
+node web/tests/vcdiff.mjs
+```
+
 ## `save_roundtrip.py` (via `save-roundtrip.mjs`) — save engine, no browser
 The Save Editor runs `Editor/s3save.py` unchanged in the browser (Pyodide). This drives that
 same module directly against a **synthetic** 53264-byte `gamedata` payload (the repo ships no
@@ -74,6 +95,16 @@ It also covers the save editor's **guide overlays** end-to-end: Pyodide is abort
 suite hands `drawSlot()` a synthetic decoded save (the shape `s3save.decode_save` returns) and
 asserts the notes reach the DOM — growth range, join level, rune-slot unlock, per-character
 skill cap, "can't learn", and that an uncovered support character renders none.
+
+The **Text** tab is driven against planted strings (one prose, one format string that must
+*not* be offered): byte-exact write, NUL padding, no write past the slot, over-length
+rejection, undo/redo and per-field revert.
+
+**Applying patches** is driven with patches built by real `xdelta3` against the synthetic ISO
+— apply → staged (not written) → one-step undo → save writes the right bytes — plus every
+refusal: a patch reaching outside the editable block, an LZMA-compressed one, a wrong-size
+one, and one built against a different source disc (caught by its checksum). An `.s3mod`
+recipe deliberately named `.xdelta` proves the format is sniffed from content, not the name.
 
 Runs in CI (a dedicated `e2e` job installs Chromium via `playwright-core install`). Locally it
 needs `playwright-core` + a Chromium binary and **skips cleanly (exit 0)** if neither is

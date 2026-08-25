@@ -135,6 +135,21 @@ need to write the ISO first):
   diff needed). Apply with any VCDIFF tool: `xdelta3 -d -s "<pristine ISO>" file.xdelta out.iso`.
   ⚠ It carries **no integrity checksum**, so apply it only to a pristine USA `SLUS-20387` disc.
 
+**Apply someone else's mod — `Apply patch…`.** The same button takes both an `.s3mod` recipe
+and a standard **`.xdelta` (VCDIFF)** patch (the format is detected from the file's contents,
+not its name), so you can install a community mod on a phone without a desktop. The patch is
+**staged like any other edit** — reviewable, undoable, revertible — rather than written
+straight to the disc, and the multi-GB image is never fully read: only the regions the patch
+actually touches are examined. If the patch carries xdelta3's checksum (they normally do),
+applying it to the wrong or already-modified disc is **detected and refused**.
+
+Two limits, both reported clearly rather than guessed around:
+
+- xdelta3 **compresses patches with LZMA by default**, which this editor can't read. Ask the
+  author for one built with `xdelta3 -e -S none -s <source> <target> <patch>`.
+- A patch that changes bytes **outside the editable region** is refused whole (a half-applied
+  mod is worse than none) — use `xdelta3 -d` on a desktop for those.
+
 ---
 
 ## Offline / desktop app (advanced & developers)
@@ -161,8 +176,9 @@ has a **↺** restore and there's a light/dark theme toggle.
 - **Full-diff xdelta patches, and applying them** — a whole-ISO binary diff that captures
   *everything*, including in-place text edits, **plus** applying any `.xdelta` back onto a
   pristine disc. These carry a checksum (wrong source is detected, not silently mis-patched)
-  and require `xdelta3` (macOS `brew install xdelta`). The web editor can *export* a checksum-less
-  `.xdelta` of its own edits, but only the desktop app diffs the whole disc and applies patches.
+  and require `xdelta3` (macOS `brew install xdelta`). The web editor can now *apply* a patch
+  as well, but only one whose changes fall inside its editable region and that isn't
+  LZMA-compressed; only the desktop app diffs the **whole** disc and applies any patch to it.
 - **CLI** — `Editor/s3patch.py` exposes the same engine for scripting:
 
   ```bash
