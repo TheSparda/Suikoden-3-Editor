@@ -1443,3 +1443,57 @@ every save/export/import path like the potch pair, and every edit fans out to
 all pack copies. Enemies view = per-pack collapsible editor (lazy-rendered) +
 the Suikosource bestiary as reference. Fields registered for the save review
 with old → new formatting and a ×copies note.
+
+---
+
+## SPAWN ZONES & FORMATIONS — decoded + editable (v1.21.0, 2026-08-25)
+
+The random-encounter data sits in the same battle packs as the monster records,
+as per-map-zone battle-area objects. Chain (all disassembly-anchored):
+
+**ELF side.** `0x1702290` picks the monster party after the encounter roll, via a
+party-info API: `0x1715058` (count) / `0x17150A0` (record, stride 0x1C) /
+`0x1715198` (spawn slot, stride 0x14) — all reading the battle master object
+(`0x1713AB8()`)->0x20, which the pack loader points at the in-pack zone object.
+There is also a small per-area (chance, threshold) table as plain ELF data at
+file 0x3C1498 (6-byte stride, 0xFFFF-terminated).
+
+**Pack side (per zone, pack-local vaddrs, per-copy K):**
+```
+zone object : { u32 slotListVa, u32 partyListVa, u32 extraVa, u32 0, char name[] }  e.g. "mori_101"
+slotList    : { u32 count, u32 arrayVa } -> 0x14-stride SPAWN SLOTS:
+              { u32 monsterId, u32 variantIdx, f32, f32, u32 nodeVa }
+partyList   : { u32 count, u32 arrayVa } -> 0x1C-stride FORMATIONS:
+              { u16 type, u16 probWeight, u32 ?, u64 -1,
+                u16 formationLayoutId, u16 memberCount, u32 membersVa -> u8 slotIdx[] }
+```
+The slot's `variantIdx` selects which of the monster node's stat variants spawns;
+members index the slot array. Verified: mori_101 = HollyShrub/Creeper/Vermitor/
+DemonSeed/GrandHolly with 16 weighted formations (w25/50/75), matching in-game
+Kuput Forest encounters; zone names are the game's own map ids.
+
+**Indexer (build_enemy_index.py) upgrades:**
+- Multi-pass K recovery: regions holding several streaming copies closer than the
+  cluster gap (MORI!) previously indexed only ONE copy — now each pass decodes a
+  copy, removes its explained fingerprint hits, excludes its K, and repeats. This
+  roughly doubled coverage: **81 logical packs, 1,961 variants** (was 41/1,071 —
+  the "new" packs are chapter variants with genuinely different stats), bestiary
+  crosscheck 1,297/1,329 on potch+SP.
+- Copy deltas now come from K differences, NOT node positions — node objects can
+  alias across byte-identical copies (they validate under every copy's K), which
+  produced duplicate write-through offsets before.
+- Zones: found via the name-tagged object signature near each cluster, validated
+  against the copy's K, deduped by data offsets (headers repeat in-file), and
+  write-through offsets are derived per copy with byte verification — a zone only
+  writes the copies whose bytes actually match (chapter variants differ).
+- Index: **96 zones, 1,540 formations** (12 packs legitimately zone-less: ETC
+  boss/story sets etc.).
+
+**Editor:** each pack card grows a "Zones & spawn formations" section — per zone:
+spawn slots (monster picker restricted to the pack's roster — out-of-pack
+monsters would spawn without loaded models — plus variant), and formations
+(weight 0-100, size capped at the on-disc allocation, member dropdowns labeled
+live by slot monster). All writes fan out to every verified copy; review rows
+show old → new with the copy count. Verified on the real ISO: swapping mori_101
+slot 0 Dark Hare → GhostHolly + weight 50 → 90 produced exactly 6 recipe runs
+(3 copies × 2 fields).
