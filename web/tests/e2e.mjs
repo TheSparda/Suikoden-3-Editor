@@ -10,7 +10,8 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK } from "./synth-iso.mjs";
+import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+  ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -316,6 +317,69 @@ head("Heal-owner round trip leaves no stray bytes");
   await page.selectOption("#ownHeal", "5");            // back to stock -> repair must be undone
   const clean = await page.evaluate(() => !document.querySelector("#isoDirty") || document.querySelector("#isoDirty").hidden);
   check("returning to the stock owner clears every staged byte", clean);
+  await page.context().close();
+}
+
+head("Enemies view — real index unavailable on a small disc");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForTimeout(150);
+  const txt = await page.textContent("#isoView");
+  // the shipped s3_enemy_packs.json targets the 4.3 GB disc; every pack must be skipped
+  check("packs degrade to 'unavailable' (no wrong data)", /none of their offsets exist/.test(txt));
+  check("bestiary reference still present", /bestiary reference/i.test(txt));
+  await page.context().close();
+}
+
+head("Enemies editor — decode, edit, write-through both copies");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
+  // decode of the planted fixture
+  check("Level decodes to 7", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
+  check("HP decodes to 40", (await page.inputValue('input.en-num[data-f="hp"]')) === "40");
+  check("SP decodes to 9", (await page.inputValue('input.en-num[data-f="sp"]')) === "9");
+  check("Potch decodes to 60", (await page.inputValue('input.en-num[data-f="potch"]')) === "60");
+  check("stat PWR decodes to 11", (await page.inputValue('input.en-num[data-f="stat0"]')) === "11");
+  check("drop 1 shows Medicine D", /Medicine D/.test(await page.textContent('button.en-item[data-f="drop0i"]')));
+  check("drop 1 weight decodes to 128", (await page.inputValue('input.en-num[data-f="drop0w"]')) === "128");
+  // edit every field kind
+  const set = async (f, v) => { await page.fill(`input.en-num[data-f="${f}"]`, String(v)); await page.dispatchEvent(`input.en-num[data-f="${f}"]`, "change"); };
+  await set("lv", 50); await set("hp", 1234); await set("sp", 77); await set("potch", 9999); await set("stat3", 222); await set("drop0w", 500);
+  await page.click('button.en-item[data-f="drop1i"]');
+  await page.waitForSelector(".picker-search"); await page.fill(".picker-search", String(armor.id)); await page.click(".picker-row >> nth=0");
+  const r = await save(page);
+  for (const [nm, rec, aux] of [["copy A", ENEMY_REC_A, ENEMY_AUX_A], ["copy B", ENEMY_REC_B, ENEMY_AUX_B]]) {
+    check(`${nm}: level = 50`, r.u16(rec + 64) === 50);
+    check(`${nm}: HP = 1234 (both fields)`, r.u16(rec + 48) === 1234 && r.u16(rec + 50) === 1234);
+    check(`${nm}: REP stat = 222`, r.u16(rec + 32 + 6) === 222);
+    check(`${nm}: SP = 77`, r.u16(aux + 12) === 77);
+    check(`${nm}: potch = 9999`, r.u32(aux + 16) === 9999);
+    check(`${nm}: drop1 weight = 500`, r.u16(aux + 34) === 500);
+    check(`${nm}: drop2 item = armor`, r.u16(aux + 36) === armor.id);
+  }
+  await page.context().close();
+}
+
+head("Enemies editor — recipe export covers enemy bytes");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
+  await page.fill('input.en-num[data-f="lv"]', "42"); await page.dispatchEvent('input.en-num[data-f="lv"]', "change");
+  const dl = page.waitForEvent("download");
+  await page.click("#isoRecipeBtn");
+  const mod = JSON.parse(fs.readFileSync(await (await dl).path(), "utf8"));
+  const a = mod.patches.find((p) => p.off === ENEMY_REC_A + 64), b = mod.patches.find((p) => p.off === ENEMY_REC_B + 64);
+  check("recipe has copy-A run (7 -> 42)", !!a && a.old === "07" && a.new === "2a");
+  check("recipe has copy-B run", !!b && b.new === "2a");
   await page.context().close();
 }
 
