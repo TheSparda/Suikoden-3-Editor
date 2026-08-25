@@ -48,6 +48,20 @@
     counterSites: [0x244F8C, 0x2452F8],     // slti $v0,$v0,imm — Destiny bonus-counter chance
     healBias: 0x245DA8, healShift: 0x245DB4, // addiu $v0,$s1,(2^k)-1 ; sra $v0,$v0,k — Pale Moon heal
     potchChoices: [1, 2, 3, 4, 5, 8, 9, 16, 17],
+    // ---- which set OWNS each effect (the comparison the code makes on the set number) ----
+    // Two shapes. MASK sites are `andi $v0,$v0,m` — a set numbered n matches when (n & m).
+    // EQ sites are `addiu $rX,$zero,n` feeding a branch — exact set number, so 6 disables.
+    counterOwnerSites: [0x244F78, 0x2452E4],   // addiu $v0,$zero,n  (both must agree)
+    healOwnerSite: 0x245D98,                   // addiu $s4,$zero,n
+    squeakOwnerSite: 0x131354,                 // addiu $s1,$zero,n
+    halveMaskSite: 0x246E28,                   // andi  $v0,$v0,m
+    // $s4 is dual-use: the heal set number AND the divisor at 0x245E1C's `div $zero,$v0,$s4`
+    // (the compiler's guard constant proves the intended divisor is 5). Changing the owner
+    // therefore needs the divisor restored right before that div. The slot below holds a
+    // DEAD store (`addiu $a0,$zero,0x64`; $a0 is next written, never read, and nothing
+    // branches here — both verified), so it is safe to repurpose as the repair.
+    healDivRepair: 0x245E1C, healDivWord: 0x24140005,   // addiu $s4,$zero,5
+    OWNER_OFF: 6,                              // an unreachable set number = effect disabled
     meta: [
       { name: "Mole Set", bonus: "Squeaky footsteps when walking (not in battle)",
         guide: "Make squeaky noises when you walk (not in battle)." },
@@ -79,14 +93,26 @@
   const healWords = (k) => [(9 << 26) | (17 << 21) | (2 << 16) | ((1 << k) - 1),   // addiu bias
     (2 << 16) | (2 << 11) | (k << 6) | 3];                                        // sra k
   const counterWord = (p) => ((0x0A << 26) | (2 << 21) | (2 << 16) | (p & 0x7FFF)) >>> 0;
+  // `addiu $rt,$zero,imm` — rewrite just the immediate of an existing instruction word
+  const withImm = (word, imm) => (((word >>> 0) & 0xFFFF0000) | (imm & 0xFFFF)) >>> 0;
+  // Set numbers are 1..5, so an `andi` mask selects a UNION of three fixed groups:
+  // bit0 → sets 1,3,5 · bit1 → sets 2,3 · bit2 → sets 4,5. Only these 8 subsets exist.
+  const setsForMask = (m) => [1, 2, 3, 4, 5].filter((n) => (n & m) !== 0);
+  const maskSetNames = (m) => {
+    const s = setsForMask(m);
+    return s.length ? s.map((n) => SETS.meta[n - 1].name.replace(/ Set$/, "")).join(" + ") : "no set (off)";
+  };
 
   // ---- aux windows: tiny out-of-block ranges we also edit ---------------------
-  // The potch x3 instructions live in a battle-results overlay ~1 GB into the disc
-  // (two identical copies) — far outside the ELF block. Each 8-byte window is read
-  // once on ISO load and rides along every save/export path. No undo integration:
+  // The potch bonus lives in a battle-results overlay ~1 GB into the disc (two identical
+  // copies) — far outside the ELF block. Each 16-byte window holds the whole sequence:
+  //   +0 andi $v0,$v0,mask   (which sets earn potch)   +4 beqz
+  //   +8 sll / +12 addu      (the multiplier)
+  // Read once on ISO load, then ride along every save/export path. No undo integration:
   // the Sets view gives each aux field its own restore control instead.
-  const AUX_WINDOWS = [0x3F3E699C, 0x3F3EF19C];
-  const AUX_LEN = 8;
+  const AUX_WINDOWS = [0x3F3E6994, 0x3F3EF194];
+  const AUX_LEN = 16;
+  const AUX_MASK = 0, AUX_MULT = 8;        // offsets within a window
   let AUX = [];       // [{off, buf, orig}] — empty until an ISO loads (or if unreadable)
   const inAux = (off, n) => AUX.some((w) => off >= w.off && off + n <= w.off + AUX_LEN);
   function auxWin(off, n) { return AUX.find((w) => off >= w.off && off + n <= w.off + AUX_LEN) || null; }
@@ -109,6 +135,13 @@
   }
   const auxDirty = () => auxRuns().length > 0;
   const auxRevertAll = () => AUX.forEach((w) => w.buf.set(w.orig));
+  // Per-field variants: the same relative span across every window (each window is an
+  // identical copy of the same code), so one control's ↺ can't revert another's edit.
+  const auxDirtyAt = (rel, len) => AUX.some((w) => {
+    for (let i = rel; i < rel + len; i++) if (w.buf[i] !== w.orig[i]) return true;
+    return false;
+  });
+  const auxRevertAt = (rel, len) => AUX.forEach((w) => w.buf.set(w.orig.subarray(rel, rel + len), rel));
   const auxMarkSaved = () => AUX.forEach((w) => { w.orig = w.buf.slice(); });
 
   // Known table starts, sorted — used to stop a record write from spilling into the next
@@ -594,9 +627,14 @@
     }
     // Aux windows (potch overlay pair): decode the multiplier for a readable review row.
     if (auxDirty()) {
-      const oldM = decodePotch(auxO32(AUX_WINDOWS[0]), auxO32(AUX_WINDOWS[0] + 4));
-      const newM = decodePotch(auxR32(AUX_WINDOWS[0]), auxR32(AUX_WINDOWS[0] + 4));
-      rows.push({ g: "Armor sets", t: `Potch multiplier per set wearer: ${oldM ? "×" + oldM : "?"} → ${newM ? "×" + newM : "?"} (both overlay copies)` });
+      const w0 = AUX_WINDOWS[0];
+      const oldM = decodePotch(auxO32(w0 + AUX_MULT), auxO32(w0 + AUX_MULT + 4));
+      const newM = decodePotch(auxR32(w0 + AUX_MULT), auxR32(w0 + AUX_MULT + 4));
+      if (oldM !== newM)
+        rows.push({ g: "Armor sets", t: `Potch multiplier per set wearer: ${oldM ? "×" + oldM : "?"} → ${newM ? "×" + newM : "?"} (both overlay copies)` });
+      const oldMask = auxO32(w0 + AUX_MASK) & 0xFFFF, newMask = auxR32(w0 + AUX_MASK) & 0xFFFF;
+      if (oldMask !== newMask)
+        rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
     }
     // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
@@ -1789,14 +1827,27 @@
       origCounter = origW(SETS.counterSites[0], 4) & 0xFFFF;
     const curHeal = (readW(SETS.healShift, 4) >>> 6) & 0x1F,
       origHeal = (origW(SETS.healShift, 4) >>> 6) & 0x1F;
-    const curPotch = AUX.length ? decodePotch(auxR32(AUX_WINDOWS[0]), auxR32(AUX_WINDOWS[0] + 4)) : null;
-    const origPotch = AUX.length ? decodePotch(auxO32(AUX_WINDOWS[0]), auxO32(AUX_WINDOWS[0] + 4)) : null;
+    const w0 = AUX_WINDOWS[0];
+    const curPotch = AUX.length ? decodePotch(auxR32(w0 + AUX_MULT), auxR32(w0 + AUX_MULT + 4)) : null;
+    const origPotch = AUX.length ? decodePotch(auxO32(w0 + AUX_MULT), auxO32(w0 + AUX_MULT + 4)) : null;
     const potchCtl = AUX.length
-      ? `<label class="field"><span>Potch multiplier per wearer <span class="muted">(Prosperity + Destiny)</span></span>
+      ? `<label class="field"><span>Potch multiplier per wearer <span class="muted">(stacks)</span></span>
            <select id="setPotch">${SETS.potchChoices.map((c) =>
              `<option value="${c}"${c === curPotch ? " selected" : ""}>×${c}${c === 1 ? " (off)" : ""}</option>`).join("")}
              ${curPotch === null ? `<option value="" selected>? (unrecognized patch)</option>` : ""}</select></label>`
       : `<label class="field"><span>Potch multiplier</span><span class="muted">unavailable — the overlay region couldn't be read from this disc</span></label>`;
+    // ---- effect ownership: which set grants each effect -------------------------
+    const maskOpts = (cur) => [0, 1, 2, 3, 4, 5, 6, 7].map((m) =>
+      `<option value="${m}"${m === cur ? " selected" : ""}>${esc2(maskSetNames(m))}</option>`).join("");
+    const eqOpts = (cur) => [1, 2, 3, 4, 5, SETS.OWNER_OFF].map((n) =>
+      `<option value="${n}"${n === cur ? " selected" : ""}>${n === SETS.OWNER_OFF ? "no set (off)" : esc2(SETS.meta[n - 1].name)}</option>`).join("");
+    const curCounterOwner = readW(SETS.counterOwnerSites[0], 4) & 0xFFFF;
+    const curHealOwner = readW(SETS.healOwnerSite, 4) & 0xFFFF;
+    const curSqueakOwner = readW(SETS.squeakOwnerSite, 4) & 0xFFFF;
+    const curHalveMask = readW(SETS.halveMaskSite, 4) & 0xFFFF;
+    const potchMaskCtl = AUX.length
+      ? `<label class="field"><span>Potch bonus goes to</span><select id="ownPotch">${maskOpts(auxR32(w0 + AUX_MASK) & 0xFFFF)}</select></label>`
+      : "";
     const setCards = [];
     for (let i = 0; i < SETS.count; i++) {
       const meta = SETS.meta[i], base = SETS.table + i * SETS.stride;
@@ -1832,8 +1883,28 @@
         <div class="muted" style="margin-top:8px">Disassembly-verified behavior: the potch multiplier applies once per party member wearing
           Prosperity <i>or</i> Destiny and stacks (two wearers at ×3 = ×9). The counter chance only fires for a Destiny wearer <b>without</b>
           the Counter Attack skill (damage = own PWR + support PWR, ÷3). Guardian's real effect is a halving check on counter damage
-          (Pale Moon matches it too — likely a dev bug; not editable). Mole just squeaks. The Suikosource guide's “Prosperity ×7” and
+          (Pale Moon matches it too — likely a dev bug). Mole just squeaks. The Suikosource guide's “Prosperity ×7” and
           “Guardian counter +50%” don't match the code.</div>
+      </div>
+      <div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Which set grants each effect <span class="u">reassigns the game's own checks</span></div>
+        <div class="grid">
+          ${potchMaskCtl}
+          <label class="field"><span>Bonus counter chance goes to</span><select id="ownCounter">${eqOpts(curCounterOwner)}</select></label>
+          <label class="field"><span>Heal-on-hit goes to</span><select id="ownHeal">${eqOpts(curHealOwner)}</select></label>
+          <label class="field"><span>Counter-damage halving goes to</span><select id="ownHalve">${maskOpts(curHalveMask)}</select></label>
+          <label class="field"><span>Squeaky footsteps go to</span><select id="ownSqueak">${eqOpts(curSqueakOwner)}</select></label>
+        </div>
+        <div class="warnbox" style="margin:10px 0 0">The game has no table of set effects — each one is a hard-coded check on the set
+          number, so these dropdowns <b>move an existing effect onto a different set</b> (and one set can hold several at once). Genuinely
+          <i>new</i> effects would need new code injected into the executable, which this editor doesn't do.
+          <div style="margin-top:6px">Two quirks worth knowing, both inherent to how the code is written:</div>
+          <ul style="margin:4px 0 0 18px">
+            <li><b>The potch and halving checks are bit tests</b>, not equality — the game does <code>setNumber &amp; mask</code>. Because the
+              sets are numbered 1–5, only 8 groupings are reachable, which is exactly what those two dropdowns list.</li>
+            <li><b>Bonus counter damage is divided by the set number itself</b> (the code reuses that register). Stock Destiny is #3, hence
+              ÷3; moving it to Mole (#1) means no division at all, while Pale Moon (#5) divides by 5.</li>
+          </ul></div>
       </div>
       <div id="setCards">${setCards.join("") || `<div class="muted">no matching sets</div>`}</div>`;
     // composition selects: normal block writes -> undo/review/recipe all standard
@@ -1882,14 +1953,57 @@
       () => { revertRange(SETS.healBias, 4); revertRange(SETS.healShift, 4); }, healLabel[origHeal] || "?");
     const potchEl = q("#setPotch", host);
     if (potchEl) {
-      const auxIsDirty = () => auxDirty();
+      const multDirty = () => auxDirtyAt(AUX_MULT, 8), multRevert = () => auxRevertAt(AUX_MULT, 8);
       potchEl.onchange = () => {
         const w = potchWords(+potchEl.value);
         if (!w) return;
-        for (const site of AUX_WINDOWS) { auxW32(site, w[0]); auxW32(site + 4, w[1]); }
-        markPair(potchEl, auxIsDirty(), auxRevertAll, "×" + (origPotch ?? "?"));
+        for (const site of AUX_WINDOWS) { auxW32(site + AUX_MULT, w[0]); auxW32(site + AUX_MULT + 4, w[1]); }
+        markPair(potchEl, multDirty(), multRevert, "×" + (origPotch ?? "?"));
       };
-      markPair(potchEl, auxIsDirty(), auxRevertAll, "×" + (origPotch ?? "?"));
+      markPair(potchEl, multDirty(), multRevert, "×" + (origPotch ?? "?"));
+    }
+    // ---- effect ownership --------------------------------------------------------
+    // Each control rewrites only the immediate of the existing instruction(s), so the
+    // opcode/registers stay exactly as the game shipped them.
+    function wireOwner(id, sites, label, fmt, extra) {
+      const el = q("#" + id, host); if (!el) return;
+      const origImm = origW(sites[0], 4) & 0xFFFF;
+      const dirty = () => sites.some((o) => isDirty(o, 4)) || (extra ? isDirty(extra.off, 4) : false);
+      const revert = () => { sites.forEach((o) => revertRange(o, 4)); if (extra) revertRange(extra.off, 4); };
+      const apply = () => {
+        const v = +el.value;
+        sites.forEach((o, i) => {
+          writeW(o, 4, withImm(origW(o, 4), v));
+          reg(o, 4, "num", "Armor sets", `${label} owner${i ? ` (code site ${i + 1})` : ""}`);
+        });
+        if (extra) {
+          // The heal check shares its register with a later divisor; restore that divisor
+          // in a dead slot whenever the owner moves off the stock value, and undo the
+          // repair when it moves back so a round-trip leaves zero bytes changed.
+          if (v === extra.stock) revertRange(extra.off, 4);
+          else { writeW(extra.off, 4, extra.word); reg(extra.off, 4, "num", "Armor sets", `${label} divisor repair`); }
+        }
+        markPair(el, dirty(), revert, fmt(origImm));
+      };
+      el.onchange = apply;
+      markPair(el, dirty(), revert, fmt(origImm));
+    }
+    const eqName = (n) => (n >= 1 && n <= 5 ? SETS.meta[n - 1].name : "no set");
+    wireOwner("ownCounter", SETS.counterOwnerSites, "Bonus counter", eqName);
+    wireOwner("ownHeal", [SETS.healOwnerSite], "Heal-on-hit", eqName,
+      { off: SETS.healDivRepair, word: SETS.healDivWord, stock: 5 });
+    wireOwner("ownSqueak", [SETS.squeakOwnerSite], "Squeaky footsteps", eqName);
+    wireOwner("ownHalve", [SETS.halveMaskSite], "Counter-damage halving", maskSetNames);
+    const ownPotchEl = q("#ownPotch", host);
+    if (ownPotchEl) {
+      const origMask = auxO32(w0 + AUX_MASK) & 0xFFFF;
+      const maskDirty = () => auxDirtyAt(AUX_MASK, 4), maskRevert = () => auxRevertAt(AUX_MASK, 4);
+      ownPotchEl.onchange = () => {
+        const m = +ownPotchEl.value;
+        for (const site of AUX_WINDOWS) auxW32(site + AUX_MASK, withImm(auxO32(site + AUX_MASK), m));
+        markPair(ownPotchEl, maskDirty(), maskRevert, maskSetNames(origMask));
+      };
+      markPair(ownPotchEl, maskDirty(), maskRevert, maskSetNames(origMask));
     }
   }
 

@@ -21,7 +21,15 @@ export const VERSION_OFF = 4136544, VERSION_VAL = 0x40A69A01;
 // Armor sets: composition table + the in-block bonus-constant instruction words
 // (the potch pair lives ~1 GB into the disc — outside a synth file, so the Sets
 // view must degrade to "unavailable" for it here).
-export const SETS = { table: 0x3DDAB8, counterSites: [0x244F8C, 0x2452F8], healBias: 0x245DA8, healShift: 0x245DB4 };
+export const SETS = { table: 0x3DDAB8, counterSites: [0x244F8C, 0x2452F8], healBias: 0x245DA8, healShift: 0x245DB4,
+  counterOwnerSites: [0x244F78, 0x2452E4], healOwnerSite: 0x245D98, squeakOwnerSite: 0x131354,
+  halveMaskSite: 0x246E28, healDivRepair: 0x245E1C };
+// stock "which set owns this effect" words (see the offsets doc)
+export const STOCK_OWNER_COUNTER = 0x24020003;   // addiu $v0,$zero,3   (Destiny)
+export const STOCK_OWNER_HEAL = 0x24140005;      // addiu $s4,$zero,5   (Pale Moon)
+export const STOCK_OWNER_SQUEAK = 0x24110001;    // addiu $s1,$zero,1   (Mole)
+export const STOCK_HALVE_MASK = 0x30420004;      // andi  $v0,$v0,4     (Guardian + Pale Moon)
+export const STOCK_HEAL_DIV_SLOT = 0x24040064;   // addiu $a0,$zero,0x64 (dead store / repair slot)
 export const SET_ROWS = [           // real composition (Head, Body, Shield, Accessory; 0 = unused)
   [0x0AD, 0x0C2, 0x109, 0x123],     // Mole
   [0x0BD, 0x103, 0x000, 0x11F],     // Prosperity
@@ -71,6 +79,9 @@ export function buildSynthIso() {
   SET_ROWS.forEach((row, i) => row.forEach((id, s) => w16(SETS.table + i * 8 + s * 2, id)));
   SETS.counterSites.forEach((o) => w32(o, STOCK_COUNTER));
   w32(SETS.healBias, STOCK_HEAL_BIAS); w32(SETS.healShift, STOCK_HEAL_SRA);
+  SETS.counterOwnerSites.forEach((o) => w32(o, STOCK_OWNER_COUNTER));
+  w32(SETS.healOwnerSite, STOCK_OWNER_HEAL); w32(SETS.squeakOwnerSite, STOCK_OWNER_SQUEAK);
+  w32(SETS.halveMaskSite, STOCK_HALVE_MASK); w32(SETS.healDivRepair, STOCK_HEAL_DIV_SLOT);
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
   for (let i = 0; i < 16; i++) bytes[TABLES.list4[0] + i] = 20 + i;   // list4 rec0 ATK curve

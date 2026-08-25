@@ -107,9 +107,10 @@ one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weap
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, and optional description rewrites),
-**Unites**, **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition plus the
-set-bonus constants patched straight into the game code — potch multiplier, Destiny counter
-chance, Pale Moon heal share), **Food**, **Text** (in-ELF UI strings —
+**Unites**, **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
+set-bonus constants patched straight into the game code — potch multiplier, counter chance,
+heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
+the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Balance** (idempotent hard-mode multiplier presets), **Enemies** (a
 read-only **bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and

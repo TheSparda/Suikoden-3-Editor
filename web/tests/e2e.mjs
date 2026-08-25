@@ -278,6 +278,47 @@ head("Armor sets view — decode, edit, byte-exact save");
   await page.context().close();
 }
 
+head("Armor set effect ownership — reassign which set grants what");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="sets"]');
+  await page.waitForSelector("#ownCounter", { timeout: 3000 });
+  // stock owners decode: counter=Destiny(3), heal=Pale Moon(5), squeak=Mole(1), halving mask=4
+  check("counter owner decodes to Destiny", (await page.inputValue("#ownCounter")) === "3");
+  check("heal owner decodes to Pale Moon", (await page.inputValue("#ownHeal")) === "5");
+  check("squeak owner decodes to Mole", (await page.inputValue("#ownSqueak")) === "1");
+  check("halving mask decodes to 4", (await page.inputValue("#ownHalve")) === "4");
+  // the mask dropdown must name the sets a bit test actually selects (4 -> Guardian + Pale Moon)
+  check("mask option names its real set group",
+    (await page.textContent("#ownHalve option[value='4']")).trim() === "Guardian + Pale Moon");
+  check("mask 1 names the odd-numbered sets",
+    (await page.textContent("#ownHalve option[value='1']")).trim() === "Mole + Destiny + Pale Moon");
+  // reassign: counter -> Mole(1), heal -> Guardian(4), squeak -> off(6), halving -> mask 2
+  await page.selectOption("#ownCounter", "1");
+  await page.selectOption("#ownHeal", "4");
+  await page.selectOption("#ownSqueak", "6");
+  await page.selectOption("#ownHalve", "2");
+  const r = await save(page);
+  check("counter owner site A = addiu 1", r.u32(SETS.counterOwnerSites[0]) === 0x24020001);
+  check("counter owner site B = addiu 1", r.u32(SETS.counterOwnerSites[1]) === 0x24020001);
+  check("heal owner = addiu $s4,4", r.u32(SETS.healOwnerSite) === 0x24140004);
+  check("squeak owner = addiu $s1,6 (off)", r.u32(SETS.squeakOwnerSite) === 0x24110006);
+  check("halving mask = andi 2", r.u32(SETS.halveMaskSite) === 0x30420002);
+  // moving the heal owner off Pale Moon must restore the divisor it clobbers
+  check("heal divisor repair written", r.u32(SETS.healDivRepair) === 0x24140005);
+  await page.context().close();
+}
+
+head("Heal-owner round trip leaves no stray bytes");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="sets"]');
+  await page.waitForSelector("#ownHeal", { timeout: 3000 });
+  await page.selectOption("#ownHeal", "2");            // off stock -> repair patch written
+  await page.selectOption("#ownHeal", "5");            // back to stock -> repair must be undone
+  const clean = await page.evaluate(() => !document.querySelector("#isoDirty") || document.querySelector("#isoDirty").hidden);
+  check("returning to the stock owner clears every staged byte", clean);
+  await page.context().close();
+}
+
 head("Rune reskin + description rewrite");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
