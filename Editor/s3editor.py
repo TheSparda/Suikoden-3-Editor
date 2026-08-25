@@ -624,6 +624,66 @@ def write_gear(item_id, fields):
             result["descError"] = str(e)
     iso.close(); return result
 
+# --- Armor sets (composition table + code-constant bonuses) -------------------
+def read_sets():
+    """The 5 armor-set records (4 item-id slots each) plus the decoded bonus
+    constants patched out of the ELF/overlay code (see s3patch for the map)."""
+    iso = _iso(); items = S.load_item_ids()
+    out = {"slots": list(S.SET_SLOTS), "sets": [], "params": {}}
+    for i in range(S.SET_COUNT):
+        rec = iso.rd(S.SET_TABLE_FILE + i * S.SET_STRIDE, S.SET_STRIDE)
+        ids = list(struct.unpack("<4H", rec))
+        meta = S.ARMOR_SETS[i]
+        out["sets"].append({
+            "idx": i, "num": i + 1, "name": meta["name"],
+            "bonus": meta["bonus"], "guide": meta["guide"],
+            "items": [{"id": v, "name": items.get(v, f"0x{v:X}") if v else "— none —"}
+                      for v in ids],
+        })
+    # bonus constants: decode the live instruction words (staged edits included)
+    w1 = iso.u32(S.SET_POTCH_SITES[0]); w2 = iso.u32(S.SET_POTCH_SITES[0] + 4)
+    out["params"]["potchMult"] = S.decode_potch_words(w1, w2)
+    out["params"]["counterPct"] = iso.u32(S.SET_COUNTER_SITES[0]) & 0xFFFF
+    out["params"]["healShift"] = (iso.u32(S.SET_HEAL_SHIFT_OFF) >> 6) & 0x1F
+    out["params"]["potchChoices"] = list(S.SET_POTCH_CHOICES)
+    iso.close(); return out
+
+def write_set(idx, slot, item_id):
+    """Stage one slot of one set record (u16 item id; 0 = slot unused)."""
+    if not (0 <= int(idx) < S.SET_COUNT and 0 <= int(slot) < 4):
+        return {"error": "bad set/slot index"}
+    iso = _iso(write=True)
+    iso.wr(S.SET_TABLE_FILE + int(idx) * S.SET_STRIDE + int(slot) * 2,
+           struct.pack("<H", int(item_id) & 0xFFFF))
+    iso.close(); return {"ok": True}
+
+def write_set_bonus(fields):
+    """Stage the instruction patches for the editable set-bonus constants.
+    Each write re-encodes full instruction words, so a value outside the supported
+    range is rejected before anything is staged."""
+    try:
+        writes = []   # (offset, packed bytes)
+        if "potchMult" in fields:
+            sll, addu = S.set_potch_words(fields["potchMult"])
+            for site in S.SET_POTCH_SITES:
+                writes.append((site, struct.pack("<II", sll, addu)))
+        if "counterPct" in fields:
+            w = S.set_counter_word(fields["counterPct"])
+            for site in S.SET_COUNTER_SITES:
+                writes.append((site, struct.pack("<I", w)))
+        if "healShift" in fields:
+            addiu, sra = S.set_heal_words(fields["healShift"])
+            writes.append((S.SET_HEAL_BIAS_OFF, struct.pack("<I", addiu)))
+            writes.append((S.SET_HEAL_SHIFT_OFF, struct.pack("<I", sra)))
+    except (ValueError, TypeError) as e:
+        return {"error": str(e)}
+    if not writes:
+        return {"error": "nothing to write"}
+    iso = _iso(write=True)
+    for off, data in writes:
+        iso.wr(off, data)
+    iso.close(); return {"ok": True}
+
 def read_foods():
     iso = _iso()
     foods = S.find_food_records(iso)
@@ -1118,6 +1178,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/spells":  return self._send(200, read_spells())
             if p == "/api/unites":  return self._send(200, read_unites())
             if p == "/api/gear":    return self._send(200, read_gear())
+            if p == "/api/sets":    return self._send(200, read_sets())
             if p == "/api/foods":   return self._send(200, read_foods())
             if p == "/api/shop":    return self._send(200, read_shop())
             if p == "/api/items":
@@ -1211,6 +1272,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, write_unite(int(body["index"]), body["fields"]))
             if self.path == "/api/gear":
                 return self._send(200, write_gear(int(body["id"]), body["fields"]))
+            if self.path == "/api/set":
+                return self._send(200, write_set(int(body["set"]), int(body["slot"]),
+                                                 int(body["item"])))
+            if self.path == "/api/setbonus":
+                return self._send(200, write_set_bonus(body))
             if self.path == "/api/food":
                 return self._send(200, write_food(int(body["index"]), body["fields"]))
             if self.path == "/api/rune":
@@ -1498,7 +1564,7 @@ kbd{background:var(--input-bg);border:1px solid var(--line);border-bottom-width:
  <span class=hint style="margin:0 0 0 6px">Suikoden III-inspired styling (not official art).</span>
  <span class=credit>Made by <b>Sparda</b> ·
   <a href="https://github.com/TheSparda/Suikoden-3-Editor" target=_blank rel="noopener noreferrer">GitHub</a>
-  · <span class=hint>v1.1.5</span></span>
+  · <span class=hint>v1.15.0</span></span>
 </footer>
 <div id=toast></div>
 <script>
@@ -1579,9 +1645,9 @@ async function doRevert(){
  DIRTY=false;updateSaveUI();toast("reverted unsaved changes");render();
 }
 async function boot(){META=await api("/api/meta");
- const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",patch:"Share / Patch",saves:"Save Editor"};
+ const TAB_LABEL={spells:"Spells",runes:"Runes",unites:"Unites",gear:"Gear",sets:"Sets",weapons:"Weapons",foods:"Foods",shop:"Shop",characters:"Characters",text:"Text",hardmode:"Hard Mode",enemies:"Enemies",reference:"Reference",patch:"Share / Patch",saves:"Save Editor"};
  // top-level bar; "Other" is a hover dropdown holding the less-used tabs
- const topTabs=["characters","spells","runes","unites","gear","weapons","hardmode"];
+ const topTabs=["characters","spells","runes","unites","gear","sets","weapons","hardmode"];
  const otherTabs=["foods","shop","enemies","text","reference","patch"];
  const btn=t=>`<button data-t="${t}">${TAB_LABEL[t]}</button>`;
  window.OTHER_TABS=otherTabs;
@@ -1664,6 +1730,7 @@ async function render(){
  if(TAB==="runes")return renderRunes(m);
  if(TAB==="unites")return renderUnites(m);
  if(TAB==="gear")return renderGear(m);
+ if(TAB==="sets")return renderSets(m);
  if(TAB==="foods")return renderFoods(m);
  if(TAB==="weapons")return renderWeapons(m);
  if(TAB==="shop")return renderShop(m);
@@ -1973,6 +2040,67 @@ async function renderGear(m){const gear=await api("/api/gear");
   if(r.ok&&r.newDesc){const span=inp.closest(".card")?.querySelector("h3 .hint");if(span)span.textContent=r.newDesc;
    const di=inp.closest(".card")?.querySelector('input[data-k=desc]');if(di&&k!=="desc")di.value=r.newDesc;}}
  draw();$("#q").oninput=e=>draw(e.target.value.toLowerCase());}
+
+async function renderSets(m){
+ const d=await api("/api/sets");
+ const ddef=await api("/api/sets?disk=1");
+ const items=await api("/api/items");
+ // which item categories are sensible per set slot (matches the game's equip slots)
+ const SLOTCATS={0:["Headgear"],1:["Armor"],2:["Shields"],3:["Rings","Gloves","Misc Gear","Footwear"]};
+ function opts(slot,cur){
+  const cats=SLOTCATS[slot]||[];
+  let o=`<option value=0>— none —</option>`;
+  o+=items.filter(i=>cats.includes(i.cat)||i.id===cur)
+    .map(i=>`<option value=${i.id} title="${(i.desc||'').replace(/"/g,'&quot;')}">${i.name}</option>`).join("");
+  return o;}
+ const p=d.params,pd=ddef.params;
+ const healPct=k=>({0:"100%",1:"50%",2:"25%",3:"12.5%",4:"6.25%"}[k]||("1/2^"+k));
+ m.innerHTML=`
+  <div class=card><h3 style=margin-top:0>Set bonus tuning <span class=hint>patches the game code — every value below was byte-verified against a pristine ISO. Saves on change.</span></h3>
+   <div class=row style=align-items:flex-end;gap:18px>
+    <label>Potch multiplier per wearer (Prosperity + Destiny)
+     <select id=potch data-def="${pd.potchMult??''}">${(p.potchChoices||[]).map(c=>`<option value=${c}>×${c}${c===1?" (off)":""}</option>`).join("")}</select></label>
+    <label>Destiny bonus counter chance %
+     <input id=cchance type=number min=0 max=100 style=width:80px data-def="${pd.counterPct}" value="${p.counterPct}"></label>
+    <label>Pale Moon heal (share of damage dealt)
+     <select id=heal data-def="${pd.healShift}">${[0,1,2,3,4].map(k=>`<option value=${k}>${healPct(k)}</option>`).join("")}</select></label>
+   </div>
+   <div class=hint style=margin-top:8px>How the code actually works (disassembly-verified): the potch ×3 applies once per party member
+    wearing Prosperity <i>or</i> Destiny and stacks (two wearers = ×9). The counter chance only fires for a Destiny wearer
+    <b>without</b> the Counter Attack skill (damage = own PWR + support PWR, ÷3). Guardian's real effect is a halving check on
+    counter damage (it also matches Pale Moon — likely a dev bug, not editable here). Mole just squeaks.
+    The Suikosource guide's "Prosperity ×7" and "Guardian counter +50%" don't match the code.</div>
+  </div>
+  <div id=setlist></div>`;
+ $("#setlist").innerHTML=d.sets.map(s=>{
+  const sd=ddef.sets[s.idx];
+  const rows=s.items.map((it,slot)=>`<tr><td class=hint style=width:110px>${d.slots[slot]}</td>
+    <td><select data-set=${s.idx} data-slot=${slot} data-def="${sd.items[slot].id}">${opts(slot,it.id)}</select></td></tr>`).join("");
+  return `<div class=card><h3 style="margin:0 0 4px">${s.name} <span class=hint>set #${s.num}</span></h3>
+   <div class=hint style=margin-bottom:6px><b>In-code bonus:</b> ${s.bonus}</div>
+   <div class=hint style=margin-bottom:8px><b>Guide says:</b> ${s.guide}</div>
+   <table><tbody>${rows}</tbody></table></div>`;}).join("");
+ // wire composition dropdowns
+ d.sets.forEach(s=>s.items.forEach((it,slot)=>{
+  const sel=$(`#setlist select[data-set="${s.idx}"][data-slot="${slot}"]`);
+  setSel(sel,it.id);
+  sel.addEventListener("change",async()=>{
+   const r=await api("/api/set",{method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({set:s.idx,slot,item:+sel.value})});
+   if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));});
+ }));
+ // wire bonus params
+ setSel($("#potch"),p.potchMult??"");setSel($("#heal"),p.healShift);
+ async function saveBonus(fields){
+  const r=await api("/api/setbonus",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(fields)});
+  if(r.ok)markDirty();toast(r.ok?"staged":"error: "+(r.error||"?"));}
+ $("#potch").addEventListener("change",()=>saveBonus({potchMult:+$("#potch").value}));
+ $("#heal").addEventListener("change",()=>saveBonus({healShift:+$("#heal").value}));
+ $("#cchance").addEventListener("blur",()=>{
+  const v=Math.max(0,Math.min(100,+$("#cchance").value||0));$("#cchance").value=v;
+  saveBonus({counterPct:v});});
+ decorate(m);}
 
 async function renderFoods(m){
  const foods=await api("/api/foods");

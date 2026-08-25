@@ -1125,3 +1125,53 @@ validate" question is now closed — there is no per-party gold structure in gam
 
 Bonus validation: the whole 21-file .xps series + a .cbs decoded/round-tripped through the
 shipped SharkPort/CBS paths without issue.
+
+---
+
+## Armor sets — composition table + bonus code CRACKED (2026-08-24)
+
+**Set composition table @ 0x3DDAB8** (boot ELF data; single copy in the whole ISO):
+5 records × 8 bytes = 4 × u16 item ids in equip-slot order **Head, Body, Shield,
+Accessory** (0 = slot not in set). Row order = in-code set number (1-based):
+1=Mole 2=Prosperity 3=Destiny 4=Guardian 5=Pale Moon.
+
+**Set-detect routine** ELF va 0x16CAD90 (`which_set(char) -> 1..5 | 0`): walks the
+table via base 0x19962B0+8, compares equip slots 4/5/6 and all 3 accessory
+sub-slots against each row; empty (0) row entries are skipped, not required.
+
+**All call sites found (jal scan across the full 4GB ISO) + what the code does:**
+- **Potch ×3 per wearer** — battle-result overlay, TWO identical copies:
+  `sll $v0,$s6,1; addu $s6,$v0,$s6` at ISO **0x3F3E699C** and **0x3F3EF19C**
+  (get_set via wrapper 0x181B370, test `andi 2` → matches Prosperity(2) AND
+  Destiny(3); stacks per party member — 2 wearers = ×9).
+- **Bonus counter chance 30%** — counter routine 0x17FD580: a char without the
+  Counter Attack skill wearing set **3 (Destiny)** counters on `rand(100) < 30`:
+  `slti $v0,$v0,0x1E` at ISO **0x244F8C** and **0x2452F8**; counter damage =
+  (own PWR + support PWR) / 3 (the /3 divides by the set number register — cute).
+- **Pale Moon heal 25% of damage dealt** — set == 5 check, then signed /4:
+  `addiu $v0,$s1,3` @ ISO **0x245DA8** + `sra $v0,$v0,2` @ **0x245DB4**.
+- **Counter-damage halving** — attack-resolution site 0x17FF620 tests
+  `andi set,4` (matches Guardian 4 **and** Pale Moon 5 — likely dev bug) and
+  halves the counter amount (`sra 1` @ va 0x17FF638). Info-only in the editor.
+- **Mole squeak** — field code 0x16E9B60 checks set == 1 while walking.
+
+**Guide discrepancies (Suikosource Rare Armor page):** code says Prosperity is
+×3/wearer (not ×7) and the free-counter bonus belongs to Destiny (guide credits
+Guardian with "counter rate +50%"). The ×7 legend probably came from testing
+Prosperity with its pieces' own Potch Finder skills stacking on the set ×3.
+
+**New "Sets" tab (v1.15.0, web + desktop):** edits the 5×4 composition table (item dropdowns
+filtered by slot category) and the three bonus constants — potch multiplier
+(encodable set {1,2,3,4,5,8,9,16,17} via sll/sll+addu re-encode, both overlay
+copies patched together), Destiny counter % (0–100), Pale Moon heal share
+(100/50/25/12.5/6.25% via shift+bias re-encode). All writes go through the
+normal staging layer, so .s3mod export/restore-to-default work as usual. Every
+patched word byte-verified against a pristine dump before shipping.
+
+**Web editor note — AUX WINDOWS.** The web ISO editor only holds the ~3.75 MB ELF
+block, but the two potch instruction pairs live ~1 GB into the disc. iso.js now
+also reads two 8-byte "aux windows" (0x3F3E699C, 0x3F3EF19C) on load and threads
+them through every write path: in-place save, streaming save, .s3mod export AND
+import, .xdelta export AND import, Revert all, and the save review (which decodes
+them into a "Potch multiplier ×3 → ×5" row). If a disc can't serve those ranges the
+control degrades to "unavailable" rather than silently doing nothing.
