@@ -1160,10 +1160,18 @@ sub-slots against each row; empty (0) row entries are skipped, not required.
 Guardian with "counter rate +50%"). The ×7 legend probably came from testing
 Prosperity with its pieces' own Potch Finder skills stacking on the set ×3.
 
-**New "Sets" tab (v1.12.0):** edits the 5×4 composition table (item dropdowns
+**New "Sets" tab (v1.15.0, web + desktop):** edits the 5×4 composition table (item dropdowns
 filtered by slot category) and the three bonus constants — potch multiplier
 (encodable set {1,2,3,4,5,8,9,16,17} via sll/sll+addu re-encode, both overlay
 copies patched together), Destiny counter % (0–100), Pale Moon heal share
 (100/50/25/12.5/6.25% via shift+bias re-encode). All writes go through the
 normal staging layer, so .s3mod export/restore-to-default work as usual. Every
 patched word byte-verified against a pristine dump before shipping.
+
+**Web editor note — AUX WINDOWS.** The web ISO editor only holds the ~3.75 MB ELF
+block, but the two potch instruction pairs live ~1 GB into the disc. iso.js now
+also reads two 8-byte "aux windows" (0x3F3E699C, 0x3F3EF19C) on load and threads
+them through every write path: in-place save, streaming save, .s3mod export AND
+import, .xdelta export AND import, Revert all, and the save review (which decodes
+them into a "Potch multiplier ×3 → ×5" row). If a disc can't serve those ranges the
+control degrades to "unavailable" rather than silently doing nothing.

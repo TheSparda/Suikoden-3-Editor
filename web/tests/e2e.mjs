@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL } from "./synth-iso.mjs";
+import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -250,6 +250,31 @@ head("Character pickers (item + skill) byte-exact");
   const r = await save(page);
   check("Other item 1 = armor id (u16)", r.u16(rec + 112) === armor.id);
   check("Skill 1 = 0x0A (u8)", r.u8(rec + 12) === 0x0A);
+  await page.context().close();
+}
+
+head("Armor sets view — decode, edit, byte-exact save");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="sets"]');
+  await page.waitForSelector("#setCards details.char", { timeout: 3000 });
+  check("all 5 set cards render", (await page.$$("#setCards details.char")).length === 5);
+  // decode of planted stock values: Mole head slot shows Mole Helm (0x0AD = 173)
+  const moleHead = SETS.table;   // set 0, slot 0
+  check("Mole head slot decodes to Mole Helm", (await page.inputValue(`select.set-slot[data-off="${moleHead}"]`)) === "173");
+  check("counter chance decodes to 30", (await page.inputValue("#setCounter")) === "30");
+  check("heal share decodes to 25% (shift 2)", (await page.inputValue("#setHeal")) === "2");
+  // the potch pair lives outside a synth file → the control must degrade, not lie
+  check("potch multiplier degrades to 'unavailable'", (await page.textContent("#isoView")).includes("unavailable"));
+  // edit: swap Mole head to Old Helm (0x0AE = 174), counter -> 50, heal -> 50% (shift 1)
+  await page.selectOption(`select.set-slot[data-off="${moleHead}"]`, "174");
+  await page.fill("#setCounter", "50"); await page.dispatchEvent("#setCounter", "change");
+  await page.selectOption("#setHeal", "1");
+  const r = await save(page);
+  check("set table: Mole head = Old Helm", r.u16(moleHead) === 174);
+  check("counter site A = slti 50", r.u32(SETS.counterSites[0]) === 0x28420032);
+  check("counter site B = slti 50", r.u32(SETS.counterSites[1]) === 0x28420032);
+  check("heal bias = addiu +1", r.u32(SETS.healBias) === 0x26220001);
+  check("heal shift = sra 1", r.u32(SETS.healShift) === 0x00021043);
   await page.context().close();
 }
 
@@ -896,7 +921,7 @@ for (const [w, h] of [[360, 640], [320, 480]]) {
   const page = await newPage({ width: w, height: h });
   await loadIso(page);
   let over = null;
-  for (const v of ["chars", "growth", "support", "weapons", "shops", "spells", "unites", "gear", "food", "balance", "enemies", "ref"]) {
+  for (const v of ["chars", "growth", "support", "weapons", "shops", "spells", "unites", "gear", "sets", "food", "balance", "enemies", "ref"]) {
     await page.click(`#isoTabs [data-v="${v}"]`); await page.waitForTimeout(50);
     if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) over = v;
   }

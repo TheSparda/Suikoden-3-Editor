@@ -36,6 +36,81 @@
   const GEAR = { stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
   const ENEMY = { off: 0x3E74E0, count: 100, stride: 0x14 };   // names only (no editable stat table)
 
+  // ---- Armor sets (see Editor/Suikoden3_ISO_offsets.md "Armor sets ... CRACKED") ----
+  // Composition table: 5 records x 8 bytes = 4 x u16 item ids (Head/Body/Shield/Accessory,
+  // 0 = slot unused). Row order = in-code set number: 1=Mole 2=Prosperity 3=Destiny
+  // 4=Guardian 5=Pale Moon. The bonus constants are instruction immediates; every stock
+  // word below was byte-verified against a pristine SLUS-20387 dump.
+  const SETS = {
+    table: 0x3DDAB8, count: 5, stride: 8,
+    slots: ["Head", "Body", "Shield", "Accessory"],
+    slotCats: [["Headgear"], ["Armor"], ["Shields"], ["Rings", "Gloves", "Misc Gear", "Footwear"]],
+    counterSites: [0x244F8C, 0x2452F8],     // slti $v0,$v0,imm — Destiny bonus-counter chance
+    healBias: 0x245DA8, healShift: 0x245DB4, // addiu $v0,$s1,(2^k)-1 ; sra $v0,$v0,k — Pale Moon heal
+    potchChoices: [1, 2, 3, 4, 5, 8, 9, 16, 17],
+    meta: [
+      { name: "Mole Set", bonus: "Squeaky footsteps when walking (not in battle)",
+        guide: "Make squeaky noises when you walk (not in battle)." },
+      { name: "Prosperity Set", bonus: "Potch won after battle ×3 per wearer (stacks)",
+        guide: "Potch won after battle multiplied by 7." },
+      { name: "Destiny Set", bonus: "Potch ×3 per wearer (stacks) + 30% counter chance if the wearer lacks the Counter Attack skill",
+        guide: "Potch won after battle multiplied by 3." },
+      { name: "Guardian Set", bonus: "Counter-related damage involving the wearer is halved (the code's `set & 4` check — Pale Moon matches it too)",
+        guide: "Counter rate +50%." },
+      { name: "Pale Moon Set", bonus: "Heal 25% of damage dealt after each standard attack",
+        guide: "Heal 25% of damage dealt after each standard attack." },
+    ],
+  };
+  // MIPS re-encoders for the three editable constants (little-endian words).
+  const ADDU_S6_V0_S6 = (2 << 21) | (22 << 16) | (22 << 11) | 0x21;
+  const mipsSll = (rd, rt, sa) => (rt << 16) | (rd << 11) | (sa << 6);
+  function potchWords(m) {      // -> [sll word, addu word] or null if unsupported
+    if (m === 1) return [0, 0];
+    for (let k = 1; k <= 4; k++) {
+      if (m === (1 << k)) return [mipsSll(22, 22, k), 0];            // x2^k
+      if (m === (1 << k) + 1) return [mipsSll(2, 22, k), ADDU_S6_V0_S6]; // x2^k+1
+    }
+    return null;
+  }
+  function decodePotch(w1, w2) {
+    for (const m of SETS.potchChoices) { const w = potchWords(m); if (w[0] === w1 && w[1] === w2) return m; }
+    return null;
+  }
+  const healWords = (k) => [(9 << 26) | (17 << 21) | (2 << 16) | ((1 << k) - 1),   // addiu bias
+    (2 << 16) | (2 << 11) | (k << 6) | 3];                                        // sra k
+  const counterWord = (p) => ((0x0A << 26) | (2 << 21) | (2 << 16) | (p & 0x7FFF)) >>> 0;
+
+  // ---- aux windows: tiny out-of-block ranges we also edit ---------------------
+  // The potch x3 instructions live in a battle-results overlay ~1 GB into the disc
+  // (two identical copies) — far outside the ELF block. Each 8-byte window is read
+  // once on ISO load and rides along every save/export path. No undo integration:
+  // the Sets view gives each aux field its own restore control instead.
+  const AUX_WINDOWS = [0x3F3E699C, 0x3F3EF19C];
+  const AUX_LEN = 8;
+  let AUX = [];       // [{off, buf, orig}] — empty until an ISO loads (or if unreadable)
+  const inAux = (off, n) => AUX.some((w) => off >= w.off && off + n <= w.off + AUX_LEN);
+  function auxWin(off, n) { return AUX.find((w) => off >= w.off && off + n <= w.off + AUX_LEN) || null; }
+  function auxR32(off) { const w = auxWin(off, 4); return w ? new DataView(w.buf.buffer).getUint32(off - w.off, true) : null; }
+  function auxO32(off) { const w = auxWin(off, 4); return w ? new DataView(w.orig.buffer).getUint32(off - w.off, true) : null; }
+  function auxW32(off, v) { const w = auxWin(off, 4); if (w) new DataView(w.buf.buffer).setUint32(off - w.off, v >>> 0, true); }
+  function auxWriteBytes(off, bytes) { const w = auxWin(off, bytes.length); if (w) w.buf.set(bytes, off - w.off); }
+  function auxRuns() {          // dirty runs across all windows, ABSOLUTE offsets
+    const out = [];
+    for (const w of AUX) {
+      let i = 0;
+      while (i < AUX_LEN) {
+        if (w.buf[i] !== w.orig[i]) {
+          const s = i; while (i < AUX_LEN && w.buf[i] !== w.orig[i]) i++;
+          out.push({ off: w.off + s, old: w.orig.slice(s, i), bytes: w.buf.slice(s, i) });
+        } else i++;
+      }
+    }
+    return out;
+  }
+  const auxDirty = () => auxRuns().length > 0;
+  const auxRevertAll = () => AUX.forEach((w) => w.buf.set(w.orig));
+  const auxMarkSaved = () => AUX.forEach((w) => { w.orig = w.buf.slice(); });
+
   // Known table starts, sorted — used to stop a record write from spilling into the next
   // table (list1's last record physically abuts list3; see nextBoundary/drawRecords).
   const BOUNDARIES = [3970620, 4054224, 4061704, 4068152, 4078716, 4089904, 4093152, 4100560, 4105552, 4113056, 4115344, 4136544, 4136564]
@@ -409,7 +484,7 @@
     if (kind === "status") return decodeF18(v);
     return String(v);
   }
-  function anyChanges() { return BUF && ORIG && diffRuns(1).length > 0; }
+  function anyChanges() { return BUF && ORIG && (diffRuns(1).length > 0 || auxDirty()); }
   // relative [start,end) runs where BUF != ORIG; pass limit to early-out on the first run
   function diffRuns(limit) {
     const runs = []; const N = BUF.length; let i = 0;
@@ -456,8 +531,19 @@
       return setStatus(`Not a USA (SLUS-20387) Suikoden III ISO — version word 0x${hex(ver, 8)} ≠ 0x${hex(VERSION_VAL, 8)}. ` +
         `Only the USA release is supported.`, "err");
     }
+    // aux windows (potch-multiplier overlay pair) — optional: an unreadable window just
+    // makes that one control read-only in the Sets view, never blocks the load.
+    let aux = [];
+    try {
+      for (const off of AUX_WINDOWS) {
+        const a = new Uint8Array(await file.slice(off, off + AUX_LEN).arrayBuffer());
+        if (a.length === AUX_LEN) aux.push({ off, buf: a, orig: a.slice() });
+      }
+      if (aux.length !== AUX_WINDOWS.length) aux = [];
+    } catch (e) { aux = []; }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
+    AUX = aux;
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
@@ -505,6 +591,12 @@
       if (m.kind === "text") { ov = `"${strFrom(ORIG, m.off, m.width)}"`; nv = `"${strFrom(BUF, m.off, m.width)}"`; }
       else { ov = fmtVal(m.kind, origW(m.off, m.width)); nv = fmtVal(m.kind, readW(m.off, m.width)); }
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}` });
+    }
+    // Aux windows (potch overlay pair): decode the multiplier for a readable review row.
+    if (auxDirty()) {
+      const oldM = decodePotch(auxO32(AUX_WINDOWS[0]), auxO32(AUX_WINDOWS[0] + 4));
+      const newM = decodePotch(auxR32(AUX_WINDOWS[0]), auxR32(AUX_WINDOWS[0] + 4));
+      rows.push({ g: "Armor sets", t: `Potch multiplier per set wearer: ${oldM ? "×" + oldM : "?"} → ${newM ? "×" + newM : "?"} (both overlay copies)` });
     }
     // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
@@ -562,7 +654,9 @@
   }
   async function doSave() {
     const runs = diffRuns();
-    const total = runs.length, totalBytes = runs.reduce((a, r) => a + (r[1] - r[0]), 0);
+    const aux = auxRuns();
+    const total = runs.length + aux.length,
+      totalBytes = runs.reduce((a, r) => a + (r[1] - r[0]), 0) + aux.reduce((a, r) => a + r.bytes.length, 0);
     const pg = progressModal();
     setBusy(true);
     try {
@@ -580,12 +674,18 @@
         done++; wrote += e - s;
         pg.phase("Writing", `Applying change ${done} of ${total}…`, { pct: (done / total) * 100 });
       }
+      for (const r of aux) {                       // out-of-block aux windows (potch overlay)
+        await w.write({ type: "write", position: r.off, data: r.bytes });
+        done++; wrote += r.bytes.length;
+        pg.phase("Writing", `Applying change ${done} of ${total}…`, { pct: (done / total) * 100 });
+      }
 
       // Phase 3: commit/rename the copy over the original.
       pg.phase("Finalizing", "Committing changes to the disc…", { indet: true });
       await w.close();
 
       ORIG = BUF.slice(); ODV = new DataView(ORIG.buffer);   // now clean
+      auxMarkSaved();
       drawView();
       pg.done(`Wrote ${wrote} byte(s) across ${total} run(s) to ${isoName}.`, false);
       setStatus(`Saved — ${wrote} byte(s) written in place to ${isoName}.`, "ok");
@@ -608,6 +708,7 @@
     const outName = (m ? isoName.slice(0, isoName.length - m[0].length) : isoName || "s3") + ".patched" + (m ? m[0] : ".iso");
     const total = isoFile.size;
     const region = BUF.slice();          // snapshot so mid-save edits can't corrupt the copy
+    const auxSnap = auxRuns();           // out-of-block aux edits (potch overlay), same reason
     // Staged character renames → a same-length disc-wide replacer (empty list = pass-through).
     const rn = RenameCore.buildRenames(RENAMES);
     rn.warnings.forEach((w) => setStatus(w, "warn"));
@@ -635,6 +736,14 @@
             const a = Math.max(start, ELF_BASE), b = Math.min(end, ELF_END);
             for (let i = a; i < b; i++) chunk[i - start] = region[i - ELF_BASE];
           }
+          for (const r of auxSnap) {                            // aux windows (potch overlay)
+            const re = r.off + r.bytes.length;
+            if (re > start && r.off < end) {
+              chunk = chunk.slice();
+              const a = Math.max(start, r.off), b = Math.min(end, re);
+              for (let i = a; i < b; i++) chunk[i - start] = r.bytes[i - r.off];
+            }
+          }
           controller.enqueue(replacer.push(chunk));             // disc-wide same-length rename
           pos = end;
           pg.phase("Writing", `Streaming patched ISO to your downloads… ${fmtSize(pos)} / ${fmtSize(total)}`,
@@ -659,6 +768,7 @@
 
       await done;                                                // resolves when fully streamed
       ORIG = BUF.slice(); ODV = new DataView(ORIG.buffer);       // treat as saved
+      auxMarkSaved();
       drawView();
       setTimeout(() => ifr.remove(), 1000);
       pg.done(`Streamed a patched copy — check your downloads for “${outName}”. Replace your ISO with it to play the edits.`, false, { bytes: total });
@@ -727,6 +837,11 @@
       for (let i = s; i < e; i++) { oldHex += hex(ORIG[i], 2).toLowerCase(); newHex += hex(BUF[i], 2).toLowerCase(); }
       patches.push({ off: ELF_BASE + s, old: oldHex, new: newHex });
     }
+    for (const r of auxRuns()) {                    // aux windows (potch overlay)
+      let oldHex = "", newHex = "";
+      for (let i = 0; i < r.bytes.length; i++) { oldHex += hex(r.old[i], 2).toLowerCase(); newHex += hex(r.bytes[i], 2).toLowerCase(); }
+      patches.push({ off: r.off, old: oldHex, new: newHex });
+    }
     recipeExported = true;
     const mod = { format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
       note: "made with the web ISO editor", patchCount: patches.length, patches };
@@ -745,7 +860,8 @@
     if (!anyChanges()) return setStatus("No changes to export.", "warn");
     if (!isoFile) return setStatus("The original ISO isn't available — reopen it and try again.", "err");
     if (typeof Vcdiff === "undefined") return setStatus("VCDIFF module didn't load — reload the page.", "err");
-    const edits = diffRuns().map(([s, e]) => ({ off: ELF_BASE + s, data: BUF.slice(s, e) }));
+    const edits = diffRuns().map(([s, e]) => ({ off: ELF_BASE + s, data: BUF.slice(s, e) }))
+      .concat(auxRuns().map((r) => ({ off: r.off, data: r.bytes })));   // aux offsets sort after the block
     let patch;
     try { patch = Vcdiff.buildXdelta(isoFile.size, edits); }
     catch (e) { return setStatus("Couldn't build the xdelta patch: " + e.message, "err"); }
@@ -773,7 +889,14 @@
     for (const p of mod.patches || []) {
       const nb = hexBytes(p.new), ob = p.old ? hexBytes(p.old) : null;
       const off = +p.off;
-      if (!inBlk(off, nb.length)) continue;
+      if (!inBlk(off, nb.length)) {
+        if (inAux(off, nb.length)) {                 // aux windows (potch overlay)
+          const w = auxWin(off, nb.length);
+          if (ob) for (let i = 0; i < ob.length; i++) if (w.buf[off - w.off + i] !== ob[i]) { mism++; break; }
+          auxWriteBytes(off, nb); applied += nb.length;
+        }
+        continue;
+      }
       if (ob) for (let i = 0; i < ob.length; i++) if (BUF[off - ELF_BASE + i] !== ob[i]) { mism++; break; }
       for (let i = 0; i < nb.length; i++) writeW(off + i, 1, nb[i]);
       applied += nb.length;
@@ -833,14 +956,14 @@
       }
       if (!edits.length) return setStatus("This patch changes nothing on this disc — it may already be applied.", "warn");
 
-      const outside = edits.filter((e) => !inBlk(e.off, e.bytes.length));
+      const outside = edits.filter((e) => !inBlk(e.off, e.bytes.length) && !inAux(e.off, e.bytes.length));
       if (outside.length) {
         const n = outside.reduce((a, e) => a + e.bytes.length, 0);
         return setStatus(`This patch changes ${n} byte(s) outside the region this editor can edit ` +
           `(first at 0x${hex(outside[0].off, 8)}) — nothing was applied. Apply it with xdelta3 instead: ` +
           `xdelta3 -d -s "<pristine ISO>" patch.xdelta out.iso`, "err");
       }
-      edits.forEach((e) => writeBytes(e.off, e.bytes));
+      edits.forEach((e) => (inBlk(e.off, e.bytes.length) ? writeBytes(e.off, e.bytes) : auxWriteBytes(e.off, e.bytes)));
       const n = edits.reduce((a, e) => a + e.bytes.length, 0);
       TEXTS = null; gearCache = null;                          // staged bytes can move strings
       drawView();
@@ -855,7 +978,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["food", "Food"],
+    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["text", "Text"], ["balance", "Balance"], ["enemies", "Enemies"], ["ref", "Reference"]];
 
   function renderEditor(size) {
@@ -894,7 +1017,7 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; renderLoader(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoXdeltaBtn").onclick = exportXdelta;
@@ -908,7 +1031,7 @@
       const isVcdiff = head[0] === 0xd6 && head[1] === 0xc3 && head[2] === 0xc4;
       if (isVcdiff) applyXdelta(f); else importRecipe(f);
     };
-    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
+    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); auxRevertAll(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     q("#isoUndoBtn").onclick = undo;
     q("#isoRedoBtn").onclick = redo;
     updateUndoUI();
@@ -937,6 +1060,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect.",
       gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
+      sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
@@ -957,6 +1081,7 @@
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "gear") drawGear(host);
+    else if (VIEW === "sets") drawSets(host);
     else if (VIEW === "food") drawFood(host);
     else if (VIEW === "text") drawText(host);
     else if (VIEW === "balance") drawBalance(host);
@@ -1654,6 +1779,118 @@
     const d0 = isDirty(base + eo, 8);
     [tSel, stat, skill].forEach((el) => el.classList.toggle("dirty", d0));
     markField(vIn, base + eo, 8, "raw");
+  }
+
+  // ---- Armor sets --------------------------------------------------------------
+  function drawSets(host) {
+    const healLabel = { 0: "100%", 1: "50%", 2: "25%", 3: "12.5%", 4: "6.25%" };
+    // decode current + original bonus constants
+    const curCounter = readW(SETS.counterSites[0], 4) & 0xFFFF,
+      origCounter = origW(SETS.counterSites[0], 4) & 0xFFFF;
+    const curHeal = (readW(SETS.healShift, 4) >>> 6) & 0x1F,
+      origHeal = (origW(SETS.healShift, 4) >>> 6) & 0x1F;
+    const curPotch = AUX.length ? decodePotch(auxR32(AUX_WINDOWS[0]), auxR32(AUX_WINDOWS[0] + 4)) : null;
+    const origPotch = AUX.length ? decodePotch(auxO32(AUX_WINDOWS[0]), auxO32(AUX_WINDOWS[0] + 4)) : null;
+    const potchCtl = AUX.length
+      ? `<label class="field"><span>Potch multiplier per wearer <span class="muted">(Prosperity + Destiny)</span></span>
+           <select id="setPotch">${SETS.potchChoices.map((c) =>
+             `<option value="${c}"${c === curPotch ? " selected" : ""}>×${c}${c === 1 ? " (off)" : ""}</option>`).join("")}
+             ${curPotch === null ? `<option value="" selected>? (unrecognized patch)</option>` : ""}</select></label>`
+      : `<label class="field"><span>Potch multiplier</span><span class="muted">unavailable — the overlay region couldn't be read from this disc</span></label>`;
+    const setCards = [];
+    for (let i = 0; i < SETS.count; i++) {
+      const meta = SETS.meta[i], base = SETS.table + i * SETS.stride;
+      const selects = SETS.slots.map((slotName, s) => {
+        const off = base + s * 2, cur = r16(off);
+        const cats = SETS.slotCats[s];
+        const ids = Object.keys(REF.items).map(Number)
+          .filter((id) => cats.includes(REF.cats[id]) || id === cur).sort((a, b) => a - b);
+        const opts = [`<option value="0">— none —</option>`]
+          .concat(ids.map((id) => `<option value="${id}"${id === cur ? " selected" : ""} title="${esc2(itemDesc(id) || "")}">${esc2(itemName(id))}</option>`));
+        return `<label class="field"><span>${slotName}</span>
+          <select class="set-slot" data-off="${off}" data-g="${esc2(meta.name)}" data-l="${slotName}">${opts.join("")}</select></label>`;
+      }).join("");
+      if (SEARCH && !meta.name.toLowerCase().includes(SEARCH)) continue;
+      setCards.push(`<details class="char" data-rec="${base}" open><summary>
+          <span class="chev">▸</span><span class="nm">${esc2(meta.name)}</span><span class="muted">set #${i + 1}</span></summary>
+        <div class="char-body">
+          <div class="muted" style="margin:0 0 4px"><b>In-code bonus:</b> ${esc2(meta.bonus)}</div>
+          <div class="muted" style="margin:0 0 8px"><b>Guide says:</b> ${esc2(meta.guide)}</div>
+          <div class="grid">${selects}</div>
+        </div></details>`);
+    }
+    host.innerHTML = `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Set bonus tuning <span class="u">patches game code — every stock value byte-verified</span></div>
+        <div class="grid">
+          ${potchCtl}
+          <label class="field"><span>Destiny bonus counter chance %</span>
+            <input type="number" id="setCounter" min="0" max="100" value="${curCounter}"></label>
+          <label class="field"><span>Pale Moon heal (share of damage dealt)</span>
+            <select id="setHeal">${[0, 1, 2, 3, 4].map((k) =>
+              `<option value="${k}"${k === curHeal ? " selected" : ""}>${healLabel[k]}</option>`).join("")}</select></label>
+        </div>
+        <div class="muted" style="margin-top:8px">Disassembly-verified behavior: the potch multiplier applies once per party member wearing
+          Prosperity <i>or</i> Destiny and stacks (two wearers at ×3 = ×9). The counter chance only fires for a Destiny wearer <b>without</b>
+          the Counter Attack skill (damage = own PWR + support PWR, ÷3). Guardian's real effect is a halving check on counter damage
+          (Pale Moon matches it too — likely a dev bug; not editable). Mole just squeaks. The Suikosource guide's “Prosperity ×7” and
+          “Guardian counter +50%” don't match the code.</div>
+      </div>
+      <div id="setCards">${setCards.join("") || `<div class="muted">no matching sets</div>`}</div>`;
+    // composition selects: normal block writes -> undo/review/recipe all standard
+    qa("select.set-slot", host).forEach((sel) => {
+      const off = +sel.dataset.off;
+      sel.onchange = () => {
+        writeW(off, 2, +sel.value || 0);
+        reg(off, 2, "item", sel.dataset.g, sel.dataset.l);
+        markField(sel, off, 2, "item");
+      };
+      markField(sel, off, 2, "item");
+    });
+    // bonus constants: whole-instruction rewrites; each control reverts BOTH code sites
+    const counterEl = q("#setCounter", host), healEl = q("#setHeal", host);
+    function markPair(el, dirty, revert, origLabel) {
+      el.classList.toggle("dirty", dirty);
+      let btn = el._revBtn;
+      if (!btn) {
+        if (!dirty) return;
+        btn = document.createElement("button"); btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+        btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); revert(); drawView(); };
+        el.insertAdjacentElement("afterend", btn); el._revBtn = btn;
+      }
+      btn.classList.toggle("show", dirty);
+      if (dirty) btn.title = `Restore original (${origLabel})`;
+      scheduleBadge();
+    }
+    counterEl.onchange = () => {
+      const v = Math.max(0, Math.min(100, +counterEl.value || 0)); counterEl.value = v;
+      SETS.counterSites.forEach((o, i) => { writeW(o, 4, counterWord(v));
+        reg(o, 4, "num", "Armor sets", `Destiny counter chance${i ? " (2nd code site)" : ""}`); });
+      markPair(counterEl, isDirty(SETS.counterSites[0], 4) || isDirty(SETS.counterSites[1], 4),
+        () => SETS.counterSites.forEach((o) => revertRange(o, 4)), origCounter + "%");
+    };
+    markPair(counterEl, isDirty(SETS.counterSites[0], 4) || isDirty(SETS.counterSites[1], 4),
+      () => SETS.counterSites.forEach((o) => revertRange(o, 4)), origCounter + "%");
+    healEl.onchange = () => {
+      const k = +healEl.value, w = healWords(k);
+      writeW(SETS.healBias, 4, w[0]); writeW(SETS.healShift, 4, w[1]);
+      reg(SETS.healBias, 4, "num", "Armor sets", "Pale Moon heal bias");
+      reg(SETS.healShift, 4, "num", "Armor sets", "Pale Moon heal shift");
+      markPair(healEl, isDirty(SETS.healBias, 4) || isDirty(SETS.healShift, 4),
+        () => { revertRange(SETS.healBias, 4); revertRange(SETS.healShift, 4); }, healLabel[origHeal] || "?");
+    };
+    markPair(healEl, isDirty(SETS.healBias, 4) || isDirty(SETS.healShift, 4),
+      () => { revertRange(SETS.healBias, 4); revertRange(SETS.healShift, 4); }, healLabel[origHeal] || "?");
+    const potchEl = q("#setPotch", host);
+    if (potchEl) {
+      const auxIsDirty = () => auxDirty();
+      potchEl.onchange = () => {
+        const w = potchWords(+potchEl.value);
+        if (!w) return;
+        for (const site of AUX_WINDOWS) { auxW32(site, w[0]); auxW32(site + 4, w[1]); }
+        markPair(potchEl, auxIsDirty(), auxRevertAll, "×" + (origPotch ?? "?"));
+      };
+      markPair(potchEl, auxIsDirty(), auxRevertAll, "×" + (origPotch ?? "?"));
+    }
   }
 
   // ---- Text (in-ELF UI strings) ----------------------------------------------

@@ -18,6 +18,20 @@ export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
 export const SHOP = { item3_a: [4105552, 2], item3_b: [4054224, 2], item2: [3970620, 4], item1: [4136564, 4] };
 export const VERSION_OFF = 4136544, VERSION_VAL = 0x40A69A01;
+// Armor sets: composition table + the in-block bonus-constant instruction words
+// (the potch pair lives ~1 GB into the disc — outside a synth file, so the Sets
+// view must degrade to "unavailable" for it here).
+export const SETS = { table: 0x3DDAB8, counterSites: [0x244F8C, 0x2452F8], healBias: 0x245DA8, healShift: 0x245DB4 };
+export const SET_ROWS = [           // real composition (Head, Body, Shield, Accessory; 0 = unused)
+  [0x0AD, 0x0C2, 0x109, 0x123],     // Mole
+  [0x0BD, 0x103, 0x000, 0x11F],     // Prosperity
+  [0x0BE, 0x0F2, 0x000, 0x126],     // Destiny
+  [0x0A7, 0x0D7, 0x10C, 0x000],     // Guardian
+  [0x0A9, 0x0E7, 0x000, 0x132],     // Pale Moon
+];
+export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
+export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
+export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
 
 // items of a category (id + exact name), in id order, from the shipped id list.
 export function catItems(cat, n = 99) {
@@ -53,6 +67,10 @@ export function buildSynthIso() {
   const P = GEAR.P, st = P + GEAR.stride;
   w32(P, put("(x)")); w32(P + 8, 1000); w16(P + 0x10, 10); w32(P + 0x40, put(armor.name));
   w32(st, put("DEF(+10)")); w32(st + 8, 1000); w16(st + 0x10, 10); w16(st + 0x14, 2); w16(st + 0x16, 5);
+  // armor sets: real composition rows + stock bonus-constant words (Sets view decodes these)
+  SET_ROWS.forEach((row, i) => row.forEach((id, s) => w16(SETS.table + i * 8 + s * 2, id)));
+  SETS.counterSites.forEach((o) => w32(o, STOCK_COUNTER));
+  w32(SETS.healBias, STOCK_HEAL_BIAS); w32(SETS.healShift, STOCK_HEAL_SRA);
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
   for (let i = 0; i < 16; i++) bytes[TABLES.list4[0] + i] = 20 + i;   // list4 rec0 ATK curve
