@@ -11,7 +11,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B } from "./synth-iso.mjs";
+  ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
+  ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -402,6 +403,38 @@ head("Enemies bulk tuning — idempotent multipliers + reset");
     check(`${nm}: HP saved = 120 (both fields)`, r.u16(rec + 48) === 120 && r.u16(rec + 50) === 120);
     check(`${nm}: SP saved = 5`, r.u16(aux + 12) === 5);
     check(`${nm}: drop weight saved = 256`, r.u16(aux + 34) === 256);
+  }
+  await page.context().close();
+}
+
+head("Zones & formations — decode, edit, write-through both copies");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector("button.zn-slot", { timeout: 3000 });
+  // decode
+  check("zone renders with its map name", (await page.textContent("#isoView")).includes("test_101"));
+  check("slot 0 decodes to BladeBunny", /BladeBunny/.test(await page.textContent('button.zn-slot[data-si="0"]')));
+  check("slot 1 variant decodes to 1", (await page.inputValue('input.zn-var[data-si="1"]')) === "1");
+  check("formation 1 weight decodes to 50", (await page.inputValue('input.zn-prob[data-pi="0"]')) === "50");
+  check("formation 1 member 2 = slot 1", (await page.inputValue('select.zn-mem[data-pi="0"][data-mi="1"]')) === "1");
+  // edit: weight 90, member 2 -> slot 0, size 1, slot1 variant -> 0
+  await page.fill('input.zn-prob[data-pi="0"]', "90"); await page.dispatchEvent('input.zn-prob[data-pi="0"]', "change");
+  await page.selectOption('select.zn-mem[data-pi="0"][data-mi="1"]', "0");
+  await page.fill('input.zn-cnt[data-pi="1"]', "1"); await page.dispatchEvent('input.zn-cnt[data-pi="1"]', "change");
+  await page.fill('input.zn-var[data-si="1"]', "0"); await page.dispatchEvent('input.zn-var[data-si="1"]', "change");
+  // size caps at the original allocation
+  await page.fill('input.zn-cnt[data-pi="0"]', "6"); await page.dispatchEvent('input.zn-cnt[data-pi="0"]', "change");
+  check("formation size caps at original allocation", (await page.inputValue('input.zn-cnt[data-pi="0"]')) === "2");
+  const r = await save(page);
+  for (const [nm, slO, paO, meO] of [["copy A", ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A], ["copy B", ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B]]) {
+    check(`${nm}: weight saved = 90`, r.u16(paO + 2) === 90);
+    check(`${nm}: member rewritten to slot 0`, r.u8(meO + 1) === 0);
+    check(`${nm}: formation 2 size = 1`, r.u16(paO + 0x1C + 0x12) === 1);
+    check(`${nm}: slot 1 variant = 0`, r.u32(slO + 0x14 + 4) === 0);
   }
   await page.context().close();
 }
