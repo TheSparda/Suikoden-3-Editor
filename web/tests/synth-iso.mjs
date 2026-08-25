@@ -37,6 +37,9 @@ export const SET_ROWS = [           // real composition (Head, Body, Shield, Acc
   [0x0A7, 0x0D7, 0x10C, 0x000],     // Guardian
   [0x0A9, 0x0E7, 0x000, 0x132],     // Pale Moon
 ];
+// Global encounter rate: the 4 instruction words the Balance tab rewrites (stock = 100%).
+export const ENC_SITES = [0x149C3C, 0x149C40, 0x149C5C, 0x149C60];
+export const ENC_STOCK = [0x0220A82D, 0x10000012, 0x24020096, 0x24020078];
 export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
 export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
 export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
@@ -77,6 +80,7 @@ export function buildSynthIso() {
   w32(st, put("DEF(+10)")); w32(st + 8, 1000); w16(st + 0x10, 10); w16(st + 0x14, 2); w16(st + 0x16, 5);
   // armor sets: real composition rows + stock bonus-constant words (Sets view decodes these)
   SET_ROWS.forEach((row, i) => row.forEach((id, s) => w16(SETS.table + i * 8 + s * 2, id)));
+  ENC_SITES.forEach((o, i) => w32(o, ENC_STOCK[i]));   // encounter-rate instruction words
   SETS.counterSites.forEach((o) => w32(o, STOCK_COUNTER));
   w32(SETS.healBias, STOCK_HEAL_BIAS); w32(SETS.healShift, STOCK_HEAL_SRA);
   SETS.counterOwnerSites.forEach((o) => w32(o, STOCK_OWNER_COUNTER));
