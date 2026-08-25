@@ -1869,16 +1869,21 @@
              ${curPotch === null ? `<option value="" selected>? (unrecognized patch)</option>` : ""}</select></label>`
       : `<label class="field"><span>Potch multiplier</span><span class="muted">unavailable — the overlay region couldn't be read from this disc</span></label>`;
     // ---- effect ownership: which set grants each effect -------------------------
-    const maskOpts = (cur) => [0, 1, 2, 3, 4, 5, 6, 7].map((m) =>
-      `<option value="${m}"${m === cur ? " selected" : ""}>${esc2(maskSetNames(m))}</option>`).join("");
-    const eqOpts = (cur) => [1, 2, 3, 4, 5, SETS.OWNER_OFF].map((n) =>
-      `<option value="${n}"${n === cur ? " selected" : ""}>${n === SETS.OWNER_OFF ? "no set (off)" : esc2(SETS.meta[n - 1].name)}</option>`).join("");
-    const curCounterOwner = readW(SETS.counterOwnerSites[0], 4) & 0xFFFF;
-    const curHealOwner = readW(SETS.healOwnerSite, 4) & 0xFFFF;
-    const curSqueakOwner = readW(SETS.squeakOwnerSite, 4) & 0xFFFF;
-    const curHalveMask = readW(SETS.halveMaskSite, 4) & 0xFFFF;
+    const stockMark = (v, orig) => (v === orig ? " (stock)" : "");
+    const maskOpts = (cur, orig) => [0, 1, 2, 3, 4, 5, 6, 7].map((m) =>
+      `<option value="${m}"${m === cur ? " selected" : ""}>${esc2(maskSetNames(m))}${stockMark(m, orig)}</option>`).join("");
+    const eqOpts = (cur, orig) => [1, 2, 3, 4, 5, SETS.OWNER_OFF].map((n) =>
+      `<option value="${n}"${n === cur ? " selected" : ""}>${n === SETS.OWNER_OFF ? "no set (off)" : esc2(SETS.meta[n - 1].name)}${stockMark(n, orig)}</option>`).join("");
+    const curCounterOwner = readW(SETS.counterOwnerSites[0], 4) & 0xFFFF,
+      origCounterOwner = origW(SETS.counterOwnerSites[0], 4) & 0xFFFF;
+    const curHealOwner = readW(SETS.healOwnerSite, 4) & 0xFFFF,
+      origHealOwner = origW(SETS.healOwnerSite, 4) & 0xFFFF;
+    const curSqueakOwner = readW(SETS.squeakOwnerSite, 4) & 0xFFFF,
+      origSqueakOwner = origW(SETS.squeakOwnerSite, 4) & 0xFFFF;
+    const curHalveMask = readW(SETS.halveMaskSite, 4) & 0xFFFF,
+      origHalveMask = origW(SETS.halveMaskSite, 4) & 0xFFFF;
     const potchMaskCtl = AUX.length
-      ? `<label class="field"><span>Potch bonus goes to</span><select id="ownPotch">${maskOpts(auxR32(w0 + AUX_MASK) & 0xFFFF)}</select></label>`
+      ? `<label class="field"><span>Potch bonus</span><select id="ownPotch">${maskOpts(auxR32(w0 + AUX_MASK) & 0xFFFF, auxO32(w0 + AUX_MASK) & 0xFFFF)}</select></label>`
       : "";
     const setCards = [];
     for (let i = 0; i < SETS.count; i++) {
@@ -1912,31 +1917,32 @@
             <select id="setHeal">${[0, 1, 2, 3, 4].map((k) =>
               `<option value="${k}"${k === curHeal ? " selected" : ""}>${healLabel[k]}</option>`).join("")}</select></label>
         </div>
-        <div class="muted" style="margin-top:8px">Disassembly-verified behavior: the potch multiplier applies once per party member wearing
+        <details class="note"><summary>Disassembly-verified behavior — what each set really does</summary>
+          <div style="margin-top:4px">The potch multiplier applies once per party member wearing
           Prosperity <i>or</i> Destiny and stacks (two wearers at ×3 = ×9). The counter chance only fires for a Destiny wearer <b>without</b>
           the Counter Attack skill (damage = own PWR + support PWR, ÷3). Guardian's real effect is a halving check on counter damage
           (Pale Moon matches it too — likely a dev bug). Mole just squeaks. The Suikosource guide's “Prosperity ×7” and
-          “Guardian counter +50%” don't match the code.</div>
+          “Guardian counter +50%” don't match the code.</div></details>
       </div>
       <div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Which set grants each effect <span class="u">reassigns the game's own checks</span></div>
-        <div class="grid">
+        <div class="bag-h">Effect ownership <span class="u">pick which set grants each effect — rewrites the game's own checks</span></div>
+        <div class="grid eq">
           ${potchMaskCtl}
-          <label class="field"><span>Bonus counter chance goes to</span><select id="ownCounter">${eqOpts(curCounterOwner)}</select></label>
-          <label class="field"><span>Heal-on-hit goes to</span><select id="ownHeal">${eqOpts(curHealOwner)}</select></label>
-          <label class="field"><span>Counter-damage halving goes to</span><select id="ownHalve">${maskOpts(curHalveMask)}</select></label>
-          <label class="field"><span>Squeaky footsteps go to</span><select id="ownSqueak">${eqOpts(curSqueakOwner)}</select></label>
+          <label class="field"><span>Bonus counter chance</span><select id="ownCounter">${eqOpts(curCounterOwner, origCounterOwner)}</select>
+            <span id="counterDivHint"></span></label>
+          <label class="field"><span>Heal-on-hit</span><select id="ownHeal">${eqOpts(curHealOwner, origHealOwner)}</select></label>
+          <label class="field"><span>Counter-damage halving</span><select id="ownHalve">${maskOpts(curHalveMask, origHalveMask)}</select></label>
+          <label class="field"><span>Squeaky footsteps</span><select id="ownSqueak">${eqOpts(curSqueakOwner, origSqueakOwner)}</select></label>
         </div>
-        <div class="warnbox" style="margin:10px 0 0">The game has no table of set effects — each one is a hard-coded check on the set
-          number, so these dropdowns <b>move an existing effect onto a different set</b> (and one set can hold several at once). Genuinely
-          <i>new</i> effects would need new code injected into the executable, which this editor doesn't do.
-          <div style="margin-top:6px">Two quirks worth knowing, both inherent to how the code is written:</div>
+        <div class="warnbox" style="margin:10px 2px 0">These dropdowns <b>move an existing effect onto a different set</b> (one set can hold
+          several) — the game hard-codes each check, so genuinely new effects can't be added.</div>
+        <details class="note"><summary>Why two dropdowns list set combos, and the counter-damage quirk</summary>
           <ul style="margin:4px 0 0 18px">
             <li><b>The potch and halving checks are bit tests</b>, not equality — the game does <code>setNumber &amp; mask</code>. Because the
               sets are numbered 1–5, only 8 groupings are reachable, which is exactly what those two dropdowns list.</li>
             <li><b>Bonus counter damage is divided by the set number itself</b> (the code reuses that register). Stock Destiny is #3, hence
-              ÷3; moving it to Mole (#1) means no division at all, while Pale Moon (#5) divides by 5.</li>
-          </ul></div>
+              ÷3; moving it to Mole (#1) means no division at all, while Pale Moon (#5) divides by 5. The hint under the dropdown tracks this.</li>
+          </ul></details>
       </div>
       <div id="setCards">${setCards.join("") || `<div class="muted">no matching sets</div>`}</div>`;
     // composition selects: normal block writes -> undo/review/recipe all standard
@@ -1997,12 +2003,15 @@
     // ---- effect ownership --------------------------------------------------------
     // Each control rewrites only the immediate of the existing instruction(s), so the
     // opcode/registers stay exactly as the game shipped them.
+    // narrow columns can clip long combo names — mirror the selection into a hover tooltip
+    const syncTitle = (el) => { el.title = el.selectedOptions[0]?.textContent || ""; };
     function wireOwner(id, sites, label, fmt, extra) {
       const el = q("#" + id, host); if (!el) return;
       const origImm = origW(sites[0], 4) & 0xFFFF;
       const dirty = () => sites.some((o) => isDirty(o, 4)) || (extra ? isDirty(extra.off, 4) : false);
       const revert = () => { sites.forEach((o) => revertRange(o, 4)); if (extra) revertRange(extra.off, 4); };
       const apply = () => {
+        syncTitle(el);
         const v = +el.value;
         sites.forEach((o, i) => {
           writeW(o, 4, withImm(origW(o, 4), v));
@@ -2018,10 +2027,22 @@
         markPair(el, dirty(), revert, fmt(origImm));
       };
       el.onchange = apply;
+      syncTitle(el);
       markPair(el, dirty(), revert, fmt(origImm));
     }
     const eqName = (n) => (n >= 1 && n <= 5 ? SETS.meta[n - 1].name : "no set");
     wireOwner("ownCounter", SETS.counterOwnerSites, "Bonus counter", eqName);
+    // surface the divisor quirk right where it bites: the counter owner's set number
+    // divides the bonus damage, so show the resulting divisor live under the dropdown
+    const counterOwnerEl = q("#ownCounter", host), counterHintEl = q("#counterDivHint", host);
+    if (counterOwnerEl && counterHintEl) {
+      const updHint = () => { const n = +counterOwnerEl.value;
+        counterHintEl.textContent = n === SETS.OWNER_OFF ? "effect disabled"
+          : n === 1 ? "bonus damage ÷1 — no reduction" : `bonus damage ÷${n} (divisor = set number)`; };
+      const applyOwner = counterOwnerEl.onchange;
+      counterOwnerEl.onchange = () => { applyOwner(); updHint(); };
+      updHint();
+    }
     wireOwner("ownHeal", [SETS.healOwnerSite], "Heal-on-hit", eqName,
       { off: SETS.healDivRepair, word: SETS.healDivWord, stock: 5 });
     wireOwner("ownSqueak", [SETS.squeakOwnerSite], "Squeaky footsteps", eqName);
@@ -2033,8 +2054,10 @@
       ownPotchEl.onchange = () => {
         const m = +ownPotchEl.value;
         for (const site of AUX_WINDOWS) auxW32(site + AUX_MASK, withImm(auxO32(site + AUX_MASK), m));
+        syncTitle(ownPotchEl);
         markPair(ownPotchEl, maskDirty(), maskRevert, maskSetNames(origMask));
       };
+      syncTitle(ownPotchEl);
       markPair(ownPotchEl, maskDirty(), maskRevert, maskSetNames(origMask));
     }
   }
