@@ -255,7 +255,42 @@ console.log("Guide overlays + xdelta:");
       ? ok : bad)(`zone spot-check: a mori_101 variant has 5 slots / 16 formations (${moris.length} variants)`);
     (/s3_enemy_packs\.json/.test(iso) && /S3_TEST_ENEMY_PACKS/.test(iso) ? ok : bad)(
       "iso.js loads the pack index (with the test override hook)");
-  } catch (e) { bad("s3_enemy_packs.json — " + e.message); }
+    // War-unit index (War tab): same record layout, its own JSON. Offsets must be
+    // on-disc, out-of-block AND disjoint from the enemy index (overlapping write
+    // windows would desync), and war variants never carry aux/reward offsets.
+    const w = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_war_units.json"), "utf8"));
+    (w.format === "s3war" && Array.isArray(w.packs) && w.packs.length >= 6 &&
+      w.packs.every((p) => p.war === true) ? ok : bad)(
+      `s3_war_units.json parses (${w.packs.length} war packs, all flagged war)`);
+    const eoffs = new Set();
+    for (const p of j.packs) for (const e of p.enemies) for (const v of e.variants)
+      for (const o of [...v.rec, ...v.aux]) eoffs.add(o);
+    let wn = 0, wbad = 0, woverlap = 0, waux = 0, wvar = 0;
+    for (const p of w.packs) for (const e of p.enemies) for (const v of e.variants) {
+      wvar++;
+      waux += v.aux.length;
+      for (const o of v.rec) { wn++; if (o < ELF_HI || o + 0x8C > ISO_MAX) wbad++; if (eoffs.has(o)) woverlap++; }
+    }
+    (wbad === 0 && woverlap === 0 && waux === 0 ? ok : bad)(
+      `all ${wn} war offsets on-disc, disjoint from enemy packs, aux-free (${wvar} variants)`);
+    // spot-checks vs the Suikosource bosses guide (exact lv/hp matches)
+    const zk = w.packs.flatMap((p) => p.enemies).filter((e) => e.name === "ZxnKn")
+      .flatMap((e) => e.variants).filter((v) => v.lv === 20 && v.hp === 230);
+    (zk.length >= 4 ? ok : bad)(`war spot-check: ZxnKn Lv20/HP230 (Thomas ch2 battle, Suikosource) in ${zk.length} packs`);
+    const sarah = w.packs.find((p) => p.archive === "SOGE");
+    (sarah && sarah.enemies.some((e) => e.name.startsWith("Sarah") &&
+      e.variants.some((v) => v.lv === 60 && v.hp === 3200)) ? ok : bad)(
+      "war spot-check: Sarah unit Lv60/HP3200 (Suikosource) in SOGE");
+    const etcw = w.packs.find((p) => p.archive === "ETC");
+    (etcw && etcw.enemies.some((e) => e.name === "ZxnInf" && e.variants.length === 12) ? ok : bad)(
+      "war spot-check: shared ETC pack has the 12-tier ZxnInf table");
+    (/s3_war_units\.json/.test(iso) && /S3_TEST_WAR_UNITS/.test(iso) && /function drawWar/.test(iso) &&
+      /\["war", "War"\]/.test(iso) ? ok : bad)("iso.js loads war units and renders the War tab");
+    const wr = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_war_ref.json"), "utf8"));
+    (wr.army && wr.support && wr.skills && Object.keys(wr.army).length >= 40 ? ok : bad)(
+      `s3_war_ref.json parses (${Object.keys(wr.army).length} army units, ${Object.keys(wr.support).length} support)`);
+    (/REF\.warRef/.test(iso) ? ok : bad)("iso.js War tab renders the army-skill reference");
+  } catch (e) { bad("s3_enemy_packs.json / s3_war_units.json — " + e.message); }
 }
 
 // 8) In-ELF text heuristic must stay in lockstep with the desktop editor.

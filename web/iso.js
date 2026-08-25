@@ -321,6 +321,7 @@
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
   let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
+  let WPACKS_SKIPPED = 0;                                    // war packs unavailable on this disc (War view)
   const EREG = {};    // enemy-field review registry: key -> {group,label,offs,w,fmt}
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
@@ -449,10 +450,11 @@
     const names = await (await grab("../Editor/s3_names.json")).json();
     // Optional guide reference overlays — never fatal: a missing file just hides its notes.
     const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch (e) { return {}; } };
-    const [runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks] = await Promise.all([
+    const [runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef] = await Promise.all([
       grabOpt("../Editor/s3_rune_slots.json"), grabOpt("../Editor/s3_skill_ref.json"),
       grabOpt("../Editor/s3_skill_caps.json"), grabOpt("../Editor/s3_growth_ref.json"),
       grabOpt("../Editor/s3_bestiary.json"), grabOpt("../Editor/s3_enemy_packs.json"),
+      grabOpt("../Editor/s3_war_units.json"), grabOpt("../Editor/s3_war_ref.json"),
     ]);
     const items = {}, cats = {};
     let cur = "";
@@ -466,7 +468,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef };
     return REF;
   }
 
@@ -635,8 +637,19 @@
     // s3_enemy_packs.json (all pack copies). Optional the same way — a pack whose
     // offsets can't be read (short disc / test fixture) is skipped, and the Enemies
     // view reports it as unavailable instead of showing wrong data.
-    let epacks = [], eskipped = 0;
-    const epsrc = (typeof window !== "undefined" && window.S3_TEST_ENEMY_PACKS) || (REF && REF.enemyPacks);
+    let epacks = [], eskipped = 0, wskipped = 0;
+    const epsrc0 = (typeof window !== "undefined" && window.S3_TEST_ENEMY_PACKS) || (REF && REF.enemyPacks);
+    // war-unit packs (s3_war_units.json) share the exact record layout and ride the
+    // same tagged spans; they render in the War view instead of the Enemies view.
+    const wpsrc = (typeof window !== "undefined" && window.S3_TEST_WAR_UNITS) || (REF && REF.warUnits);
+    const epsrc = (() => {
+      const base = (epsrc0 && Array.isArray(epsrc0.packs)) ? epsrc0 : null;
+      const war = (wpsrc && Array.isArray(wpsrc.packs)) ? wpsrc : null;
+      if (!base && !war) return null;
+      const meta = base || war;
+      return { recLayout: meta.recLayout, auxLayout: meta.auxLayout, zoneLayout: (base && base.zoneLayout) || undefined,
+               packs: [...(base ? base.packs : []), ...(war ? war.packs : [])] };
+    })();
     if (epsrc && Array.isArray(epsrc.packs)) {
       setStatus("Reading enemy data…", "");
       const rl = epsrc.recLayout, al = epsrc.auxLayout;
@@ -655,7 +668,7 @@
             for (const o of pa.memOff) offs.push([o, Math.max(pa.members.length, 1)]);
           }
         }
-        if (offs.some(([o, n]) => o + n > file.size)) { eskipped++; continue; }
+        if (offs.some(([o, n]) => o + n > file.size)) { if (p.war) wskipped++; else eskipped++; continue; }
         epacks.push(p); spans.push(...offs);
       }
       spans.sort((a, b) => a[0] - b[0]);
@@ -674,13 +687,15 @@
       } catch (err) {
         // drop every enemy window on any failure — a half-loaded set would lie
         aux = aux.filter((w) => w.tag !== "enemy");
-        epacks = []; eskipped = epsrc.packs.length;
+        epacks = [];
+        eskipped = epsrc.packs.filter((p) => !p.war).length;
+        wskipped = epsrc.packs.filter((p) => p.war).length;
       }
     }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     AUX = aux;
-    EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped;
+    EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped; WPACKS_SKIPPED = wskipped;
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
@@ -1140,7 +1155,7 @@
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
-    ["text", "Text"], ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["ref", "Reference"]];
+    ["text", "Text"], ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -1227,6 +1242,7 @@
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
+      war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster. Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
     };
     q("#isoHint").textContent = hints[VIEW] || "";
@@ -1249,6 +1265,7 @@
     else if (VIEW === "balance") drawBalance(host);
     else if (VIEW === "encounter") drawEncounter(host);
     else if (VIEW === "enemies") drawEnemies(host);
+    else if (VIEW === "war") drawWar(host);
     else if (VIEW === "ref") drawReference(host);
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
@@ -2352,6 +2369,7 @@
   function enemyPacksInScope(scope) {
     const q2 = SEARCH;
     return EPACKS.filter((p) => {
+      if (p.war) return false;   // war units have their own view; bulk multipliers never touch them
       if (scope !== "filtered" || !q2) return true;
       return (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase().includes(q2);
     });
@@ -2396,9 +2414,10 @@
   function drawEnemies(host) {
     const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
     const parts = [];
-    if (EPACKS.length && rl && al) {
+    const ZPACKS = EPACKS.filter((p) => !p.war);
+    if (ZPACKS.length && rl && al) {
       parts.push(`<div class="muted" style="margin:0 0 8px">Per-area enemy packs decoded straight from the disc
-        (${EPACKS.length} pack${EPACKS.length === 1 ? "" : "s"}${EPACKS_SKIPPED ? `, ${EPACKS_SKIPPED} unavailable on this disc` : ""}).
+        (${ZPACKS.length} pack${ZPACKS.length === 1 ? "" : "s"}${EPACKS_SKIPPED ? `, ${EPACKS_SKIPPED} unavailable on this disc` : ""}).
         Each pack exists as several streaming copies — edits write <b>every copy</b> at once. Stat order is the
         character convention (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK); drop weights are out of 1000 (128 ≈ 12.8%).
         Filter matches enemy or archive names.</div>`);
@@ -2425,6 +2444,7 @@
       const q2 = SEARCH;
       for (let pi = 0; pi < EPACKS.length; pi++) {
         const p = EPACKS[pi];
+        if (p.war) continue;
         const hay = (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
         if (q2 && !hay.includes(q2)) continue;
         const nvar = p.enemies.reduce((a, e) => a + e.variants.length, 0);
@@ -2433,7 +2453,7 @@
             <span class="lv">${p.enemies.length} enemies · ${nvar} variants · ×${p.copies} on disc</span></summary>
           <div class="char-body"><div class="muted">expanding…</div></div></details>`);
       }
-      if (EPACKS_SKIPPED && !EPACKS.length)
+      if (EPACKS_SKIPPED && !ZPACKS.length)
         parts.push(`<div class="warnbox">Enemy packs are indexed for the full USA disc — none of their offsets exist in this file, so nothing is editable here.</div>`);
     } else if (EPACKS_META && EPACKS_SKIPPED) {
       parts.push(`<div class="warnbox">Enemy packs are indexed for the full USA disc — none of their offsets exist in this file, so nothing is editable here.</div>`);
@@ -2488,6 +2508,70 @@
       drawView();
     };
   }
+  // ---- War / major battles (unit stat editor + army-skill reference) ----------
+  // Region hints for the archives that hold war packs (best-effort labels).
+  const WAR_ARCH_HINTS = {
+    ETC: "shared war data (all battles)", VDZK: "Vinay del Zexay region", KRVI: "Karaya region",
+    LZVI: "Great Hollow region", TSVI: "Chisha region", SOGE: "grassland plains",
+    ZKTR: "Zexen territory", HGB1: "Budehuc / Lake Castle region",
+  };
+  function drawWar(host) {
+    const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
+    const parts = [];
+    const wpacks = EPACKS.map((p, pi) => [p, pi]).filter(([p]) => p.war);
+    if (wpacks.length && rl && al) {
+      parts.push(`<div class="muted" style="margin:0 0 8px">Every war-battle combatant found on the disc: faction soldiers
+        (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy <b>leader units</b> and the chapter-5 war monsters
+        (${wpacks.length} pack${wpacks.length === 1 ? "" : "s"}${WPACKS_SKIPPED ? `, ${WPACKS_SKIPPED} unavailable on this disc` : ""}).
+        Each archive feeds the battles staged from that region, so the same soldier can be tuned per battle; edits write every
+        on-disc copy in that archive. <b>Your own units use the characters' save-file stats</b> — strengthen your army in the
+        Save Editor (HP, stats, equipment). War battles pay no EXP/SP/potch, so there are no reward fields.
+        Leader names marked (unit) are verified against the Suikosource guide; <i>Unit&nbsp;#N</i> records are unidentified
+        leader units — edit them like any other. Filter matches unit or archive names.</div>`);
+      const q2 = SEARCH;
+      for (const [p, pi] of wpacks) {
+        const hay = (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
+        if (q2 && !hay.includes(q2)) continue;
+        const nvar = p.enemies.reduce((a, e) => a + e.variants.length, 0);
+        const hint = WAR_ARCH_HINTS[p.archive];
+        parts.push(`<details class="char epack" data-ep="${pi}" data-i="wp${pi}"><summary><span class="chev">▸</span>
+            <span class="nm">${esc2(p.archive)}${hint ? ` · ${esc2(hint)}` : ""}</span>
+            <span class="lv">${p.enemies.length} units · ${nvar} variants</span></summary>
+          <div class="char-body"><div class="muted">expanding…</div></div></details>`);
+      }
+    } else if (WPACKS_SKIPPED) {
+      parts.push(`<div class="warnbox">War units are indexed for the full USA disc — none of their offsets exist in this file, so nothing is editable here.</div>`);
+    }
+    // Army-skill reference (RPGClassics army units guide) — war skills live in game
+    // code, not in an editable table, so this is read-only context.
+    const wr = REF.warRef || {};
+    if (wr.army || wr.skills) {
+      const row = (nm, sk) => `<tr><td>${esc2(nm)}</td><td>${esc2(sk)}</td></tr>`;
+      const tbl = (obj) => `<table class="invtbl"><thead><tr><th>Character</th><th>War skills</th></tr></thead>
+          <tbody>${Object.keys(obj).filter((n) => !SEARCH || n.toLowerCase().includes(SEARCH) || obj[n].toLowerCase().includes(SEARCH))
+            .map((n) => row(n, obj[n])).join("") || `<tr><td colspan="2" class="muted">no matches</td></tr>`}</tbody></table>`;
+      const skl = wr.skills ? `<table class="invtbl" style="margin-top:8px"><thead><tr><th>Skill</th><th>Effect</th></tr></thead>
+          <tbody>${Object.keys(wr.skills).map((s) => row(s, wr.skills[s])).join("")}</tbody></table>` : "";
+      const notes = (wr.notes || []).map((n) => `<li>${esc2(n)}</li>`).join("");
+      parts.push(`<details class="char" style="margin-top:10px"${SEARCH ? " open" : ""}><summary><span class="chev">▸</span>
+          <span class="nm">Army skills reference</span><span class="lv">read-only guide data</span></summary>
+        <div class="char-body">
+          ${notes ? `<ul class="muted" style="margin:0 0 8px 18px;padding:0">${notes}</ul>` : ""}
+          <div class="bag-h">Army units</div>${wr.army ? tbl(wr.army) : ""}
+          <div class="bag-h" style="margin-top:8px">Support units</div>${wr.support ? tbl(wr.support) : ""}
+          <div class="bag-h" style="margin-top:8px">War skill effects</div>${skl}
+        </div></details>`);
+    }
+    host.innerHTML = parts.join("") || `<div class="muted">no war-unit data available</div>`;
+    qa("details.epack", host).forEach((det) => {
+      det.addEventListener("toggle", () => {
+        if (!det.open || det._built) return;
+        det._built = true;
+        buildPackBody(det, EPACKS[+det.dataset.ep], rl, al);
+      });
+    });
+  }
+
   function buildPackBody(det, p, rl, al) {
     const body = det.querySelector(".char-body");
     const html = [];
@@ -2501,22 +2585,24 @@
           `<label class="field enfld"><span>${sn}</span>
              <input type="number" class="en-num" min="0" max="65535" data-k="${key}" data-f="stat${si}"></label>`).join("");
         const drops = [];
-        for (let di = 0; di < al.nDrops; di++) {
+        if (!p.war) for (let di = 0; di < al.nDrops; di++) {
           drops.push(`<div class="en-drop" style="display:flex;gap:6px;align-items:center;max-width:520px;margin:4px 0">
             <button type="button" class="picker en-item" style="flex:1;min-width:0" data-k="${key}" data-f="drop${di}i">—</button>
             <input type="number" class="en-num" style="width:84px;flex:none" min="0" max="1000" title="weight / 1000" data-k="${key}" data-f="drop${di}w"></div>`);
         }
+        // war variants carry no rewards or drops (major battles pay no EXP/SP/potch)
+        const rewards = p.war ? "" : `
+            <label class="field enfld"><span>EXP value</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="exp"></label>
+            <label class="field enfld"><span>SP</span><input type="number" class="en-num" min="0" max="65535" data-k="${key}" data-f="sp"></label>
+            <label class="field enfld"><span>Potch</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="potch"></label>`;
         html.push(`<div class="card" style="margin:0 0 10px">
           <div class="bag-h">${esc2(e.name)}${tag} <span class="u">id ${hex(e.id, 3)} · ×${v.rec.length} cop${v.rec.length === 1 ? "y" : "ies"}</span></div>
           <div class="grid">
             <label class="field enfld"><span>Level</span><input type="number" class="en-num" min="1" max="99" data-k="${key}" data-f="lv"></label>
-            <label class="field enfld"><span>HP</span><input type="number" class="en-num" min="1" max="65535" data-k="${key}" data-f="hp"></label>
-            <label class="field enfld"><span>EXP value</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="exp"></label>
-            <label class="field enfld"><span>SP</span><input type="number" class="en-num" min="0" max="65535" data-k="${key}" data-f="sp"></label>
-            <label class="field enfld"><span>Potch</span><input type="number" class="en-num" min="0" max="4294967295" data-k="${key}" data-f="potch"></label>
+            <label class="field enfld"><span>HP</span><input type="number" class="en-num" min="1" max="65535" data-k="${key}" data-f="hp"></label>${rewards}
           </div>
           <div class="grid" style="margin-top:6px">${stats}</div>
-          <div style="margin-top:6px"><span class="muted">Drops (item · weight/1000):</span>${drops.join("")}</div>
+          ${drops.length ? `<div style="margin-top:6px"><span class="muted">Drops (item · weight/1000):</span>${drops.join("")}</div>` : ""}
         </div>`);
       }
     }
