@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "text-core.js", "vcdiff.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -50,9 +50,12 @@ console.log("App shell:");
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
 (/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
+(/src=["']guide-core\.js["']/.test(html) ? ok : bad)("index.html loads guide-core.js before app.js");
+(/src=["']text-core\.js["']/.test(html) ? ok : bad)("index.html loads text-core.js before iso.js");
 (/data-mode="iso"/.test(html) && /data-mode="save"/.test(html) ? ok : bad)("both mode tabs present");
 { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
-  (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js"); }
+  (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
+  (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js"); }
 
 // 5) canonical recruit-team map: parses, teams valid, every name is in s3save.py ROSTER
 console.log("Recruit teams:");
@@ -80,12 +83,25 @@ console.log("QoL guards:");
   const app = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
   (/s3suffix"\)\s*===\s*"on"/.test(app) ? ok : bad)("save-editor '.edited' suffix defaults OFF (overwrite-friendly)");
   (/showSaveFilePicker/.test(app) ? ok : bad)("save-editor has a 'Save as…' destination picker");
+  // Guide overlays: the join itself is covered behaviorally by guide-core.mjs; these assert the
+  // save editor actually fetches the three files and renders a note for each kind of field.
+  (/s3_skill_caps\.json/.test(app) && /s3_growth_ref\.json/.test(app) && /s3_rune_slots\.json/.test(app)
+    ? ok : bad)("save-editor fetches the skill-cap / growth / rune-slot guides");
+  (/GuideCore\./.test(app) ? ok : bad)("save-editor uses the pure GuideCore join (not an inline copy)");
+  (/growthNoteSave\(c\.name, n\)/.test(app) && /runeSlotNoteSave\(c\.name, key\)/.test(app) && /capNote\(c\.name, sk\.id\)/.test(app)
+    ? ok : bad)("save-editor renders guide notes on stats, rune slots and skill slots");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/RenameCore\.streamReplacer/.test(iso) && /src=["']rename-core\.js["']/.test(html) ? ok : bad)("ISO editor wires the character-rename streaming replacer");
   (/function markFlagsField/.test(iso) ? ok : bad)("ISO editor has bit-aware Target/AOE highlight");
   (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) && /class="fddesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite + food descriptions");
   (/<input type="file" id="isoFileInput">/.test(iso) ? ok : bad)("ISO file input has no restrictive accept filter (Android can select .iso)");
   (/doStreamSave/.test(iso) ? ok : bad)("ISO editor has the streaming 'save patched copy' path");
+  // Applying patches: sniff the format by magic, walk windows, stage rather than write.
+  (/async function applyXdelta/.test(iso) && /Vcdiff\.eachWindow/.test(iso)
+    ? ok : bad)("ISO editor can apply an .xdelta patch");
+  (/0xd6 && head\[1\] === 0xc3/.test(iso) ? ok : bad)("import sniffs VCDIFF magic (not the file extension)");
+  (/w\.plan\(\)\.length/.test(iso) ? ok : bad)("apply-patch skips untouched windows (no whole-disc read)");
+  (/outside the region/.test(iso) ? ok : bad)("apply-patch refuses a patch that reaches outside the editable block");
   const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
   (/cache:\s*"no-store"/.test(sw) ? ok : bad)("service worker fetches app shell no-store (fresh updates)");
   (/dl-register/.test(sw) ? ok : bad)("service worker supports the streaming-download hand-off"); }
@@ -204,6 +220,42 @@ console.log("Guide overlays + xdelta:");
     (Object.keys(j).length >= 50 ? ok : bad)(`s3_bestiary.json parses (${Object.keys(j).length} enemies)`); }
   catch (e) { bad("s3_bestiary.json — " + e.message); }
   (/s3_bestiary\.json/.test(iso) && /REF\.bestiary/.test(iso) ? ok : bad)("iso.js Enemies tab renders the bestiary reference");
+}
+
+// 8) In-ELF text heuristic must stay in lockstep with the desktop editor.
+// There's no index of strings in the ELF — both editors FIND them with the same filter, so if
+// the rules drift the two tools offer different strings on the same disc (and one of them may
+// offer a format string the user can corrupt). Assert the literals agree, rule by rule.
+console.log("In-ELF text heuristic (web ⇄ desktop):");
+{
+  const T = (await import("../text-core.js")).default ||
+    (await import("module")).createRequire(import.meta.url)(path.join(WEB, "text-core.js"));
+  const py = fs.readFileSync(path.join(REPO, "Editor", "s3editor.py"), "utf8");
+  const pick = (re, what) => { const m = re.exec(py); if (!m) bad(`could not find ${what} in s3editor.py`); return m && m[1]; };
+
+  const minLen = pick(/if len\(s\) < (\d+) or " " not in s:/, "min length");
+  (Number(minLen) === T.MIN_LEN ? ok : bad)(`min run length ${T.MIN_LEN} (py ${minLen})`);
+
+  const rej = pick(/_re\.search\(r"([^"]+)"/, "reject regex");
+  (rej === T.REJECT.source ? ok : bad)(`reject pattern matches` + (rej === T.REJECT.source ? "" : ` — js ${T.REJECT.source} vs py ${rej}`));
+
+  const punct = pick(/c\.isalpha\(\) or c in "([^"]+)"/, "prose punctuation");
+  (punct === T.PROSE_PUNCT ? ok : bad)(`prose punctuation matches` + (punct === T.PROSE_PUNCT ? "" : ` — js ${JSON.stringify(T.PROSE_PUNCT)} vs py ${JSON.stringify(punct)}`));
+
+  const ratio = pick(/return ok \/ len\(s\) > (0\.\d+)/, "prose ratio");
+  (Number(ratio) === T.PROSE_RATIO ? ok : bad)(`prose ratio ${T.PROSE_RATIO} (py ${ratio})`);
+
+  // Scan range. The desktop starts 0x1000 earlier, at the ELF *header* rather than PT_LOAD;
+  // those bytes are headers and program-header tables, which cannot pass the prose filter, so
+  // the two produce the same string set. The END must match exactly — that one is real data.
+  const pyHi = pick(/_TEXT_ELF_HI = (0x[0-9A-Fa-f]+)/, "_TEXT_ELF_HI");
+  const pyLo = pick(/_TEXT_ELF_LO = (0x[0-9A-Fa-f]+)/, "_TEXT_ELF_LO");
+  (Number(pyHi) === ELF_END ? ok : bad)(`scan end 0x${ELF_END.toString(16)} matches desktop (${pyHi})`);
+  (Number(pyLo) <= ELF_BASE ? ok : bad)(`desktop scan start ${pyLo} is at or before the web block (0x${ELF_BASE.toString(16)})`);
+
+  const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
+  (/TextCore\.scanStrings\(ORIG, ELF_BASE\)/.test(iso) ? ok : bad)("iso.js scans ORIG (stable slot lengths), not BUF");
+  (/\["text", "Text"\]/.test(iso) ? ok : bad)("iso.js registers the Text view");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");

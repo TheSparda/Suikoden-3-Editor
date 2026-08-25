@@ -439,7 +439,8 @@ function drawSlot() {
 function showSub() {
   $$("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === SUB));
   if (SUB === "chars") {
-    $("#subhint").innerHTML = `Stats, equipped runes/armor, and skill slots per character. ` +
+    $("#subhint").innerHTML = `Stats, equipped runes/armor, and skill slots per character, with the ` +
+      `<b>guide's</b> skill caps, Lv-99 growth ranges and rune-slot unlock levels shown under each field. ` +
       `Tick <b>recruited</b> to add a not-yet-joined character (or untick to remove). ` +
       `<label style="cursor:pointer;margin-left:6px"><input type="checkbox" id="reconly" ${RECRUITED_ONLY ? "checked" : ""}> recruited only</label>`;
     drawChars();
@@ -463,9 +464,57 @@ function showSub() {
   }
 }
 
+// ---- guide reference overlays ----------------------------------------------
+// The ISO editor annotates its character records with the Suikosource guide data (skill
+// caps, Lv-99 growth ranges, rune-slot unlock levels — iso.js: skillCapNote/growthNote/
+// runeSlotNote). The same committed JSON applies to a save, so show it here too: it turns
+// "Skill slot 3" into "max B+" and a bare stat box into "Lv99 ≈ 90-188". The join and the
+// coverage guarantees live in guide-core.js; this half is only rendering + escaping.
+let GUIDE = null;                   // { caps, growth, slots }; {} tables when a file is absent
+async function loadGuideRefs() {
+  if (GUIDE) return GUIDE;
+  const one = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : {}; } catch (e) { return {}; } };
+  const [caps, growth, slots] = await Promise.all([
+    one("../Editor/s3_skill_caps.json"), one("../Editor/s3_growth_ref.json"), one("../Editor/s3_rune_slots.json")]);
+  GUIDE = { caps, growth, slots };   // a missing file just hides its notes, never breaks the editor
+  return GUIDE;
+}
+const fnote = (html) => (html ? `<div class="fnote">${html}</div>` : "");
+
+// max grade for one skill on one character: "guide max: B+", or a dim "can't learn".
+function capNote(charName, skillId) {
+  const r = GUIDE && GuideCore.skillCap(GUIDE, charName, skillId);
+  if (!r) return "";
+  return r.grade ? `guide max: <b>${esc(r.grade)}</b>` : `<span class="dim">guide: can't learn</span>`;
+}
+// growth rate + the Lv-99 range the guide expects for a stat ("HP" covers Max HP).
+function growthNoteSave(charName, stat) {
+  const g = GUIDE && GuideCore.growth(GUIDE, charName, stat);
+  if (!g) return "";
+  const bits = [];
+  if (g.rate) bits.push(`rate ${g.rate}`);
+  if (g.end) bits.push(`Lv99 ≈ ${g.end}`);
+  return bits.length ? `guide: ${esc(bits.join(" · "))}` : "";
+}
+// rune slot: locked until Lv N, an innate starting rune, or nothing.
+function runeSlotNoteSave(charName, eqKey) {
+  const s = GUIDE && GuideCore.runeSlot(GUIDE, charName, eqKey);
+  if (!s) return "";
+  if (s.state === "opens") return `guide: slot opens at <b>Lv ${esc(String(s.lv))}</b>`;
+  if (s.state === "rune") return `guide: starts with <b>${esc(s.rune)}</b>`;
+  return `<span class="dim">guide: empty/none</span>`;
+}
+// the level the character joins at — context for "is this level plausible?".
+function joinLvNote(charName) {
+  const i = GUIDE && GuideCore.initial(GUIDE, charName);
+  if (!i) return "";
+  return `guide: joins at <b>Lv ${esc(i.lv)}</b>${i.wlv ? ` · WLv ${esc(i.wlv)}` : ""}`;
+}
+
 // ---- Characters ------------------------------------------------------------
 function drawChars() {
   const s = saves[curSlot];
+  if (GUIDE === null) loadGuideRefs().then(() => { if (SUB === "chars") drawChars(); });   // notes appear once the guides load
   const pool = RECRUITED_ONLY ? s.characters.filter((c) => c.recruited) : s.characters.filter((c) => c.hasData || c.recruited);
   const shown = pool.filter((c) => !SEARCH || c.name.toLowerCase().includes(SEARCH) || String(c.rosterIndex) === SEARCH);
   const box = $("#subview");
@@ -481,19 +530,22 @@ function charCard(c) {
       (stat ? ` data-stat="${stat}"` : ` data-k="${k}"`) + ` data-def="${val}" title="0–${max}">`;
   };
   const statCells = STAT_NAMES().map((n) =>
-    `<label class="field"><span>${n}</span>${num(null, c.stats[n], n)}</label>`).join("");
+    `<label class="field"><span>${n}</span>${num(null, c.stats[n], n)}${fnote(growthNoteSave(c.name, n))}</label>`).join("");
+  // Level gets the guide's join level; Max HP is the "HP" row of the growth table.
+  const CORE_NOTE = { level: () => joinLvNote(c.name), maxHP: () => growthNoteSave(c.name, "HP") };
   const core = [["Level", "level"], ["Cur HP", "curHP"], ["Max HP", "maxHP"], ["EXP→next", "expToNext"]]
-    .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}</label>`).join("");
+    .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}${fnote(CORE_NOTE[k] ? CORE_NOTE[k]() : "")}</label>`).join("");
   const equip = EQ.map(([key, lbl]) => {
     const cur = c.equip[key] || 0;
     return `<label class="field"><span>${lbl}</span>
-       <button type="button" class="picker" data-eqri="${c.rosterIndex}" data-eq="${key}" data-val="${cur}" data-def="${cur}">${esc(itemLabel(cur))}</button></label>`;
+       <button type="button" class="picker" data-eqri="${c.rosterIndex}" data-eq="${key}" data-val="${cur}" data-def="${cur}">${esc(itemLabel(cur))}</button>${fnote(runeSlotNoteSave(c.name, key))}</label>`;
   }).join("");
   const skills = (c.skills || []).map((sk) =>
     `<div class="field"><span>Skill slot ${sk.slot + 1}</span>
        <button type="button" class="picker" data-skri="${c.rosterIndex}" data-skslot="${sk.slot}" data-skf="id" data-val="${sk.id}" data-def="${sk.id}">${esc(skillLabel(sk.id))}</button>
        <div class="row" style="gap:6px;margin-top:4px"><span class="muted">rank</span>
-         <select style="flex:1" data-skri="${c.rosterIndex}" data-skslot="${sk.slot}" data-skf="rank" data-def="${sk.rank}">${rankSel(sk.rank)}</select></div></div>`).join("");
+         <select style="flex:1" data-skri="${c.rosterIndex}" data-skslot="${sk.slot}" data-skf="rank" data-def="${sk.rank}">${rankSel(sk.rank)}</select></div>
+       <div class="fnote" data-capnote="${sk.slot}">${capNote(c.name, sk.id)}</div></div>`).join("");
   return `<details class="char"><summary>
       <span class="chev">▸</span><span class="nm">${esc(c.name)}</span>
       <span class="muted">#${c.rosterIndex}</span>
@@ -537,6 +589,8 @@ function wireChar(c) {
       btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
       EDITS[ri] = EDITS[ri] || {}; EDITS[ri].skills = EDITS[ri].skills || {};
       (EDITS[ri].skills[slot] = EDITS[ri].skills[slot] || {}).id = id;
+      const note = $(`[data-capnote="${slot}"]`, body);      // the cap is per-skill, so re-render it
+      if (note) note.innerHTML = capNote(c.name, id);
     }, (id) => hx(id, 2));
   }));
   $$("select[data-skf='rank']", body).forEach((s2) => (s2.onchange = () => {

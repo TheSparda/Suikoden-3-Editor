@@ -9,7 +9,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF } from "./synth-iso.mjs";
+import { execFileSync } from "child_process";
+import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -79,6 +80,30 @@ async function openRec(page, detailsSel) {
   if ((await loc.getAttribute("open")) === null) await loc.locator("summary").click();
   await page.waitForTimeout(50);
 }
+// ---- .xdelta helpers (patch-apply tests) --------------------------------------------------
+// Patches are built by REAL xdelta3 so the decoder is exercised against genuine output, not
+// against our own encoder. `-S none` because xdelta3 defaults to LZMA secondary compression,
+// which the editor refuses by design (one test asserts exactly that, using lzma=true).
+let _xd = null;
+function xdelta3Available() {
+  if (_xd === null) { try { execFileSync("xdelta3", ["-V"], { stdio: "ignore" }); _xd = true; } catch { _xd = false; } }
+  return _xd;
+}
+function makeXdelta(src, tgt, lzma = false) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "s3e2e-"));
+  const s = path.join(dir, "s.bin"), t = path.join(dir, "t.bin"), p = path.join(dir, "p.xd");
+  fs.writeFileSync(s, Buffer.from(src)); fs.writeFileSync(t, Buffer.from(tgt));
+  execFileSync("xdelta3", ["-e", "-f", "-q", ...(lzma ? [] : ["-S", "none"]), "-s", s, t, p]);
+  const out = new Uint8Array(fs.readFileSync(p));
+  fs.rmSync(dir, { recursive: true, force: true });
+  return out;
+}
+// Feed bytes to the app's file input as if the user picked them.
+async function uploadPatch(page, data, name) {
+  await page.setInputFiles("#isoRecipeFile", { name, mimeType: "application/octet-stream", buffer: Buffer.from(data) });
+  await page.waitForTimeout(400);
+}
+
 async function save(page) {
   await page.evaluate(() => { window.__writes = []; });   // capture only THIS save's writes
   await page.click("#isoSaveBtn");
@@ -104,18 +129,36 @@ head("Fallback (no File System Access → input loader)");
 }
 
 head("ISO validation");
-{ // wrong version word
+{ // Wait for the EXPECTED rejection text, not a fixed 300ms: reading the multi-MB fixture over
+  // HTTP can outlast any constant, which flaked ~1 run in 8. Waiting merely for "not still
+  // loading" is not enough either — the loader's idle placeholder (".iso / .bin / .img · USA
+  // release only") satisfies that instantly AND contains "USA", so a loose check would pass
+  // before the version check had even run. Wait for the specific message.
+  const rejection = async (page, re) => {
+    await page.waitForFunction((src) => {
+      const el = document.querySelector("#isoBootStatus");
+      return !!(el && new RegExp(src, "i").test(el.textContent || ""));
+    }, re.source, { timeout: 10000 });
+    return page.textContent("#isoBootStatus");
+  };
+  // wrong version word
   const bad = bytes.slice(); new DataView(bad.buffer).setUint32(VERSION_OFF, 0x11223344, false);
   setServed(bad);
   const page = await newPage();
-  await gotoIsoTab(page); await page.click("#isoPick"); await page.waitForTimeout(300);
-  check("rejects non-USA version word", !(await page.$("#isoTabs")) && /USA|SLUS|version/i.test(await page.textContent("#isoBootStatus")));
+  await gotoIsoTab(page); await page.click("#isoPick");
+  const want = /Not a USA \(SLUS-20387\)/;
+  let msg = "";
+  try { msg = await rejection(page, want); } catch { msg = await page.textContent("#isoBootStatus"); }
+  check("rejects non-USA version word", !(await page.$("#isoTabs")) && want.test(msg), msg);
   await page.context().close();
   // undersized file
   setServed(new Uint8Array(2048));
   const page2 = await newPage();
-  await gotoIsoTab(page2); await page2.click("#isoPick"); await page2.waitForTimeout(300);
-  check("rejects too-small file", !(await page2.$("#isoTabs")) && /not a full/i.test(await page2.textContent("#isoBootStatus")));
+  await gotoIsoTab(page2); await page2.click("#isoPick");
+  const want2 = /not a full Suikoden III ISO/;
+  let msg2 = "";
+  try { msg2 = await rejection(page2, want2); } catch { msg2 = await page2.textContent("#isoBootStatus"); }
+  check("rejects too-small file", !(await page2.$("#isoTabs")) && want2.test(msg2), msg2);
   await page2.context().close();
   setServed(bytes);
 }
@@ -348,6 +391,63 @@ head("Gear description overflow is rejected");
   await page.context().close();
 }
 
+head("Text tab — in-ELF strings: filtered, editable, length-capped, byte-exact");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="text"]');
+  await page.waitForSelector("input.txt", { timeout: 5000 });
+  const T = mapping.text;
+  // the scanner must offer the planted prose string and NOT the planted format string
+  await page.fill("#isoSearch", "everyone survived"); await page.waitForTimeout(80);
+  const row = page.locator(`input.txt[data-off="${T.off}"]`);
+  check("planted prose string is offered", (await row.count()) === 1);
+  check("slot cap is the on-disk length", +(await row.getAttribute("maxlength")) === T.max);
+  check("current value decodes from the disc", (await row.inputValue()) === T.value);
+  await page.fill("#isoSearch", "arg1"); await page.waitForTimeout(80);
+  check("format string is filtered out (not editable)", (await page.locator("input.txt").count()) === 0);
+
+  // over-length is rejected outright — the slot can't grow
+  await page.fill("#isoSearch", "everyone survived"); await page.waitForTimeout(80);
+  await row.evaluate((el, n) => { el.value = "X".repeat(n + 4); el.dispatchEvent(new Event("change", { bubbles: true })); }, T.max);
+  await page.waitForTimeout(60);
+  check("over-length text warns", /too long/i.test(await page.textContent("#isoStatus")));
+  check("over-length text is not staged", (await row.inputValue()) === T.value);
+
+  // a shorter edit is written over the whole slot and NUL-padded
+  const NEW = "Everyone made it home";
+  await row.fill(NEW); await row.dispatchEvent("change"); await page.waitForTimeout(60);
+  check("edited field highlights dirty", await row.evaluate((el) => el.classList.contains("dirty")));
+  check("the change is counted as one labelled field", /1 unsaved/.test(await page.textContent("#isoDirty")));
+  const r = await save(page);
+  let got = ""; for (let i = 0; i < T.max; i++) { const c = r.at(T.off + i); if (!c) break; got += String.fromCharCode(c); }
+  check("new text written byte-exact", got === NEW);
+  check("tail of the slot is NUL-padded, not left over",
+    r.at(T.off + NEW.length) === 0 && r.at(T.off + T.max - 1) === 0);
+  check("the write never runs past the slot", !r.wrote(T.off + T.max, 1));
+  await page.context().close();
+}
+
+head("Text tab — undo and per-field revert");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="text"]');
+  await page.waitForSelector("input.txt", { timeout: 5000 });
+  const T = mapping.text;
+  // Filter by OFFSET, not by content: undo/redo re-render and re-filter, and a
+  // content filter would drop the row the moment the edit changes the text.
+  await page.fill("#isoSearch", T.off.toString(16)); await page.waitForTimeout(80);
+  const row = () => page.locator(`input.txt[data-off="${T.off}"]`);
+  check("a string can be found by its offset", (await row().count()) === 1);
+  await row().fill("Short text"); await row().dispatchEvent("change"); await page.waitForTimeout(60);
+  check("undo is enabled after a text edit", !(await page.locator("#isoUndoBtn").isDisabled()));
+  await page.click("#isoUndoBtn"); await page.waitForTimeout(80);
+  check("undo restores the original string", (await row().inputValue()) === T.value);
+  await page.click("#isoRedoBtn"); await page.waitForTimeout(80);
+  check("redo re-applies the edit", (await row().inputValue()) === "Short text");
+  await page.locator(`input.txt[data-off="${T.off}"] ~ button.revert`).click(); await page.waitForTimeout(80);
+  check("per-field revert restores the original", (await row().inputValue()) === T.value);
+  check("nothing staged after revert", await page.locator("#isoDirty").isHidden());
+  await page.context().close();
+}
+
 head("Recipe export → reset → import round-trip");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
@@ -365,6 +465,83 @@ head("Recipe export → reset → import round-trip");
   fs.writeFileSync(badRecipe, JSON.stringify({ format: "s3mod", versionWord: 0xDEADBEEF, patches: [] }));
   await page.setInputFiles("#isoRecipeFile", badRecipe); await page.waitForTimeout(80);
   check("wrong-region recipe rejected", /different game\/region/i.test(await page.textContent("#isoStatus")));
+  await page.context().close();
+}
+
+// Applying a patch is the counterpart to exporting one: the editor can now consume a mod.
+// These drive the real UI with patches built by REAL xdelta3 against the real synthetic ISO,
+// so they cover the whole path — magic sniffing, window walk, checksum, staging.
+head("Apply an .xdelta patch (built by real xdelta3)");
+if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else { const page = await newPage(); await loadIso(page);
+  // a patch that edits bytes inside the editable block
+  const tgt = Uint8Array.from(bytes);
+  const at = SPELL.off + 0x1C;                    // spell 0 power (u32) — inside the block
+  tgt.set([0xE7, 0x03, 0x00, 0x00], at);          // 999
+  const patch = makeXdelta(bytes, tgt);
+  check("xdelta3 produced a patch", patch && patch.length > 0);
+  await uploadPatch(page, patch, "mod.xdelta");
+  check("status reports a checksum-verified apply", /applied patch/i.test(await page.textContent("#isoStatus")));
+  check("status says how much changed", /byte\(s\)/i.test(await page.textContent("#isoStatus")));
+  check("the edit is staged, not silently written", !(await page.evaluate(() => window.__writes.length)));
+  check("dirty badge reflects the staged patch", !(await page.locator("#isoDirty").isHidden()));
+
+  // An imported patch is an edit like any other: one undo step for the whole patch, before
+  // saving (a save re-baselines ORIG, so this has to be checked while it's still staged).
+  await page.click("#isoUndoBtn"); await page.waitForTimeout(120);
+  check("undo reverts the whole applied patch in one step", await page.locator("#isoDirty").isHidden());
+  await page.click("#isoRedoBtn"); await page.waitForTimeout(120);
+  check("redo re-applies it", !(await page.locator("#isoDirty").isHidden()));
+
+  const r = await save(page);
+  check("saving writes the patched bytes", r.u32(at) === 999);
+  await page.context().close();
+}
+
+head("Apply patch — refusals");
+if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else { const page = await newPage(); await loadIso(page);
+  // 1. a patch that changes bytes OUTSIDE the editable block must be refused whole
+  { const tgt = Uint8Array.from(bytes);
+    tgt.set([1, 2, 3, 4], 0x1000);                // before ELF_BASE — can't be staged
+    await uploadPatch(page, makeXdelta(bytes, tgt), "outside.xdelta");
+    const s = await page.textContent("#isoStatus");
+    check("patch touching bytes outside the block is refused", /outside the region/i.test(s));
+    check("...and says nothing was applied", /nothing was applied/i.test(s));
+    check("...and stages nothing", await page.locator("#isoDirty").isHidden());
+  }
+  // 2. xdelta3's DEFAULT encoding (LZMA secondary) must be refused with the fix, not mangled
+  { const tgt = Uint8Array.from(bytes); tgt.set([9, 9, 9, 9], SPELL.off + 0x1C);
+    await uploadPatch(page, makeXdelta(bytes, tgt, true), "lzma.xdelta");
+    const s = await page.textContent("#isoStatus");
+    check("LZMA-compressed patch is refused", /secondary compression|delta sections/i.test(s));
+    check("...and tells the user to re-encode with -S none", /-S none/.test(s));
+  }
+  // 3. a patch for a different-sized image is refused before any disc I/O
+  { const small = bytes.slice(0, ELF_END - 4096);
+    const tgt = Uint8Array.from(small); tgt.set([1, 2, 3], 0x200000);
+    await uploadPatch(page, makeXdelta(small, tgt), "wrongsize.xdelta");
+    check("patch for a different image size is refused", /different image/i.test(await page.textContent("#isoStatus")));
+  }
+  // 4. a patch built against a MODIFIED source must fail the checksum rather than corrupt
+  { const other = Uint8Array.from(bytes); other[SPELL.off + 0x40] ^= 0xFF;   // not our disc
+    const tgt = Uint8Array.from(other); tgt.set([5, 5, 5, 5], SPELL.off + 0x1C);
+    await uploadPatch(page, makeXdelta(other, tgt), "othersrc.xdelta");
+    const s = await page.textContent("#isoStatus");
+    check("patch built against a different disc fails its checksum", /checksum mismatch/i.test(s));
+    check("...and stages nothing", await page.locator("#isoDirty").isHidden());
+  }
+  await page.context().close();
+}
+
+head("Apply an .s3mod recipe through the same button (format sniffed, not by name)");
+{ const page = await newPage(); await loadIso(page);
+  const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
+    patches: [{ off: SPELL.off + 0x1C, new: "2a000000" }] });
+  await uploadPatch(page, new TextEncoder().encode(recipe), "recipe.xdelta");   // WRONG extension on purpose
+  check("a recipe named .xdelta is still recognised as a recipe", /applied recipe/i.test(await page.textContent("#isoStatus")));
+  const r = await save(page);
+  check("recipe bytes written", r.u32(SPELL.off + 0x1C) === 42);
   await page.context().close();
 }
 
@@ -664,6 +841,53 @@ head("Save editor tab still boots (structural)");
   check("iso section shows", await page.locator("#mode-iso").evaluate((e) => !e.classList.contains("hidden")));
   await page.click('.mtab[data-mode="save"]'); await page.waitForTimeout(60);
   check("save section shows again", await page.locator("#mode-save").evaluate((e) => !e.classList.contains("hidden")));
+  await page.context().close();
+}
+
+// Guide overlays in the save editor. guide-core.mjs proves the *join*; this proves the notes
+// actually reach the DOM. Pyodide is aborted here, so we hand drawSlot() a synthetic decoded
+// save (the same shape s3save.decode_save returns) and drive the real render path.
+head("Save editor — guide overlays on character cards");
+{ const page = await newPage();
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  const built = await page.evaluate(async () => {
+    const mk = (rosterIndex, name) => ({
+      rosterIndex, name, addr: 0, id: 0, level: 30, curHP: 200, maxHP: 200, expToNext: 500,
+      stats: { PWR: 100, SKL: 100, MAG: 100, REP: 100, PDF: 100, MDF: 100, SPD: 100, LUK: 100 },
+      equip: { headRune: 0, rightRune: 0, leftRune: 0, helm: 0, armor: 0, shield: 0, boots: 0, gloves: 0, accessory: 0 },
+      skills: [{ slot: 0, id: 10, rank: 4 }, { slot: 1, id: 40, rank: 0 }],
+      recruited: true, recruitWord: 1, recruiter: "", recruiters: [], hasData: true,
+    });
+    REF = { items: [], skills: [], charById: {} };
+    OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+    saves = [{
+      label: "slot", folder: "BASLUS-20387", checksumWord: 0, meta: {}, names: [], inventory: [],
+      global: { gold: 100, storyPhase: 1, partyLeader: 0, playtime: "1:00" },
+      characters: [mk(0, "Hugo"), mk(15, "Ace"), mk(76, "Apple")],
+    }];
+    curSlot = 0;
+    renderEditor();
+    RECRUIT_META = {};                     // skip the recruit-meta fetch/redraw
+    await loadGuideRefs();                 // resolve before we read the DOM
+    drawChars();
+    const card = (nm) => [...document.querySelectorAll("details.char")].find((d) => d.querySelector(".nm").textContent === nm);
+    const notes = (nm) => card(nm) ? [...card(nm).querySelectorAll(".fnote")].map((n) => n.textContent.trim()).filter(Boolean) : null;
+    return { hugo: notes("Hugo"), ace: notes("Ace"), apple: notes("Apple"),
+             guideLoaded: !!(GUIDE && Object.keys(GUIDE.caps).length) };
+  });
+  check("guide files fetched", built.guideLoaded);
+  const has = (arr, re) => !!arr && arr.some((t) => re.test(t));
+  check("stat field shows the guide's Lv-99 growth range", has(built.hugo, /rate 04 · Lv99 ≈ 90-188/));
+  check("Max HP shows the HP growth row", has(built.hugo, /Lv99 ≈ 470-626/));
+  check("Level shows the guide's join level", has(built.hugo, /joins at Lv 12/));
+  check("rune slot shows its unlock level", has(built.hugo, /slot opens at Lv 35/));
+  check("rune slot shows an innate rune", has(built.hugo, /starts with Wind/));
+  check("skill slot shows the per-character cap", has(built.hugo, /guide max: S/));
+  check("a skill the character can't learn is called out", has(built.hugo, /can't learn/));
+  check("a different character gets different notes (not a constant)",
+    has(built.ace, /starts with Double Tusk/) && has(built.ace, /slot opens at Lv 32/) && !has(built.ace, /joins at Lv 12/));
+  check("a support character the guide doesn't cover shows no notes",
+    Array.isArray(built.apple) && built.apple.length === 0);
   await page.context().close();
 }
 
