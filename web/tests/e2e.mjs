@@ -129,18 +129,36 @@ head("Fallback (no File System Access → input loader)");
 }
 
 head("ISO validation");
-{ // wrong version word
+{ // Wait for the EXPECTED rejection text, not a fixed 300ms: reading the multi-MB fixture over
+  // HTTP can outlast any constant, which flaked ~1 run in 8. Waiting merely for "not still
+  // loading" is not enough either — the loader's idle placeholder (".iso / .bin / .img · USA
+  // release only") satisfies that instantly AND contains "USA", so a loose check would pass
+  // before the version check had even run. Wait for the specific message.
+  const rejection = async (page, re) => {
+    await page.waitForFunction((src) => {
+      const el = document.querySelector("#isoBootStatus");
+      return !!(el && new RegExp(src, "i").test(el.textContent || ""));
+    }, re.source, { timeout: 10000 });
+    return page.textContent("#isoBootStatus");
+  };
+  // wrong version word
   const bad = bytes.slice(); new DataView(bad.buffer).setUint32(VERSION_OFF, 0x11223344, false);
   setServed(bad);
   const page = await newPage();
-  await gotoIsoTab(page); await page.click("#isoPick"); await page.waitForTimeout(300);
-  check("rejects non-USA version word", !(await page.$("#isoTabs")) && /USA|SLUS|version/i.test(await page.textContent("#isoBootStatus")));
+  await gotoIsoTab(page); await page.click("#isoPick");
+  const want = /Not a USA \(SLUS-20387\)/;
+  let msg = "";
+  try { msg = await rejection(page, want); } catch { msg = await page.textContent("#isoBootStatus"); }
+  check("rejects non-USA version word", !(await page.$("#isoTabs")) && want.test(msg), msg);
   await page.context().close();
   // undersized file
   setServed(new Uint8Array(2048));
   const page2 = await newPage();
-  await gotoIsoTab(page2); await page2.click("#isoPick"); await page2.waitForTimeout(300);
-  check("rejects too-small file", !(await page2.$("#isoTabs")) && /not a full/i.test(await page2.textContent("#isoBootStatus")));
+  await gotoIsoTab(page2); await page2.click("#isoPick");
+  const want2 = /not a full Suikoden III ISO/;
+  let msg2 = "";
+  try { msg2 = await rejection(page2, want2); } catch { msg2 = await page2.textContent("#isoBootStatus"); }
+  check("rejects too-small file", !(await page2.$("#isoTabs")) && want2.test(msg2), msg2);
   await page2.context().close();
   setServed(bytes);
 }
