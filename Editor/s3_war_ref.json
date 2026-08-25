@@ -1,0 +1,43 @@
+{
+  "source": "RPGClassics Suikoden III shrine — Army Units guide (Guides/armyunits.pdf); skill effect details cross-checked with the GameFAQs walkthrough (Guides/gamefaqs.rtf §3h).",
+  "skills": {
+    "Control": "Decides how many unit moves you get per turn — the highest Control on the field sets it (Control VIII = 7 moves).",
+    "Fire Rune": "Damages every unit in an adjacent area (each member loses ~1/5 HP).",
+    "Heal": "Fully heals one unit in the same area (Heal x2/x3 = uses per battle).",
+    "Lightning Rune": "Hits one enemy unit up to two areas away (each member loses ~1/3 HP).",
+    "Quick Aid": "Heals 25% of all lost HP to every member of the unit.",
+    "Quicken": "Grants an extra action (x1/x2 = uses per battle).",
+    "Riding": "The unit can travel up to three areas through friendly territory.",
+    "Surprise": "In a forest area the unit's attack is up 50%.",
+    "Tactics": "Raises attack coordination of the whole unit (I=5%, II=7%, III=10%).",
+    "Valor": "Raises offensive power of the whole unit (I=5%, II=10%, III=20%).",
+    "Water Rune": "Fully heals every member of one unit, up to one area away.",
+    "Wind Rune": "Offensive rune skill used by some leaders (e.g. Thomas's Wind Magic)."
+  },
+  "army": {
+    "Ace": "Riding", "Augustine": "Tactics I", "Bazba": "Surprise", "Bright": "—",
+    "Cecile": "—", "Chris": "Riding, Tactics I, Valor I", "Duke": "Tactics I, Valor I",
+    "Dupa": "Valor III, Surprise", "Edge": "—", "Elaine": "—", "Emily": "—",
+    "Franz": "—", "Fred": "Tactics I", "Fubar": "Surprise", "Futch": "—",
+    "Gau": "—", "Geddoe": "Valor II", "Hugo": "—", "Jacques": "—",
+    "Landis": "Surprise", "Lilly": "Valor II", "Lucia": "Control V, Valor II",
+    "Mua": "—", "Nash": "Tactics II", "Nicolas": "—", "Queen": "—", "Reed": "—",
+    "Rico": "Quick Aid", "Rhett": "—", "Ruby": "—", "Salome": "Control VI, Tactics II",
+    "Samus": "—", "Sanae Y": "Valor II", "Sasarai": "Lightning Rune x2",
+    "Sgt. Joe": "Valor II", "Sharon": "—", "Shiba": "Surprise", "Thomas": "Quicken x1",
+    "Twaikin": "—", "Viki": "—", "Wan Fu": "—", "Wilder": "—", "Yumi": "Surprise"
+  },
+  "support": {
+    "Anne": "Quicken x1", "Apple": "Control V, Tactics II", "Beecham": "Valor I",
+    "Caesar": "Control VII, Tactics III", "Estella": "Fire Rune x2",
+    "Jeane": "Lightning Rune x1", "Joker": "Tactics II", "Mio": "Heal x2, Quick Aid",
+    "Nei": "Quicken x2", "Salome": "Control VI, Tactics II", "Sana": "Quick Aid",
+    "Tuta": "Quick Aid, Heal x3", "Yun": "Heal x3, Quick Aid", "Yuiri": "Water Rune x1"
+  },
+  "notes": [
+    "A unit's HP in war battles are the members' own battle HP — level and equip characters (or edit them in the save editor) to strengthen your army.",
+    "The main character's True Fire / True Water Rune adds its own special ability on top of the skills above.",
+    "Non-Story-VIP characters can die permanently if their whole unit falls — press Story VIPs on the arrange screen to see who is at risk.",
+    "War-skill assignments are fixed in the game code, not in an editable data table — the list here is reference only."
+  ]
+}

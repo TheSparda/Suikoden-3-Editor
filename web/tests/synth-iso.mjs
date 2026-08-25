@@ -53,6 +53,7 @@ export const ENEMY_REC_A = 0x465E00, ENEMY_AUX_A = 0x465F00;   // copy 1
 export const ENEMY_REC_B = 0x466000, ENEMY_AUX_B = 0x466100;   // copy 2
 export const ZONE_SLOTS_A = 0x466200, ZONE_PARTY_A = 0x466240, ZONE_MEM_A = 0x466290;
 export const ZONE_SLOTS_B = 0x466300, ZONE_PARTY_B = 0x466340, ZONE_MEM_B = 0x466390;
+export const WAR_REC_A = 0x466400, WAR_REC_B = 0x4664A0;       // war-unit fixture (two copies)
 export const SYNTH_EXTRA = 0x800;                              // file = ELF_END + this
 export const ENEMY_TEST_PACKS = {
   format: "s3enemy", version: 1,
@@ -80,6 +81,21 @@ export const ENEMY_TEST_PACKS = {
           off: [ZONE_PARTY_A + 0x1C, ZONE_PARTY_B + 0x1C], memOff: [ZONE_MEM_A + 8, ZONE_MEM_B + 8] },
       ],
     }],
+  }],
+};
+
+// War-units fixture (War tab): one ZxnKn record in two copies, stats-only —
+// war variants carry no aux/reward offsets. Injected via window.S3_TEST_WAR_UNITS.
+export const WAR_TEST_UNITS = {
+  format: "s3war", version: 1,
+  recLayout: { hp: 48, maxhp: 50, lv: 64, stats: 32, size: 0x8C },
+  auxLayout: { exp: 4, sp: 12, mark: 14, potch: 16, drops: 32, nDrops: 5, size: 0x34 },
+  packs: [{
+    archive: "TEST", war: true, copies: 2, label: "ZxnKn",
+    enemies: [{ id: 0x132, name: "ZxnKn", variants: [{
+      lv: 20, hp: 230, stats: [49, 65, 60, 35, 40, 45, 45, 55], exp: 0, sp: 0, potch: 0,
+      drops: [], rec: [WAR_REC_A, WAR_REC_B], aux: [],
+    }] }],
   }],
 };
 
@@ -142,6 +158,12 @@ export function buildSynthIso() {
       w16(b, pa.type); w16(b + 2, pa.prob); w16(b + 0x10, pa.formId); w16(b + 0x12, pa.members.length);
       pa.members.forEach((m, mi) => { bytes[meO + pi * 8 + mi] = m; });
     });
+  }
+  // war-units fixture: one ZxnKn record in two copies (stats only, no aux)
+  for (const recO of [WAR_REC_A, WAR_REC_B]) {
+    const v = WAR_TEST_UNITS.packs[0].enemies[0].variants[0];
+    v.stats.forEach((sv, si) => w16(recO + 32 + si * 2, sv));
+    w16(recO + 48, v.hp); w16(recO + 50, v.hp); w16(recO + 64, v.lv);
   }
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
