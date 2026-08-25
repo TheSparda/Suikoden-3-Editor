@@ -121,7 +121,14 @@ EXP/SP/potch, drop weights — recomputed from the disc's original values so re-
 never compounds), and **spawn zones & formations** — each map zone's spawn slots (which
 monster + which stat variant, swappable within the pack's roster) and its weighted encounter
 groups, all written through to every streaming copy — with the Suikosource bestiary kept as
-a reference table), and **Reference** (item/skill id → name lists).
+a reference table), **War** (every war/major-battle combatant on the disc — Zexen Knights &
+Infantry, Karaya/Lizard/Duck Fighters, Mantor Legionnaires, Harmonian Soldiers, the chapter-5
+war monsters and the enemy **leader units** (Leo, Sarah, Franz, Ruby identified exactly against
+the Suikosource guide) — editable level, HP and all 8 combat stats, grouped per region archive
+so the same soldier can be tuned per battle; your own units use the characters' save stats, and
+the RPGClassics army-skill list (Riding / Tactics / Valor / Control / rune skills per character)
+ships as a read-only reference since war skills are code-embedded), and **Reference**
+(item/skill id → name lists).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
