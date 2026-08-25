@@ -446,10 +446,25 @@ head("Balance (Hard Mode) — idempotent + reset");
 
 head("Global encounter rate — scale all three movement paths");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="balance"]');
+  await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
+  check("Encounter is its own top-level tab", !!(await page.$('#isoTabs [data-v="encounter"]')));
+  check("the Balance tab no longer carries the rate field", await (async () => {
+    await page.click('#isoTabs [data-v="balance"]');
+    const gone = !(await page.$("#encPct"));
+    await page.click('#isoTabs [data-v="encounter"]');
+    await page.waitForSelector("#encPct", { timeout: 3000 });
+    return gone;
+  })());
   check("stock words decode to 100%", (await page.inputValue("#encPct")) === "100");
   check("100% reads as the stock rate", /stock rate/.test(await page.textContent("#encOut")));
+  check("the Stock preset is marked active at 100%",
+    await page.locator('[data-enc="100"]').evaluate((e) => e.classList.contains("on")));
+  // preset buttons stage the same words as typing the number
+  await page.click('[data-enc="25"]');
+  check("Quarter preset sets the field to 25", (await page.inputValue("#encPct")) === "25");
+  await page.click('[data-enc="100"]');
+  check("Stock preset returns to 100 with nothing staged", await page.locator("#isoDirty").isHidden());
   // 50%: the ride path gains its own multiplier and branches into the shared MULT/100 block
   await page.fill("#encPct", "50"); await page.dispatchEvent("#encPct", "change");
   check("50% is described as fewer battles", /fewer battles/.test(await page.textContent("#encOut")));
@@ -463,7 +478,7 @@ head("Global encounter rate — scale all three movement paths");
 
 head("Global encounter rate — 0% disables, 200% doubles");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="balance"]');
+  await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "0"); await page.dispatchEvent("#encPct", "change");
   check("0% is described as off", /off/.test(await page.textContent("#encOut")));
@@ -474,7 +489,7 @@ head("Global encounter rate — 0% disables, 200% doubles");
   await page.context().close();
 }
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="balance"]');
+  await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "200"); await page.dispatchEvent("#encPct", "change");
   check("200% is described as more battles", /more battles/.test(await page.textContent("#encOut")));
@@ -486,7 +501,7 @@ head("Global encounter rate — 0% disables, 200% doubles");
 
 head("Global encounter rate — 100% is a byte-exact restore, input clamps");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="balance"]');
+  await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "25"); await page.dispatchEvent("#encPct", "change");
   check("25% stages a change", await page.locator("#isoDirty").isVisible());

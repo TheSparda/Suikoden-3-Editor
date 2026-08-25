@@ -1327,8 +1327,9 @@ sign-extended, so the real ceiling is ~21800; 1000 is far past where `rand(100) 
 saturates anyway). Encoder/decoder: `s3patch.encounter_words` / `decode_encounter_words`,
 mirrored in `web/iso.js` as `encWords` / `decodeEnc` (parity-tested 0..1000 both ways).
 
-Exposed as **Balance tab → "Random encounter rate"** in the web editor and in the
-s3editor server UI (`GET/POST /api/encounter`).
+Exposed as its own **Encounter** tab in both UIs — the web editor's `drawEncounter`
+and the s3editor server's `renderEncounter` (`GET/POST /api/encounter`) — with None /
+Quarter / Half / Stock / Double / Triple presets alongside the free-form percentage.
 
 **Still NOT editable: per-area base rates.** `area_rate` and the post-battle grace
 distance are read from a **60-byte room record** — `+0x02` = grace (u16), `+0x04` = rate
