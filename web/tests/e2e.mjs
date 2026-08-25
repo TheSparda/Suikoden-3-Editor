@@ -12,7 +12,8 @@ import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
-  ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B } from "./synth-iso.mjs";
+  ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
+  WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -454,6 +455,46 @@ head("Enemies editor — recipe export covers enemy bytes");
   const a = mod.patches.find((p) => p.off === ENEMY_REC_A + 64), b = mod.patches.find((p) => p.off === ENEMY_REC_B + 64);
   check("recipe has copy-A run (7 -> 42)", !!a && a.old === "07" && a.new === "2a");
   check("recipe has copy-B run", !!b && b.new === "2a");
+  await page.context().close();
+}
+
+head("War view — real index unavailable on a small disc, reference still shows");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="war"]');
+  await page.waitForTimeout(150);
+  const txt = await page.textContent("#isoView");
+  check("war packs degrade to 'unavailable' (no wrong data)", /none of their offsets exist/.test(txt));
+  check("army skills reference still present", /Army skills reference/.test(txt));
+  await page.click("#isoView details.char summary");
+  const body = await page.textContent("#isoView");
+  check("reference lists a character's war skills", /Caesar/.test(body) && /Control VII, Tactics III/.test(body));
+  await page.context().close();
+}
+
+head("War editor — decode, edit, write-through both copies, no reward fields");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_WAR_UNITS = ${JSON.stringify(WAR_TEST_UNITS)};`);
+  await loadIso(page);
+  // the war pack must NOT leak into the Enemies view or its bulk scope
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForTimeout(150);
+  check("war pack hidden from Enemies view", !/ZxnKn/.test(await page.textContent("#isoView")));
+  await page.click('#isoTabs [data-v="war"]');
+  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
+  check("Level decodes to 20", (await page.inputValue('input.en-num[data-f="lv"]')) === "20");
+  check("HP decodes to 230", (await page.inputValue('input.en-num[data-f="hp"]')) === "230");
+  check("stat PWR decodes to 49", (await page.inputValue('input.en-num[data-f="stat0"]')) === "49");
+  check("no reward fields on a war unit", !(await page.isVisible('input.en-num[data-f="sp"]')) && !(await page.isVisible('button.en-item[data-f="drop0i"]')));
+  const set = async (f, v) => { await page.fill(`input.en-num[data-f="${f}"]`, String(v)); await page.dispatchEvent(`input.en-num[data-f="${f}"]`, "change"); };
+  await set("lv", 55); await set("hp", 999); await set("stat2", 111);
+  const r = await save(page);
+  for (const [nm, rec] of [["copy A", WAR_REC_A], ["copy B", WAR_REC_B]]) {
+    check(`${nm}: level = 55`, r.u16(rec + 64) === 55);
+    check(`${nm}: HP = 999 (both fields)`, r.u16(rec + 48) === 999 && r.u16(rec + 50) === 999);
+    check(`${nm}: MAG stat = 111`, r.u16(rec + 32 + 4) === 111);
+  }
   await page.context().close();
 }
 
