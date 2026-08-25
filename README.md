@@ -154,9 +154,11 @@ and the riding path originally had no multiplier at all, taking an implicit ×1.
 grafted in and pointed at the shared divide, which is why 100% still behaves exactly like the
 unmodified game: it computes ×100÷100.
 
-**What it can't do: per-area rates.** Each zone's *own* base rate isn't in the executable — it
-lives in the packed map archives (`DATA/*.BIN`), the same undecoded container that keeps enemy
-stats out of reach. So there's no per-zone tuning here, only the global scale.
+**What it can't do (yet): per-area rates.** Each zone's *own* base rate isn't in the executable
+— it's read from a 60-byte room record inside the packed map archives (`DATA/*.BIN`). Those
+archives are steadily being decoded (enemy stat records were located in them in August 2026),
+but the room records specifically haven't been pinned down, so for now the tab offers the
+global scale only.
 
 </details>
 

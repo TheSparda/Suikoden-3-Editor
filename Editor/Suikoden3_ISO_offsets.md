@@ -1340,10 +1340,16 @@ work = *(0x196A4D0); idx = work->[7]; tbl = *(work->[0x12D0] + 0xC); return tbl 
 ```
 
 `work->0x12D0` is set at 0x1773D44 from resource type 5 (`0x188B758(5)`), i.e. the loaded
-town data — inside the `DATA/*.BIN` area archives, the same undecoded container that has
-blocked enemy stats. There is also a script opcode (0x1791148) that sets both fields at
-runtime from a 6-byte operand stream, which is why they're script-driven rather than a flat
-ELF table. Listing every area's rate needs the zone-archive header decoded first.
+town data — inside the `DATA/*.BIN` area archives. There is also a script opcode (0x1791148)
+that sets both fields at runtime from a 6-byte operand stream, which is why they're
+script-driven rather than a flat ELF table.
+
+**Update (2026-08-25):** the "undecoded container" framing above is superseded — see the
+ENEMY STATS section, which locates raw 0x8C enemy records in those same zone archives via a
+(hp,hp,lv) fingerprint. The same approach should work here: the room record's shape is known
+(0x3C stride, `+0x02` grace, `+0x04` rate), so a fingerprint over plausible rate/grace pairs
+near each pack's node tables is the obvious next attempt at a per-area encounter-rate list.
+Note packs are duplicated ~3x per area, so any editor must write through every copy.
 
 ---
 
