@@ -154,6 +154,9 @@
   function auxR32(off) { const w = auxWin(off, 4); return w ? new DataView(w.buf.buffer).getUint32(off - w.off, true) : null; }
   function auxO32(off) { const w = auxWin(off, 4); return w ? new DataView(w.orig.buffer).getUint32(off - w.off, true) : null; }
   function auxW32(off, v) { const w = auxWin(off, 4); if (w) new DataView(w.buf.buffer).setUint32(off - w.off, v >>> 0, true); }
+  function auxR8(off) { const w = auxWin(off, 1); return w ? w.buf[off - w.off] : null; }
+  function auxO8(off) { const w = auxWin(off, 1); return w ? w.orig[off - w.off] : null; }
+  function auxW8(off, v) { const w = auxWin(off, 1); if (w) w.buf[off - w.off] = v & 0xFF; }
   function auxR16(off) { const w = auxWin(off, 2); return w ? new DataView(w.buf.buffer).getUint16(off - w.off, true) : null; }
   function auxO16(off) { const w = auxWin(off, 2); return w ? new DataView(w.orig.buffer).getUint16(off - w.off, true) : null; }
   function auxW16(off, v) { const w = auxWin(off, 2); if (w) new DataView(w.buf.buffer).setUint16(off - w.off, v & 0xFFFF, true); }
@@ -184,9 +187,9 @@
   const auxMarkSaved = () => AUX.forEach((w) => { w.orig = w.buf.slice(); });
   // Multi-offset field helpers for enemy edits: one logical field lives at the same
   // relative spot in every pack copy; write all, dirty/revert consider all.
-  function eRead(offs, w) { return w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
-  function eOrig(offs, w) { return w === 2 ? auxO16(offs[0]) : auxO32(offs[0]); }
-  function eWrite(offs, w, v) { for (const o of offs) (w === 2 ? auxW16(o, v) : auxW32(o, v)); }
+  function eRead(offs, w) { return w === 1 ? auxR8(offs[0]) : w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
+  function eOrig(offs, w) { return w === 1 ? auxO8(offs[0]) : w === 2 ? auxO16(offs[0]) : auxO32(offs[0]); }
+  function eWrite(offs, w, v) { for (const o of offs) (w === 1 ? auxW8(o, v) : w === 2 ? auxW16(o, v) : auxW32(o, v)); }
   function eDirty(offs, w) {
     return offs.some((o) => { const win = auxWin(o, w); if (!win) return false;
       for (let i = 0; i < w; i++) if (win.buf[o - win.off + i] !== win.orig[o - win.off + i]) return true;
@@ -637,12 +640,20 @@
     if (epsrc && Array.isArray(epsrc.packs)) {
       setStatus("Reading enemy data…", "");
       const rl = epsrc.recLayout, al = epsrc.auxLayout;
+      const zl = epsrc.zoneLayout || { slotSize: 0x14, partySize: 0x1C };
       const spans = [];
       for (const p of epsrc.packs) {
         const offs = [];
         for (const e of p.enemies) for (const v of e.variants) {
           for (const o of v.rec) offs.push([o, rl.size]);
           for (const o of v.aux) offs.push([o, al.size]);
+        }
+        for (const z of (p.zones || [])) {
+          for (const s of z.slots) for (const o of s.off) offs.push([o, zl.slotSize]);
+          for (const pa of z.parties) {
+            for (const o of pa.off) offs.push([o, zl.partySize]);
+            for (const o of pa.memOff) offs.push([o, Math.max(pa.members.length, 1)]);
+          }
         }
         if (offs.some(([o, n]) => o + n > file.size)) { eskipped++; continue; }
         epacks.push(p); spans.push(...offs);
@@ -2509,8 +2520,146 @@
         </div>`);
       }
     }
+    // ---- zones & spawn formations -------------------------------------------
+    const zl = (EPACKS_META && EPACKS_META.zoneLayout) || {};
+    const roster = p.enemies.map((e) => ({ id: e.id, name: e.name }));
+    if ((p.zones || []).length) {
+      html.push(`<div class="bag-h" style="margin-top:14px">Zones &amp; spawn formations
+        <span class="u">which monsters appear where, and in what groups</span></div>
+      <div class="muted" style="margin:0 0 8px">Each zone is a map area (the game's own name, e.g. <code>mori_101</code>).
+        Its <b>spawn slots</b> pick which monster (and which stat variant) each slot holds — swap a slot's monster and every
+        formation using that slot spawns the new one. <b>Formations</b> are the encounter groups: relative weight, then one
+        pick per member from the slots. Member count can shrink but not exceed the group's original size (fixed allocation
+        on disc). The picker lists this pack's roster — monsters from other packs would load without models and crash.</div>`);
+      for (let zi = 0; zi < p.zones.length; zi++) {
+        const z = p.zones[zi];
+        const zkey = `${det.dataset.ep}:z${zi}`;
+        const slotCtls = z.slots.map((s, si) =>
+          `<div class="en-drop" style="display:flex;gap:6px;align-items:center;max-width:520px;margin:4px 0">
+             <span class="muted" style="width:52px">slot ${si}</span>
+             <button type="button" class="picker zn-slot" style="flex:1;min-width:0" data-k="${zkey}" data-si="${si}">—</button>
+             <label class="muted" style="flex:none">variant <input type="number" class="en-num zn-var" style="width:56px" min="0" max="7" data-k="${zkey}" data-si="${si}"></label>
+           </div>`).join("");
+        const partyRows = z.parties.map((pa, pi2) => {
+          const mems = pa.members.map((m, mi) =>
+            `<select class="zn-mem" data-k="${zkey}" data-pi="${pi2}" data-mi="${mi}"></select>`).join("");
+          return `<div class="en-drop" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0">
+            <span class="muted" style="width:24px">#${pi2 + 1}</span>
+            <label class="muted">weight <input type="number" class="en-num zn-prob" style="width:64px" min="0" max="100" data-k="${zkey}" data-pi="${pi2}"></label>
+            <label class="muted">size <input type="number" class="en-num zn-cnt" style="width:52px" min="1" max="${pa.members.length}" data-k="${zkey}" data-pi="${pi2}"></label>
+            ${mems}
+            ${pa.type ? `<span class="muted">type ${pa.type}</span>` : ""}
+          </div>`;
+        }).join("");
+        html.push(`<div class="card" style="margin:0 0 10px">
+          <div class="bag-h">${esc2(z.name)} <span class="u">${z.slots.length} slots · ${z.parties.length} formations · ×${z.slots[0].off.length} cop${z.slots[0].off.length === 1 ? "y" : "ies"}</span></div>
+          <div style="margin:4px 0 8px">${slotCtls}</div>
+          <div class="muted">Formations:</div>${partyRows}
+        </div>`);
+      }
+    }
     body.innerHTML = html.join("") || `<div class="muted">empty pack</div>`;
     wireEnemyFields(body, p, det.dataset.ep, rl, al);
+    wireZoneFields(body, p, det.dataset.ep, zl, roster);
+  }
+  function wireZoneFields(scope, p, ep, zl, roster) {
+    const zone = (k) => p.zones[+k.split(":z")[1]];
+    const slotName = (z, si) => {
+      const id = eRead(z.slots[si].off, 4) & 0xFFFF;
+      const r = roster.find((x) => x.id === id);
+      return r ? r.name : (REF.items && id2nameFallback(id));
+    };
+    function id2nameFallback(id) { return `#${hex(id, 3)}`; }
+    const refreshMembers = (z, k) => {
+      qa(`select.zn-mem[data-k="${k}"]`, scope).forEach((sel) => {
+        const cur = sel.value;
+        sel.innerHTML = z.slots.map((s, si) => `<option value="${si}">${esc2(slotName(z, si) || "slot " + si)}</option>`).join("");
+        if (cur !== "") sel.value = cur;
+      });
+    };
+    // spawn slots: monster picker (pack roster) + variant
+    qa("button.zn-slot", scope).forEach((btn) => {
+      const z = zone(btn.dataset.k), si = +btn.dataset.si, s = z.slots[si];
+      const idOffs = s.off;                        // u32 monster id (all copies)
+      const label = () => {
+        const id = eRead(idOffs, 4) & 0xFFFF;
+        const r = roster.find((x) => x.id === id);
+        return r ? `${hex(id, 3)} · ${r.name}` : `${hex(id, 3)} · (non-roster)`;
+      };
+      const mark = () => markMulti(btn, eDirty(idOffs, 4), () => { eRevert(idOffs, 4); drawView(); },
+        hex(eOrig(idOffs, 4) & 0xFFFF, 3));
+      btn.textContent = label();
+      btn.onclick = () => {
+        const cur = eRead(idOffs, 4) & 0xFFFF;
+        const opts = roster.map((r) => ({ id: r.id, name: r.name }));
+        if (!opts.some((o) => o.id === cur)) opts.unshift({ id: cur, name: "(current, non-roster)" });
+        openPicker(`${z.name} slot ${si}`, opts, cur, (id) => {
+          eWrite(idOffs, 4, id);
+          EREG[`${p.archive}:${btn.dataset.k}:s${si}`] = { group: `${p.archive} ${z.name}`, label: `slot ${si} monster`,
+            offs: idOffs, w: 4, fmt: (x) => { const r = roster.find((y) => y.id === (x & 0xFFFF)); return r ? r.name : hex(x & 0xFFFF, 3); } };
+          btn.textContent = label(); mark(); refreshMembers(z, btn.dataset.k);
+        });
+      };
+      mark();
+    });
+    qa("input.zn-var", scope).forEach((inp) => {
+      const z = zone(inp.dataset.k), s = z.slots[+inp.dataset.si];
+      const offs = s.off.map((o) => o + 4);        // u32 variant
+      const mark = () => markMulti(inp, eDirty(offs, 4), () => { eRevert(offs, 4); drawView(); }, String(eOrig(offs, 4)));
+      inp.value = eRead(offs, 4);
+      inp.onchange = () => {
+        const v = Math.max(0, Math.min(7, +inp.value || 0)); inp.value = v;
+        eWrite(offs, 4, v);
+        EREG[`${p.archive}:${inp.dataset.k}:sv${inp.dataset.si}`] = { group: `${p.archive} ${z.name}`,
+          label: `slot ${inp.dataset.si} variant`, offs, w: 4, fmt: String };
+        mark();
+      };
+      mark();
+    });
+    // formations: weight, size, members
+    qa("input.zn-prob", scope).forEach((inp) => {
+      const z = zone(inp.dataset.k), pa = z.parties[+inp.dataset.pi];
+      const offs = pa.off.map((o) => o + (zl.partyProb ?? 2));
+      const mark = () => markMulti(inp, eDirty(offs, 2), () => { eRevert(offs, 2); drawView(); }, String(eOrig(offs, 2)));
+      inp.value = eRead(offs, 2);
+      inp.onchange = () => {
+        const v = Math.max(0, Math.min(100, +inp.value || 0)); inp.value = v;
+        eWrite(offs, 2, v);
+        EREG[`${p.archive}:${inp.dataset.k}:pw${inp.dataset.pi}`] = { group: `${p.archive} ${z.name}`,
+          label: `formation ${+inp.dataset.pi + 1} weight`, offs, w: 2, fmt: String };
+        mark();
+      };
+      mark();
+    });
+    qa("input.zn-cnt", scope).forEach((inp) => {
+      const z = zone(inp.dataset.k), pa = z.parties[+inp.dataset.pi];
+      const offs = pa.off.map((o) => o + (zl.partyCount ?? 0x12));
+      const mark = () => markMulti(inp, eDirty(offs, 2), () => { eRevert(offs, 2); drawView(); }, String(eOrig(offs, 2)));
+      inp.value = eRead(offs, 2);
+      inp.onchange = () => {
+        const v = Math.max(1, Math.min(pa.members.length, +inp.value || 1)); inp.value = v;
+        eWrite(offs, 2, v);
+        EREG[`${p.archive}:${inp.dataset.k}:pc${inp.dataset.pi}`] = { group: `${p.archive} ${z.name}`,
+          label: `formation ${+inp.dataset.pi + 1} size`, offs, w: 2, fmt: String };
+        mark();
+      };
+      mark();
+    });
+    qa("select.zn-mem", scope).forEach((sel) => {
+      const z = zone(sel.dataset.k), pa = z.parties[+sel.dataset.pi], mi = +sel.dataset.mi;
+      const offs = pa.memOff.map((o) => o + mi);   // u8 slot index
+      sel.innerHTML = z.slots.map((s, si) => `<option value="${si}">${esc2(slotName(z, si) || "slot " + si)}</option>`).join("");
+      const mark = () => markMulti(sel, eDirty(offs, 1), () => { eRevert(offs, 1); drawView(); }, String(eOrig(offs, 1)));
+      sel.value = String(eRead(offs, 1));
+      sel.onchange = () => {
+        eWrite(offs, 1, +sel.value);
+        EREG[`${p.archive}:${sel.dataset.k}:pm${sel.dataset.pi}.${mi}`] = { group: `${p.archive} ${z.name}`,
+          label: `formation ${+sel.dataset.pi + 1} member ${mi + 1}`, offs, w: 1,
+          fmt: (x) => slotName(z, x) || String(x) };
+      mark();
+      };
+      mark();
+    });
   }
   // field key -> {offs (all copies), width, group, label, kind}
   function enemyField(p, e, v, f, rl, al) {
@@ -2536,7 +2685,7 @@
       const [, ei, vi] = key.split(":").map(Number);
       return [p.enemies[ei], p.enemies[ei].variants[vi]];
     };
-    qa("input.en-num", scope).forEach((inp) => {
+    qa("input.en-num[data-f]", scope).forEach((inp) => {
       const [e, v] = lookup(inp.dataset.k);
       const fd = enemyField(p, e, v, inp.dataset.f, rl, al);
       const mark = () => markMulti(inp, eDirty(fd.offs, fd.w), () => eRevert(fd.offs, fd.w), String(eOrig(fd.offs, fd.w)));
