@@ -783,6 +783,76 @@
   }
   const hexBytes = (h) => { const o = new Uint8Array(h.length / 2); for (let i = 0; i < o.length; i++) o[i] = parseInt(h.substr(i * 2, 2), 16); return o; };
 
+  // ---- apply an .xdelta (VCDIFF) patch ---------------------------------------
+  // The editor could already publish a patch; this lets it consume one, so a phone user can
+  // take a community mod without owning a desktop. We do NOT reconstruct the 4 GB target:
+  //
+  //   1. walk the patch's windows and ask each for its `plan()` — the target spans that
+  //      aren't provably an identity copy. A window with none is untouched, and is skipped
+  //      without reading a single byte of the disc. Real mod patches touch a few windows.
+  //   2. for each touched window, read only ITS source segment + ITS target range from the
+  //      disc, decode (the adler32 xdelta3 stores verifies we decoded against the right
+  //      source), and diff — giving the exact changed bytes, over-reporting from step 1
+  //      washed out.
+  //   3. stage those bytes like any other edit, so the import is reviewable, undoable and
+  //      revertible instead of being written straight to the disc.
+  //
+  // Changes outside the editable block can't be staged, so a patch containing any are
+  // refused outright rather than applied by halves — a partly-applied mod is worse than none.
+  async function applyXdelta(file) {
+    if (!isoFile) return setStatus("Load an ISO first.", "err");
+    setBusy(true);
+    setStatus("Reading patch…", "");
+    try {
+      const patch = new Uint8Array(await file.arrayBuffer());
+      const wins = [];
+      const total = Vcdiff.eachWindow(patch, (w) => wins.push(w));
+      if (total !== isoFile.size)
+        return setStatus(`This patch builds a ${fmtSize(total)} file, but the loaded disc is ` +
+          `${fmtSize(isoFile.size)} — it was made for a different image.`, "err");
+      if (wins.some((w) => w.fromTarget))
+        return setStatus("This patch uses VCD_TARGET windows, which this editor can't apply. " +
+          "Apply it with xdelta3 instead.", "err");
+
+      const edits = [];                 // {off, bytes} — exact changed runs, absolute offsets
+      let scanned = 0;
+      for (let wi = 0; wi < wins.length; wi++) {
+        const w = wins[wi];
+        if (!w.plan().length) continue;                       // untouched window — no disc I/O
+        scanned++;
+        setStatus(`Checking patched region ${scanned}… (${fmtSize(w.targetLen)})`, "");
+        const src = new Uint8Array(await isoFile.slice(w.sourceStart, w.sourceStart + w.sourceLen).arrayBuffer());
+        const out = w.decode(src);                            // throws on checksum mismatch
+        const cur = new Uint8Array(await isoFile.slice(w.targetStart, w.targetStart + w.targetLen).arrayBuffer());
+        for (let i = 0; i < out.length;) {
+          if (out[i] === cur[i]) { i++; continue; }
+          const from = i;
+          while (i < out.length && out[i] !== cur[i]) i++;
+          edits.push({ off: w.targetStart + from, bytes: out.subarray(from, i) });
+        }
+      }
+      if (!edits.length) return setStatus("This patch changes nothing on this disc — it may already be applied.", "warn");
+
+      const outside = edits.filter((e) => !inBlk(e.off, e.bytes.length));
+      if (outside.length) {
+        const n = outside.reduce((a, e) => a + e.bytes.length, 0);
+        return setStatus(`This patch changes ${n} byte(s) outside the region this editor can edit ` +
+          `(first at 0x${hex(outside[0].off, 8)}) — nothing was applied. Apply it with xdelta3 instead: ` +
+          `xdelta3 -d -s "<pristine ISO>" patch.xdelta out.iso`, "err");
+      }
+      edits.forEach((e) => writeBytes(e.off, e.bytes));
+      const n = edits.reduce((a, e) => a + e.bytes.length, 0);
+      TEXTS = null; gearCache = null;                          // staged bytes can move strings
+      drawView();
+      setStatus(`Applied patch — ${n} byte(s) in ${edits.length} run(s), checksum-verified. ` +
+        `Review, then Save to write.`, "ok");
+    } catch (e) {
+      setStatus(e.message || String(e), "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["food", "Food"],
@@ -815,8 +885,9 @@
           <button id="isoRedoBtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ Redo</button>
           <button id="isoRecipeBtn">Export recipe…</button>
           <button id="isoXdeltaBtn" title="Standard VCDIFF patch (no checksum — apply ONLY to a pristine USA SLUS-20387 ISO): xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
-          <label class="file" style="margin:0"><button type="button" id="isoImportBtn">Import recipe…</button>
-            <input type="file" id="isoRecipeFile" accept=".s3mod,.json"></label>
+          <label class="file" style="margin:0"><button type="button" id="isoImportBtn"
+            title="Apply a mod: an .s3mod recipe from this editor, or a standard .xdelta (VCDIFF) patch — built with xdelta3 -S none">Apply patch…</button>
+            <input type="file" id="isoRecipeFile" accept=".s3mod,.json,.xdelta,.vcdiff,.xd"></label>
           <button id="isoResetBtn">Revert all</button>
           <span class="status" id="isoStatus"></span>
         </div>
@@ -828,7 +899,15 @@
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoXdeltaBtn").onclick = exportXdelta;
     q("#isoImportBtn").onclick = () => q("#isoRecipeFile").click();
-    q("#isoRecipeFile").onchange = (e) => { if (e.target.files[0]) importRecipe(e.target.files[0]); e.target.value = ""; };
+    // One import button, two formats — dispatch on the VCDIFF magic rather than the file
+    // name, so a patch saved as "mod.bin" (or a recipe as ".txt") still lands in the right path.
+    q("#isoRecipeFile").onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = "";
+      if (!f) return;
+      const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+      const isVcdiff = head[0] === 0xd6 && head[1] === 0xc3 && head[2] === 0xc4;
+      if (isVcdiff) applyXdelta(f); else importRecipe(f);
+    };
     q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     q("#isoUndoBtn").onclick = undo;
     q("#isoRedoBtn").onclick = redo;

@@ -9,7 +9,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF } from "./synth-iso.mjs";
+import { execFileSync } from "child_process";
+import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
@@ -79,6 +80,30 @@ async function openRec(page, detailsSel) {
   if ((await loc.getAttribute("open")) === null) await loc.locator("summary").click();
   await page.waitForTimeout(50);
 }
+// ---- .xdelta helpers (patch-apply tests) --------------------------------------------------
+// Patches are built by REAL xdelta3 so the decoder is exercised against genuine output, not
+// against our own encoder. `-S none` because xdelta3 defaults to LZMA secondary compression,
+// which the editor refuses by design (one test asserts exactly that, using lzma=true).
+let _xd = null;
+function xdelta3Available() {
+  if (_xd === null) { try { execFileSync("xdelta3", ["-V"], { stdio: "ignore" }); _xd = true; } catch { _xd = false; } }
+  return _xd;
+}
+function makeXdelta(src, tgt, lzma = false) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "s3e2e-"));
+  const s = path.join(dir, "s.bin"), t = path.join(dir, "t.bin"), p = path.join(dir, "p.xd");
+  fs.writeFileSync(s, Buffer.from(src)); fs.writeFileSync(t, Buffer.from(tgt));
+  execFileSync("xdelta3", ["-e", "-f", "-q", ...(lzma ? [] : ["-S", "none"]), "-s", s, t, p]);
+  const out = new Uint8Array(fs.readFileSync(p));
+  fs.rmSync(dir, { recursive: true, force: true });
+  return out;
+}
+// Feed bytes to the app's file input as if the user picked them.
+async function uploadPatch(page, data, name) {
+  await page.setInputFiles("#isoRecipeFile", { name, mimeType: "application/octet-stream", buffer: Buffer.from(data) });
+  await page.waitForTimeout(400);
+}
+
 async function save(page) {
   await page.evaluate(() => { window.__writes = []; });   // capture only THIS save's writes
   await page.click("#isoSaveBtn");
@@ -422,6 +447,83 @@ head("Recipe export → reset → import round-trip");
   fs.writeFileSync(badRecipe, JSON.stringify({ format: "s3mod", versionWord: 0xDEADBEEF, patches: [] }));
   await page.setInputFiles("#isoRecipeFile", badRecipe); await page.waitForTimeout(80);
   check("wrong-region recipe rejected", /different game\/region/i.test(await page.textContent("#isoStatus")));
+  await page.context().close();
+}
+
+// Applying a patch is the counterpart to exporting one: the editor can now consume a mod.
+// These drive the real UI with patches built by REAL xdelta3 against the real synthetic ISO,
+// so they cover the whole path — magic sniffing, window walk, checksum, staging.
+head("Apply an .xdelta patch (built by real xdelta3)");
+if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else { const page = await newPage(); await loadIso(page);
+  // a patch that edits bytes inside the editable block
+  const tgt = Uint8Array.from(bytes);
+  const at = SPELL.off + 0x1C;                    // spell 0 power (u32) — inside the block
+  tgt.set([0xE7, 0x03, 0x00, 0x00], at);          // 999
+  const patch = makeXdelta(bytes, tgt);
+  check("xdelta3 produced a patch", patch && patch.length > 0);
+  await uploadPatch(page, patch, "mod.xdelta");
+  check("status reports a checksum-verified apply", /applied patch/i.test(await page.textContent("#isoStatus")));
+  check("status says how much changed", /byte\(s\)/i.test(await page.textContent("#isoStatus")));
+  check("the edit is staged, not silently written", !(await page.evaluate(() => window.__writes.length)));
+  check("dirty badge reflects the staged patch", !(await page.locator("#isoDirty").isHidden()));
+
+  // An imported patch is an edit like any other: one undo step for the whole patch, before
+  // saving (a save re-baselines ORIG, so this has to be checked while it's still staged).
+  await page.click("#isoUndoBtn"); await page.waitForTimeout(120);
+  check("undo reverts the whole applied patch in one step", await page.locator("#isoDirty").isHidden());
+  await page.click("#isoRedoBtn"); await page.waitForTimeout(120);
+  check("redo re-applies it", !(await page.locator("#isoDirty").isHidden()));
+
+  const r = await save(page);
+  check("saving writes the patched bytes", r.u32(at) === 999);
+  await page.context().close();
+}
+
+head("Apply patch — refusals");
+if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else { const page = await newPage(); await loadIso(page);
+  // 1. a patch that changes bytes OUTSIDE the editable block must be refused whole
+  { const tgt = Uint8Array.from(bytes);
+    tgt.set([1, 2, 3, 4], 0x1000);                // before ELF_BASE — can't be staged
+    await uploadPatch(page, makeXdelta(bytes, tgt), "outside.xdelta");
+    const s = await page.textContent("#isoStatus");
+    check("patch touching bytes outside the block is refused", /outside the region/i.test(s));
+    check("...and says nothing was applied", /nothing was applied/i.test(s));
+    check("...and stages nothing", await page.locator("#isoDirty").isHidden());
+  }
+  // 2. xdelta3's DEFAULT encoding (LZMA secondary) must be refused with the fix, not mangled
+  { const tgt = Uint8Array.from(bytes); tgt.set([9, 9, 9, 9], SPELL.off + 0x1C);
+    await uploadPatch(page, makeXdelta(bytes, tgt, true), "lzma.xdelta");
+    const s = await page.textContent("#isoStatus");
+    check("LZMA-compressed patch is refused", /secondary compression|delta sections/i.test(s));
+    check("...and tells the user to re-encode with -S none", /-S none/.test(s));
+  }
+  // 3. a patch for a different-sized image is refused before any disc I/O
+  { const small = bytes.slice(0, ELF_END - 4096);
+    const tgt = Uint8Array.from(small); tgt.set([1, 2, 3], 0x200000);
+    await uploadPatch(page, makeXdelta(small, tgt), "wrongsize.xdelta");
+    check("patch for a different image size is refused", /different image/i.test(await page.textContent("#isoStatus")));
+  }
+  // 4. a patch built against a MODIFIED source must fail the checksum rather than corrupt
+  { const other = Uint8Array.from(bytes); other[SPELL.off + 0x40] ^= 0xFF;   // not our disc
+    const tgt = Uint8Array.from(other); tgt.set([5, 5, 5, 5], SPELL.off + 0x1C);
+    await uploadPatch(page, makeXdelta(other, tgt), "othersrc.xdelta");
+    const s = await page.textContent("#isoStatus");
+    check("patch built against a different disc fails its checksum", /checksum mismatch/i.test(s));
+    check("...and stages nothing", await page.locator("#isoDirty").isHidden());
+  }
+  await page.context().close();
+}
+
+head("Apply an .s3mod recipe through the same button (format sniffed, not by name)");
+{ const page = await newPage(); await loadIso(page);
+  const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
+    patches: [{ off: SPELL.off + 0x1C, new: "2a000000" }] });
+  await uploadPatch(page, new TextEncoder().encode(recipe), "recipe.xdelta");   // WRONG extension on purpose
+  check("a recipe named .xdelta is still recognised as a recipe", /applied recipe/i.test(await page.textContent("#isoStatus")));
+  const r = await save(page);
+  check("recipe bytes written", r.u32(SPELL.off + 0x1C) === 42);
   await page.context().close();
 }
 

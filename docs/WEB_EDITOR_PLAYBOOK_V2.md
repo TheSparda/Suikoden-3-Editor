@@ -53,7 +53,8 @@ index.html         # app shell: dual-mode tabs, PWA meta, script load order
 style.css          # one stylesheet, mobile-first, two themes, safe-area aware
 recruit-core.js    # PURE logic module (no DOM/Pyodide) → unit-testable in Node
 guide-core.js      # PURE reference-data join (guide key ↔ roster name) → unit-testable  (v2)
-vcdiff.js          # PURE VCDIFF (.xdelta) encoder → unit-testable in Node   (v2)
+vcdiff.js          # PURE VCDIFF (.xdelta) encoder + decoder → unit-testable  (v2)
+text-core.js       # PURE in-ELF string scanner + prose filter → unit-testable (v2)
 app.js             # Save Editor: Pyodide bootstrap + full UI + update check
 iso.js             # ISO Editor: ranged-read disc editor + undo/redo + overlays (v2)
 sw.js              # service worker: offline shell + Pyodide cache + share-target
@@ -313,6 +314,27 @@ existed — that one needs a manual hard-refresh once. Ship it early so future u
   module (`vcdiff.js`) and round-trip it against the real `xdelta3` in tests. *Caveat:* a
   hand-built patch has no integrity checksum, so tell users to apply it only to a pristine disc
   (or compute one, which costs a full source read).
+- **Then close the loop: apply patches too, without materializing the target.** Exporting a mod
+  and being unable to install one is a dead end for exactly the mobile users the editor targets.
+  Applying looks like it needs the whole 4 GB target — it doesn't. A VCDIFF tiles the target in
+  windows; walk the instruction stream of each window **without any source bytes** and track
+  each output byte's *provenance* (which source position it derives from, following
+  self-references, since encoders bound their source window and encode long tails as copies from
+  earlier output). A window whose every byte traces back to its own file position is untouched:
+  skip it, zero I/O. Read only the touched windows, decode, diff — exact changed bytes for a few
+  MB of reads. Two things make this safe: provenance may **over**-report (a copy of equal bytes
+  from elsewhere) but must never **under**-report, so treat its output as *candidates* and
+  confirm against real bytes; and **stage** the result as ordinary edits so the import is
+  reviewable, undoable and revertible instead of being written straight to disc.
+- **Decoding is a much bigger contract than encoding — scope it explicitly and refuse the rest.**
+  The encoder emits one shape you control; the decoder must read whatever the real tool wrote:
+  the full default code table (generate it from the spec's algorithm, don't transcribe 256 rows),
+  every address mode plus both caches, RUN, app headers, extension bits. Find the real default
+  *empirically* before scoping — `xdelta3 -e` LZMA-compresses its output by default, so most
+  patches in the wild need `-S none` and an LZMA decoder would dwarf the editor. Detect that and
+  say so **with the fix in the message**; never partially decode. The upside discovered on the
+  way: the encoder's own format carries a per-window **adler32**, so applying a patch can verify
+  it decoded against the right source — the integrity check the export path never had.
 - **Presets that fill, or apply, staged edits.** Skill-cap presets ("Set to guide caps / Max all
   / Clear") write the whole array from the reference data; rune-reskin presets pre-fill a form
   the user then applies. Both are just staged edits — revertible, reviewed, undoable — so they're
@@ -382,6 +404,13 @@ the baseline. Then add:
 - [ ] **Undo/redo via the one-write-hook + microtask transaction model** (B18).
 - [ ] **Patch synthesis** (B18) if you have a huge file: build the VCDIFF from known edits; pure
       module; round-trip against the real tool in tests; warn about the missing checksum.
+- [ ] **Patch application** (B18): provenance walk → skip untouched windows → decode + diff only
+      the touched ones → stage as normal edits. Verify the stored checksum; refuse (with the fix
+      in the message) anything you can't fully decode. Test against the REAL tool's output across
+      several file shapes and encoder settings, not just your own encoder's.
+- [ ] **In-ROM text** if the executable holds strings: scan for printable runs, filter to prose,
+      cap every edit to the original slot length. Keep the filter in one pure module and assert
+      it matches the other editor's rule-for-rule (B12's lockstep discipline).
 - [ ] **Presets** that stage reviewable/undoable edits from the reference data (B18).
 - [ ] **Behavioral tests, not just guards** (B19); run e2e in CI or mirror its invariants in
       static guards; keep real-ROM proofs in a doc.
