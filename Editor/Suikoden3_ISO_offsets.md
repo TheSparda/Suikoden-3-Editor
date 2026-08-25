@@ -1344,3 +1344,57 @@ town data — inside the `DATA/*.BIN` area archives, the same undecoded containe
 blocked enemy stats. There is also a script opcode (0x1791148) that sets both fields at
 runtime from a 6-byte operand stream, which is why they're script-driven rather than a flat
 ELF table. Listing every area's rate needs the zone-archive header decoded first.
+
+---
+
+## ENEMY STATS — FOUND, raw on disc (2026-08-25)
+
+The earlier "not plain data anywhere" conclusion was WRONG in a precise way: the
+stats aren't near potch/SP as guessed, and enemy names never sit near records —
+but the records themselves are raw, uncompressed, and now fully located. Chain of
+evidence, each step verified on the pristine dump:
+
+**1. Monsters are characters.** The ELF ships an id→name mapping as plain data at
+file **0x3B1168** (vaddr 0x1969968): u16 pairs (monster type id, enemy-name-table
+index), ids **0x1F5..0x257**, name idx 0..99 (the 100×0x14 name table @0x3E74E0 —
+names are TRUNCATED, "BladeBunny" not "Blade Bunny", which is why text searches
+failed). The tail maps boss "monsters" to CHARACTER ids (Sarah, Yuber…).
+
+**2. The resolver.** `0x16C6D08` (id→combat struct): chars via a lut @0x19697A8
+into 0x8C-stride runtime structs @0x196E700 (BSS, filled from list1). Monsters
+via `0x16C6D70`: walks a runtime node list head @**0x196B1F0** of
+`{u32 id, u32 count, u32 recPtr[count]}` — count = encounter variants; each rec
+is **0x8C (140) bytes**, sub-index stamped at +0x41 at registration.
+
+**3. The register function** `0x1714FA8(nodeTable)` stores the table head. Its
+only on-disc caller sits in a battle overlay inside ETC.BIN (ISO 0x417EA768),
+registering a node table at overlay vaddr 0x7AF950. That pack's file↔vaddr delta:
+**K = 0x4103A640** (derived by node-pointer delta matching, then verified by
+decoding: table @ISO 0x417E9FB0 = 29 nodes: GhostArmor/BoneSldr/Chimera/Mirage/
+Rock Golem/Siren + character nodes — a Mt. Senai / Ceremonial Site battle set).
+
+**4. Monster record layout (0x8C, decoded + bestiary-verified):**
+| Off | Field |
+|---|---|
+| +12 u32 | EXP-ish reward value |
+| +16 u32 | potch-ish reward value |
+| +32 8×u16 | combat stats (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK order per char convention) |
+| +48 u16 | **HP** · +50 u16 **Max HP** (equal on disc) |
+| +56 8×u8 | resist/skill-ish bytes (0x09 ×8 on plain monsters) |
+| +64 u16 | **Level** |
+| +0x41 u8 | runtime-stamped variant index (0 on disc) |
+Rock Golem (Ceremonial Site): rec 950/950 HP, Lv 55 — exact bestiary match.
+
+**5. Where all the records are.** Fingerprint `u16 hp@X == u16 @X+2, u16 lv@X+16`
+against every bestiary (lv,hp) pair finds **4,430 record hits in 167 clusters**
+across the zone archives — see `docs/enemy_record_clusters.json` (per-archive
+counts: MORI 15, SOGE 20, AKMT 20, YMMT/KSKR 16, FAKE 13, LAST 13, …). Packs are
+duplicated ~3× per area (streaming copies at fixed strides, e.g. MORI copies at
++0x298000 intervals) — an editor MUST patch every copy, exactly like the potch
+overlay pair. One cluster is ELF-resident (file ~0x3EA58E, stride 0x7C — a
+different, smaller record type; tutorial-forest values lv2/hp10; layout TBD).
+
+**Next steps for an editor feature:** per-pack node-table discovery (find each
+pack's K via the node-pointer delta trick), id→name via the 0x3B1168 mapping,
+then expose per-area enemy HP/level/stats/rewards with all-copies write-through.
+Formations/zone-spawn lists likely sit near the node tables in the same packs.
