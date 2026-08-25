@@ -79,5 +79,18 @@ export function buildSynthIso() {
     hpGrowth: 9, pwrGrowth: 6,
     head: runes[0], right: runes[1], left: runes[2],
   };
+
+  // ---- Text tab fixture -------------------------------------------------------------------
+  // Planted UI strings for the in-ELF Text view, each isolated by NUL bytes so the scanner
+  // sees exactly one run. One is prose (must be offered for editing); one is a format string
+  // (must be filtered out — editing it would corrupt a printf-style slot).
+  const TEXT_AT = 0x420000;
+  const TEXT_PROSE = "The battle is over and everyone survived";
+  const TEXT_REJECT = "arg1 %s -> %d";
+  bytes.set(enc(TEXT_PROSE), TEXT_AT); bytes[TEXT_AT + TEXT_PROSE.length] = 0;
+  const rejAt = TEXT_AT + TEXT_PROSE.length + 1;
+  bytes.set(enc(TEXT_REJECT), rejAt); bytes[rejAt + TEXT_REJECT.length] = 0;
+  mapping.text = { off: TEXT_AT, value: TEXT_PROSE, max: TEXT_PROSE.length, rejected: TEXT_REJECT };
+
   return { bytes, armor, mapping };
 }

@@ -107,9 +107,14 @@ one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weap
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, and optional description rewrites),
-**Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Balance** (idempotent hard-mode
-multiplier presets), **Enemies** (a read-only **bestiary**: Lv, HP, item/food drops, potch and
-SP per encounter), and **Reference** (item/skill id → name lists).
+**Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Text** (in-ELF UI strings —
+battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
+original byte length), **Balance** (idempotent hard-mode multiplier presets), **Enemies** (a
+read-only **bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and
+**Reference** (item/skill id → name lists).
+
+> **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
+> event files outside the executable. The Text tab covers the strings held in the boot ELF.
 
 **Guide overlays.** Fields show verified reference data inline: per-character skill caps and
 Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food
@@ -153,10 +158,6 @@ has a **↺** restore and there's a light/dark theme toggle.
 
 ### What the desktop app adds over the web editor
 
-- **Text editing** — an in-place editor for the boot-ELF strings (UI / battle / menu / prize /
-  error text and character blurbs), each capped to its original length. (Story **dialogue**
-  lives in packed event files outside the executable and is not editable.) This is **not**
-  available in the web ISO editor.
 - **Full-diff xdelta patches, and applying them** — a whole-ISO binary diff that captures
   *everything*, including in-place text edits, **plus** applying any `.xdelta` back onto a
   pristine disc. These carry a checksum (wrong source is detected, not silently mis-patched)

@@ -459,7 +459,7 @@
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -786,7 +786,7 @@
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["food", "Food"],
-    ["balance", "Balance"], ["enemies", "Enemies"], ["ref", "Reference"]];
+    ["text", "Text"], ["balance", "Balance"], ["enemies", "Enemies"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -859,6 +859,7 @@
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect.",
       gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
       food: "Consumable / food table: heal amount and proc chance %.",
+      text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
       enemies: "Bestiary reference (read-only): Lv, HP, item/food drops, potch and SP per encounter (Suikosource). Enemy stats aren't an editable flat table in this ROM.",
       ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
@@ -878,6 +879,7 @@
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "food") drawFood(host);
+    else if (VIEW === "text") drawText(host);
     else if (VIEW === "balance") drawBalance(host);
     else if (VIEW === "enemies") drawEnemies(host);
     else if (VIEW === "ref") drawReference(host);
@@ -1573,6 +1575,57 @@
     const d0 = isDirty(base + eo, 8);
     [tSel, stat, skill].forEach((el) => el.classList.toggle("dirty", d0));
     markField(vIn, base + eo, 8, "raw");
+  }
+
+  // ---- Text (in-ELF UI strings) ----------------------------------------------
+  // The ELF has no index of its strings, so we find them the same way the desktop editor
+  // does: scan the block for printable-ASCII runs and keep the ones that read as prose
+  // (TextCore, a direct port of s3editor.py's _looks_like_text — the two must agree).
+  //
+  // Scanning ORIG rather than BUF is deliberate: `max` is the ON-DISK slot length and must
+  // not move as you edit, or a string that you shortened would lose the tail of its slot on
+  // the next render and could never be restored. Values displayed still come from BUF.
+  let TEXTS = null;                                   // [{off, max}]; cleared on ISO load
+  function scanTexts() {
+    if (!TEXTS) TEXTS = TextCore.scanStrings(ORIG, ELF_BASE);
+    return TEXTS;
+  }
+  const TEXT_ROW_CAP = 300;                           // keep the DOM small; filter to narrow
+  function drawText(host) {
+    const all = scanTexts();
+    const hits = SEARCH
+      ? all.filter((t) => strFrom(BUF, t.off, t.max).toLowerCase().includes(SEARCH) || hex(t.off, 6).includes(SEARCH))
+      : all;
+    const shown = hits.slice(0, TEXT_ROW_CAP);
+    const rows = shown.map((t) => {
+      const cur = strFrom(BUF, t.off, t.max);
+      return `<label class="field tx"><span>0x${hex(t.off, 6)} <span class="muted">(max ${t.max})</span></span>
+        <input type="text" class="txt" data-off="${t.off}" data-max="${t.max}" maxlength="${t.max}" value="${esc2(cur)}"></label>`;
+    }).join("");
+    const capped = hits.length > shown.length
+      ? `<div class="muted" style="margin:8px 0 0">Showing the first ${shown.length} of ${hits.length} matches — type in the filter to narrow.</div>` : "";
+    host.innerHTML = `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">In-ELF text <span class="u">${all.length} strings · in-place, length-capped</span></div>
+        <div class="warnbox" style="margin:0 0 8px">Each string is written back over its <b>original bytes</b> and can't grow — longer text is
+          rejected, shorter is null-padded. These are UI/battle/menu strings and character blurbs; <b>story dialogue is not here</b>
+          (it lives in packed event files outside the executable and no editor in this repo can reach it).</div>
+        ${rows ? `<div class="grid">${rows}</div>` : `<div class="muted">no matches</div>`}${capped}</div>`;
+    qa("input.txt", host).forEach((el) => {
+      const off = +el.dataset.off, max = +el.dataset.max;
+      markField(el, off, max, "text");
+      el.onchange = () => {
+        const enc = latin1Enc(el.value);
+        if (enc.length > max) {                       // maxlength can't stop a paste of wide chars
+          setStatus(`Too long — "${el.value}" is ${enc.length} bytes, the slot holds ${max}.`, "err");
+          el.value = strFrom(BUF, off, max); markField(el, off, max, "text"); return;
+        }
+        const padded = new Uint8Array(max); padded.set(enc);
+        writeBytes(off, padded);
+        reg(off, max, "text", "Text", `0x${hex(off, 6)}`);
+        markField(el, off, max, "text");
+        setStatus("", "");
+      };
+    });
   }
 
   // ---- Balance (Hard Mode / bulk) --------------------------------------------

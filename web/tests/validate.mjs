@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "vcdiff.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "text-core.js", "vcdiff.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -51,6 +51,7 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
 (/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
 (/src=["']guide-core\.js["']/.test(html) ? ok : bad)("index.html loads guide-core.js before app.js");
+(/src=["']text-core\.js["']/.test(html) ? ok : bad)("index.html loads text-core.js before iso.js");
 (/data-mode="iso"/.test(html) && /data-mode="save"/.test(html) ? ok : bad)("both mode tabs present");
 { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
@@ -213,6 +214,42 @@ console.log("Guide overlays + xdelta:");
     (Object.keys(j).length >= 50 ? ok : bad)(`s3_bestiary.json parses (${Object.keys(j).length} enemies)`); }
   catch (e) { bad("s3_bestiary.json — " + e.message); }
   (/s3_bestiary\.json/.test(iso) && /REF\.bestiary/.test(iso) ? ok : bad)("iso.js Enemies tab renders the bestiary reference");
+}
+
+// 8) In-ELF text heuristic must stay in lockstep with the desktop editor.
+// There's no index of strings in the ELF — both editors FIND them with the same filter, so if
+// the rules drift the two tools offer different strings on the same disc (and one of them may
+// offer a format string the user can corrupt). Assert the literals agree, rule by rule.
+console.log("In-ELF text heuristic (web ⇄ desktop):");
+{
+  const T = (await import("../text-core.js")).default ||
+    (await import("module")).createRequire(import.meta.url)(path.join(WEB, "text-core.js"));
+  const py = fs.readFileSync(path.join(REPO, "Editor", "s3editor.py"), "utf8");
+  const pick = (re, what) => { const m = re.exec(py); if (!m) bad(`could not find ${what} in s3editor.py`); return m && m[1]; };
+
+  const minLen = pick(/if len\(s\) < (\d+) or " " not in s:/, "min length");
+  (Number(minLen) === T.MIN_LEN ? ok : bad)(`min run length ${T.MIN_LEN} (py ${minLen})`);
+
+  const rej = pick(/_re\.search\(r"([^"]+)"/, "reject regex");
+  (rej === T.REJECT.source ? ok : bad)(`reject pattern matches` + (rej === T.REJECT.source ? "" : ` — js ${T.REJECT.source} vs py ${rej}`));
+
+  const punct = pick(/c\.isalpha\(\) or c in "([^"]+)"/, "prose punctuation");
+  (punct === T.PROSE_PUNCT ? ok : bad)(`prose punctuation matches` + (punct === T.PROSE_PUNCT ? "" : ` — js ${JSON.stringify(T.PROSE_PUNCT)} vs py ${JSON.stringify(punct)}`));
+
+  const ratio = pick(/return ok \/ len\(s\) > (0\.\d+)/, "prose ratio");
+  (Number(ratio) === T.PROSE_RATIO ? ok : bad)(`prose ratio ${T.PROSE_RATIO} (py ${ratio})`);
+
+  // Scan range. The desktop starts 0x1000 earlier, at the ELF *header* rather than PT_LOAD;
+  // those bytes are headers and program-header tables, which cannot pass the prose filter, so
+  // the two produce the same string set. The END must match exactly — that one is real data.
+  const pyHi = pick(/_TEXT_ELF_HI = (0x[0-9A-Fa-f]+)/, "_TEXT_ELF_HI");
+  const pyLo = pick(/_TEXT_ELF_LO = (0x[0-9A-Fa-f]+)/, "_TEXT_ELF_LO");
+  (Number(pyHi) === ELF_END ? ok : bad)(`scan end 0x${ELF_END.toString(16)} matches desktop (${pyHi})`);
+  (Number(pyLo) <= ELF_BASE ? ok : bad)(`desktop scan start ${pyLo} is at or before the web block (0x${ELF_BASE.toString(16)})`);
+
+  const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
+  (/TextCore\.scanStrings\(ORIG, ELF_BASE\)/.test(iso) ? ok : bad)("iso.js scans ORIG (stable slot lengths), not BUF");
+  (/\["text", "Text"\]/.test(iso) ? ok : bad)("iso.js registers the Text view");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
