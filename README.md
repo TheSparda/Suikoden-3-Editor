@@ -64,7 +64,11 @@ Editable per save:
   story phase, party leader, and Suikoden I/II carryover detection.
 - **Characters** — level, current/max HP, EXP, all 8 stats, equipped runes + armour
   (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
-  per-character recruitment (recruited toggle + "recruited by").
+  per-character recruitment (recruited toggle + "recruited by"). Fields carry the same
+  **guide overlays** as the ISO editor: each stat shows its growth rate and expected Lv-99
+  range, Max HP the HP row, Level the level that character joins at, each rune slot whether
+  it's innate or **opens at Lv N**, and each skill slot that character's **maximum grade**
+  (or a note that they can't learn it at all).
 - **Party** — the active battle party (up to 6), by character name.
 - **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
   (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
@@ -75,7 +79,9 @@ Editable per save:
   vs Key/Valuables, with name-resolved item pickers, quantities, add and remove.
 
 Item and skill pickers throughout the save editor show **guide details** — rune effects and
-food heals (which lack an in-game description record), plus per-rank skill effects.
+food heals (which lack an in-game description record), plus per-rank skill effects. The
+guide data has no entry for the support characters (they don't fight) or for a handful of
+units the guides omit; those simply show no note rather than a guess.
 
 Quality-of-life: **searchable pickers** (type-to-filter, with id + name + in-game
 description + category), a **review-changes** confirmation (an explicit old → new list before
@@ -101,9 +107,14 @@ one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weap
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, and optional description rewrites),
-**Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Balance** (idempotent hard-mode
-multiplier presets), **Enemies** (a read-only **bestiary**: Lv, HP, item/food drops, potch and
-SP per encounter), and **Reference** (item/skill id → name lists).
+**Unites**, **Gear** (DEF, price, 5 effect slots), **Food**, **Text** (in-ELF UI strings —
+battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
+original byte length), **Balance** (idempotent hard-mode multiplier presets), **Enemies** (a
+read-only **bestiary**: Lv, HP, item/food drops, potch and SP per encounter), and
+**Reference** (item/skill id → name lists).
+
+> **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
+> event files outside the executable. The Text tab covers the strings held in the boot ELF.
 
 **Guide overlays.** Fields show verified reference data inline: per-character skill caps and
 Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food
@@ -123,6 +134,21 @@ need to write the ISO first):
 - **`.xdelta` patch** — a standard VCDIFF patch synthesized directly from the edits (no 4 GB
   diff needed). Apply with any VCDIFF tool: `xdelta3 -d -s "<pristine ISO>" file.xdelta out.iso`.
   ⚠ It carries **no integrity checksum**, so apply it only to a pristine USA `SLUS-20387` disc.
+
+**Apply someone else's mod — `Apply patch…`.** The same button takes both an `.s3mod` recipe
+and a standard **`.xdelta` (VCDIFF)** patch (the format is detected from the file's contents,
+not its name), so you can install a community mod on a phone without a desktop. The patch is
+**staged like any other edit** — reviewable, undoable, revertible — rather than written
+straight to the disc, and the multi-GB image is never fully read: only the regions the patch
+actually touches are examined. If the patch carries xdelta3's checksum (they normally do),
+applying it to the wrong or already-modified disc is **detected and refused**.
+
+Two limits, both reported clearly rather than guessed around:
+
+- xdelta3 **compresses patches with LZMA by default**, which this editor can't read. Ask the
+  author for one built with `xdelta3 -e -S none -s <source> <target> <patch>`.
+- A patch that changes bytes **outside the editable region** is refused whole (a half-applied
+  mod is worse than none) — use `xdelta3 -d` on a desktop for those.
 
 ---
 
@@ -147,15 +173,12 @@ has a **↺** restore and there's a light/dark theme toggle.
 
 ### What the desktop app adds over the web editor
 
-- **Text editing** — an in-place editor for the boot-ELF strings (UI / battle / menu / prize /
-  error text and character blurbs), each capped to its original length. (Story **dialogue**
-  lives in packed event files outside the executable and is not editable.) This is **not**
-  available in the web ISO editor.
 - **Full-diff xdelta patches, and applying them** — a whole-ISO binary diff that captures
   *everything*, including in-place text edits, **plus** applying any `.xdelta` back onto a
   pristine disc. These carry a checksum (wrong source is detected, not silently mis-patched)
-  and require `xdelta3` (macOS `brew install xdelta`). The web editor can *export* a checksum-less
-  `.xdelta` of its own edits, but only the desktop app diffs the whole disc and applies patches.
+  and require `xdelta3` (macOS `brew install xdelta`). The web editor can now *apply* a patch
+  as well, but only one whose changes fall inside its editable region and that isn't
+  LZMA-compressed; only the desktop app diffs the **whole** disc and applies any patch to it.
 - **CLI** — `Editor/s3patch.py` exposes the same engine for scripting:
 
   ```bash

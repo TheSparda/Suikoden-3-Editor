@@ -25,9 +25,17 @@ jobs:
         run: node web/tests/recruit-logic.mjs
       - name: Rename-core unit tests
         run: node web/tests/rename-core.mjs
+      - name: Guide-core unit tests (guide-overlay name join + coverage)
+        run: node web/tests/guide-core.mjs
+      - name: Text-core unit tests (in-ELF string scanner + prose filter)
+        run: node web/tests/text-core.mjs
       - name: Save round-trip (synthetic gamedata)
         run: node web/tests/save-roundtrip.mjs
-      - name: VCDIFF (.xdelta) encoder tests
+      # The decoder's real coverage is against genuine xdelta3 output; without the binary those
+      # checks self-skip and the patch-apply path would ride into a release untested.
+      - name: Install xdelta3 (real-patch decode coverage)
+        run: sudo apt-get install -y xdelta3
+      - name: VCDIFF (.xdelta) encoder + decoder tests
         run: node web/tests/vcdiff.mjs
       - name: Description-merge tests (rune/food/skill)
         run: node web/tests/desc-merge.mjs
@@ -39,6 +47,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Install xdelta3 (the apply-patch e2e builds real patches with it)
+        run: sudo apt-get install -y xdelta3
       - name: Install e2e deps
         run: npm install
         working-directory: web/tests
