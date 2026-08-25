@@ -1497,3 +1497,51 @@ live by slot monster). All writes fan out to every verified copy; review rows
 show old → new with the copy count. Verified on the real ISO: swapping mori_101
 slot 0 Dark Hare → GhostHolly + weight 50 → 90 produced exactly 6 recipe runs
 (3 copies × 2 fields).
+## WAR UNITS — FOUND (2026-08-24, supersedes the 2026-08-10 "no editable unit table" spike)
+
+The 2026-08-10 spike searched for war data by STRING vocabulary and concluded war
+battles were purely script-driven. That predates the battle-pack breakthrough. A
+node-invariant scan (the enemies-editor container: `[count × 0x8C stat records]
+[count × 0x34 aux blocks][node {u32 id, u32 count, u32 recsVa, u32 auxVa}]`, found
+by `auxVa == recsVa + count*0x8C` over the whole disc) shows the war-battle FIELD
+FIGHTS use the same containers — they were invisible to the bestiary fingerprint
+because war soldiers aren't in the bestiary.
+
+**What exists (indexed in `s3_war_units.json` by `build_war_index.py`):**
+- **Shared war pack in ETC.BIN** (~0x417E4800–0x417E9860, single copy): every
+  faction soldier with per-chapter level tiers — ZxnInf ×12 variants (lv17→51),
+  KarayaFtr ×8, LizardFtr ×8, MntrLegnnr ×4, Mantor ×2, DuckFtr ×2 — plus the
+  chapter-5 war monsters (GhostArmor, BoneSldr, Chimera, Mirage, Rock Golem) and
+  nine small-id "leader unit" nodes (ids 0x4, 0x13, 0x22, 0x23, 0x24, 0x28, 0x29,
+  0x2A, 0x42) with paired level tiers.
+- **Per-battle packs in chapter archives**: ZxnKn (8 variants, lv20–33) in VDZK /
+  KRVI / LZVI / ZKTR / HGB1; HarmonSldr (4 variants, lv38–55) in TSVI / ZKTR /
+  SOGE; leader nodes alongside. Same-archive byte-identical copies are merged;
+  different archives are kept separate so battles can be tuned individually.
+- Soldier ids resolve through the ELF pair table (0x3B1168): 0x132 ZxnKn,
+  0x133 ZxnInf, 0x136 KarayaFtr, 0x13F LizardFtr, 0x141 DuckFtr, 0x147 HarmonSldr,
+  0x165/0x166 MntrLegnnr, 0x167/0x168 Mantor, 0x17C ZxnMarshll.
+
+**Verification vs the Suikosource bosses guide (exact lv/hp):** ZxnKn lv20 hp230 =
+Thomas ch.2 war battle; leader id **0x12 = Leo** (23/600 and 35/800 both exact);
+**0x42 = Sarah** (six exact matches incl. 60/3200); **0x29 = Franz** and
+**0x2A = Ruby** (both 38/400; Ruby has the Mantor-style non-zero PDF column).
+The small ids are the game's own actor enum — NOT list1 ids (Leo is 17 in list1
+but 0x12 here only by coincidence of adjacency; Sarah is 59 vs 0x42=66).
+
+**War aux blocks are unused** (no EXP/SP/potch/drops — war battles pay no rewards;
+the 1000 drop-rate marker is absent), so the index carries `aux: []` and the web
+editor edits records only. The editor must keep war offsets DISJOINT from
+`s3_enemy_packs.json` — several war clusters sit inside zone archives whose
+monsters the Enemies view already edits; `build_war_index.py` excludes any node
+whose record offsets the enemy index owns (validate.mjs asserts disjointness).
+
+**Player-side war units** use the characters' own save data (HP/stats/equipment),
+so the save editor already covers them. **Per-character war SKILLS (Riding /
+Tactics / Valor / Control / runes) are code-embedded, not flat data**: full-ISO
+differential scans keyed by both list1 ids and save-ROSTER ids (equality within
+same-skill-set groups from the RPGClassics army guide, e.g. Tuta=Yun,
+Thomas=Anne; inequality across groups) found nothing but noise, and the war
+overlay in ETC.BIN (skill-name strings at ~0x41B1A930, `<type>_wart_<map>` asset
+modules, `imf_<char>_100` portrait table at ~0x41B19B20) exposes no assignment
+table. The guide's skill list ships as read-only reference (`s3_war_ref.json`).
