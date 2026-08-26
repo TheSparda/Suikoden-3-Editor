@@ -146,3 +146,67 @@ recommended shape if this line of work turns into a feature.
    stopped the model swap.
 3. **If a feature is wanted now**, ship the stat port (§5), which needs no proof beyond what the
    Enemies and Save editors already verify.
+
+---
+
+## Addendum — "can we make Dios playable?" (2026-08-26)
+
+Follow-up question, and a useful contrast: **Dios is not the Luc/Yuber case.** Luc, Yuber and
+Sarah are battle characters the game happens to point at you. Dios is a **support-only star**,
+and every table on the disc says so.
+
+**Table side.** The four record tables split the cast cleanly:
+
+| Table | Count | Who |
+|---|---|---|
+| list1 (starting stats, 0x3E3C7C, stride 140) | **79** | the fighting cast: `1 Hugo … 75 Emily`, then `76–79` Koichi/Connie/Kosanji/Kogoro |
+| list2 (growth + skill caps, 0x3E1338) | **79** | same 79, same order |
+| **list3 (support skills, 0x3E6830, stride 8)** | **34** | `1 Apple … 33 Dios … 34 Iku` |
+
+Dios is **list3 #33**. He has no list1 record (no starting stats, no equip/rune slots, no
+weapon-growth class → no list4 ATK curve) and no list2 record (no growth rates, no skill caps).
+The Suikosource data agrees: `skills.txt` gives him one support skill, *Discount: C*;
+`s3_recruit_meta.json` says `auto: true, "he joins with Sasarai"`; the character guide says
+"Dios doesn't do anything in the castle."
+
+**So there is no id that means "Dios" in the party's id space.** Party slots at 0x3216 hold
+*list1* ids; support stars live in a disjoint 34-entry table. Writing 33 there gives you
+**Shiba** (list1 33), not Dios. His save block is roster index **107**, past the editor's
+`CHAR_COUNT = 100` decode window and past the ~99 blocks the offset map documents — the Save
+Editor doesn't even surface him as a character.
+
+**Asset side — independent confirmation.** `docs/etc_char_summary.json` counts `cha`
+(model + animation) nodes per character code. The distribution is sharply bimodal:
+
+- **78 codes carry ≥ 21 `cha` nodes** — the fighting cast (`syu2` 89, `leoo` 64, `kork`
+  Koroku 44, `yuba` 42, `duke` 38, `bzba`/`ziba` 35, `quen` 34). 30 of them sit at 34–35.
+- **25 codes carry exactly 8** — and `deos` (Dios) is one, alongside `appl` (Apple), `iiku`
+  (Iku), `elot` (Elliot), `luis` (Louis). Cross-check on the inference: `luis` = 8 (Louis, a
+  support) while `lusi` = 35 (Lucia, a fighter).
+
+Eight `cha` nodes is a standing/talking NPC. The `1xx`/`17x`/`18x` battle-pose ranges the
+ETC.BIN research identified simply do not exist for him — and authoring them is the wall
+`docs/ETC_BIN_MODEL_RESEARCH.md` already hit (compressed payloads, per-scene duplication,
+index-based resolution, full-archive rebuild).
+
+**The tempting shortcut, and why it fails.** list1/list2 **76–79** look like four free battle
+slots — Koichi, Connie, Kosanji and Kogoro, the game's other four dogs, with complete starting
+stats *and* growth rates on disc and in the Suikosource guides, but no save-roster block. They
+are also **the only character codes with `cha: 0`** (`koit`/`koni`/`kosn`/`kogr`: 0 cha, 18 imf,
+8 ctx — textures, no model). Cut content, not a usable donor slot.
+
+**What is actually achievable: a reskin, not a port.** Give a battle slot you don't use a "Dios"
+build (ISO Characters + Growth tabs: stats, rune slots, skills, growth, caps) and rename it.
+`web/rename-core.js` already does whole-disc, same-length, zero-shift renaming — but it is
+deliberately limited to `Hugo / Chris / Geddoe`, the names distinctive enough to global-replace
+safely. Generalizing it needs the same two guards: the donor name must be **≥ 4 chars** (`"Dios"`
+padded to length) and must not be a substring that appears elsewhere — `Mel`, `Ace`, `Gau`,
+`Nash`, `Belle` are unsafe; **`Sasarai` → `Dios`** is the safe pick, and fittingly leaves the
+bishop's attendant standing in for the bishop. You get a playable unit *named* Dios wearing
+someone else's model.
+
+**Verdict:** properly playable — no. He has no battle record, no battle animations, and no
+addressable id in the party's id space; all three would have to be authored, and the third is
+gated on the archive rebuild that stopped the model swap. A named stat-reskin of an existing
+fighter is the honest ceiling, and it needs one small, low-risk change (extend `rename-core`'s
+allow-list with the same length/distinctiveness rules) rather than any new reverse-engineering.
