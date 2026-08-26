@@ -201,6 +201,9 @@ head("Byte-exact edits across every editable view");
   await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2");
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1");
   await page.selectOption('details.char[data-i="0"] select[data-k="status"]', "sleep");
+  // ally-pair targeting (0x41, the Kindness Drops / Vengeful Child byte) on a second spell
+  await openRec(page, 'details.char[data-i="1"]');
+  await page.selectOption('details.char[data-i="1"] select[data-k="target"]', "65");
   // Unites: power/cast/target/aoe
   await page.click('#isoTabs [data-v="unites"]'); await openRec(page, 'details.char[data-i="0"]');
   await page.fill('details.char[data-i="0"] input[data-k="power"]', "555"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change");
@@ -227,6 +230,7 @@ head("Byte-exact edits across every editable view");
   check("spell0 element = Lightning(5)", (r.u16(SPELL.off + SPELL.elem) & 0xFF) === 5);
   // AOE is the top bit of the target byte, so target=all-foes(0x02) + AOE => high byte 0x82
   { const f14 = r.u32(SPELL.off + 0x14); check("spell0 target=all-foes + AOE bit", ((f14 >> 8) & 0x0F) === 0x02 && !!(f14 & 0x8000)); }
+  { const f14 = r.u32(SPELL.off + SPELL.stride + 0x14); check("spell1 target=ally-pair (0x41)", ((f14 >> 8) & 0x7F) === 0x41 && !(f14 & 0x8000)); }
   check("spell0 status = sleep(bit10)", r.u32(SPELL.off + 0x18) === (1 << 10));
   check("unite0 power = 555", r.u32(UNITE.off + 0x1C) === 555);
   check("unite0 AOE bit set", !!(r.u32(UNITE.off + 0x14) & 0x8000));
