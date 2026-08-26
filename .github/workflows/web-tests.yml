@@ -5,11 +5,13 @@ name: web-tests
 # Playwright e2e suite against a synthetic in-bounds ISO — including planted-byte assertions
 # that the verified table offsets (skill-max +16, growth HP@+0, rune Head/Right/Left) still
 # decode correctly (see web/tests/synth-iso.mjs / e2e.mjs).
+# push-only: PRs come from branches in this same repo, so a pull_request trigger
+# just re-runs the suite on the synthetic merge ref — a duplicate of the push run
+# that has produced spurious "PR run failed" noise (e.g. runs 99/103 red while the
+# push runs 98/102 on the identical commits were green).
 on:
   push:
     paths: ["web/**", "Editor/**", ".github/workflows/web-tests.yml"]
-  pull_request:
-    paths: ["web/**", "Editor/**"]
 
 jobs:
   validate:
