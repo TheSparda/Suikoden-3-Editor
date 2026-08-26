@@ -2510,10 +2510,20 @@
   }
   // ---- War / major battles (unit stat editor + army-skill reference) ----------
   // Region hints for the archives that hold war packs (best-effort labels).
+  // Which in-game battles each war archive stages — anchored to the Suikosource bosses
+  // guide via exact level/HP matches (Leo 23/600 + ZxnKn 20/230 at Vinay del Zexay in
+  // Hugo ch.1; Franz/Ruby 38/400 at Chisha in ch.3; Leo 35/800 + HarmonSldr 55/600 at
+  // Brass Castle; Sarah's tiers in SOGE). Battles staged from an archive's maps load
+  // that archive's pack, so each hint names the chapter/story beat its units are fought in.
   const WAR_ARCH_HINTS = {
-    ETC: "shared war data (all battles)", VDZK: "Vinay del Zexay region", KRVI: "Karaya region",
-    LZVI: "Great Hollow region", TSVI: "Chisha region", SOGE: "grassland plains",
-    ZKTR: "Zexen territory", HGB1: "Budehuc / Lake Castle region",
+    ETC: "all war battles — shared soldier tiers + ch.5 war monsters",
+    VDZK: "Vinay del Zexay — Hugo ch.1 escape (Leo & Percival give chase)",
+    KRVI: "Karaya Village — ch.1 Zexen raid & burning of Karaya",
+    LZVI: "Great Hollow — ch.1–2 Zexen attacks on the Lizard Clan",
+    TSVI: "Chisha Village — ch.3 Harmonian invasion (Franz & Ruby's Mantors)",
+    ZKTR: "Brass Castle — Hugo ch.3 assault · ch.5 Harmonian siege",
+    SOGE: "grassland plains — ch.5 war vs Sarah's Harmonian army",
+    HGB1: "Budehuc Castle — Thomas ch.2 defense against the Zexen troops",
   };
   function drawWar(host) {
     const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
@@ -2527,13 +2537,14 @@
         on-disc copy in that archive. <b>Your own units use the characters' save-file stats</b> — strengthen your army in the
         Save Editor (HP, stats, equipment). War battles pay no EXP/SP/potch, so there are no reward fields.
         Leader names marked (unit) are verified against the Suikosource guide; <i>Unit&nbsp;#N</i> records are unidentified
-        leader units — edit them like any other. Filter matches unit or archive names.</div>`);
+        leader units — edit them like any other. Each pack's title notes the chapter and story beat its battles belong to
+        (matched against the guide's exact level/HP tables). Filter matches unit names, archive names or the battle context.</div>`);
       const q2 = SEARCH;
       for (const [p, pi] of wpacks) {
-        const hay = (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
+        const hint = WAR_ARCH_HINTS[p.archive];
+        const hay = (p.archive + " " + (hint || "") + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
         if (q2 && !hay.includes(q2)) continue;
         const nvar = p.enemies.reduce((a, e) => a + e.variants.length, 0);
-        const hint = WAR_ARCH_HINTS[p.archive];
         parts.push(`<details class="char epack" data-ep="${pi}" data-i="wp${pi}"><summary><span class="chev">▸</span>
             <span class="nm">${esc2(p.archive)}${hint ? ` · ${esc2(hint)}` : ""}</span>
             <span class="lv">${p.enemies.length} units · ${nvar} variants</span></summary>
