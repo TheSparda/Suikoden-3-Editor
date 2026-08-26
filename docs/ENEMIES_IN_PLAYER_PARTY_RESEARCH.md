@@ -210,3 +210,52 @@ addressable id in the party's id space; all three would have to be authored, and
 gated on the archive rebuild that stopped the model swap. A named stat-reskin of an existing
 fighter is the honest ceiling, and it needs one small, low-risk change (extend `rename-core`'s
 allow-list with the same length/distinctiveness rules) rather than any new reverse-engineering.
+
+### Addendum 2 — does Dios have battle animations, and can "his unit" get real stats?
+
+Two separate questions. The first has a hard answer from two independent sources.
+
+**Dios has no fighting animations anywhere on the disc.** The `cha_` variant numbers are the
+test, not the raw node count. Every battle actor carries the same fixed pose set —
+`100 101 110 120 130 140 (150) 160 170 171 172 180 190` — e.g. Queen, Duke, Yuber, Koroku all
+have it, and **82 of the 194 character codes** carry ≥8 of those 12 canonical nodes. `deos`
+carries **exactly `{001, 010, 020, 700}`** — field model + two LOD/state variants + the shared
+700 loop set — which is the signature **27 codes** share, among them `appl` (Apple), `iiku`
+(Iku), `elot` (Elliot) and `luis` (Louis). No idle, no attack, no cast, no hit reaction.
+
+The Suikosource character entry says the same thing in words:
+
+> Name: Dios — **Battle Fighting Style: Support** · **War Fighting Style: Doesn't Fight** ·
+> Unique Skills: Discount
+
+What you see of him in a war battle is a **portrait in a unit's support slot**: he has
+`imf_deos_100` ×11, and `imf_<char>_100` is the war-overlay portrait table
+(`Editor/Suikoden3_ISO_offsets.md`, war-editor section). Where the guide has him "leading" a
+unit (ch.5, Unit 2) it also says "Sasarai, Dios, and Albert are **in support** and their unit
+cannot be defeated until all enemies in the unit are defeated" — he is the support member, not
+a combatant. He is absent from `suikosource/bosses.txt` entirely, and no node in
+`s3_war_units.json` resolves to him. That is consistent: a non-combatant needs no stat record.
+
+**But "his unit" absolutely can be given real stats — today, in the War tab.** The unit Dios
+supports is Harmonian Soldiers, war id **327 / 0x147**, present in the TSVI, ZKTR and SOGE
+packs with 4 variants (Lv38/HP350, Lv45/HP450, Lv55/HP600 …). The War editor already writes
+level, HP and all 8 stats per variant, fanned out to every pack copy. Donor numbers can come
+from any other unit in the same index — e.g. Sarah's top variant (Lv60, HP3200,
+`120/145/145/120/140/135/130/70`) — or from a character's Lv99 growth range in
+`s3_growth_ref.json`.
+
+Two honest caveats:
+
+1. **Granularity is the soldier type, not the unit.** id 327 is shared by every Harmonian
+   Soldier unit in that pack, so buffing it buffs the whole Harmonian side of that battle, not
+   just the unit Dios sits in. Isolating one unit needs the war **unit-composition** table
+   (which leader draws which soldier ids), which is not decoded — a well-scoped next RE target.
+2. **Six war leader ids are still unidentified**: `0x04, 0x13, 0x22, 0x23, 0x24, 0x28`. Dios is
+   not among them, but Sasarai / Albert / Yuber / the Masked Bishop probably are. `0x28` is the
+   standout mage profile (MAG 146→177, PDF 0, appears in VDZK / LZVI / TSVI / ETC) and looks
+   like a caster leader. Pinning them needs war-battle lv/HP ground truth, which
+   `bosses.txt` (field bosses only) does not provide.
+
+**So:** a Dios who swings a weapon in a normal battle would require authoring the 13-node pose
+set — the ETC.BIN archive rebuild, again. A Dios whose *war unit* hits like Sarah's is an
+afternoon in the War tab.
