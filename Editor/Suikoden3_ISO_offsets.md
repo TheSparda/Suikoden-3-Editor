@@ -1545,3 +1545,34 @@ Thomas=Anne; inequality across groups) found nothing but noise, and the war
 overlay in ETC.BIN (skill-name strings at ~0x41B1A930, `<type>_wart_<map>` asset
 modules, `imf_<char>_100` portrait table at ~0x41B19B20) exposes no assignment
 table. The guide's skill list ships as read-only reference (`s3_war_ref.json`).
+
+---
+
+## Enemies as party members — id-space analysis (2026-08-26, no new offsets)
+
+Follow-up question to the Enemies/War work: "enemies are character records in
+character slots, so can they join the player party?" Analysis lives in
+[`docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md`](../docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md);
+the offsets-relevant conclusions:
+
+- **Three disjoint id spaces**, all serialized into the same 0x8C record: list1
+  characters **1..79** (`s3_names.json`), war unit types **4..359**
+  (`s3_war_units.json`, the actor enum — not list1 ids, as noted above), and
+  bestiary monsters **0x1F5..0x257 / 501..599** (`s3_enemy_packs.json`; the
+  index contains no id below 0x1F5). `0x16C6D08` dispatches on that range —
+  characters via the lut at `0x19697A8`, monsters via `0x16C6D70` walking the
+  node list registered by the resident battle pack.
+- **Same size ≠ same layout.** Save character block vs monster record agree on
+  `u16[8]` stats at **+0x20** and the HP word at **+0x30**, and disagree
+  everywhere else (save: EXP@+0x00, id@+0x0C, level@+0x0D, skills@+0x10;
+  monster: rewards@+0x0C/+0x10, resist bytes@+0x38, level@+0x40). They are two
+  serializations of one runtime struct, **not interchangeable bytes**.
+- **Boss characters need no new mechanism**: Luc 57 / Yuber 58 / Sarah 59 etc.
+  are list1 ids with save blocks at `0x33AC + rosterIndex*140` (id = rosterIndex+1
+  for ids 1..75) and recruit words at `0x232 + rosterIndex*2`. The party list at
+  `0x3216` already accepts them. Unproven in-game (per-area model residency,
+  story overwrite of 0x3216, soft-locks) — PCSX2 test required before any UI
+  promotes it.
+- **Monster ids cannot be party members** (no save block, no persistent record
+  outside the resident pack, no character-table name/portrait/field model). Their
+  stats *can* be ported onto a character through existing write paths.
