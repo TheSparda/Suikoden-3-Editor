@@ -135,7 +135,7 @@ has no table linking these 4-char codes to character indices. Below is split by 
 | factor | status |
 |--------|--------|
 | Directory readable without decompression | ✅ yes |
-| Inline per-entry size word | ✅ yes (helps same-size swaps) |
+| Inline per-entry size word | ⚠️ **over-generalized — only 65 of 9,652 entries carry it** (see the 2026-08-26 addendum) |
 | Entries are self-contained, sector-aligned blobs | ✅ likely (sizes are 32 KB multiples) |
 | Single swap point | ❌ no — duplicated per scene bundle |
 | Hugo/Luc share bundles (for in-place swap) | ❌ rarely |
@@ -157,3 +157,66 @@ has no table linking these 4-char codes to character indices. Below is split by 
 Only after #1–#3 are known should a "Model Swap" section be added to the offline editor, scoped
 to exactly what the proof supports (most likely: same-size, per-bundle swaps between two
 already-co-present characters).
+
+---
+
+## Addendum (2026-08-26) — "swap Hugo's model to the Flame Champion?"
+
+Re-examined for one specific pair. **Answer unchanged — still not feasible** — but the
+re-check produced one correction to our own Phase-0 notes and three pair-specific findings.
+
+### Correction: the inline size word is not the general layout
+
+§2 called the inline size word "the single most encouraging fact for feasibility." Measured
+against the full dump, it is not a general property. Of the **9,652** `cha_/imf_/ctx_` name
+occurrences in `etc_inventory.json`, only **65** carry the confirmed directory shape
+(`u32 flags == 0x00010000` at +0x10, size at +0x14) — and all 65 are `syu1`, inside one region
+(ISO 0x03012490–0x0F6BC37C). 16-byte alignment doesn't predict it either: of 2,036 aligned
+hits, 17 have the flags word. What usually follows an aligned name is `2` (950×) or **another
+name string** — `0x5F616863` = `"cha_"` appears 233× as the very next word — i.e. most
+occurrences are entries in **packed name/reference tables**, not directory records with a size.
+
+So the encouraging fact was generalized from a `syu1`-only sample. Table row in §6 downgraded.
+
+### Why this pair is *worse* than the Hugo↔Luc case, not better
+
+1. **Both endpoints are unidentified.** Hugo is still one of `syu1/syu2/syu3` (unverified — §5),
+   and the Flame Champion has no obvious code. `hono` and `fire` are the tempting reads and are
+   **not characters**: both carry only `cha_*_{001,010,020}` and zero battle-pose nodes, i.e.
+   they are props/effects. The main-tier candidates that *do* carry the full 12-node battle set
+   are `lead` (34 cha / 80 occurrences), `hrec` (35 / 87), `s2hr` (58 / 101) and `mask`
+   (32 / 50) — the last being the Masked Bishop by elimination, not proof.
+2. **The bundle intersection is tiny by construction.** A swap can only be done in place where
+   *both* payloads are already present. The protagonist is nearly everywhere (`syu1` 135
+   occurrences, `syu2` 212) while every FC candidate sits at 50–101 — and a story-only character
+   appears in story bundles, not in the field/town/dungeon bundles where you would want to see
+   the swapped model. Most bundles have no FC payload to point at.
+3. **Phase 1 already refuted the mechanism itself.** The `syu1`↔`syu2` name-swap booted with no
+   visible change → models resolve by precomputed index, not by the embedded name string; and
+   payloads are compressed, variable-length and tightly packed (`cha_syu1_001`: size word
+   163,840, ~7,924 bytes on disc, ~20:1). Nothing about choosing a different target pair changes
+   either fact.
+
+### What the disc *does* offer for a Flame Champion build
+
+Two findings worth recording, both actionable without any archive work:
+
+- **The Flame Champion looks like list1 record 0.** `LIST_COUNT.list1 = 80` (indices 0–79) but
+  `s3_names.json` names only 1–79, and `iso.js:1307` skips unnamed records — so record 0 exists
+  on disc and the editor hides it. The save side agrees structurally: the Flame Champion's
+  140-byte block sits exactly one stride before Hugo's (`0x3320` vs `CHAR_BASE 0x33AC`), i.e.
+  the slot immediately preceding Hugo in *both* tables. Two independent tables agreeing makes
+  "record 0 = Flame Champion" a strong inference — unverified byte-wise, needs a disc read.
+  Surfacing record 0 in the Characters tab (labelled as unnamed/unverified) would make his
+  starting stats, runes and skills editable. Caveat: id 0 is also the party list's **empty-slot
+  sentinel**, so he can never be seated via a party slot at `0x3216`.
+- **His name is already editable.** `NAME_FIELDS` has `flameChampion` at save `0xC9E0`, a
+  16-char ASCII field the Save Editor exposes today.
+
+### Note for the cosmetic route
+
+Whole-disc renaming (`web/rename-core.js`) is same-length only, so `"Hugo"` (4 bytes) cannot
+become `"Flame Champion"` (14). Doing that needs the **fixed-width character-name table**, which
+is still unlocated (only the 100 × 0x14 enemy name table at `0x3E74E0` and the in-ELF UI strings
+are decoded). That table is the cheapest unlock here: find it and arbitrary per-character
+renames become a safe, length-checked edit instead of a global byte replacement.
