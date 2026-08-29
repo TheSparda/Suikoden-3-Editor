@@ -118,4 +118,10 @@ PW_CHROMIUM=/path/to/chrome node web/tests/e2e.mjs   # or point at an existing b
 
 No real ISO is used or needed — the synthetic image is just the editable region with the
 USA version word and a few planted records. Verifying a **real** SLUS-20387 disc (edit →
-save → re-open → PCSX2 boot) is still a manual step before trusting the editor widely.
+save → re-open → PCSX2 boot) is a step no synthetic fixture can cover — every table the
+editor writes lives in the boot ELF, so "right about the file, wrong about the game" is a
+failure only the game can catch. [`tools/pcsx2/`](../../tools/pcsx2/) now scripts that
+half (`boot-verify`: boot the disc, snapshot EE RAM, compare the tables byte-for-byte
+against the disc), and its own logic is covered offline by
+`python3 tools/pcsx2/selftest.py`, which runs in CI. Running `boot-verify` still needs a
+disc and a PS2 BIOS, which CI does not have.
