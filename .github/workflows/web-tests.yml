@@ -11,7 +11,7 @@ name: web-tests
 # push runs 98/102 on the identical commits were green).
 on:
   push:
-    paths: ["web/**", "Editor/**", ".github/workflows/web-tests.yml"]
+    paths: ["web/**", "Editor/**", "tools/**", ".github/workflows/web-tests.yml"]
 
 jobs:
   validate:
@@ -41,6 +41,11 @@ jobs:
         run: node web/tests/vcdiff.mjs
       - name: Description-merge tests (rune/food/skill)
         run: node web/tests/desc-merge.mjs
+      # The emulator half (boot-verify) needs a disc and a PS2 BIOS and cannot run here;
+      # this covers everything under it — PINE framing against a mock server, savestate
+      # parsing, scan narrowing, ELF calibration, PNG hashing. Pure stdlib, no install.
+      - name: PCSX2 harness self-test (no emulator required)
+        run: python3 tools/pcsx2/selftest.py
 
   e2e:
     runs-on: ubuntu-latest

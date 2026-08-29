@@ -18,6 +18,17 @@
 > compression RE effort, not an editor feature. **No "Model Swap" section should be added to the
 > offline editor.** The sections below are the decode groundwork that led here.
 
+> **PHASE 2 (2026-08-29): the disc-level verdict above stands — but it is not the only route.**
+> The finding that killed Phase 1 ("loads by precomputed index, and we can't find the index
+> table") reframes the problem rather than closing it: an index is a *value in RAM at scene-load
+> time*, and changing it needs no repack, no compression RE and no ISO edit — it ships as a
+> `.pnach`. Locating it is a search over 32 MB of live memory, which is a machine's job, and
+> [`tools/pcsx2/`](../tools/pcsx2/) is now that machine. See
+> [`PCSX2_AUTOMATION.md`](PCSX2_AUTOMATION.md) §3 for the plan, including how the Trinity Sight
+> System's overlapping areas supply free A/B snapshot pairs, and how a savestate in a Luc scene
+> answers §5's unresolved `syu1/2/3` identity and missing-`luc*` questions directly. Nothing is
+> proven yet — this records the route, not a result.
+
 ---
 
 ## Phase 0 — decode (retained for reference)
