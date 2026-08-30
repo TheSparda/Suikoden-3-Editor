@@ -3336,13 +3336,66 @@
     wireRefTabs(host);
   }
 
+  // Pickup locations. Two tables that are deliberately NOT joined to each other:
+  //
+  //   the disc  — every archive's chests / lootable corpses / herb spots, counted off the map
+  //               data by the game's own object names (takara 宝, emono 獲物, herb_*). An
+  //               archive ships several chapter variants of the same maps, so the figure is
+  //               the MAXIMUM over its variants; summing would count one chest per chapter.
+  //   the guide — the six named treasure-boss chests and the rare gear the Suikosource guide
+  //               says each holds, with the guardian sitting on it.
+  //
+  // The disc carries no place names anywhere, only tags like YMMT and map ids like ymmt_101,
+  // so mapping "Mountain Path" onto an archive would be a guess in a data costume. The UI
+  // says that outright rather than quietly printing one merged table.
+  function drawPickups(host) {
+    const src = REF.itemSources || {};
+    const places = src.places || [], chests = src.chests || [];
+    if (!places.length && !chests.length) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_item_sources.json</code>; it didn't load.</div>`;
+      wireRefTabs(host); return;
+    }
+    const q2 = SEARCH;
+    const pk = (n2, label) => (n2 ? `<span class="pkct">${n2} ${label}${n2 === 1 ? "" : "s"}</span>` : "");
+    const prows = places.filter((p) => !q2 || (p.archive + " " + (p.zones || []).join(" ")).toLowerCase().includes(q2))
+      .map((p) => `<tr><td class="sl">${p.area != null ? "0x" + p.area.toString(16).toUpperCase().padStart(2, "0") : "—"}</td>
+        <td><b>${esc2(p.archive)}</b><div class="muted">${esc2((p.zones || []).join(", ") || "no battle zones indexed")}</div></td>
+        <td>${pk(p.chest, "chest")}${pk(p.corpse, "corpse")}${pk(p.herbs, "herb spot")}</td>
+        <td class="muted">${p.variants} chapter variant${p.variants === 1 ? "" : "s"}</td></tr>`);
+    const crows = chests.filter((c) => !q2 || (c.place + " " + c.items.map((i) => itemName(+i.item)).join(" ")).toLowerCase().includes(q2))
+      .map((c) => {
+        const guards = [...new Set(c.items.map((i) => i.guardian).filter(Boolean))];
+        return `<tr><td><b>${esc2(c.place)}</b>${guards.length
+            ? `<div class="muted">guarded by ${esc2(guards.join(" · "))}</div>` : ""}</td>
+          <td>${c.items.map((i) => `<span class="pkitem">${esc2(itemName(+i.item))}</span>`).join(" ")}</td></tr>`;
+      });
+    host.innerHTML = refTabs() +
+      `<div class="muted" style="margin:0 0 10px">Where the game hides things. The first table is counted off
+        <b>your disc</b> — the map objects the game itself names <code>takara</code> (宝, a chest),
+        <code>emono</code> (獲物, a lootable corpse) and <code>herb_*</code>. An archive ships the same maps
+        several times over, one set per chapter, so the count is the most any single variant carries rather
+        than the total. The second table is the Suikosource guide's six treasure-boss chests.
+        <b>The two aren't linked</b>: the disc holds no place names at all, only tags like <code>YMMT</code>
+        and map ids like <code>ymmt_101</code>, so pairing "Mountain Path" with an archive would be a guess.
+        Nothing here is editable — a chest's contents are rolled at run time, not stored.</div>
+      <h3 class="sec">On the disc — pickups per area</h3>
+      <table class="invtbl"><thead><tr><th style="width:8%">Area</th><th style="width:34%">Archive · map ids</th>
+        <th>Pickups</th><th style="width:20%"></th></tr></thead>
+        <tbody>${prows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>
+      <h3 class="sec">From the guide — treasure-boss chests</h3>
+      <table class="invtbl"><thead><tr><th style="width:26%">Chest</th><th>Rare gear it holds</th></tr></thead>
+        <tbody>${crows.join("") || `<tr><td colspan="2" class="muted">no matches</td></tr>`}</tbody></table>`;
+    wireRefTabs(host);
+  }
+
   function refTabs() {
     const n = (REF.itemSources && REF.itemSources.items) ? Object.keys(REF.itemSources.items).length : 0;
     const on = (k) => (REF_KIND === k ? " on" : "");
     return `<div class="subtabs" style="margin-bottom:10px">
         <button class="chip${on("items")}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
         <button class="chip${on("skills")}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button>
-        <button class="chip${on("sources")}" data-ref="sources">Item sources (${n})</button></div>`;
+        <button class="chip${on("sources")}" data-ref="sources">Item sources (${n})</button>
+        <button class="chip${on("places")}" data-ref="places">Pickups (${((REF.itemSources && REF.itemSources.places) || []).length})</button></div>`;
   }
   function wireRefTabs(host) {
     qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawReference(host); }));
@@ -3350,6 +3403,7 @@
 
   function drawReference(host) {
     if (REF_KIND === "sources") return drawSources(host);
+    if (REF_KIND === "places") return drawPickups(host);
     const isItems = REF_KIND === "items";
     const list = isItems
       ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))

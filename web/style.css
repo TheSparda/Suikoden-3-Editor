@@ -322,3 +322,9 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
   border:1px solid var(--line); color:var(--mut); }
 .srctag.disc { border-color:var(--acc); color:var(--acc2); }
 .srctag.guide { border-color:var(--line); color:var(--mut); }
+
+/* pickup locations (Reference view) */
+.pkct { display:inline-block; font-size:12px; color:var(--ink); border:1px solid var(--line);
+  border-radius:6px; padding:1px 7px; margin:0 4px 3px 0; background:var(--input-bg); }
+.pkitem { display:inline-block; font-size:12px; color:var(--mut); border:1px solid var(--line);
+  border-radius:6px; padding:1px 6px; margin:0 3px 3px 0; }
