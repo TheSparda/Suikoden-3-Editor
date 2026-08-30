@@ -1948,3 +1948,68 @@ object, so proximity is the only link, and proximity is what produced the last r
 positives. Recording the shape and the sentinels here is the useful part; the attribution
 needs the same disassembly anchor the pickup contents do — find the consumer, and the
 operand layout follows.
+
+---
+
+## Pickup subsystem — disassembled (2026-08-30). Layout proved, enumeration still missing
+
+Following the plan from the section above: find the handler, and the operand layout follows.
+The handler was found. Retail keeps the whole subsystem's debug printfs:
+
+| VA | String |
+|---|---|
+| 0x19C5C48 | `ItemPointInitS %s` |
+| 0x19C5C18 / 0x19C5C30 | `FLAG:%s ITEM 0x%x:(%s)` / `FLAG:%s ITEM %d:(%s)` |
+| 0x19CB228 | `BOX[%d]:Frist Item(%d)` *(sic)* |
+| 0x19CB250 | `!!Takara No Error %d!!` |
+| 0x19C8D58 / 0x19C8E20 | `ECPLAYERPICKUPHERB_E` / `GET ITEM wno:%d` |
+| 0x19C8E20 | inside `ECPLAYEROPENITEMBOX_E` |
+
+**The runtime item-point table — 0x16D4580(idx, kind, val).** Decompiled exactly:
+
+```
+if (idx >= 0xF8) return 0;
+base = 0x196B3F0;                            // lui 0x197 / addiu -0x4C10
+if (kind == 2) *(u16)(base + idx*12 + 0x1030) = val;     // set
+return *(s16)(base + idx*12 + 0x1030);                   // get
+```
+
+So the live pickup state is **248 entries × 12 bytes at VA 0x196C420**, the item id being the
+u16 at +0 — and the caller masks it `& 0x7FFF` before resolving a name, so **bit 15 is a
+flag**, exactly as it is in the save file's item entries. `0x16D4458(idx>>3, idx&7, kind)` is
+the companion bitfield (whether the point has been taken). The printf splits behaviour at
+idx < 0x10 and idx < 0x28, so the 248 slots are banded by pickup class.
+
+**Treasure-box contents — 0x17B4FF0(boxObj).** Also decompiled, not guessed:
+
+```
+$fp = 0x1C                                   // entry stride
+$s6 = *(u32)(boxObj + 8)                     // entry array
+item = *(u32)($s6 + i*0x1C + 4)              // <- the item field
+0x17B54C8(boxIdx, item):
+    if (item & 0x4000) { ... 0x16D47A0(kind 6) }   // flagged entry
+    if (item == 0x249) ... ; if (item == 0x248) ... // two special ids
+```
+
+So a chest's contents are an array of **0x1C-byte entries with the item id as a u32 at +4**,
+carrying a `0x4000` flag bit and two reserved ids. That is the field the previous section
+could not prove, and it is nothing like the 0x30-stride script records that looked promising —
+those really were operands.
+
+**Town sub-file K is free.** A town sub-file's **first word points at its own end**, so
+`K = firstWord - fileLength` exactly. Verified on several: MORI[0] `0x00220DA8 - 0x8800 =
+0x2185A8`, and every pointer in the file resolves in range under it. This is a general result
+— it is the anchor the opcode-stream work also needs, and it costs nothing to compute.
+
+**Why no editor ships yet.** Reading the entries works, and they decode to coherent loot
+("Medicine A, Thunder Runner, Stone Of Mag-Def, Berserk Blow"). The missing piece is
+*enumeration*: town data is full of 0x1C-stride tables — shop stock and food lists among them —
+and neither the item-run fingerprint nor "a pointer under K that lands on a valid run"
+separates a chest's list from a shop's. Both accept sequential runs like "Medicine D, C, B, A,
+Mega Medicine D, C, B, A" that are obviously a shop.
+
+The box object is the anchor and it is one step away: `0x17B4FF0` is called only from
+`0x17B4B34`, so walking back from there to wherever `boxObj` is fetched gives the object's own
+signature, and every chest becomes addressable by construction rather than by fingerprint.
+That is the next session's first move, and it is a bounded one — a single call chain, with the
+layout already proved so the result is immediately checkable.
