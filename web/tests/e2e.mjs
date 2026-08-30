@@ -674,6 +674,33 @@ head("Unite description — editable + length-capped");
   await page.context().close();
 }
 
+head("Unite rosters — guide characters shown, searchable, read-only");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="unites"]'); await page.waitForTimeout(120);
+  const row0 = 'details.char[data-i="0"]';
+  check("roster summary on unite 0",
+    /Geddoe, Queen, Ace, Joker, Jacques/.test(await page.textContent(`${row0} .un-who`)));
+  await openRec(page, row0);
+  const chips = await page.locator(`${row0} .char-body .tag`).allTextContents();
+  check("unite 0 members resolved to character ids",
+    chips.map((t) => t.replace(/\s+/g, " ").trim()).join(" | ") ===
+    "Geddoe #3 | Queen #21 | Ace #16 | Joker #23 | Jacques #22", chips.join(" | "));
+  check("roster is read-only (no input in the Characters field)",
+    (await page.locator(`${row0} .char-body .tag input, ${row0} .char-body .tag select`).count()) === 0);
+  check("unite view says the roster is guide reference",
+    /Suikosource unite guide/i.test(await page.textContent("#isoView")));
+  // unite 2 ("Griffon") has no entry in the guide — say so instead of guessing
+  await openRec(page, 'details.char[data-i="2"]');
+  check("unguided unite says roster unknown",
+    /roster unknown/i.test(await page.textContent('details.char[data-i="2"] .char-body')));
+  // filtering matches character names, not just unite names
+  await page.fill("#isoSearch", "jacques"); await page.waitForTimeout(80);
+  const ids = await page.locator("details.char").evaluateAll((ns) => ns.map((n) => n.dataset.i));
+  check("filter by character name keeps both Mercenary B rows", ids.join(",") === "0,24", ids.join(","));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(60);
+  await page.context().close();
+}
+
 head("Food description — editable, auto-updates on heal, length-capped");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
