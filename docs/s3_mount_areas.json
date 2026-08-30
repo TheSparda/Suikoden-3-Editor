@@ -1,7 +1,7 @@
 {
  "_source": "Scanned from the 28 DATA/*.BIN area archives on Suikoden III (USA).iso, 2026-08-30. Archives are UNCOMPRESSED: asset record names (cha_/imf_/ctx_) and animation clip names are plain text on disc.",
  "_mounts": "Mount models present in that archive, with the cha_ variant numbers found. ground_complete = the archive carries the full 001/002/005/010/020/021 field ground-ride set that krum/kru2/zkum/s2um use. It is a krum-shaped test and does not fit mskr/msx1 (party-character rigs) or guli/brit (flyers).",
- "_riders": "Rider models present with their 07x bank \u2014 the FIELD half of the mounted animation set (3xx is the battle half; the same ten models carry both, plus msk1/msk2/jyan which are field-only).",
+ "_riders": "Per area: which rider models have ride clips bundled there. Variant legend (exact, by clip containment): 070/970 rideon, 071/971 rdwalk, 072/972 rdfastwalk, 073/973 rdfastrun, 074/974 ride_neutral, 075/975 rd_inanaki, 080 fly, 301/320/340 mounted battle. 07x and 97x are parallel copies of the same ground set.",
  "_caveat": "This is asset residency, not proof the game mounts you there. A bundled rider model carries its ride clips whether or not that scene uses them.",
  "areas": {
   "AKMT": {
@@ -776,6 +776,713 @@
      "074",
      "075"
     ]
+   }
+  }
+ },
+ "riders_by_area": {
+  "HGB1": {
+   "name": "Yaza Plain (Budehuc gate)",
+   "mounts": [
+    "krum"
+   ],
+   "riders": {
+    "syu1": {
+     "ground": [
+      "970",
+      "971",
+      "972",
+      "973",
+      "974",
+      "975"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "HNKT": {
+   "name": "Budehuc Castle",
+   "mounts": [
+    "brit",
+    "guli",
+    "krum",
+    "mskr",
+    "msx1",
+    "zkum"
+   ],
+   "riders": {
+    "bols": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "futi": {
+     "ground": [
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "jyan": {
+     "ground": [
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "leoo": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "loll": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "mstk": {
+     "ground": [
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "psvl": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu1": {
+     "ground": [
+      "074",
+      "970",
+      "971",
+      "972",
+      "973",
+      "974"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu2": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "KRVI": {
+   "name": "Karaya Village",
+   "mounts": [
+    "guli",
+    "krum",
+    "zkum"
+   ],
+   "riders": {
+    "bols": {
+     "ground": [],
+     "fly": [],
+     "battle": [
+      "301",
+      "320",
+      "340"
+     ]
+    },
+    "loll": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": [
+      "301",
+      "320"
+     ]
+    },
+    "syu1": {
+     "ground": [
+      "970",
+      "971",
+      "972",
+      "973",
+      "974"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu2": {
+     "ground": [],
+     "fly": [],
+     "battle": [
+      "301",
+      "320",
+      "340"
+     ]
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": [
+      "301",
+      "320",
+      "340"
+     ]
+    }
+   }
+  },
+  "ZKTR": {
+   "name": "Brass Castle",
+   "mounts": [
+    "guli",
+    "zkum"
+   ],
+   "riders": {
+    "bols": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "leoo": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "loll": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "psvl": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu1": {
+     "ground": [
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu2": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "MSVI": {
+   "name": "Le Buque",
+   "mounts": [
+    "mskr",
+    "msx1"
+   ],
+   "riders": {
+    "msk1": {
+     "ground": [
+      "070",
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [
+      "080"
+     ],
+     "battle": []
+    },
+    "msk2": {
+     "ground": [
+      "070",
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [
+      "080"
+     ],
+     "battle": []
+    },
+    "mstk": {
+     "ground": [
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [
+      "080"
+     ],
+     "battle": []
+    }
+   }
+  },
+  "TSVI": {
+   "name": "Chisha Village",
+   "mounts": [
+    "guli",
+    "mskr",
+    "msx1"
+   ],
+   "riders": {
+    "msk1": {
+     "ground": [
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [
+      "080"
+     ],
+     "battle": []
+    },
+    "mstk": {
+     "ground": [
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [
+      "080"
+     ],
+     "battle": []
+    },
+    "psvl": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu1": {
+     "ground": [
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "CRRA": {
+   "name": "Caleria",
+   "mounts": [
+    "brit"
+   ],
+   "riders": {
+    "futi": {
+     "ground": [
+      "070",
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "YMMT": {
+   "name": "Mountain Path",
+   "mounts": [
+    "brit"
+   ],
+   "riders": {
+    "futi": {
+     "ground": [
+      "070",
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "mstk": {
+     "ground": [
+      "071",
+      "073",
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "VDZK": {
+   "name": "Vinay del Zexay",
+   "mounts": [
+    "guli"
+   ],
+   "riders": {
+    "bols": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "leoo": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "psvl": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu2": {
+     "ground": [
+      "070"
+     ],
+     "fly": [],
+     "battle": [
+      "301"
+     ]
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "LZVI": {
+   "name": "Great Hollow",
+   "mounts": [
+    "guli"
+   ],
+   "riders": {
+    "syu2": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "LAST": {
+   "name": "Ceremonial Site",
+   "mounts": [
+    "guli"
+   ],
+   "riders": {
+    "syu1": {
+     "ground": [
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu2": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "AKMT": {
+   "name": "Kuput Forest",
+   "mounts": [
+    "s2um",
+    "zkum"
+   ],
+   "riders": {
+    "bols": {
+     "ground": [],
+     "fly": [],
+     "battle": [
+      "301"
+     ]
+    },
+    "syu2": {
+     "ground": [],
+     "fly": [],
+     "battle": [
+      "301"
+     ]
+    }
+   }
+  },
+  "IKVI": {
+   "name": "Iksay Village",
+   "mounts": [],
+   "riders": {
+    "bols": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "leoo": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "loll": {
+     "ground": [
+      "070",
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "psvl": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
+   }
+  },
+  "DKVI": {
+   "name": "Duck Village",
+   "mounts": [],
+   "riders": {
+    "psvl": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "syu1": {
+     "ground": [
+      "074"
+     ],
+     "fly": [],
+     "battle": []
+    },
+    "zkk1": {
+     "ground": [
+      "071",
+      "072",
+      "073",
+      "074",
+      "075"
+     ],
+     "fly": [],
+     "battle": []
+    }
    }
   }
  }
