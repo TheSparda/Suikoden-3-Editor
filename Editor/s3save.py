@@ -314,7 +314,7 @@ ITEM_ID_MAX = 0x2FF
 ITEM_FLAG_DISPLAYED = 0x8000
 ITEM_ID_MASK = 0x7FFF
 
-# Stackable vs one-per-slot, from the count field's behaviour over 2337 real entries:
+# Stackable vs one-per-slot, from the count field's behaviour over 2327 real entries:
 #   consumables/food   id < 0x0A0    count 0..6   (stackable; per-item stack size)
 #   equipment & runes   0x0A0-0x1EF  count 0 in 986/986 entries — one item per slot
 #   trade goods         0x1F0-0x1FF  count 1..9   (stackable)
@@ -325,11 +325,53 @@ ITEM_ID_MASK = 0x7FFF
 # never produces: it displays, but the whole slot is freed the moment one item leaves it,
 # which is exactly the reported "attach 1 Fury Rune and the other 2 vanish".
 ITEM_QTY_MAX = 9              # herrvillain doc: item qty 0-9
+# The bands above are the default, but they are not the whole story: the corpus covers 213
+# of the 508 item ids, and nine of those contradict a pure band test. Embedded as exceptions
+# so the classification follows the data rather than a tidy boundary.
+#   Stat stones read count 0 in every save despite sitting in the consumable band. Six of
+#   the seven are observed (0x0B-0x0E, 0x10, 0x11) and all agree, so the contiguous category
+#   block 0x0B-0x11 is treated as one-per-slot — 0x0F (Stone Of Mag-Def) by interpolation.
+#   Sacrificial Jizo and Dragon Incense likewise read 0.
+ITEM_ONE_PER_SLOT_EXC = set(range(0x0B, 0x12)) | {0x9E, 0x9F}
+#   Grape is an ingredient in the key-item band and does carry a count.
+ITEM_STACKABLE_EXC = {0x202}
 
 def item_stackable(iid):
-    """True if this item id carries a real count; False if it is one-item-per-slot."""
+    """True if this item id carries a real count; False if it is one-item-per-slot.
+
+    Beware: ~58% of the item table never appears in the sample saves, so for those ids this
+    is the band rule's best guess, not a verified fact. apply_edits_to_gamedata prefers the
+    evidence in the save being edited when the same item is already held somewhere in it."""
     iid &= ITEM_ID_MASK
+    if iid in ITEM_ONE_PER_SLOT_EXC:
+        return False
+    if iid in ITEM_STACKABLE_EXC:
+        return True
     return iid < 0xA0 or 0x1F0 <= iid < 0x200
+
+
+def item_stackable_for(gamedata, iid):
+    """item_stackable(), refined by how THIS save already stores that item.
+
+    Since ~58% of the item table never appears in the sample saves, the band rule is a guess
+    for those ids — but if the player already holds the item, the entries in their own save
+    settle it. The override is deliberately ONE-DIRECTIONAL: the save may only demote an item
+    to one-per-slot, never promote it to stackable. A save edited by an older build can
+    contain runes carrying a bogus count of 1 (the bug being fixed here), and promoting on
+    that evidence would keep writing the broken shape for exactly the players who hit it.
+    Demoting is safe in both directions: the old build never wrote 0 for a new item, and
+    one-per-slot is the shape that provably survives."""
+    iid &= ITEM_ID_MASK
+    guess = item_stackable(iid)
+    if not iid or not guess:
+        return guess
+    counts = [qty for slot in range(INV_BLOCKS * 30)
+              for raw, qty in [struct.unpack_from("<HH", gamedata,
+                                                  INV_BASE + slot * INV_ENTRY)]
+              if raw and (raw & ITEM_ID_MASK) == iid]
+    if counts and max(counts) == 0:
+        return False              # the game's own entries hold this one per slot
+    return True
 
 # Roster order for the character blocks. CHAR_BASE (0x33AC) is HUGO — the real
 # story "Flame Champion" record lives one block earlier (0x3320) and is not a
@@ -593,7 +635,7 @@ def decode_inventory(gamedata, story_phase=0):
             last_used = k
             items.append({"slot": slot, "addr": off, "id": iid, "qty": qty,
                           "category": item_category(iid),
-                          "stackable": item_stackable(iid),
+                          "stackable": item_stackable_for(gamedata, iid),
                           "displayed": bool(raw & ITEM_FLAG_DISPLAYED),
                           "rawId": raw,
                           "unknownId": iid > ITEM_ID_MAX,
@@ -616,27 +658,35 @@ def validate_save(gamedata, chars, inventory, meta=None):
 
     The strongest check is the last one: the PS2 browser title of an S3 save states the
     chapter protagonist's level, so the save carries its own answer for the field this issue
-    got wrong. If our decoded level disagrees with the title, the level offset is wrong."""
+    got wrong. If our decoded level disagrees with the title, the level offset is wrong.
+
+    Each entry is (severity, text). "error" means the layout looks wrong and editing is
+    unsafe; "info" means the discrepancy has a benign explanation the user should simply be
+    told. Keeping them apart matters: the title-vs-level check legitimately trips on a save
+    whose protagonist level was edited here and then reloaded, and crying corruption at that
+    would train people to ignore the banner that catches the real bug."""
     warn = []
+    err = lambda t: warn.append(("error", t))
+    info = lambda t: warn.append(("info", t))
     bad_ids = [c for c in chars if c.get("idMismatch")]
     if bad_ids:
-        warn.append("character record id mismatch at roster %s (expected %s, found %s) — the "
+        err("character record id mismatch at roster %s (expected %s, found %s) — the "
                     "roster order may have shifted; treat character edits as unsafe" % (
                         ", ".join(str(c["rosterIndex"]) for c in bad_ids[:5]),
                         bad_ids[0]["idExpected"], bad_ids[0]["id"]))
     over = [c for c in chars if c["hasData"] and c["curHP"] > c["maxHP"]]
     if over:
-        warn.append("%d character(s) decode with current HP above max HP (first: %s %d/%d) — "
+        err("%d character(s) decode with current HP above max HP (first: %s %d/%d) — "
                     "the HP offsets look wrong" % (len(over), over[0]["name"],
                                                    over[0]["curHP"], over[0]["maxHP"]))
     bad_lv = [c for c in chars if c["level"] > LEVEL_MAX or c["weaponLv"] > WEAPONLV_MAX]
     if bad_lv:
-        warn.append("%d character(s) decode outside the level/weapon-level caps (first: %s "
+        err("%d character(s) decode outside the level/weapon-level caps (first: %s "
                     "Lv%d WLv%d)" % (len(bad_lv), bad_lv[0]["name"], bad_lv[0]["level"],
                                      bad_lv[0]["weaponLv"]))
     bad_item = [it for bag in inventory for it in bag["items"] if it["unknownId"]]
     if bad_item:
-        warn.append("%d inventory slot(s) hold an id past the end of the item table (first: "
+        err("%d inventory slot(s) hold an id past the end of the item table (first: "
                     "0x%04X) — the bag layout may be wrong" % (len(bad_item),
                                                                bad_item[0]["rawId"]))
     phase = gamedata[GLOBAL["storyPhase"][0]]
@@ -650,7 +700,7 @@ def validate_save(gamedata, chars, inventory, meta=None):
            for n in range(1, INV_BLOCKS)]
     sequential = all(seq[i] == 30 for i in range(len(seq) - 1) if seq[i + 1] > 0)
     if merged != sequential and any(seq):
-        warn.append("story phase %d says the parties are %s but the storage blocks look %s — "
+        err("story phase %d says the parties are %s but the storage blocks look %s — "
                     "the bag labels for this save may be wrong" % (
                         phase, "merged" if merged else "separate",
                         "merged" if sequential else "separate"))
@@ -659,8 +709,14 @@ def validate_save(gamedata, chars, inventory, meta=None):
     if want:
         got = next((c["level"] for c in chars if c["name"] == who), None)
         if got is not None and got != want:
-            warn.append("the save title reports %s at Lv%d but the character record decodes "
-                        "Lv%d — the level offset is wrong" % (who, want, got))
+            # The title is written by the GAME when it saves, so it legitimately goes stale
+            # the moment this editor changes that character's level — say so, or a user who
+            # edits the protagonist and reloads their own file gets told it is corrupt.
+            info("the save title says %s is Lv%d but the character record decodes "
+                        "Lv%d. Expected if you changed that level here and reloaded the "
+                        "result (the game rewrites the title on its next save). If you have "
+                        "not edited it, the level offset is wrong — please report it."
+                        % (who, want, got))
     return warn
 
 
@@ -679,13 +735,19 @@ def decode_save(gamedata, meta=None):
     chars = [c for c in (decode_character(gamedata, i)
                          for i in range(min(CHAR_COUNT, len(ROSTER)))) if c]
     inv = decode_inventory(gamedata, g.get("storyPhase", 0))
+    checks = validate_save(gamedata, chars, inv, meta)
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
             "party": decode_party(gamedata),
             "characters": chars,
             "inventory": inv,
             "statNames": list(STAT_NAMES),
-            "warnings": validate_save(gamedata, chars, inv, meta)}
+            # "problems" are layout errors (editing is unsafe); "notes" are discrepancies
+            # with a benign explanation. `warnings` stays as the flat list of texts so
+            # existing callers keep working.
+            "problems": [t for sev, t in checks if sev == "error"],
+            "notes": [t for sev, t in checks if sev == "info"],
+            "warnings": [t for _, t in checks]}
 
 
 # Editable per-character scalar fields -> (offset within the 140-byte block, byte width, cap).
@@ -793,6 +855,10 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
     # whole slot is freed as soon as one item leaves it — issue #5's "attach 1 Fury Rune and
     # the other 2 disappear", and the reason editor-added runes did not survive a chapter
     # transition. So the count is derived from the item, not from the caller's default.
+    # Read the save's own evidence from the ORIGINAL bytes, before this batch's writes
+    # muddy the picture.
+    def stackable(iid):
+        return item_stackable_for(gamedata, iid)
     for slot, ent in (inv_edits or {}).items():
         slot = int(slot)
         off = INV_BASE + slot * INV_ENTRY        # slot is absolute, from the first bag
@@ -814,13 +880,12 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
             if (new_id & ITEM_ID_MASK) == 0:     # clearing a slot -> zero its count too
                 struct.pack_into("<H", b, off + 2, 0)
             elif "qty" not in ent:
-                struct.pack_into("<H", b, off + 2,
-                                 1 if item_stackable(new_id) else 0)
+                struct.pack_into("<H", b, off + 2, 1 if stackable(new_id) else 0)
         if "qty" in ent:
             iid = struct.unpack_from("<H", b, off)[0] & ITEM_ID_MASK
             if not iid:
                 qty = 0
-            elif item_stackable(iid):
+            elif stackable(iid):
                 qty = max(1, _clamp(ent["qty"], 2, ITEM_QTY_MAX))
             else:
                 qty = 0                          # one item per slot; the count must be 0

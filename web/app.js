@@ -369,13 +369,16 @@ function drawSlot() {
 
   // The engine cross-checks the decoded save against invariants a correct layout cannot
   // violate — including the level it reads against the level the save's own PS2 browser
-  // title reports. Anything it flags means editing this save is unsafe, so say so loudly
-  // rather than letting a mislabelled field get written back.
-  const warns = (s.warnings || []).length
+  // title reports. `problems` mean editing is unsafe and are shouted about; `notes` are
+  // discrepancies with a benign explanation (e.g. the title going stale after you edit a
+  // protagonist's level here) and get a quiet box, so the loud one keeps its meaning.
+  const warns = ((s.problems || []).length
     ? `<div class="warnbox" style="margin:0 0 10px"><b>⚠ This save does not decode cleanly.</b>
          Editing it may write to the wrong place — please report it with the save attached.
-         <ul style="margin:6px 0 0 18px">${s.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`
-    : "";
+         <ul style="margin:6px 0 0 18px">${s.problems.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`
+    : "") + ((s.notes || []).length
+    ? `<div class="muted" style="margin:0 0 10px">${s.notes.map((w) => `ℹ ${esc(w)}`).join("<br>")}</div>`
+    : "");
 
   $("#slotbody").innerHTML = `
     ${warns}
@@ -905,8 +908,19 @@ function drawItems() {
 }
 
 // Mirrors s3save.item_stackable — the count field is real only for consumables/food and the
-// 0x1F0-0x1FF trade goods. Everything else is one item per slot with the count left at 0.
-function itemStackable(id) { return id > 0 && (id < 0xa0 || (id >= 0x1f0 && id < 0x200)); }
+// 0x1F0-0x1FF trade goods; everything else is one item per slot with the count left at 0.
+// The exceptions match s3save's: the stat stones and the two battle items just below 0x0A0
+// carry no count despite being in the consumable band, and Grape does despite being a key
+// item. This is only for display — the engine decides what actually gets stored, and it
+// also consults how the save already holds that item.
+const ITEM_ONE_PER_SLOT_EXC = new Set([0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x9e, 0x9f]);
+const ITEM_STACKABLE_EXC = new Set([0x202]);
+function itemStackable(id) {
+  if (!(id > 0)) return false;
+  if (ITEM_ONE_PER_SLOT_EXC.has(id)) return false;
+  if (ITEM_STACKABLE_EXC.has(id)) return true;
+  return id < 0xa0 || (id >= 0x1f0 && id < 0x200);
+}
 const ITEM_QTY_MAX = 9;              // s3save.ITEM_QTY_MAX — the game's count domain is 0-9
 
 // Mirrors s3save.item_category.
