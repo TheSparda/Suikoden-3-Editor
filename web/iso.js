@@ -39,12 +39,28 @@
   };
   const PRICE_LADDER = [3970620, 15, 4];    // 15 x u32 potch — a shared price scale
   const ITEM1 = [4136564, 3, 4];            // 3 x u32, meaning not identified
-  const SPELL = { off: 0x3EC2A0, count: 94, stride: 0x20, elem: 0x24 };   // elem = stride+0x04
-  const UNITE = { off: 0x3ECF90, count: 38, stride: 0x28 };
+  // Each record's LAST 8 bytes are stored one record AHEAD of the name/desc/power they belong
+  // to, so a spell reads every tail field at (own base + stride + x). Element was already known
+  // to sit there; two more tail fields are now pinned, each against both tables at once:
+  //   radius (+0x01 into the tail) — the size of the area/line template. Nonzero for every AREA
+  //     or LINE record and zero for every single/all-target one, 130/130 across the 94 spells
+  //     and 38 unites with no exception. Spells run 1..4 (Dancing Flames 2 -> Blazing Wall 3 ->
+  //     Explosion 4), every area unite is 3.
+  //   chance (+0x06 into the tail for spells, +0x04 for unites) — % chance the status lands.
+  //     Nonzero for exactly the records with flags14 bit21 set, again 130/130, and it reads
+  //     straight off the text: unite "Knight B" = 30 vs "30% chance of deathblow", Wind of
+  //     Sleep 60, Funeral Wind 80, Open Gate 80 (deathblow), Ready!/Go! 100.
+  // A unite record is 8 bytes longer than a spell record, so the same shift leaves its tail
+  // INSIDE its own record (+0x20..+0x27) — no next-record guard needed there.
+  const SPELL = { off: 0x3EC2A0, count: 94, stride: 0x20, elem: 0x24, radius: 0x21, chance: 0x26 };
+  const UNITE = { off: 0x3ECF90, count: 38, stride: 0x28, radius: 0x21, chance: 0x24 };
   // 60 recipe/dish records (0..59). Records 60-61 name-resolve to consumable ITEMS (Sacrificial
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
   const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
-  const GEAR = { stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
+  // Equipment records, 0x44 apart. These offsets are relative to the STATS record, which sits
+  // one record after the one carrying the name pointer — so the name pointer reads back at
+  // base-0x04 (= +0x40 of the preceding record). scanGear explains how a record is anchored.
+  const GEAR = { stride: 0x44, def: 0x10, price: 0x08, name: -0x04, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
   // RUNE item table — the text the game itself shows in the rune/equip menu. Indexed by ITEM
   // ID (record = off + id*stride), name ptr @+0x00 and description ptr @+0x04. Verified on a
   // pristine SLUS-20387: all 72 rune items line up, ids 317-365 (magic/attack) and 440-462
@@ -245,11 +261,18 @@
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
   const MAX_BY_GRADE = {}; MAX_OPTS.forEach(([v, l]) => (MAX_BY_GRADE[l] = v));   // "B+"->5, "A+"->1, "S"->7
   // spell/unite target byte (flags14 bits 8..15). AOE is a separate bit (0x8000).
-  // Low nibble = who (0xA foe, 0x2 all foes, 0x3 foes+allies, 0x1 ally side); bit 0x40 = pick
-  // ONE ally pair instead of the whole side (verified in the ISO: Kindness Drops / Vengeful
-  // Child = 0x41, Clay Guardian / Canopy Defense = 0x01 — same nibble, only the pair bit differs).
+  // The byte is a bit set, not an enum: 0x01 = ally side, 0x02 = foe side (0x03 = both),
+  // 0x04 = centred on the CASTER (no aiming step), 0x08 = aim at one unit, 0x10 = line/front,
+  // 0x40 = pick ONE ally pair instead of the whole side. So 0x0A = one foe, 0x09 = one ally
+  // (Healing Wind / Mother Ocean: "Restores ... of 1 ally"), 0x05 = the caster alone (the
+  // Sword/Amulet runes: "Enhances chanter's ..."), 0x41 = one ally pair (Kindness Drops /
+  // Vengeful Child = 0x41 vs Clay Guardian / Canopy Defense = 0x01 — same side, pair bit only).
+  // 0x06 = 0x04|0x02: an area of foes centred on the caster, with nothing to aim at. Every
+  // spell carrying it is a self-centred burst — War Horse (Cecile), Watari Special ("Explosion.
+  // DMGx1.5 to foes in area") and Goss (the axe swing) — and their descriptions say "to foes in
+  // area" where the aimed area spells at 0x82 all say "to TARGET+foes in area".
   const TARGET_OPTS = [[0x0A, "Single target"], [0x02, "All foes"], [0x03, "All foes + allies"],
-    [0x01, "All allies"], [0x41, "Single ally (pair)"]];
+    [0x01, "All allies"], [0x41, "Single ally (pair)"], [0x06, "Foes around caster"]];
 
   // gear effect-slot semantics (mirror s3patch.py)
   const GEAR_EFFECT_TYPES = { 0: "(none)", 1: "HP regen/turn", 2: "Stat bonus", 3: "Accuracy +%",
@@ -352,6 +375,9 @@
   let VIEW = "chars", SEARCH = "";
   let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
   let gearCache = null;                     // {itemId: absStatsOffset}
+  let gearAlias = {};                       // renamed gear: newName -> itemId. scanGear anchors a
+                                            // record by its on-disc name, so a rename would hide it
+                                            // from the next rescan without this.
   const FIELD_REG = {};                     // absOff -> {group,label,off:absOff,width,kind}
   const dec = new TextDecoder("latin1");
 
@@ -363,6 +389,7 @@
 
   // ---- block read/write (all offsets are ABSOLUTE ISO offsets) ---------------
   const inBlk = (off, n) => off >= ELF_BASE && off + n <= ELF_END;
+  const clampInt = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+v || 0)));
   function r8(o) { return BUF[o - ELF_BASE]; }
   function r16(o) { return DV.getUint16(o - ELF_BASE, true); }
   function r32(o) { return DV.getUint32(o - ELF_BASE, true); }
@@ -485,6 +512,8 @@
     const uniteChars = await grabOpt("../Editor/s3_unite_chars.json");  // who is in each unite
     const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
     const shops = await grabOpt("../Editor/s3_shops.json");        // shop counter map + town names
+    const runeFood = await grabOpt("../Editor/s3_rune_food_desc.json");    // rune/food menu text + spell lists
+    const runeOwner = await grabOpt("../Editor/s3_rune_owner.json");       // whose rune each signature rune is
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -498,12 +527,13 @@
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
-            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources, shops };
+            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources,
+            runeFood, runeOwner, shops };
     return REF;
   }
 
   // ---- label / option helpers ------------------------------------------------
-  const itemName = (id) => REF.items[id] || "#" + id;
+  const itemName = (id) => gearName(id) || REF.items[id] || "#" + id;
   const skillName = (id) => REF.skills[id] || "#" + id;
   const itemLabel = (id) => id ? `${hex(id, 3)} · ${itemName(id)}` : "— none —";
   const skillLabel = (id) => id ? `${hex(id, 2)} · ${skillName(id)}` : "— none —";
@@ -535,7 +565,8 @@
   }
   function decodeTarget(f14) {
     const tb = (f14 >>> 8) & 0xFF, area = !!(f14 & AREA_BIT), low = tb & 0x0F;
-    let who = { 0xA: "single", 0x2: "all-foes", 0x3: "foes+allies", 0x1: "self/ally" }[low] || "who" + low;
+    let who = { 0xA: "single", 0x2: "all-foes", 0x3: "foes+allies", 0x1: "self/ally",
+      0x6: "foes-around-caster" }[low] || "who" + low;
     if (tb & 0x40) who += "(1 pair)";       // pair-select bit: target one ally pair, not the side
     const shape = area ? "AREA" : (tb & 0x10) ? "LINE" : low === 0xA ? "single" : "spread";
     return `${shape}:${who}`;
@@ -767,7 +798,7 @@
     ROOMS = rareas; ROOMS_SKIPPED = rskipped;
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -1237,7 +1268,7 @@
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
-    ["files", "Files"], ["text", "Text"], ["ref", "Reference"]];
+    ["text", "Text"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -1317,7 +1348,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
-      gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
+      gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
@@ -1325,9 +1356,9 @@
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster. Your own units use the characters' save stats. Army skill list included as reference.",
-      ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
+      ref: "Reference (read-only): searchable item, rune and skill lookups, where each item comes from, and every packed sub-file on the disc.",
     };
-    q("#isoHint").textContent = hints[VIEW] || "";
+    q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
     const host = q("#isoView");
     // remember which records are expanded so a re-render (e.g. a per-field revert) keeps your place
     const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
@@ -1348,7 +1379,6 @@
     else if (VIEW === "encounter") drawEncounter(host);
     else if (VIEW === "enemies") drawEnemies(host);
     else if (VIEW === "war") drawWar(host);
-    else if (VIEW === "files") drawFiles(host);
     else if (VIEW === "ref") drawReference(host);
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
@@ -1597,6 +1627,15 @@
   // Equipment carries its description in its own gear record, so read that live too — a
   // description rewritten on the Gear tab then shows up in every picker and tooltip. The
   // bundled s3_item_desc.json stays as the fallback for items scanGear can't pin down.
+  // Equipment carries its own name string as well as its description, so read that live too — a
+  // rename made on the Gear tab then shows up in every picker, tooltip and review row.
+  function gearName(id) {
+    if (!BUF || !REF) return "";
+    const g = scanGear()[id];
+    if (!g) return "";
+    const np = r32(g + GEAR.name);
+    return np ? strAt(np) : "";
+  }
   function gearDesc(id) {
     if (!BUF) return "";
     const g = scanGear()[id];
@@ -1888,6 +1927,12 @@
     if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((f.target & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
     if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
     if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
+    if (f.radius != null && idx + 1 < SPELL.count) {
+      const ro = off + SPELL.radius; writeW(ro, 1, clampInt(f.radius, 0, 255)); reg(ro, 1, "num", name, "Radius");
+    }
+    if (f.chance != null && idx + 1 < SPELL.count) {
+      const co = off + SPELL.chance; writeW(co, 2, clampInt(f.chance, 0, 100)); reg(co, 2, "num", name, "Status chance %");
+    }
     return descRes;
   }
   const targetOptsHTML = (cur) => {
@@ -1910,6 +1955,8 @@
         <label class="field"><span>Target</span><select id="rsTarget"><option value="">— no change —</option>${TARGET_OPTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
         <label class="field"><span>Area of effect</span><select id="rsAoe"><option value="">— no change —</option><option value="1">on</option><option value="0">off</option></select></label>
         <label class="field"><span>Status</span><select id="rsStatus">${statOptsBlank}</select></label>
+        <label class="field"><span>Radius</span><input type="number" id="rsRadius" min="0" max="255" placeholder="no change"></label>
+        <label class="field"><span>Status chance %</span><input type="number" id="rsChance" min="0" max="100" placeholder="no change"></label>
       </div>
       <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:4px">
         <span class="muted">Presets:</span>
@@ -1932,7 +1979,8 @@
       rows.push({ i, off, name });
     }
     const body = rows.map(({ i, off, name }) => {
-      const canElem = i + 1 < SPELL.count, elVal = canElem ? (r16(off + SPELL.elem) & 0xFF) : 0;
+      const canTail = i + 1 < SPELL.count, elVal = canTail ? (r16(off + SPELL.elem) & 0xFF) : 0;
+      const radVal = canTail ? r8(off + SPELL.radius) : 0, chVal = canTail ? r16(off + SPELL.chance) : 0;
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F, f18 = r32(off + 0x18);
       const statCur = f18 === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => f18 === (1 << b)) || [])[1] || "custom";
       const elemSel = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === elVal ? " selected" : ""}>${l}</option>`).join("");
@@ -1945,16 +1993,18 @@
         : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
-          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
+          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
         <div class="char-body">
           ${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="sp" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
-            <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canElem ? "" : "disabled"}>${elemSel}</select></label>
+            <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
             <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
             <label class="field"><span>Status</span><select class="sp" data-i="${i}" data-k="status">${statOpts}</select></label>
+            <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}></label>
+            <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
     host.innerHTML = reskin + updBox + body;
@@ -1970,7 +2020,7 @@
         case "instant": set("#rsCast", "0"); break;
         case "poison": set("#rsStatus", "poison"); break;
         case "nostatus": set("#rsStatus", "none"); break;   // clears the inflicted status (flags18)
-        case "clear": ["#rsPower", "#rsCast", "#rsElem", "#rsTarget", "#rsAoe", "#rsStatus"].forEach((s) => set(s, "")); break;
+        case "clear": ["#rsPower", "#rsCast", "#rsElem", "#rsTarget", "#rsAoe", "#rsStatus", "#rsRadius", "#rsChance"].forEach((s) => set(s, "")); break;
       }
       setStatus("Preset filled — pick a rune and click “Apply to rune”.", "ok");
     }));
@@ -1997,8 +2047,10 @@
     const d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
     const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
     const f18 = r32(off + 0x18);
-    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${f18 ? " · " + decodeF18(f18) : ""}`;
-    const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"] };
+    const rad = i + 1 < SPELL.count ? r8(off + SPELL.radius) : 0;
+    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${rad ? " r" + rad : ""}${f18 ? " · " + decodeF18(f18) : ""}`;
+    const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"],
+      radius: [SPELL.radius, 1, "num"], chance: [SPELL.chance, 2, "num"] };
     qa(".sp", d).forEach((el) => {
       const [o, w, kind] = MAP[el.dataset.k];
       if (kind === "flags14") markFlagsField(el, off + o, el.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
@@ -2023,6 +2075,8 @@
     if (num("#rsTarget") !== "") f.target = +num("#rsTarget");
     if (num("#rsAoe") !== "") f.aoe = num("#rsAoe") === "1";
     if (num("#rsStatus") !== "") f.status = num("#rsStatus");
+    if (num("#rsRadius") !== "") f.radius = +num("#rsRadius");
+    if (num("#rsChance") !== "") f.chance = +num("#rsChance");
     if (!Object.keys(f).length) return setStatus("Set at least one field to apply.", "warn");
     targets.forEach((i) => applySpell(i, f, spDescOn));
     drawView();
@@ -2041,6 +2095,7 @@
       + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
     host.innerHTML = updBox + (rows.map(({ i, off, name, who }) => {
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
+      const radVal = r8(off + UNITE.radius), chVal = r16(off + UNITE.chance);
       const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
       const descField = dmax > 0
         ? `<label class="field" style="margin:0 0 10px"><span>Description <span class="muted">(max ${dmax} chars)</span></span>
@@ -2057,19 +2112,23 @@
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
           <span class="muted un-who" style="flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc2(who || "")}">${esc2(who || "—")}</span>
-          <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
+          <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}</span></summary>
         <div class="char-body">${whoField}${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
             <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
+            <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}"></label>
+            <label class="field"><span>Status chance %</span><input type="number" class="un" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}"></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`);
-    const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"] };
+    const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"],
+      radius: [UNITE.radius, 1, "num"], chance: [UNITE.chance, 2, "num"] };
     const markUnite = (i) => {
       const off = UNITE.off + i * UNITE.stride, d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
-      d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
+      const rad = r8(off + UNITE.radius);
+      d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${rad ? " r" + rad : ""}`;
       qa(".un", d).forEach((c) => {
         const [o, w, kind] = UMAP[c.dataset.k];
         if (kind === "flags14") markFlagsField(c, off + o, c.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
@@ -2089,6 +2148,8 @@
       else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
       else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
       else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
+      else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); }
+      else if (k === "chance") { writeW(off + UNITE.chance, 2, clampInt(el.value, 0, 100)); reg(off + UNITE.chance, 2, "num", name, "Status chance %"); }
       markUnite(i);
     }));
     qa(".undesc", host).forEach((el) => (el.onchange = () => {
@@ -2149,6 +2210,7 @@
   function scanGear() {
     if (gearCache) return gearCache;
     const nameset = {}; for (const id in REF.items) nameset[REF.items[id]] = +id;
+    for (const nm in gearAlias) nameset[nm] = gearAlias[nm];   // gear renamed this session still anchors
     const isptr = (w) => w >= ELF_VADDR && w <= ELF_VADDR + ELF_LEN;
     const out = {};
     const N = BUF.length - 2 * GEAR.stride;
@@ -2198,6 +2260,7 @@
       if (SEARCH && !nm.toLowerCase().includes(SEARCH) && hex(iid, 3).toLowerCase() !== SEARCH) continue;
       const base = g[iid], def = base + GEAR.def, price = base + GEAR.price, dptr = r32(base + 0x00);
       const descStr = strAt(dptr), descMax = origSlotLen(dptr);
+      const nptr = r32(base + GEAR.name), nameMax = origSlotLen(nptr);
       const effs = GEAR.effs.map((eo) => effectSlotHTML(nm, base, eo)).join("");
       rows.push(`<details class="char" data-base="${base}"><summary><span class="chev">▸</span>
           <span class="nm">${esc2(nm)}</span><span class="muted">${hex(iid, 3)}</span>
@@ -2206,6 +2269,8 @@
           <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
           <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
         </div>
+        <label class="field" style="margin-top:8px"><span>Name (${nameMax} char slot)</span>
+          <input type="text" class="ge-name" maxlength="${nameMax}" value="${esc2(nm)}" data-nptr="${nptr}" data-iid="${iid}" data-g="${esc2(nm)}"></label>
         <label class="field" style="margin-top:8px"><span>Description (${descMax} char slot)</span>
           <input type="text" class="ge-desc" maxlength="${descMax}" value="${esc2(descStr)}" data-dptr="${dptr}" data-g="${esc2(nm)}"></label>
         <h4>Effect slots</h4>${effs}</div></details>`);
@@ -2225,6 +2290,26 @@
         }
       };
       markField(inp, off, w, "num");
+    });
+    // Renaming is the same in-place, same-slot write the descriptions use: the string is
+    // overwritten where it already sits and null-padded, so no pointer anywhere on the disc moves.
+    // Every menu that shows the item reads through that one pointer, so the new name is global.
+    qa("input.ge-name", host).forEach((inp) => {
+      const nptr = +inp.dataset.nptr, iid = +inp.dataset.iid, was = inp.dataset.g;
+      inp.onchange = () => {
+        const want = inp.value.trim();
+        if (!want) { inp.value = strAt(nptr); return setStatus("An item needs a name — left unchanged.", "warn"); }
+        const r = setDescText(nptr, want, was, "Name");
+        if (r.tooLong) { setStatus(`"${want}" is too long — the name slot holds ${r.max} characters.`, "warn"); inp.value = strAt(nptr); }
+        else if (r.skip) setStatus("This item's name can't be edited on this disc.", "warn");
+        else { gearAlias[want] = iid; gearCache = null; }   // rescan must still find the record
+        const now = strAt(nptr);
+        inp.value = now;
+        const sum = inp.closest("details.char");
+        if (sum) { const t = q(".nm", sum); if (t) t.textContent = now; }
+        markField(inp, vaOff(nptr), origSlotLen(nptr), "text");
+      };
+      markField(inp, vaOff(nptr), origSlotLen(nptr), "text");
     });
     qa("input.ge-desc", host).forEach((inp) => {
       const dptr = +inp.dataset.dptr;
@@ -3299,17 +3384,22 @@
     map: "geometry / model data",
     data: "not yet identified",
   };
-  function drawFiles(host) {
+  function subfileIndex() {
     const idx = (typeof window !== "undefined" && window.S3_TEST_SUBFILES) || (REF && REF.subfiles);
-    if (!idx || !Array.isArray(idx.archives)) {
-      host.innerHTML = `<div class="muted">Needs <code>Editor/s3_subfiles.json</code>; it didn't load.</div>`;
+    return idx && Array.isArray(idx.archives) ? idx : null;
+  }
+  function drawFiles(host) {
+    const idx = subfileIndex();
+    if (!idx) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_subfiles.json</code>; it didn't load.</div>`;
+      wireRefTabs(host);
       return;
     }
     const kinds = idx.kinds || [];
     const total = idx.archives.reduce((a, x) => a + x.files.length, 0);
     const tally = {};
     idx.archives.forEach((a) => a.files.forEach((fl) => { const k = kinds[fl[2]]; tally[k] = (tally[k] || 0) + 1; }));
-    const parts = [`<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
+    const parts = [refTabs(), `<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
       <b>${total.toLocaleString()}</b> across ${idx.archives.length} archives — from the directory in
       <code>DATA/FSECT.BIN</code>. ${kinds.map((k) => `<b>${tally[k] || 0}</b> ${k}`).join(" · ")}.
       Read-only: the editable pieces inside these files have their own views. <b>Peek</b> reads the first
@@ -3330,6 +3420,7 @@
         <div class="char-body"><div class="muted">expanding…</div></div></details>`);
     });
     host.innerHTML = parts.join("");
+    wireRefTabs(host);
     qa("details.sfarch", host).forEach((det) => det.addEventListener("toggle", () => {
       if (!det.open || det._built) return;
       det._built = true;
@@ -3380,8 +3471,21 @@
     return out.join("\n");
   }
 
-  // ---- Reference (read-only item / skill browser) ----------------------------
+  // ---- Reference (read-only item / rune / skill browser) ---------------------
   let REF_KIND = "items";
+  // Reference is the disc's read-only half, so everything that only *describes* the game
+  // lives under it — item, rune and skill lookups, where an item comes from, and the sub-file
+  // directory. Each sub-tab replaces the view hint, because "read-only lookup" is the only
+  // thing they share; what you're looking at differs a lot between them.
+  const REF_HINT = {
+    items: "Reference (read-only): every item id on the disc, with its category and description.",
+    runes: "Reference (read-only): every rune — what it does, the spells it grants, who carries it and where it drops.",
+    skills: "Reference (read-only): every skill — what each rank is worth, who can learn it and how far, and who has it on this disc.",
+    sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
+    files: "Reference (read-only): every packed sub-file on the disc — which archive holds it, where it starts, how big it is, and what it turned out to be.",
+  };
+  let RUNE_GROUP = "";     // Runes browser: family filter chip ("" = all)
+  let SKILL_TYPE = "";     // Skills browser: type filter chip ("" = all)
   // "Where does this item come from" — the read-only half of everything the enemy index and
   // the guides know. Two provenance kinds, deliberately kept apart in the UI as well as in
   // the JSON: `drops` were decoded off this disc and are stated as fact; `guide` rows are
@@ -3401,9 +3505,15 @@
     const src = REF.itemSources && REF.itemSources.items && REF.itemSources.items[String(id)];
     if (!src) return [];
     const out = [];
-    (src.drops || []).forEach((d) => out.push({ disc: true,
-      what: `${d.enemy} · ${d.archive}`,
-      detail: `Lv ${d.lv} · drop weight ${d.weight}/1000 (${(d.weight / 10).toFixed(1)}%)` }));
+    // One row per (enemy, level, weight) — the archives hosting that pack are a detail of
+    // the same fact, not separate findings. Ungrouped this was 625 rows for 188 facts.
+    (src.drops || []).forEach((d) => {
+      const a = d.archives || (d.archive ? [d.archive] : []);
+      const where = a.length <= 4 ? a.join(", ") : `${a.slice(0, 4).join(", ")} +${a.length - 4} more`;
+      out.push({ disc: true, what: d.enemy,
+        detail: `Lv ${d.lv} · drop weight ${d.weight}/1000 (${(d.weight / 10).toFixed(1)}%)`
+          + (where ? ` · ${where}` : "") });
+    });
     (src.guide || []).forEach((g) => out.push({ disc: false,
       what: SRC_LABEL[g.kind] || g.kind, detail: g.text }));
     return out;
@@ -3442,29 +3552,309 @@
     wireRefTabs(host);
   }
 
-  function refTabs() {
-    const n = (REF.itemSources && REF.itemSources.items) ? Object.keys(REF.itemSources.items).length : 0;
-    const on = (k) => (REF_KIND === k ? " on" : "");
-    return `<div class="subtabs" style="margin-bottom:10px">
-        <button class="chip${on("items")}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
-        <button class="chip${on("skills")}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button>
-        <button class="chip${on("sources")}" data-ref="sources">Item sources (${n})</button></div>`;
-  }
-  function wireRefTabs(host) {
-    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawReference(host); }));
+  // Pickup locations. Two tables that are deliberately NOT joined to each other:
+  //
+  //   the disc  — every archive's chests / lootable corpses / herb spots, counted off the map
+  //               data by the game's own object names (takara 宝, emono 獲物, herb_*). An
+  //               archive ships several chapter variants of the same maps, so the figure is
+  //               the MAXIMUM over its variants; summing would count one chest per chapter.
+  //   the guide — the six named treasure-boss chests and the rare gear the Suikosource guide
+  //               says each holds, with the guardian sitting on it.
+  //
+  // The disc carries no place names anywhere, only tags like YMMT and map ids like ymmt_101,
+  // so mapping "Mountain Path" onto an archive would be a guess in a data costume. The UI
+  // says that outright rather than quietly printing one merged table.
+  function drawPickups(host) {
+    const src = REF.itemSources || {};
+    const places = src.places || [], chests = src.chests || [];
+    if (!places.length && !chests.length) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_item_sources.json</code>; it didn't load.</div>`;
+      wireRefTabs(host); return;
+    }
+    const q2 = SEARCH;
+    const pk = (n2, label) => (n2 ? `<span class="pkct">${n2} ${label}${n2 === 1 ? "" : "s"}</span>` : "");
+    const prows = places.filter((p) => !q2 || (p.archive + " " + (p.zones || []).join(" ")).toLowerCase().includes(q2))
+      .map((p) => `<tr><td class="sl">${p.area != null ? "0x" + p.area.toString(16).toUpperCase().padStart(2, "0") : "—"}</td>
+        <td><b>${esc2(p.archive)}</b><div class="muted">${esc2((p.zones || []).join(", ") || "no battle zones indexed")}</div></td>
+        <td>${pk(p.chest, "chest")}${pk(p.corpse, "corpse")}${pk(p.herbs, "herb spot")}</td>
+        <td class="muted">${p.variants} chapter variant${p.variants === 1 ? "" : "s"}</td></tr>`);
+    const crows = chests.filter((c) => !q2 || (c.place + " " + c.items.map((i) => itemName(+i.item)).join(" ")).toLowerCase().includes(q2))
+      .map((c) => {
+        const guards = [...new Set(c.items.map((i) => i.guardian).filter(Boolean))];
+        return `<tr><td><b>${esc2(c.place)}</b>${guards.length
+            ? `<div class="muted">guarded by ${esc2(guards.join(" · "))}</div>` : ""}</td>
+          <td>${c.items.map((i) => `<span class="pkitem">${esc2(itemName(+i.item))}</span>`).join(" ")}</td></tr>`;
+      });
+    host.innerHTML = refTabs() +
+      `<div class="muted" style="margin:0 0 10px">Where the game hides things. The first table is counted off
+        <b>your disc</b> — the map objects the game itself names <code>takara</code> (宝, a chest),
+        <code>emono</code> (獲物, a lootable corpse) and <code>herb_*</code>. An archive ships the same maps
+        several times over, one set per chapter, so the count is the most any single variant carries rather
+        than the total. The second table is the Suikosource guide's six treasure-boss chests.
+        <b>The two aren't linked</b>: the disc holds no place names at all, only tags like <code>YMMT</code>
+        and map ids like <code>ymmt_101</code>, so pairing "Mountain Path" with an archive would be a guess.
+        Nothing here is editable — a chest's contents are rolled at run time, not stored.</div>
+      <h3 class="sec">On the disc — pickups per area</h3>
+      <table class="invtbl"><thead><tr><th style="width:8%">Area</th><th style="width:34%">Archive · map ids</th>
+        <th>Pickups</th><th style="width:20%"></th></tr></thead>
+        <tbody>${prows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>
+      <h3 class="sec">From the guide — treasure-boss chests</h3>
+      <table class="invtbl"><thead><tr><th style="width:26%">Chest</th><th>Rare gear it holds</th></tr></thead>
+        <tbody>${crows.join("") || `<tr><td colspan="2" class="muted">no matches</td></tr>`}</tbody></table>`;
+    wireRefTabs(host);
   }
 
-  function drawReference(host) {
-    if (REF_KIND === "sources") return drawSources(host);
-    const isItems = REF_KIND === "items";
-    const list = isItems
-      ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))
-      : Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 2, nm: skillName(id), sub: (REF.skillRef && REF.skillRef[String(id)] || {}).type || "", desc: skillEffectText(id) }));
+  // ---- Runes browser ---------------------------------------------------------
+  // Runes fall into three families and the item-id list keeps each family contiguous, so these
+  // ranges ARE the classification — there is no per-rune table here to drift out of sync.
+  // Checked against Editor/Suikoden3_item_ids.txt: 22 + 27 + 23 = 72, which is exactly the
+  // number of items in the "Runes" category, so every rune lands in one family and no other
+  // item can wander in.
+  const RUNE_GROUPS = [
+    ["magic", "Magic", 0x13D, 0x152, "grants spells — which four you get depends on the rune's mastery level"],
+    ["attack", "Special attack", 0x153, 0x16D, "a character's or a weapon class's signature attack; several are one-per-battle"],
+    ["support", "Support", 0x1B8, 0x1CE, "passive — attach it and forget it. No spells, no menu entry in battle"],
+  ];
+  const runeGroupOf = (id) => (RUNE_GROUPS.find(([, , lo, hi]) => id >= lo && id <= hi) || ["", ""])[0];
+  const runeGroupLabel = (k) => (RUNE_GROUPS.find(([g]) => g === k) || ["", ""])[1];
+  const runeIds = () => Object.keys(REF.items).map(Number).filter((id) => REF.cats[id] === "Runes").sort((a, b) => a - b);
+
+  // Both guide files that answer "whose rune is this?" spell rune names their own way — the
+  // slot guide writes "Eight Devil", "Shining wing", "Sword of Rage" where the item list has
+  // "Eight-Devil", "Shining Wing", "Sword Of Rage" — so both indexes are keyed by nameKey(),
+  // the same normalizer runeTblDesc() already trusts before it believes a disc record.
+  let RUNE_OWNERS = null, RUNE_HOLDERS = null;
+  const SLOT_NAME = { head: "Head", right: "Right hand", left: "Left hand" };
+  function runeOwners() {              // rune -> the character (or weapon class) it belongs to
+    if (RUNE_OWNERS) return RUNE_OWNERS;
+    const m = {}, src = REF.runeOwner || {};
+    for (const k in src) m[nameKey(k)] = src[k];
+    return (RUNE_OWNERS = m);
+  }
+  function runeHolders() {             // rune -> [{ch, slot}] who starts with it equipped
+    if (RUNE_HOLDERS) return RUNE_HOLDERS;
+    const m = {}, slots = REF.runeSlots || {};
+    for (const ch in slots) for (const k in SLOT_NAME) {
+      const s = slots[ch][k];
+      if (!s || s.state !== "rune" || !s.rune) continue;
+      const key = nameKey(s.rune);
+      (m[key] = m[key] || []).push({ ch, slot: SLOT_NAME[k] });
+    }
+    return (RUNE_HOLDERS = m);
+  }
+
+  // What a rune is and does. The menu text is read off the LOADED disc (RUNE_TBL), so a rewrite
+  // on the Text tab shows up here immediately; s3_rune_food_desc.json is the fallback, and it
+  // also carries the "— Grants a, b, c" spell list that the disc's own one-liner leaves out.
+  function runeInfo(id) {
+    const nm = REF.items[id] || "";
+    const fb = (REF.runeFood && REF.runeFood[String(id)]) || "";
+    const m = /^(.*?)\s*—\s*Grants\s+(.+)$/.exec(fb);
+    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");
+    return {
+      id, name: nm, group: runeGroupOf(id),
+      text: (BUF && runeTblDesc(id)) || (m ? m[1] : fb),
+      grants: RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []),
+      owner: runeOwners()[nameKey(nm)] || "",
+      holders: runeHolders()[nameKey(nm)] || [],
+      sources: sourceRows(id),
+    };
+  }
+  const runeHaystack = (r) => [r.name, hex(r.id, 3), r.text, runeGroupLabel(r.group), r.grants.join(" "), r.owner,
+    r.holders.map((h) => h.ch + " " + h.slot).join(" "),
+    r.sources.map((s) => s.what + " " + s.detail).join(" ")].join(" ").toLowerCase();
+
+  // "Who has it / where to get it" — three kinds of row, each tagged with where it came from,
+  // for the same reason the Item-sources browser tags its own: a decoded drop weight and a
+  // guide's prose are not the same class of fact and a reader shouldn't have to guess which.
+  function runeWhoHTML(r) {
+    const rows = [];
+    if (r.owner) rows.push({ disc: false, what: "Belongs to", detail: r.owner });
+    if (r.holders.length) rows.push({ disc: false, what: "Starts equipped on",
+      detail: r.holders.map((h) => `${h.ch} (${h.slot})`).join(", ") });
+    rows.push(...r.sources);
+    if (!rows.length) return `<span class="muted">—</span>`;
+    return rows.map((x) => `<div class="srcrow"><span class="srctag ${x.disc ? "disc" : "guide"}"
+        title="${x.disc ? "decoded from this disc" : "from the Suikosource guides"}"
+        >${x.disc ? "disc" : "guide"}</span> <b>${esc2(x.what)}</b>
+        <span class="muted">${esc2(x.detail)}</span></div>`).join("");
+  }
+
+  function drawRunes(host) {
+    const all = runeIds().map(runeInfo);
     const q2 = SEARCH;
-    const rows = list.filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, o.w).toLowerCase().includes(q2))
-      .map((o) => `<tr><td class="sl">${hex(o.id, o.w)}</td><td>${esc2(o.nm)}${o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
+    const rows = all.filter((r) => (!RUNE_GROUP || r.group === RUNE_GROUP) && (!q2 || runeHaystack(r).includes(q2)));
+    const tally = (k) => all.filter((r) => r.group === k).length;
+    const chips = `<div class="subtabs" style="margin:0 0 10px">
+      <button class="chip${RUNE_GROUP ? "" : " on"} mini" data-rgrp="">All (${all.length})</button>
+      ${RUNE_GROUPS.map(([k, label, , , note]) => `<button class="chip${RUNE_GROUP === k ? " on" : ""} mini"
+        data-rgrp="${k}" title="${esc2(note)}">${esc2(label)} (${tally(k)})</button>`).join("")}</div>`;
+    host.innerHTML = refTabs() + chips +
+      `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
+        grants, and who carries it. Descriptions come off <b>this</b> disc's rune table, so an edit on the
+        Text tab shows here. <b>Grants</b> lists the spells a magic rune unlocks as its mastery level rises;
+        the Spells tab is where those are edited. Rows in the last column are tagged
+        <span class="srctag guide">guide</span> when they come from the Suikosource rune-slot and character
+        guides and <span class="srctag disc">disc</span> when decoded from this disc's enemy drop tables.
+        Nothing here is editable — runes are equipped per character on the <b>Characters</b> tab.</div>
+      <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
+        <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
+          <td>${esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
+          <td><div class="muted">${esc2(r.text || "—")}</div>
+            ${r.grants.length ? `<div class="grants">${r.grants.map((s) =>
+              `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}</td>
+          <td>${runeWhoHTML(r)}</td></tr>`).join("")
+        || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+    qa("[data-rgrp]", host).forEach((b) => (b.onclick = () => { RUNE_GROUP = b.dataset.rgrp; drawRunes(host); }));
+    wireRefTabs(host);
+  }
+
+  // ---- Skills browser --------------------------------------------------------
+  // The three types in s3_skill_ref.json line up exactly with how the game treats them, and
+  // "Utility" is the set the editor already knows as the support skills: supportActive() gates
+  // ids 0x1C..0x26 for the same eleven, verified 27/27 against the character guide. So the
+  // Utility chip and the Support view's fade are two views of one fact, not two guesses.
+  const SKILL_TYPES = [
+    ["Mundane", "learnable by most fighters; the bread-and-butter combat skills"],
+    ["Unique", "restricted — only some characters can take these, and rarely to S"],
+    ["Utility", "the support skills: castle abilities that work outside battle (Cook, Appraisal, Discount, Bath…)"],
+  ];
+  const skillType = (id) => ((REF.skillRef && REF.skillRef[String(id)]) || {}).type || "";
+  const GRADES = ["S", "A+", "A", "B+", "B", "C", "D", "E"];   // best first, for the cap summary
+
+  // Who the guide says can learn a skill, and how far. Its cap tables only cover the combat
+  // skills (ids 1..23, 26, 39..41) — the Utility ones aren't per-character caps at all, which
+  // is why an empty list here is a fact worth printing rather than a hole to hide.
+  let SKILL_LEARNERS = null;
+  function skillLearners() {
+    if (SKILL_LEARNERS) return SKILL_LEARNERS;
+    const m = {}, caps = REF.skillCaps || {};
+    for (const ch in caps) for (const sid in caps[ch]) (m[sid] = m[sid] || []).push({ ch, cap: caps[ch][sid] });
+    return (SKILL_LEARNERS = m);
+  }
+  // Live from the disc, so it reflects staged edits: which support characters (list3) carry a
+  // skill, and which fighters (list1) start with one. Both tables are tiny — 35 x 8 and 80 x 6.
+  function skillHoldersLive() {
+    const m = {};
+    if (!BUF) return m;
+    const add = (id, entry) => { if (id) (m[id] = m[id] || []).push(entry); };
+    const [b3, s3] = TABLES.list3, n3 = REF.names.list3 || {};
+    for (let i = 0; i < LIST_COUNT.list3; i++) {
+      const nm = n3[String(i)]; if (!nm) continue;
+      for (let k = 0; k < 8; k++) {
+        const o = b3 + i * s3 + k; if (!inBlk(o, 1)) continue;
+        const v = readW(o, 1);
+        if (v && supportActive(v)) add(v, { ch: nm, note: "support" });   // combat slots on list3 never fire
+      }
+    }
+    const [b1, s1] = TABLES.list1, n1 = REF.names.list1 || {};
+    for (let i = 0; i < LIST_COUNT.list1; i++) {
+      const nm = n1[String(i)]; if (!nm) continue;
+      for (let k = 0; k < 6; k++) {
+        const o = b1 + i * s1 + 12 + k * 2; if (!inBlk(o, 2)) continue;
+        add(readW(o, 1), { ch: nm, note: rankLabel(readW(o + 1, 1)) });
+      }
+    }
+    return m;
+  }
+
+  function skillCardHTML(id, learners, live) {
+    const r = (REF.skillRef && REF.skillRef[String(id)]) || {};
+    const ty = r.type || "";
+    const byGrade = GRADES.map((g) => [g, learners.filter((l) => l.cap === g)]).filter(([, l]) => l.length);
+    const best = byGrade.length ? byGrade[0][0] : "";
+    const effects = (r.effects || []).map((e) => `<tr><td class="ty">${esc2(e.label)}</td>${
+      RANK_OPTS.slice(1).map(([, g]) => `<td class="sl">${esc2((e.ranks && e.ranks[g]) || "–")}</td>`).join("")}</tr>`).join("");
+    const capBlock = byGrade.length
+      ? `<h4>Who can learn it — ${learners.length} characters, best <b>${esc2(best)}</b></h4>
+         ${byGrade.map(([g, l]) => `<div class="srcrow"><span class="srctag guide">${esc2(g)}</span>
+            <span class="muted">${esc2(l.map((x) => x.ch).join(", "))}</span></div>`).join("")}`
+      : `<h4>Who can learn it</h4><div class="muted">Not in the guide's cap tables.${
+          ty === "Utility" ? " Utility skills aren't capped per character — a support character either has one or doesn't." : ""}</div>`;
+    const liveBlock = live.length
+      ? `<h4>On this disc</h4><div class="srcrow"><span class="srctag disc">disc</span>
+           <span class="muted">${esc2(live.map((x) => `${x.ch} (${x.note})`).join(", "))}</span></div>`
+      : `<h4>On this disc</h4><div class="muted">No character starts with it.</div>`;
+    return `<details class="char" data-i="sk${id}"${SEARCH ? " open" : ""}><summary><span class="chev">▸</span>
+        <span class="nm">${esc2(skillName(id))}</span><span class="muted">${hex(id, 2)}</span>
+        <span class="lv">${esc2(ty)}${byGrade.length ? ` · ${learners.length} can learn · best ${esc2(best)}` : ""}</span></summary>
+      <div class="char-body">
+        <div class="muted" style="margin-bottom:8px">${esc2(r.desc || "No guide description for this skill.")}</div>
+        ${effects ? `<h4>Effect by rank</h4>
+          <table class="invtbl ranktbl"><thead><tr><th>Effect</th>${
+            RANK_OPTS.slice(1).map(([, g]) => `<th>${esc2(g)}</th>`).join("")}</tr></thead>
+            <tbody>${effects}</tbody></table>` : ""}
+        ${capBlock}
+        ${liveBlock}
+      </div></details>`;
+  }
+
+  function drawSkillsRef(host) {
+    const learners = skillLearners(), live = skillHoldersLive(), q2 = SEARCH;
+    const ids = Object.keys(REF.skills).map(Number).sort((a, b) => a - b);
+    const tally = (t) => ids.filter((id) => skillType(id) === t).length;
+    const hay = (id) => {
+      const r = (REF.skillRef && REF.skillRef[String(id)]) || {};
+      return [skillName(id), hex(id, 2), r.type || "", r.desc || "",
+        (learners[String(id)] || []).map((l) => l.ch).join(" "),
+        (live[id] || []).map((x) => x.ch).join(" ")].join(" ").toLowerCase();
+    };
+    const shown = ids.filter((id) => (!SKILL_TYPE || skillType(id) === SKILL_TYPE) && (!q2 || hay(id).includes(q2)));
+    const chips = `<div class="subtabs" style="margin:0 0 10px">
+      <button class="chip${SKILL_TYPE ? "" : " on"} mini" data-styp="">All (${ids.length})</button>
+      ${SKILL_TYPES.map(([t, note]) => `<button class="chip${SKILL_TYPE === t ? " on" : ""} mini"
+        data-styp="${t}" title="${esc2(note)}">${t === "Utility" ? "Utility (support)" : t} (${tally(t)})</button>`).join("")}</div>`;
+    host.innerHTML = refTabs() + chips +
+      `<div class="muted" style="margin:0 0 10px">Every skill, what each rank of it is actually worth, and who
+        can get there. Effect numbers and the per-character caps are from the Suikosource skills guide
+        (<span class="srctag guide">guide</span>); the <b>On this disc</b> line is read live out of the loaded
+        ISO (<span class="srctag disc">disc</span>) and follows your staged edits. <b>Utility</b> are the
+        support skills — castle abilities like Cook, Appraisal and Discount that only support characters use;
+        they have no per-character cap, so the guide lists none. Editing lives on the
+        <b>Characters</b>, <b>Growth</b> and <b>Support</b> tabs.</div>
+      ${shown.map((id) => skillCardHTML(id, learners[String(id)] || [], live[id] || [])).join("")
+        || `<div class="muted">no matches</div>`}`;
+    qa("[data-styp]", host).forEach((b) => (b.onclick = () => { SKILL_TYPE = b.dataset.styp; drawSkillsRef(host); }));
+    wireRefTabs(host);
+  }
+
+  // ---- Reference tab strip ---------------------------------------------------
+  // [key, label, count(), draw(host)] — data-driven because several people add modes here and
+  // a literal strip means every new mode edits the same three lines. `count` is a thunk since
+  // REF is still null when this array is built. Function declarations hoist, so the draw
+  // references resolve fine.
+  const REF_MODES = [
+    ["items", "Items", () => Object.keys(REF.items).length, drawItemsRef],
+    ["runes", "Runes", () => runeIds().length, drawRunes],
+    ["skills", "Skills", () => Object.keys(REF.skills).length, drawSkillsRef],
+    ["sources", "Item sources", () => Object.keys((REF.itemSources && REF.itemSources.items) || {}).length, drawSources],
+    ["files", "Files", () => { const sf = subfileIndex(); return (sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0).toLocaleString(); }, drawFiles],
+    ["places", "Pickups", () => ((REF.itemSources && REF.itemSources.places) || []).length, drawPickups],
+  ];
+  function refTabs() {
+    return `<div class="subtabs" style="margin-bottom:10px">${REF_MODES.map(([k, label, count]) =>
+      `<button class="chip${REF_KIND === k ? " on" : ""}" data-ref="${k}">${label} (${count()})</button>`).join("")}</div>`;
+  }
+  function wireRefTabs(host) {
+    // go through drawView so the per-sub-tab hint above the list follows the tab
+    qa("[data-ref]", host).forEach((b) => (b.onclick = () => {
+      REF_KIND = b.dataset.ref; RUNE_GROUP = ""; SKILL_TYPE = "";   // a mode's filter chips don't outlive it
+      drawView();
+    }));
+  }
+  function drawReference(host) { (REF_MODES.find(([k]) => k === REF_KIND) || REF_MODES[0])[3](host); }
+
+  function drawItemsRef(host) {
+    const q2 = SEARCH;
+    const rows = Object.keys(REF.items).map(Number).sort((a, b) => a - b)
+      .map((id) => ({ id, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))
+      .filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, 3).toLowerCase().includes(q2))
+      .map((o) => `<tr><td class="sl">${hex(o.id, 3)}</td><td>${esc2(o.nm)}${
+        o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
     host.innerHTML = refTabs() +
-      `<table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
+      `<table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${
+        rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
     wireRefTabs(host);
   }
 

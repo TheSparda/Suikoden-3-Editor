@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -280,6 +280,9 @@ head("Byte-exact edits across every editable view");
   await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2");
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1");
   await page.selectOption('details.char[data-i="0"] select[data-k="status"]', "sleep");
+  // radius + status chance (tail fields, stored one record ahead for spells)
+  await page.fill('details.char[data-i="0"] input[data-k="radius"]', "3"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="radius"]', "change");
+  await page.fill('details.char[data-i="0"] input[data-k="chance"]', "75"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="chance"]', "change");
   // ally-pair targeting (0x41, the Kindness Drops / Vengeful Child byte) on a second spell
   await openRec(page, 'details.char[data-i="1"]');
   await page.selectOption('details.char[data-i="1"] select[data-k="target"]', "65");
@@ -287,6 +290,9 @@ head("Byte-exact edits across every editable view");
   await page.click('#isoTabs [data-v="unites"]'); await openRec(page, 'details.char[data-i="0"]');
   await page.fill('details.char[data-i="0"] input[data-k="power"]', "555"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change");
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1");
+  await page.fill('details.char[data-i="0"] input[data-k="radius"]', "2"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="radius"]', "change");
+  await page.fill('details.char[data-i="0"] input[data-k="chance"]', "40"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="chance"]', "change");
+  const uniteSum = await page.textContent('details.char[data-i="0"] .un-sum');
   // Gear: DEF/price/effect/desc
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
   await page.fill('input.gr[data-l="DEF"]', "42"); await page.dispatchEvent('input.gr[data-l="DEF"]', "change");
@@ -313,8 +319,15 @@ head("Byte-exact edits across every editable view");
   { const f14 = r.u32(SPELL.off + 0x14); check("spell0 target=all-foes + AOE bit", ((f14 >> 8) & 0x0F) === 0x02 && !!(f14 & 0x8000)); }
   { const f14 = r.u32(SPELL.off + SPELL.stride + 0x14); check("spell1 target=ally-pair (0x41)", ((f14 >> 8) & 0x7F) === 0x41 && !(f14 & 0x8000)); }
   check("spell0 status = sleep(bit10)", r.u32(SPELL.off + 0x18) === (1 << 10));
+  // tail fields land one record ahead for spells — a wrong phase would write spell0's own record
+  check("spell0 radius = 3 (one record ahead)", r.u8(SPELL.off + SPELL.radius) === 3);
+  check("spell0 chance = 75%", r.u16(SPELL.off + SPELL.chance) === 75);
+  check("spell0's own record 0x00..0x07 untouched", r.u32(SPELL.off) === 0 && r.u32(SPELL.off + 4) === 0);
   check("unite0 power = 555", r.u32(UNITE.off + 0x1C) === 555);
   check("unite0 AOE bit set", !!(r.u32(UNITE.off + 0x14) & 0x8000));
+  check("unite0 radius = 2 (in-record tail)", r.u8(UNITE.off + UNITE.radius) === 2);
+  check("unite0 chance = 40%", r.u16(UNITE.off + UNITE.chance) === 40);
+  check("unite summary shows the radius", /r2/.test(uniteSum), uniteSum);
   check("gear DEF = 42", r.u16(GEAR.P + GEAR.stride + GEAR.def) === 42);
   check("gear price = 9999", r.u32(GEAR.P + GEAR.stride + GEAR.price) === 9999);
   check("gear effect0 type = 1", r.u16(GEAR.P + GEAR.stride + GEAR.effs[0]) === 1);
@@ -970,12 +983,16 @@ head("Per-area encounter rates — presets scale from the disc and never compoun
   await page.context().close();
 }
 
-head("Files view — sub-file browser is read-only and peeks real bytes");
+head("Files browser — a Reference sub-tab, read-only, peeks real bytes");
 { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_SUBFILES = ${JSON.stringify(SUBFILE_TEST_INDEX)};`);
   await loadIso(page);
-  await page.click('#isoTabs [data-v="files"]');
+  check("Files is no longer a top-level tab", (await page.locator('#isoTabs [data-v="files"]').count()) === 0);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="files"]', { timeout: 3000 });
+  await page.click('[data-ref="files"]');
   await page.waitForSelector("details.sfarch", { timeout: 3000 });
+  check("the sub-tab hint follows the sub-tab", /packed sub-file/.test(await page.textContent("#isoHint")), await page.textContent("#isoHint"));
   const sum = await page.textContent("details.sfarch summary");
   check("the archive summarises its sub-files by kind", /4 sub-files/.test(sum) && /1 town/.test(sum) && /1 battle/.test(sum), sum);
   await page.click("details.sfarch summary");
@@ -1015,6 +1032,93 @@ head("Reference — item sources, disc vs guide provenance, read-only");
   await page.context().close();
 }
 
+head("Reference — pickup locations, disc census vs guide chests");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="places"]', { timeout: 3000 });
+  await page.click('[data-ref="places"]');
+  await page.waitForSelector(".pkct", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("both tables are present", /pickups per area/i.test(txt) && /treasure-boss chests/i.test(txt));
+  check("it says the two tables aren't linked", /aren't linked/.test(txt));
+  check("it says nothing here is editable", /rolled at run time/.test(txt));
+  check("MORI's census matches the walkthrough", /1 corpse/.test(txt) && /3 herb spots/.test(txt), "");
+  check("a guide chest lists its guardian", /guarded by/.test(txt));
+  // filtering reaches map ids and chest contents alike
+  await page.fill("#isoSearch", "mori_101"); await page.waitForTimeout(150);
+  check("filter matches a map id", /MORI/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", "horned helm"); await page.waitForTimeout(150);
+  check("filter matches a chest's contents", /Mt\. Senai/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the pickups browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
+head("Reference — rune lookup: families, granted spells, who has it");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="runes"]', { timeout: 3000 });
+  await page.click('[data-ref="runes"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  const all = +(await page.textContent('[data-rgrp=""]')).replace(/\D+/g, "");
+  check("every rune in the game is listed", all === 72, `All (${all})`);
+  const groups = await page.$$eval("[data-rgrp]", (es) => es.map((e) => e.textContent.trim()));
+  check("the three rune families each have a chip", /Magic \(22\)/.test(groups.join(" "))
+    && /Special attack \(27\)/.test(groups.join(" ")) && /Support \(23\)/.test(groups.join(" ")), groups.join(" | "));
+  // a magic rune names the spells it grants; the browser is where you look that up
+  await page.fill("#isoSearch", "true fire"); await page.waitForTimeout(150);
+  const tf = await page.textContent("#isoView");
+  check("a magic rune lists the spells it grants", /Hellfire/.test(tf) && /Blazing Wall/.test(tf), tf.slice(0, 200));
+  // the filter reaches past the name into owners, spells and drop sources
+  await page.fill("#isoSearch", "sasarai"); await page.waitForTimeout(150);
+  check("filtering finds a rune by who carries it", /True Earth/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", "hellfire"); await page.waitForTimeout(150);
+  check("filtering finds a rune by a spell it grants", /True Fire/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  // the family chips actually narrow the table, and the support runes are reachable in one click
+  await page.click('[data-rgrp="support"]'); await page.waitForTimeout(150);
+  const sup = await page.textContent("#isoView");
+  check("the Support family shows the passive runes", /Fortune/.test(sup) && /Fury/.test(sup));
+  check("the Support family excludes the magic runes", !/>True Fire</.test(await page.innerHTML("#isoView")));
+  await page.click('[data-rgrp=""]'); await page.waitForTimeout(150);
+  const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
+  check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the rune browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
+head("Reference — skill lookup: types, per-rank effects, who can learn it");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="skills"]', { timeout: 3000 });
+  await page.click('[data-ref="skills"]');
+  await page.waitForSelector("details.char", { timeout: 3000 });
+  const types = (await page.$$eval("[data-styp]", (es) => es.map((e) => e.textContent.trim()))).join(" | ");
+  check("the support skills have their own chip", /Utility \(support\) \(11\)/.test(types), types);
+  // the whole point of the card: what a rank is worth, and who can reach it
+  await page.click('details[data-i="sk1"] summary'); await page.waitForTimeout(120);
+  const swing = await page.textContent('details[data-i="sk1"]');
+  check("a skill card shows its per-rank effect table", /Freeze Time/.test(swing) && /-100/.test(swing), swing.slice(0, 200));
+  check("a skill card names who can learn it and how far", /Who can learn it/.test(swing) && /characters, best/.test(swing));
+  // Utility skills have no per-character cap, and the card says so rather than showing a hole
+  await page.click('[data-styp="Utility"]'); await page.waitForTimeout(150);
+  const util = await page.textContent("#isoView");
+  check("the Utility chip narrows to the support skills", /Cook/.test(util) && /Appraisal/.test(util) && !/Sharpshoot/.test(util));
+  await page.click('details[data-i="sk31"] summary'); await page.waitForTimeout(120);
+  check("a support skill explains why it has no cap",
+    /aren't capped per character/.test(await page.textContent('details[data-i="sk31"]')));
+  await page.click('[data-styp=""]'); await page.waitForTimeout(150);
+  // filtering reaches the description, not just the name
+  await page.fill("#isoSearch", "counter attack"); await page.waitForTimeout(200);
+  check("filtering opens the matching card", /Parry\/Shield Counter/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the skill browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
 head("Gear description overflow is rejected");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
@@ -1025,6 +1129,58 @@ head("Gear description overflow is rejected");
   await page.waitForTimeout(60);
   check("over-length description warns", await statusHas(page, /too long/i));
   check("over-length description not written", !(await getWrites(page)).length && !(await page.evaluate(() => window.__writes.length)));
+  await page.context().close();
+}
+
+head("Gear rename — in-place, slot-capped, and global");
+{ const page = await newPage(); await loadIso(page);
+  // The name pointer sits at +0x40 of the record BEFORE the stats record (= base + GEAR.name).
+  const nameVa = (bytes[GEAR.P + 0x40] | bytes[GEAR.P + 0x41] << 8 | bytes[GEAR.P + 0x42] << 16 | bytes[GEAR.P + 0x43] << 24) >>> 0;
+  const nameOff = nameVa - ELF_VADDR + ELF_BASE, slot = armor.name.length;
+  await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
+  const nameIn = page.locator("input.ge-name").first();
+  const max = +(await nameIn.getAttribute("maxlength"));
+  check("the name field is capped to the on-disc slot", max === slot, `maxlength=${max} vs slot=${slot}`);
+  check("the name field starts at the disc's name", (await nameIn.inputValue()) === armor.name);
+
+  // Over-length is refused outright — same rule as descriptions, because growing the string
+  // would mean repointing every reference to it.
+  await nameIn.evaluate((el, n) => { el.value = "X".repeat(n + 3); el.dispatchEvent(new Event("change", { bubbles: true })); }, max);
+  await page.waitForTimeout(60);
+  check("an over-length name warns", await statusHas(page, /too long/i));
+  check("an over-length name stages nothing", await nothingStaged(page));
+
+  // ...and so is a blank one: an item with no name is worse than the original.
+  await nameIn.evaluate((el) => { el.value = "   "; el.dispatchEvent(new Event("change", { bubbles: true })); });
+  await page.waitForTimeout(60);
+  check("a blank name is refused", await statusHas(page, /needs a name/i));
+  check("a blank name stages nothing", await nothingStaged(page));
+
+  const newName = "Zzz";   // shorter than the slot -> exercises the null padding
+  await nameIn.fill(newName); await page.dispatchEvent("input.ge-name", "change"); await page.waitForTimeout(80);
+  check("the row header follows the rename", (await page.textContent("details.char[open] .nm")) === newName);
+
+  // Renaming is global because every menu reads the one string through the one pointer. The
+  // item pickers prove it: they resolve names off the disc, not off the bundled id list.
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.fill("#isoSearch", "1"); await page.waitForTimeout(60);
+  await openRec(page, "details.char"); await page.waitForTimeout(80);
+  const rec = +(await page.getAttribute("details.char[open]", "data-rec"));
+  await page.click(`details.char[open] button.picker[data-off="${rec + 112}"]`);   // all-items slot
+  await page.waitForSelector(".picker-search");
+  await page.fill(".picker-search", String(armor.id)); await page.waitForTimeout(60);
+  const rowText = await page.evaluate((wanted) => {
+    const row = [...document.querySelectorAll(".picker-row")].find((b) => +b.dataset.id === wanted);
+    return row ? row.textContent : null;
+  }, armor.id);
+  check("every picker shows the renamed item", (rowText || "").includes(newName) && !(rowText || "").includes(armor.name), rowText);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(60);
+
+  const { r, review } = await saveAndReview(page);
+  check("the rename is listed for review", /Name/.test(review) && review.includes(newName), review.split("\n").find((l) => /Name/.test(l)) || "");
+  let wrote = ""; for (let i = 0; i < slot; i++) wrote += String.fromCharCode(r.u8(nameOff + i));
+  check("the name is written in place, null-padded to the slot", wrote === newName + "\0".repeat(slot - newName.length), JSON.stringify(wrote));
+  check("the byte past the slot is untouched", r.u8(nameOff + slot) === bytes[nameOff + slot]);
   await page.context().close();
 }
 

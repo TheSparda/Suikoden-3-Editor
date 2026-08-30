@@ -323,6 +323,22 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .srctag.disc { border-color:var(--acc); color:var(--acc2); }
 .srctag.guide { border-color:var(--line); color:var(--mut); }
 
+/* pickup locations (Reference view) */
+.pkct { display:inline-block; font-size:12px; color:var(--ink); border:1px solid var(--line);
+  border-radius:6px; padding:1px 7px; margin:0 4px 3px 0; background:var(--input-bg); }
+.pkitem { display:inline-block; font-size:12px; color:var(--mut); border:1px solid var(--line);
+  border-radius:6px; padding:1px 6px; margin:0 3px 3px 0; }
+
+/* rune + skill lookups (Reference view) */
+.grants { margin-top:4px; display:flex; gap:4px; flex-wrap:wrap; }
+.spellchip { font-size:11px; color:var(--acc2); border:1px solid var(--line); border-radius:999px;
+  padding:1px 8px; background:var(--input-bg); white-space:nowrap; }
+/* 8 rank columns have to fit a 320px phone, so they scroll rather than squeeze the label out */
+.ranktbl { display:block; overflow-x:auto; white-space:nowrap; }
+.ranktbl th, .ranktbl td { padding:4px 6px; }
+.ranktbl td.ty { white-space:nowrap; color:var(--ink); }
+.ranktbl td.sl { width:auto; text-align:right; font-variant-numeric:tabular-nums; }
+
 /* ===== Shops: three-column counters on a 320px screen =====
    button.picker is white-space:nowrap, so a content-sized table takes its *full* label as the
    column's minimum and a third column tips the page into horizontal scroll. Fixed layout lets
