@@ -33,7 +33,10 @@
   // 60 recipe/dish records (0..59). Records 60-61 name-resolve to consumable ITEMS (Sacrificial
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
   const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
-  const GEAR = { stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
+  // Equipment records, 0x44 apart. These offsets are relative to the STATS record, which sits
+  // one record after the one carrying the name pointer — so the name pointer reads back at
+  // base-0x04 (= +0x40 of the preceding record). scanGear explains how a record is anchored.
+  const GEAR = { stride: 0x44, def: 0x10, price: 0x08, name: -0x04, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
   // RUNE item table — the text the game itself shows in the rune/equip menu. Indexed by ITEM
   // ID (record = off + id*stride), name ptr @+0x00 and description ptr @+0x04. Verified on a
   // pristine SLUS-20387: all 72 rune items line up, ids 317-365 (magic/attack) and 440-462
@@ -341,6 +344,9 @@
   let VIEW = "chars", SEARCH = "";
   let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
   let gearCache = null;                     // {itemId: absStatsOffset}
+  let gearAlias = {};                       // renamed gear: newName -> itemId. scanGear anchors a
+                                            // record by its on-disc name, so a rename would hide it
+                                            // from the next rescan without this.
   const FIELD_REG = {};                     // absOff -> {group,label,off:absOff,width,kind}
   const dec = new TextDecoder("latin1");
 
@@ -491,7 +497,7 @@
   }
 
   // ---- label / option helpers ------------------------------------------------
-  const itemName = (id) => REF.items[id] || "#" + id;
+  const itemName = (id) => gearName(id) || REF.items[id] || "#" + id;
   const skillName = (id) => REF.skills[id] || "#" + id;
   const itemLabel = (id) => id ? `${hex(id, 3)} · ${itemName(id)}` : "— none —";
   const skillLabel = (id) => id ? `${hex(id, 2)} · ${skillName(id)}` : "— none —";
@@ -755,7 +761,7 @@
     ROOMS = rareas; ROOMS_SKIPPED = rskipped;
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -1305,7 +1311,7 @@
       shops: "Shop item slots (pick an item), the price ladder, and the item1 group. Prices are potch.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
-      gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
+      gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
@@ -1585,6 +1591,15 @@
   // Equipment carries its description in its own gear record, so read that live too — a
   // description rewritten on the Gear tab then shows up in every picker and tooltip. The
   // bundled s3_item_desc.json stays as the fallback for items scanGear can't pin down.
+  // Equipment carries its own name string as well as its description, so read that live too — a
+  // rename made on the Gear tab then shows up in every picker, tooltip and review row.
+  function gearName(id) {
+    if (!BUF || !REF) return "";
+    const g = scanGear()[id];
+    if (!g) return "";
+    const np = r32(g + GEAR.name);
+    return np ? strAt(np) : "";
+  }
   function gearDesc(id) {
     if (!BUF) return "";
     const g = scanGear()[id];
@@ -2004,6 +2019,7 @@
   function scanGear() {
     if (gearCache) return gearCache;
     const nameset = {}; for (const id in REF.items) nameset[REF.items[id]] = +id;
+    for (const nm in gearAlias) nameset[nm] = gearAlias[nm];   // gear renamed this session still anchors
     const isptr = (w) => w >= ELF_VADDR && w <= ELF_VADDR + ELF_LEN;
     const out = {};
     const N = BUF.length - 2 * GEAR.stride;
@@ -2053,6 +2069,7 @@
       if (SEARCH && !nm.toLowerCase().includes(SEARCH) && hex(iid, 3).toLowerCase() !== SEARCH) continue;
       const base = g[iid], def = base + GEAR.def, price = base + GEAR.price, dptr = r32(base + 0x00);
       const descStr = strAt(dptr), descMax = origSlotLen(dptr);
+      const nptr = r32(base + GEAR.name), nameMax = origSlotLen(nptr);
       const effs = GEAR.effs.map((eo) => effectSlotHTML(nm, base, eo)).join("");
       rows.push(`<details class="char" data-base="${base}"><summary><span class="chev">▸</span>
           <span class="nm">${esc2(nm)}</span><span class="muted">${hex(iid, 3)}</span>
@@ -2061,6 +2078,8 @@
           <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
           <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
         </div>
+        <label class="field" style="margin-top:8px"><span>Name (${nameMax} char slot)</span>
+          <input type="text" class="ge-name" maxlength="${nameMax}" value="${esc2(nm)}" data-nptr="${nptr}" data-iid="${iid}" data-g="${esc2(nm)}"></label>
         <label class="field" style="margin-top:8px"><span>Description (${descMax} char slot)</span>
           <input type="text" class="ge-desc" maxlength="${descMax}" value="${esc2(descStr)}" data-dptr="${dptr}" data-g="${esc2(nm)}"></label>
         <h4>Effect slots</h4>${effs}</div></details>`);
@@ -2080,6 +2099,26 @@
         }
       };
       markField(inp, off, w, "num");
+    });
+    // Renaming is the same in-place, same-slot write the descriptions use: the string is
+    // overwritten where it already sits and null-padded, so no pointer anywhere on the disc moves.
+    // Every menu that shows the item reads through that one pointer, so the new name is global.
+    qa("input.ge-name", host).forEach((inp) => {
+      const nptr = +inp.dataset.nptr, iid = +inp.dataset.iid, was = inp.dataset.g;
+      inp.onchange = () => {
+        const want = inp.value.trim();
+        if (!want) { inp.value = strAt(nptr); return setStatus("An item needs a name — left unchanged.", "warn"); }
+        const r = setDescText(nptr, want, was, "Name");
+        if (r.tooLong) { setStatus(`"${want}" is too long — the name slot holds ${r.max} characters.`, "warn"); inp.value = strAt(nptr); }
+        else if (r.skip) setStatus("This item's name can't be edited on this disc.", "warn");
+        else { gearAlias[want] = iid; gearCache = null; }   // rescan must still find the record
+        const now = strAt(nptr);
+        inp.value = now;
+        const sum = inp.closest("details.char");
+        if (sum) { const t = q(".nm", sum); if (t) t.textContent = now; }
+        markField(inp, vaOff(nptr), origSlotLen(nptr), "text");
+      };
+      markField(inp, vaOff(nptr), origSlotLen(nptr), "text");
     });
     qa("input.ge-desc", host).forEach((inp) => {
       const dptr = +inp.dataset.dptr;

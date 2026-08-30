@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -959,6 +959,58 @@ head("Gear description overflow is rejected");
   await page.waitForTimeout(60);
   check("over-length description warns", await statusHas(page, /too long/i));
   check("over-length description not written", !(await getWrites(page)).length && !(await page.evaluate(() => window.__writes.length)));
+  await page.context().close();
+}
+
+head("Gear rename — in-place, slot-capped, and global");
+{ const page = await newPage(); await loadIso(page);
+  // The name pointer sits at +0x40 of the record BEFORE the stats record (= base + GEAR.name).
+  const nameVa = (bytes[GEAR.P + 0x40] | bytes[GEAR.P + 0x41] << 8 | bytes[GEAR.P + 0x42] << 16 | bytes[GEAR.P + 0x43] << 24) >>> 0;
+  const nameOff = nameVa - ELF_VADDR + ELF_BASE, slot = armor.name.length;
+  await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
+  const nameIn = page.locator("input.ge-name").first();
+  const max = +(await nameIn.getAttribute("maxlength"));
+  check("the name field is capped to the on-disc slot", max === slot, `maxlength=${max} vs slot=${slot}`);
+  check("the name field starts at the disc's name", (await nameIn.inputValue()) === armor.name);
+
+  // Over-length is refused outright — same rule as descriptions, because growing the string
+  // would mean repointing every reference to it.
+  await nameIn.evaluate((el, n) => { el.value = "X".repeat(n + 3); el.dispatchEvent(new Event("change", { bubbles: true })); }, max);
+  await page.waitForTimeout(60);
+  check("an over-length name warns", await statusHas(page, /too long/i));
+  check("an over-length name stages nothing", await nothingStaged(page));
+
+  // ...and so is a blank one: an item with no name is worse than the original.
+  await nameIn.evaluate((el) => { el.value = "   "; el.dispatchEvent(new Event("change", { bubbles: true })); });
+  await page.waitForTimeout(60);
+  check("a blank name is refused", await statusHas(page, /needs a name/i));
+  check("a blank name stages nothing", await nothingStaged(page));
+
+  const newName = "Zzz";   // shorter than the slot -> exercises the null padding
+  await nameIn.fill(newName); await page.dispatchEvent("input.ge-name", "change"); await page.waitForTimeout(80);
+  check("the row header follows the rename", (await page.textContent("details.char[open] .nm")) === newName);
+
+  // Renaming is global because every menu reads the one string through the one pointer. The
+  // item pickers prove it: they resolve names off the disc, not off the bundled id list.
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.fill("#isoSearch", "1"); await page.waitForTimeout(60);
+  await openRec(page, "details.char"); await page.waitForTimeout(80);
+  const rec = +(await page.getAttribute("details.char[open]", "data-rec"));
+  await page.click(`details.char[open] button.picker[data-off="${rec + 112}"]`);   // all-items slot
+  await page.waitForSelector(".picker-search");
+  await page.fill(".picker-search", String(armor.id)); await page.waitForTimeout(60);
+  const rowText = await page.evaluate((wanted) => {
+    const row = [...document.querySelectorAll(".picker-row")].find((b) => +b.dataset.id === wanted);
+    return row ? row.textContent : null;
+  }, armor.id);
+  check("every picker shows the renamed item", (rowText || "").includes(newName) && !(rowText || "").includes(armor.name), rowText);
+  await page.keyboard.press("Escape"); await page.waitForTimeout(60);
+
+  const { r, review } = await saveAndReview(page);
+  check("the rename is listed for review", /Name/.test(review) && review.includes(newName), review.split("\n").find((l) => /Name/.test(l)) || "");
+  let wrote = ""; for (let i = 0; i < slot; i++) wrote += String.fromCharCode(r.u8(nameOff + i));
+  check("the name is written in place, null-padded to the slot", wrote === newName + "\0".repeat(slot - newName.length), JSON.stringify(wrote));
+  check("the byte past the slot is untouched", r.u8(nameOff + slot) === bytes[nameOff + slot]);
   await page.context().close();
 }
 
