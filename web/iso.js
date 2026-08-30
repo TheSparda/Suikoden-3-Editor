@@ -2105,7 +2105,7 @@
         <span class="u">fills the fields — then Apply</span></div>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
         <span class="muted" id="rsInfo"></span></div></details>`;
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes</label>`;
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes <span class="u">\u00b7 applies to the rune reskin above too</span></label>`;
 
     const rows = [];
     for (let i = 0; i < SPELL.count; i++) {
@@ -2142,7 +2142,12 @@
             <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
-    host.innerHTML = splitCard() + reskin + updBox + body;
+    // Two collapsed cards in a row read as one stack, so each section says what it is:
+    // a one-off engine patch, a rune-wide bulk edit, then the table itself.
+    const sec = (t) => `<div class="secdiv"><span>${t}</span></div>`;
+    host.innerHTML = sec("Special effect \u00b7 one spell only") + splitCard()
+      + sec("Bulk edit \u00b7 a whole rune") + reskin
+      + sec("Every spell") + updBox + body;
 
     wireSplit(host);
     const fold = (id, set) => { const d = q(id, host); if (d) d.ontoggle = () => set(d.open); };
