@@ -495,7 +495,11 @@ async function loadGuideRefs() {
   GUIDE = { caps, growth, slots };   // a missing file just hides its notes, never breaks the editor
   return GUIDE;
 }
+// .fnote is for GUIDE overlays, which are per-character by definition (e2e asserts a
+// character the guide doesn't cover shows none). Static help that describes the field
+// itself uses .fhint so it can't be mistaken for guide data.
 const fnote = (html) => (html ? `<div class="fnote">${html}</div>` : "");
+const fhint = (html) => (html ? `<div class="fhint">${html}</div>` : "");
 
 // max grade for one skill on one character: "guide max: B+", or a dim "can't learn".
 function capNote(charName, skillId) {
@@ -551,15 +555,15 @@ function charCard(c) {
   const statCells = STAT_NAMES().map((n) =>
     `<label class="field"><span>${n}</span>${num(null, c.stats[n], n)}${fnote(growthNoteSave(c.name, n))}</label>`).join("");
   // Level gets the guide's join level; Max HP is the "HP" row of the growth table.
-  const CORE_NOTE = {
-    level: () => joinLvNote(c.name),
-    maxHP: () => growthNoteSave(c.name, "HP"),
-    weaponLv: () => `sharpen level, 1–16 <span class="dim">(this is what older builds mislabelled as "Level")</span>`,
-    expToNext: () => `<span class="dim">progress inside this level; 1000 = level up</span>`,
+  const CORE_NOTE = { level: () => joinLvNote(c.name), maxHP: () => growthNoteSave(c.name, "HP") };
+  const CORE_HINT = {
+    weaponLv: `sharpen level, 1–16 <span class="dim">(what older builds mislabelled as "Level")</span>`,
+    expToNext: `<span class="dim">progress inside this level; 1000 = level up</span>`,
   };
   const core = [["Level", "level"], ["Weapon Lv", "weaponLv"], ["Cur HP", "curHP"],
                 ["Max HP", "maxHP"], ["EXP in level", "expToNext"]]
-    .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}${fnote(CORE_NOTE[k] ? CORE_NOTE[k]() : "")}</label>`).join("");
+    .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}` +
+      `${fnote(CORE_NOTE[k] ? CORE_NOTE[k]() : "")}${fhint(CORE_HINT[k] || "")}</label>`).join("");
   const equip = EQ.map(([key, lbl]) => {
     const cur = c.equip[key] || 0;
     return `<label class="field"><span>${lbl}</span>
