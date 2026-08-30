@@ -71,6 +71,14 @@ export const mountWord = (imm) => (0x24020000 | (imm & 0xFFFF)) >>> 0;   // addi
 export const HORSE_OFF = 0x66;
 export const HORSE_STOCK = { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 };
 export const horseAddr = (roster) => TABLES.list2[0] + roster * TABLES.list2[1] + HORSE_OFF;
+// Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
+// the two rounding sweeteners, and the Adrenaline Power pair-sum.
+export const MECH = {
+  pool:       { off: 0x226F64, stock: 0x10400030, alt: 0x10000030 },
+  roundRider: { off: 0x226FF4, stock: 0x24c60001 },
+  roundMount: { off: 0x226FF8, stock: 0x26100001 },
+  adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
+};
 export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
 export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
 export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
@@ -232,6 +240,7 @@ export function buildSynthIso() {
   w32(SETS.healOwnerSite, STOCK_OWNER_HEAL); w32(SETS.squeakOwnerSite, STOCK_OWNER_SQUEAK);
   w32(SETS.halveMaskSite, STOCK_HALVE_MASK); w32(SETS.healDivRepair, STOCK_HEAL_DIV_SLOT);
   for (const [roster, v] of Object.entries(HORSE_STOCK)) w16(horseAddr(+roster), v);
+  for (const d of Object.values(MECH)) w32(d.off, d.stock);
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));
