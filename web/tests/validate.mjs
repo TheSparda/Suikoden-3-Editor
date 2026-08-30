@@ -317,6 +317,25 @@ console.log("Guide overlays + xdelta:");
     (/tag: "room"/.test(iso) ? ok : bad)("room windows are tagged apart from the enemy windows");
     (!/Only the <b>global<\/b> rate is editable/.test(iso) ? ok : bad)(
       "the 'global only' caveat is gone from the Encounter tab");
+    // Sub-file index (Files view). Every sub-file must sit inside its own archive, and the
+    // directory must tile it exactly — that tiling is what identified the archive at all.
+    const sf = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_subfiles.json"), "utf8"));
+    const nsub = sf.archives.reduce((a, x) => a + x.files.length, 0);
+    (sf.format === "s3subfiles" && sf.archives.length >= 28 && nsub >= 4000 ? ok : bad)(
+      `s3_subfiles.json parses (${sf.archives.length} archives, ${nsub} sub-files)`);
+    { let bad2 = 0, tiles = 0;
+      for (const a of sf.archives) {
+        let next = 0;
+        for (const [sect, size] of a.files) { if (sect !== next) bad2++; next = sect + size; }
+        if (next * 2048 === a.size) tiles++;
+      }
+      (bad2 === 0 && tiles === sf.archives.length ? ok : bad)(
+        `every archive's sub-files tile it exactly (${tiles}/${sf.archives.length})`);
+      const towns = sf.archives.reduce((a, x) => a + x.files.filter((f2) => sf.kinds[f2[2]] === "town").length, 0);
+      const tables = rm.areas.reduce((a, x) => a + x.tables.length, 0);
+      (towns === tables ? ok : bad)(`town sub-files match the room index's tables (${towns} vs ${tables})`); }
+    (/s3_subfiles\.json/.test(iso) && /function drawFiles/.test(iso) && /\["files", "Files"\]/.test(iso)
+      ? ok : bad)("iso.js registers the read-only Files view");
     const areas = rm.areas.map((a) => a.area);
       (new Set(areas).size === areas.length ? ok : bad)("every archive has a distinct area id");
       const mori = rm.areas.find((a) => a.archive === "MORI");
