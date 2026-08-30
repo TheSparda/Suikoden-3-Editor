@@ -210,7 +210,9 @@ first two bytes** of the word:
 Riders #2 and #3 each appear **twice** because the compiler hoisted the next comparison's
 constant into a branch delay slot. Change only one of the pair and the check breaks.
 
-This is what the web editor's **Mounts** tab writes (`drawMounts` in `web/iso.js`). It offers
+This is what the web editor's **Mounts** tab writes (`drawMounts` in `web/iso.js`), shipped
+**beta / testing only** — the byte writes are verified but no re-paired combination has been
+played through an emulator yet. It offers
 only riders whose model carries the `3xx` bank and only mounts with a battle animation set,
 refuses to edit if any of the eight sites is no longer an `addiu $v0,$zero,imm`, and always
 writes a rider's delay-slot duplicate alongside its primary site.

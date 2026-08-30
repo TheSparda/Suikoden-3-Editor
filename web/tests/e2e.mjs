@@ -429,6 +429,9 @@ head("Mounts view — rewrite the battle rider/mount pairs");
   await page.click('#isoTabs [data-v="mounts"]');
   await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
   check("all 3 pair cards render", (await page.$$("#mountCards details.char")).length === 3);
+  // the feature ships flagged: the beta banner must survive refactors
+  { const txt = await page.textContent("#isoView");
+    check("tab is flagged BETA / testing only", /BETA/.test(txt) && /not yet confirmed in-game/i.test(txt)); }
   // stock decode: Hugo(1)+Fubar(8), Futch(31)+Bright(32), Franz(41)+Ruby(42)
   check("pair 1 rider decodes to Hugo", (await page.inputValue('select.mnt-rider[data-i="0"]')) === "1");
   check("pair 1 mount decodes to Fubar", (await page.inputValue('select.mnt-mount[data-i="0"]')) === "8");
