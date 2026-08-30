@@ -309,6 +309,20 @@ console.log("Guide overlays + xdelta:");
   (/function applyCapPreset/.test(iso) && /data-cap="max"/.test(iso) && /data-cap="guide"/.test(iso)
     ? ok : bad)("iso.js Growth view has skill-cap presets");
   (/data-rspreset=/.test(iso) ? ok : bad)("iso.js Spells tab has rune reskin presets");
+  // Damage+heal slot: three instruction immediates in the boot ELF, all inside the block the
+  // editor holds, and all three rewritten together (moving one without the others leaves the
+  // split spell healing for its Power instead of the number the user typed).
+  {
+    const m = iso.match(/const SPLIT = \{([\s\S]*?)\n  \};/);
+    const num = (k) => { const g = m && m[1].match(new RegExp(k + ":\\s*(0x[0-9A-Fa-f]+)")); return g ? parseInt(g[1], 16) : NaN; };
+    const sites = m ? ["route", "amtSel", "amt"].map(num) : [];
+    (m && sites.every((o) => o >= 0xA4800 && o < 0x465DF0) ? ok : bad)(
+      `iso.js SPLIT sites sit inside the ELF block (${sites.map((o) => "0x" + (o >>> 0).toString(16)).join(" ")})`);
+    (m && num("stockRoute") === 0x24020011 && num("stockAmtSel") === 0x3AC30011 && num("stockAmt") === 0x2412012C
+      ? ok : bad)("iso.js SPLIT stock words = spell 17 / spell 17 / 300 HP");
+    (/function applySplit/.test(iso) && /SPLIT\.route/.test(iso) && /SPLIT\.amtSel/.test(iso) && /SPLIT\.amt,/.test(iso)
+      ? ok : bad)("iso.js applySplit rewrites all three damage+heal immediates");
+  }
   // bestiary reference (Enemies tab)
   try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_bestiary.json"), "utf8"));
     (Object.keys(j).length >= 50 ? ok : bad)(`s3_bestiary.json parses (${Object.keys(j).length} enemies)`); }
