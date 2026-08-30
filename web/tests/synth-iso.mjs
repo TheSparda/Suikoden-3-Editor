@@ -54,7 +54,11 @@ export const ENEMY_REC_B = 0x466000, ENEMY_AUX_B = 0x466100;   // copy 2
 export const ZONE_SLOTS_A = 0x466200, ZONE_PARTY_A = 0x466240, ZONE_MEM_A = 0x466290;
 export const ZONE_SLOTS_B = 0x466300, ZONE_PARTY_B = 0x466340, ZONE_MEM_B = 0x466390;
 export const WAR_REC_A = 0x466400, WAR_REC_B = 0x4664A0;       // war-unit fixture (two copies)
-export const SYNTH_EXTRA = 0x800;                              // file = ELF_END + this
+// Room (per-area encounter rate) fixture — two chapter-variant tables of three rooms.
+// Placed clear of the enemy/war spans so it gets its OWN aux window, the way the real
+// disc's town-data sub-files do, instead of being absorbed into an enemy range.
+export const ROOM_TABLE_A = 0x467000, ROOM_TABLE_B = 0x467100;
+export const SYNTH_EXTRA = 0x1800;                             // file = ELF_END + this
 export const ENEMY_TEST_PACKS = {
   format: "s3enemy", version: 1,
   recLayout: { hp: 48, maxhp: 50, lv: 64, stats: 32, size: 0x8C },
@@ -96,6 +100,28 @@ export const WAR_TEST_UNITS = {
       lv: 20, hp: 230, stats: [49, 65, 60, 35, 40, 45, 45, 55], exp: 0, sp: 0, potch: 0,
       drops: [], rec: [WAR_REC_A, WAR_REC_B], aux: [],
     }] }],
+  }],
+};
+
+// Room-table fixture (Encounter view). Two chapter variants of one area, where room 1 and
+// room 2 AGREE across the variants but room 3 does NOT (9 vs 2) — so the editor must show
+// rooms 1-2 as a single row writing both tables, and split room 3 into two rows rather than
+// showing one value that would be wrong for the other table.
+const ROOM_REC = 0x3C;
+export const ROOM_AREA_ID = 0x20;
+export const ROOM_FIXTURE = [
+  { base: ROOM_TABLE_A, rank: 3, rooms: [{ room: 1, rate: 4, grace: 6 }, { room: 2, rate: 0, grace: 0 }, { room: 3, rate: 9, grace: 4 }] },
+  { base: ROOM_TABLE_B, rank: 5, rooms: [{ room: 1, rate: 4, grace: 6 }, { room: 2, rate: 0, grace: 0 }, { room: 3, rate: 2, grace: 4 }] },
+];
+export const ROOM_TEST_INDEX = {
+  format: "s3rooms", schema: 1,
+  areas: [{
+    archive: "TEST", area: ROOM_AREA_ID, zones: ["test_101"],
+    tables: ROOM_FIXTURE.map((t, ti) => ({
+      sub: ti, rank: t.rank,
+      rooms: t.rooms.map((r, i) => ({ room: r.room, rate: r.rate, grace: r.grace,
+        rateOff: t.base + i * ROOM_REC + 4, graceOff: t.base + i * ROOM_REC + 2 })),
+    })),
   }],
 };
 
@@ -164,6 +190,14 @@ export function buildSynthIso() {
     const v = WAR_TEST_UNITS.packs[0].enemies[0].variants[0];
     v.stats.forEach((sv, si) => w16(recO + 32 + si * 2, sv));
     w16(recO + 48, v.hp); w16(recO + 50, v.hp); w16(recO + 64, v.lv);
+  }
+  // room tables: rank/grace/rate/bg per record, exactly as build_room_index.py reads them
+  for (const t of ROOM_FIXTURE) {
+    t.rooms.forEach((r, i) => {
+      const o = t.base + i * ROOM_REC;
+      w16(o, t.rank); w16(o + 2, r.grace); w16(o + 4, r.rate);
+      w16(o + 8, (r.room << 8) | ROOM_AREA_ID);
+    });
   }
   // enemy names (inline, 0x14 stride) so the Enemies view + search have content
   ["Zombie", "Bat Rider", "Harpy", "Golem", "Dragon"].forEach((nm, i) => bytes.set(enc(nm), ENEMY.off + i * ENEMY.stride));
