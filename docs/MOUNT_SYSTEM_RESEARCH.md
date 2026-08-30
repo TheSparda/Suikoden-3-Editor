@@ -304,8 +304,8 @@ And the mounts, split by whether they have a battle animation set (`1xx`/`14x`/`
 | `msx1` | 277 / 359 | Le Buque horse | yes (140 160 171 172 180 190) |
 | `mskn` | 147 / 209 | Le Buque named NPC/horse | yes (140 160 171 172 180 190) |
 | `msx2` | 278 / 360 | Le Buque horse | no |
-| `s2um` | 165 / 227 / 309 | **Chris's horse** | **no** — 001 002 004 005 010 020 021 060 171 172 |
-| `zkum` | 164 / 226 / 308 | Zexen-knight horse | **no** — same set |
+| `s2um` | 165 / 227 / 309 | **Chris's horse** | **partial** — `171` `b_N_damage`, `172` `b_down_start` |
+| `zkum` | 164 / 226 / 308 | Zexen-knight horse | **partial** — same two clips |
 | `krum` | 181 / 243 / 325 | Karaya horse | **no** — 001 002 005 010 020 021 060 |
 | `kru2` | 271 / 353 | Karaya horse #2 | **no** |
 | `uma1` | 388 | plain scenery horse | no — only 001 010 |
@@ -529,6 +529,69 @@ Net: such a hook would keep you mounted across scripted dismounts inside the fou
 already mount you. It cannot add mounting to a map that has no mount in it — the same wall
 §7 and §8 hit from two other directions.
 
+## 11. The *other* mount system — a per-character assigned horse
+
+> **Corrects §5/§6.** Those said the ground horses have "no battle animation set at all". By
+> exact clip containment they have exactly two — `171` = `b_N_damage`, `172` = `b_down_start` —
+> which is precisely what a *passive* battle mount needs: react when hit, fall when knocked
+> down. They never attack or cast, which is why they lack the `101/140/160/180` that Fubar,
+> Bright and Ruby carry. Chris genuinely does fight mounted.
+
+The three-pair table in §4 is not the only gate. Both call sites evaluate
+
+```
+hasAssignedHorse(charaId) || isValidRidePair(rider, mount)
+```
+
+and the first half (`0x16c76b8`) is **pure data**. It fetches the character's record and reads a
+u16 at **`+0x66`**:
+
+```
+rec = GetCharaRecord(charaId)              ; 0x16c6e18
+if (charaId == 203) return 0               ; s2hr explicitly excluded
+v = rec->0x66
+return (v - 308) < 2 ? v : 0               ; ONLY 308 / 309 are honoured
+```
+
+`GetCharaRecord` indexes a byte table at `0x19697A8 + modelId` to get a row number, then
+`0x1999B38 + row*0x84`. That row number is the **roster id**, and that table is the editor's
+existing **list2** — so the field is simply:
+
+**`list2 record N, +0x66, u16` — ISO `4068152 + N*132 + 102`.**
+
+It sits just past the starting-level bytes at `+100/+101` and was undocumented. Read off the
+disc, exactly six characters carry one:
+
+| roster | character | value | ISO offset |
+|---|---|---|---|
+| 2 | **Chris** | 309 — her own horse (`s2um`) | `0x3E14A6` |
+| 12 | **Roland** | 308 — Zexen-knight horse (`zkum`) | `0x3E19CE` |
+| 17 | **Leo** | 308 | `0x3E1C62` |
+| 19 | **Percival** | 308 | `0x3E1D6A` |
+| 20 | **Borus** | 308 | `0x3E1DEE` |
+| 39 | **Salome** | 308 | `0x3E27BA` |
+
+The six Zexen Knights, exactly. Two code-side extras: the generic knight NPC `zkk1` (306) gets
+308 from a hard-coded case when it has no record, and `s2hr` — a Chris variant that *shares her
+record*, hence the same 309 — is explicitly rejected regardless.
+
+### Why this is the better lever
+
+Compared with the three-pair table it is strictly more capable, and it is the mechanism behind
+"Chris rides her horse in some battles":
+
+- **Plain data.** One u16 per character, no instruction rewriting, no delay-slot duplicates.
+- **No party membership needed.** The pair table draws its candidate from the party roster, so a
+  mount must be a recruitable character. `zkum`/`s2um` are ordinary NPC models, so this route
+  sidesteps that entirely.
+- **Both paths honour it.** Field ride and battle mounting both consult it.
+- **It reaches Geddoe.** He has the `97x` field bank but no mounted-battle bank, so the pair
+  table can never help him — but an assigned horse puts him on horseback outside combat.
+
+The hard limit is the consumer's own clamp: `(v - 308) < 2` unsigned means **only 308 and 309
+work**. Writing the Karaya horse, Ruby or a flyer here is read and silently discarded, so the
+editor offers exactly three options.
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
@@ -536,6 +599,8 @@ already mount you. It cannot add mounting to a map that has no mount in it — t
 - The meaning of individual `3xx` variant numbers, and the `311` vs `321/322` split.
 - Whether the field ride state survives a map transition. The field state lives on per-scene
   EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
+- The rest of the `0x84`-byte list2 record — `+0x66` is now known (§11) but most of the row
+  past the skill-cap array is still unmapped.
 - What populates `rec->+0x1bc` (a character's assigned mount for the scene). No literal-offset
   writer exists; the two that do write it only clear the field-work global. Presumably scene
   setup via a computed offset or a struct copy, but it was not traced.

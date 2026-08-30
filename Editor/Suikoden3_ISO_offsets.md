@@ -56,6 +56,12 @@ The name lists in the UI are just `NNN Label` lines; the editor parses the first
   Note 1=A+ is non-monotonic: A+ ranks between A (6) and S (7) but is stored as 1.
   **Max is 7** as of v1.2b (8 caused in-game problems). Rank ladder confirmed vs the Suikosource
   Skills List guide: E<D<C<B<B+<A<A+<S.
+- **`+102` (0x66) u16 — ASSIGNED HORSE** (model id). The game reads this to decide whether a
+  character rides in the field *and* in battle: `hasAssignedHorse(chara) || isValidRidePair(...)`.
+  Stock, six records carry one — Chris = 309 (`s2um`, her own horse), Roland/Leo/Percival/Borus/
+  Salome = 308 (`zkum`, the Zexen-knight horse); every other record is 0. The consumer at
+  `0x16c76e4` tests `(value - 308) < 2` unsigned, so **only 308 and 309 are honoured** — any
+  other mount id is read and silently discarded. See `docs/MOUNT_SYSTEM_RESEARCH.md` §11.
 - `+12` u8 (unknown; values like 5/9/17/18/34/81/98). `+80..+96` 17×u8 (list2_60…76, fixed-skills
   block); `+100..+101` 2×u8 (list2_80,81, starting level + relative flag).
 
