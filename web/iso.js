@@ -500,6 +500,8 @@
     const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
     const uniteChars = await grabOpt("../Editor/s3_unite_chars.json");  // who is in each unite
     const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
+    const runeFood = await grabOpt("../Editor/s3_rune_food_desc.json");    // rune/food menu text + spell lists
+    const runeOwner = await grabOpt("../Editor/s3_rune_owner.json");       // whose rune each signature rune is
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -513,7 +515,7 @@
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
-            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources };
+            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources, runeFood, runeOwner };
     return REF;
   }
 
@@ -1341,7 +1343,7 @@
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster. Your own units use the characters' save stats. Army skill list included as reference.",
-      ref: "Reference (read-only): searchable item and skill id lists, where each item comes from, and every packed sub-file on the disc.",
+      ref: "Reference (read-only): searchable item, rune and skill lookups, where each item comes from, and every packed sub-file on the disc.",
     };
     q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
     const host = q("#isoView");
@@ -3323,18 +3325,21 @@
     return out.join("\n");
   }
 
-  // ---- Reference (read-only item / skill browser) ----------------------------
+  // ---- Reference (read-only item / rune / skill browser) ---------------------
   let REF_KIND = "items";
   // Reference is the disc's read-only half, so everything that only *describes* the game
-  // lives under it — item and skill ids, where an item comes from, and the sub-file
+  // lives under it — item, rune and skill lookups, where an item comes from, and the sub-file
   // directory. Each sub-tab replaces the view hint, because "read-only lookup" is the only
   // thing they share; what you're looking at differs a lot between them.
   const REF_HINT = {
     items: "Reference (read-only): every item id on the disc, with its category and description.",
-    skills: "Reference (read-only): every skill id, with its type and effect text.",
+    runes: "Reference (read-only): every rune — what it does, the spells it grants, who carries it and where it drops.",
+    skills: "Reference (read-only): every skill — what each rank is worth, who can learn it and how far, and who has it on this disc.",
     sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
     files: "Reference (read-only): every packed sub-file on the disc — which archive holds it, where it starts, how big it is, and what it turned out to be.",
   };
+  let RUNE_GROUP = "";     // Runes browser: family filter chip ("" = all)
+  let SKILL_TYPE = "";     // Skills browser: type filter chip ("" = all)
   // "Where does this item come from" — the read-only half of everything the enemy index and
   // the guides know. Two provenance kinds, deliberately kept apart in the UI as well as in
   // the JSON: `drops` were decoded off this disc and are stated as fact; `guide` rows are
@@ -3453,36 +3458,257 @@
     wireRefTabs(host);
   }
 
+  // ---- Runes browser ---------------------------------------------------------
+  // Runes fall into three families and the item-id list keeps each family contiguous, so these
+  // ranges ARE the classification — there is no per-rune table here to drift out of sync.
+  // Checked against Editor/Suikoden3_item_ids.txt: 22 + 27 + 23 = 72, which is exactly the
+  // number of items in the "Runes" category, so every rune lands in one family and no other
+  // item can wander in.
+  const RUNE_GROUPS = [
+    ["magic", "Magic", 0x13D, 0x152, "grants spells — which four you get depends on the rune's mastery level"],
+    ["attack", "Special attack", 0x153, 0x16D, "a character's or a weapon class's signature attack; several are one-per-battle"],
+    ["support", "Support", 0x1B8, 0x1CE, "passive — attach it and forget it. No spells, no menu entry in battle"],
+  ];
+  const runeGroupOf = (id) => (RUNE_GROUPS.find(([, , lo, hi]) => id >= lo && id <= hi) || ["", ""])[0];
+  const runeGroupLabel = (k) => (RUNE_GROUPS.find(([g]) => g === k) || ["", ""])[1];
+  const runeIds = () => Object.keys(REF.items).map(Number).filter((id) => REF.cats[id] === "Runes").sort((a, b) => a - b);
+
+  // Both guide files that answer "whose rune is this?" spell rune names their own way — the
+  // slot guide writes "Eight Devil", "Shining wing", "Sword of Rage" where the item list has
+  // "Eight-Devil", "Shining Wing", "Sword Of Rage" — so both indexes are keyed by nameKey(),
+  // the same normalizer runeTblDesc() already trusts before it believes a disc record.
+  let RUNE_OWNERS = null, RUNE_HOLDERS = null;
+  const SLOT_NAME = { head: "Head", right: "Right hand", left: "Left hand" };
+  function runeOwners() {              // rune -> the character (or weapon class) it belongs to
+    if (RUNE_OWNERS) return RUNE_OWNERS;
+    const m = {}, src = REF.runeOwner || {};
+    for (const k in src) m[nameKey(k)] = src[k];
+    return (RUNE_OWNERS = m);
+  }
+  function runeHolders() {             // rune -> [{ch, slot}] who starts with it equipped
+    if (RUNE_HOLDERS) return RUNE_HOLDERS;
+    const m = {}, slots = REF.runeSlots || {};
+    for (const ch in slots) for (const k in SLOT_NAME) {
+      const s = slots[ch][k];
+      if (!s || s.state !== "rune" || !s.rune) continue;
+      const key = nameKey(s.rune);
+      (m[key] = m[key] || []).push({ ch, slot: SLOT_NAME[k] });
+    }
+    return (RUNE_HOLDERS = m);
+  }
+
+  // What a rune is and does. The menu text is read off the LOADED disc (RUNE_TBL), so a rewrite
+  // on the Text tab shows up here immediately; s3_rune_food_desc.json is the fallback, and it
+  // also carries the "— Grants a, b, c" spell list that the disc's own one-liner leaves out.
+  function runeInfo(id) {
+    const nm = REF.items[id] || "";
+    const fb = (REF.runeFood && REF.runeFood[String(id)]) || "";
+    const m = /^(.*?)\s*—\s*Grants\s+(.+)$/.exec(fb);
+    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");
+    return {
+      id, name: nm, group: runeGroupOf(id),
+      text: (BUF && runeTblDesc(id)) || (m ? m[1] : fb),
+      grants: RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []),
+      owner: runeOwners()[nameKey(nm)] || "",
+      holders: runeHolders()[nameKey(nm)] || [],
+      sources: sourceRows(id),
+    };
+  }
+  const runeHaystack = (r) => [r.name, hex(r.id, 3), r.text, runeGroupLabel(r.group), r.grants.join(" "), r.owner,
+    r.holders.map((h) => h.ch + " " + h.slot).join(" "),
+    r.sources.map((s) => s.what + " " + s.detail).join(" ")].join(" ").toLowerCase();
+
+  // "Who has it / where to get it" — three kinds of row, each tagged with where it came from,
+  // for the same reason the Item-sources browser tags its own: a decoded drop weight and a
+  // guide's prose are not the same class of fact and a reader shouldn't have to guess which.
+  function runeWhoHTML(r) {
+    const rows = [];
+    if (r.owner) rows.push({ disc: false, what: "Belongs to", detail: r.owner });
+    if (r.holders.length) rows.push({ disc: false, what: "Starts equipped on",
+      detail: r.holders.map((h) => `${h.ch} (${h.slot})`).join(", ") });
+    rows.push(...r.sources);
+    if (!rows.length) return `<span class="muted">—</span>`;
+    return rows.map((x) => `<div class="srcrow"><span class="srctag ${x.disc ? "disc" : "guide"}"
+        title="${x.disc ? "decoded from this disc" : "from the Suikosource guides"}"
+        >${x.disc ? "disc" : "guide"}</span> <b>${esc2(x.what)}</b>
+        <span class="muted">${esc2(x.detail)}</span></div>`).join("");
+  }
+
+  function drawRunes(host) {
+    const all = runeIds().map(runeInfo);
+    const q2 = SEARCH;
+    const rows = all.filter((r) => (!RUNE_GROUP || r.group === RUNE_GROUP) && (!q2 || runeHaystack(r).includes(q2)));
+    const tally = (k) => all.filter((r) => r.group === k).length;
+    const chips = `<div class="subtabs" style="margin:0 0 10px">
+      <button class="chip${RUNE_GROUP ? "" : " on"} mini" data-rgrp="">All (${all.length})</button>
+      ${RUNE_GROUPS.map(([k, label, , , note]) => `<button class="chip${RUNE_GROUP === k ? " on" : ""} mini"
+        data-rgrp="${k}" title="${esc2(note)}">${esc2(label)} (${tally(k)})</button>`).join("")}</div>`;
+    host.innerHTML = refTabs() + chips +
+      `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
+        grants, and who carries it. Descriptions come off <b>this</b> disc's rune table, so an edit on the
+        Text tab shows here. <b>Grants</b> lists the spells a magic rune unlocks as its mastery level rises;
+        the Spells tab is where those are edited. Rows in the last column are tagged
+        <span class="srctag guide">guide</span> when they come from the Suikosource rune-slot and character
+        guides and <span class="srctag disc">disc</span> when decoded from this disc's enemy drop tables.
+        Nothing here is editable — runes are equipped per character on the <b>Characters</b> tab.</div>
+      <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
+        <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
+          <td>${esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
+          <td><div class="muted">${esc2(r.text || "—")}</div>
+            ${r.grants.length ? `<div class="grants">${r.grants.map((s) =>
+              `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}</td>
+          <td>${runeWhoHTML(r)}</td></tr>`).join("")
+        || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+    qa("[data-rgrp]", host).forEach((b) => (b.onclick = () => { RUNE_GROUP = b.dataset.rgrp; drawRunes(host); }));
+    wireRefTabs(host);
+  }
+
+  // ---- Skills browser --------------------------------------------------------
+  // The three types in s3_skill_ref.json line up exactly with how the game treats them, and
+  // "Utility" is the set the editor already knows as the support skills: supportActive() gates
+  // ids 0x1C..0x26 for the same eleven, verified 27/27 against the character guide. So the
+  // Utility chip and the Support view's fade are two views of one fact, not two guesses.
+  const SKILL_TYPES = [
+    ["Mundane", "learnable by most fighters; the bread-and-butter combat skills"],
+    ["Unique", "restricted — only some characters can take these, and rarely to S"],
+    ["Utility", "the support skills: castle abilities that work outside battle (Cook, Appraisal, Discount, Bath…)"],
+  ];
+  const skillType = (id) => ((REF.skillRef && REF.skillRef[String(id)]) || {}).type || "";
+  const GRADES = ["S", "A+", "A", "B+", "B", "C", "D", "E"];   // best first, for the cap summary
+
+  // Who the guide says can learn a skill, and how far. Its cap tables only cover the combat
+  // skills (ids 1..23, 26, 39..41) — the Utility ones aren't per-character caps at all, which
+  // is why an empty list here is a fact worth printing rather than a hole to hide.
+  let SKILL_LEARNERS = null;
+  function skillLearners() {
+    if (SKILL_LEARNERS) return SKILL_LEARNERS;
+    const m = {}, caps = REF.skillCaps || {};
+    for (const ch in caps) for (const sid in caps[ch]) (m[sid] = m[sid] || []).push({ ch, cap: caps[ch][sid] });
+    return (SKILL_LEARNERS = m);
+  }
+  // Live from the disc, so it reflects staged edits: which support characters (list3) carry a
+  // skill, and which fighters (list1) start with one. Both tables are tiny — 35 x 8 and 80 x 6.
+  function skillHoldersLive() {
+    const m = {};
+    if (!BUF) return m;
+    const add = (id, entry) => { if (id) (m[id] = m[id] || []).push(entry); };
+    const [b3, s3] = TABLES.list3, n3 = REF.names.list3 || {};
+    for (let i = 0; i < LIST_COUNT.list3; i++) {
+      const nm = n3[String(i)]; if (!nm) continue;
+      for (let k = 0; k < 8; k++) {
+        const o = b3 + i * s3 + k; if (!inBlk(o, 1)) continue;
+        const v = readW(o, 1);
+        if (v && supportActive(v)) add(v, { ch: nm, note: "support" });   // combat slots on list3 never fire
+      }
+    }
+    const [b1, s1] = TABLES.list1, n1 = REF.names.list1 || {};
+    for (let i = 0; i < LIST_COUNT.list1; i++) {
+      const nm = n1[String(i)]; if (!nm) continue;
+      for (let k = 0; k < 6; k++) {
+        const o = b1 + i * s1 + 12 + k * 2; if (!inBlk(o, 2)) continue;
+        add(readW(o, 1), { ch: nm, note: rankLabel(readW(o + 1, 1)) });
+      }
+    }
+    return m;
+  }
+
+  function skillCardHTML(id, learners, live) {
+    const r = (REF.skillRef && REF.skillRef[String(id)]) || {};
+    const ty = r.type || "";
+    const byGrade = GRADES.map((g) => [g, learners.filter((l) => l.cap === g)]).filter(([, l]) => l.length);
+    const best = byGrade.length ? byGrade[0][0] : "";
+    const effects = (r.effects || []).map((e) => `<tr><td class="ty">${esc2(e.label)}</td>${
+      RANK_OPTS.slice(1).map(([, g]) => `<td class="sl">${esc2((e.ranks && e.ranks[g]) || "–")}</td>`).join("")}</tr>`).join("");
+    const capBlock = byGrade.length
+      ? `<h4>Who can learn it — ${learners.length} characters, best <b>${esc2(best)}</b></h4>
+         ${byGrade.map(([g, l]) => `<div class="srcrow"><span class="srctag guide">${esc2(g)}</span>
+            <span class="muted">${esc2(l.map((x) => x.ch).join(", "))}</span></div>`).join("")}`
+      : `<h4>Who can learn it</h4><div class="muted">Not in the guide's cap tables.${
+          ty === "Utility" ? " Utility skills aren't capped per character — a support character either has one or doesn't." : ""}</div>`;
+    const liveBlock = live.length
+      ? `<h4>On this disc</h4><div class="srcrow"><span class="srctag disc">disc</span>
+           <span class="muted">${esc2(live.map((x) => `${x.ch} (${x.note})`).join(", "))}</span></div>`
+      : `<h4>On this disc</h4><div class="muted">No character starts with it.</div>`;
+    return `<details class="char" data-i="sk${id}"${SEARCH ? " open" : ""}><summary><span class="chev">▸</span>
+        <span class="nm">${esc2(skillName(id))}</span><span class="muted">${hex(id, 2)}</span>
+        <span class="lv">${esc2(ty)}${byGrade.length ? ` · ${learners.length} can learn · best ${esc2(best)}` : ""}</span></summary>
+      <div class="char-body">
+        <div class="muted" style="margin-bottom:8px">${esc2(r.desc || "No guide description for this skill.")}</div>
+        ${effects ? `<h4>Effect by rank</h4>
+          <table class="invtbl ranktbl"><thead><tr><th>Effect</th>${
+            RANK_OPTS.slice(1).map(([, g]) => `<th>${esc2(g)}</th>`).join("")}</tr></thead>
+            <tbody>${effects}</tbody></table>` : ""}
+        ${capBlock}
+        ${liveBlock}
+      </div></details>`;
+  }
+
+  function drawSkillsRef(host) {
+    const learners = skillLearners(), live = skillHoldersLive(), q2 = SEARCH;
+    const ids = Object.keys(REF.skills).map(Number).sort((a, b) => a - b);
+    const tally = (t) => ids.filter((id) => skillType(id) === t).length;
+    const hay = (id) => {
+      const r = (REF.skillRef && REF.skillRef[String(id)]) || {};
+      return [skillName(id), hex(id, 2), r.type || "", r.desc || "",
+        (learners[String(id)] || []).map((l) => l.ch).join(" "),
+        (live[id] || []).map((x) => x.ch).join(" ")].join(" ").toLowerCase();
+    };
+    const shown = ids.filter((id) => (!SKILL_TYPE || skillType(id) === SKILL_TYPE) && (!q2 || hay(id).includes(q2)));
+    const chips = `<div class="subtabs" style="margin:0 0 10px">
+      <button class="chip${SKILL_TYPE ? "" : " on"} mini" data-styp="">All (${ids.length})</button>
+      ${SKILL_TYPES.map(([t, note]) => `<button class="chip${SKILL_TYPE === t ? " on" : ""} mini"
+        data-styp="${t}" title="${esc2(note)}">${t === "Utility" ? "Utility (support)" : t} (${tally(t)})</button>`).join("")}</div>`;
+    host.innerHTML = refTabs() + chips +
+      `<div class="muted" style="margin:0 0 10px">Every skill, what each rank of it is actually worth, and who
+        can get there. Effect numbers and the per-character caps are from the Suikosource skills guide
+        (<span class="srctag guide">guide</span>); the <b>On this disc</b> line is read live out of the loaded
+        ISO (<span class="srctag disc">disc</span>) and follows your staged edits. <b>Utility</b> are the
+        support skills — castle abilities like Cook, Appraisal and Discount that only support characters use;
+        they have no per-character cap, so the guide lists none. Editing lives on the
+        <b>Characters</b>, <b>Growth</b> and <b>Support</b> tabs.</div>
+      ${shown.map((id) => skillCardHTML(id, learners[String(id)] || [], live[id] || [])).join("")
+        || `<div class="muted">no matches</div>`}`;
+    qa("[data-styp]", host).forEach((b) => (b.onclick = () => { SKILL_TYPE = b.dataset.styp; drawSkillsRef(host); }));
+    wireRefTabs(host);
+  }
+
+  // ---- Reference tab strip ---------------------------------------------------
+  // [key, label, count(), draw(host)] — data-driven because several people add modes here and
+  // a literal strip means every new mode edits the same three lines. `count` is a thunk since
+  // REF is still null when this array is built. Function declarations hoist, so the draw
+  // references resolve fine.
+  const REF_MODES = [
+    ["items", "Items", () => Object.keys(REF.items).length, drawItemsRef],
+    ["runes", "Runes", () => runeIds().length, drawRunes],
+    ["skills", "Skills", () => Object.keys(REF.skills).length, drawSkillsRef],
+    ["sources", "Item sources", () => Object.keys((REF.itemSources && REF.itemSources.items) || {}).length, drawSources],
+    ["files", "Files", () => { const sf = subfileIndex(); return (sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0).toLocaleString(); }, drawFiles],
+    ["places", "Pickups", () => ((REF.itemSources && REF.itemSources.places) || []).length, drawPickups],
+  ];
   function refTabs() {
-    const n = (REF.itemSources && REF.itemSources.items) ? Object.keys(REF.itemSources.items).length : 0;
-    const sf = subfileIndex();
-    const nf = sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0;
-    const on = (k) => (REF_KIND === k ? " on" : "");
-    return `<div class="subtabs" style="margin-bottom:10px">
-        <button class="chip${on("items")}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
-        <button class="chip${on("skills")}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button>
-        <button class="chip${on("sources")}" data-ref="sources">Item sources (${n})</button>
-        <button class="chip${on("files")}" data-ref="files">Files (${nf.toLocaleString()})</button>
-        <button class="chip${on("places")}" data-ref="places">Pickups (${((REF.itemSources && REF.itemSources.places) || []).length})</button></div>`;
+    return `<div class="subtabs" style="margin-bottom:10px">${REF_MODES.map(([k, label, count]) =>
+      `<button class="chip${REF_KIND === k ? " on" : ""}" data-ref="${k}">${label} (${count()})</button>`).join("")}</div>`;
   }
   function wireRefTabs(host) {
     // go through drawView so the per-sub-tab hint above the list follows the tab
-    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawView(); }));
+    qa("[data-ref]", host).forEach((b) => (b.onclick = () => {
+      REF_KIND = b.dataset.ref; RUNE_GROUP = ""; SKILL_TYPE = "";   // a mode's filter chips don't outlive it
+      drawView();
+    }));
   }
+  function drawReference(host) { (REF_MODES.find(([k]) => k === REF_KIND) || REF_MODES[0])[3](host); }
 
-  function drawReference(host) {
-    if (REF_KIND === "sources") return drawSources(host);
-    if (REF_KIND === "files") return drawFiles(host);
-    if (REF_KIND === "places") return drawPickups(host);
-    const isItems = REF_KIND === "items";
-    const list = isItems
-      ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))
-      : Object.keys(REF.skills).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 2, nm: skillName(id), sub: (REF.skillRef && REF.skillRef[String(id)] || {}).type || "", desc: skillEffectText(id) }));
+  function drawItemsRef(host) {
     const q2 = SEARCH;
-    const rows = list.filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, o.w).toLowerCase().includes(q2))
-      .map((o) => `<tr><td class="sl">${hex(o.id, o.w)}</td><td>${esc2(o.nm)}${o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
+    const rows = Object.keys(REF.items).map(Number).sort((a, b) => a - b)
+      .map((id) => ({ id, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))
+      .filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, 3).toLowerCase().includes(q2))
+      .map((o) => `<tr><td class="sl">${hex(o.id, 3)}</td><td>${esc2(o.nm)}${
+        o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
     host.innerHTML = refTabs() +
-      `<table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
+      `<table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${
+        rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
     wireRefTabs(host);
   }
 
