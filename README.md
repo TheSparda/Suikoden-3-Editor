@@ -189,14 +189,18 @@ and the riding path originally had no multiplier at all, taking an implicit ×1.
 grafted in and pointed at the shared divide, which is why 100% still behaves exactly like the
 unmodified game: it computes ×100÷100.
 
-**What it can't do (yet): per-area rates.** Each zone's *own* base rate isn't in the executable
-— it's read from a 60-byte room record inside the packed map archives (`DATA/*.BIN`). That
-record is now fully decoded (the rate is its `+0x04` halfword, traced by disassembly from the
-record all the way into the encounter roll), but **where the table of them sits on disc is
-still unknown**: unlike an enemy record, a bare rate has no redundant field to fingerprint
-against, and two disc-wide scans came back at chance level. Pinning it needs a PCSX2
-savestate taken on a field map to read the live table address. Until then the tab offers the
-global scale only. Full write-up in `Editor/Suikoden3_ISO_offsets.md`.
+**Per-area rates — located, not yet wired into the tab.** Each zone's *own* base rate isn't
+in the executable: it's the `+0x04` halfword of a 60-byte room record inside the packed map
+archives (`DATA/*.BIN`). Both halves are now solved — the record by disassembly (traced from
+the record all the way into the encounter roll), and the archives by cracking
+**`DATA/FSECT.BIN`**, which turns out to be the disc's sub-file directory rather than the
+relocation table it was long taken for. `Editor/build_room_index.py` emits
+`Editor/s3_rooms.json`: **23 areas, 133 chapter-variant tables, 1,612 room records**, every
+offset verified on-disc and outside the executable region. The rates are per room and behave
+exactly as you'd hope — towns and interiors read 0, field and dungeon maps read 2–9 (Karaya
+9, Budehuc 5, Kuput Forest 4, Amur Plains 3). The **Encounter tab still offers the global
+scale only** until the per-area editor is built on top of that index. Full write-up in
+`Editor/Suikoden3_ISO_offsets.md`.
 
 </details>
 
