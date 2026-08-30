@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -256,9 +256,12 @@ head("Byte-exact edits across every editable view");
   // Weapons (list4): ATK Lv1 (byte @ rec0+0)
   await page.click('#isoTabs [data-v="weapons"]'); await openRec(page, "details.char");
   await page.fill('details.char[open] input[data-off="' + l4b + '"]', "77"); await page.dispatchEvent('details.char[open] input[data-off="' + l4b + '"]', "change");
-  // Shops: item slot (picker) + a price (number)
+  // Shops: a stock slot (picker), a rarity chance (number) and a price-ladder step (number)
   await page.click('#isoTabs [data-v="shops"]');
   await page.click("button.shopitem >> nth=0"); await page.waitForSelector(".picker-search"); await page.fill(".picker-search", String(armor.id)); await page.click(".picker-row >> nth=0");
+  await page.fill('input.shopchance >> nth=0', "77"); await page.dispatchEvent('input.shopchance >> nth=0', "change");
+  await page.fill('input.shopqty >> nth=0', "5"); await page.dispatchEvent('input.shopqty >> nth=0', "change");
+  await page.click(".shop-extra > summary");        // the shared tables fold away by default
   await page.fill('input.shopnum >> nth=0', "12345"); await page.dispatchEvent('input.shopnum >> nth=0', "change");
   // Support (list3): first support skill (skill picker). First *named* record is index 1.
   await page.click('#isoTabs [data-v="support"]'); await openRec(page, "details.char");
@@ -296,8 +299,10 @@ head("Byte-exact edits across every editable view");
 
   const r = await save(page);
   check("list4 ATK Lv1 = 77", r.u8(l4b) === 77);
-  check("shop item slot = armor id", r.u16(SHOP.item3_a[0]) === armor.id);
-  check("shop price = 12345", r.u32(SHOP.item2[0]) === 12345);
+  check("shop stock slot 1 = armor id", r.u16(shopRec(SHOPS.kinds.item, 0, 0)) === armor.id);
+  check("shop rarity chance = 77", r.u8(shopRec(SHOPS.kinds.item, 0, 0) + SHOPS.rarOff + 0x0A) === 77);
+  check("shop rarity quantity = 5", r.u8(shopRec(SHOPS.kinds.item, 0, 0) + SHOPS.rarOff + 0x0B) === 5);
+  check("price ladder step 0 = 12345", r.u32(PRICE_LADDER[0]) === 12345);
   check("support skill1 = 0x0A", r.u8(l3rec) === 0x0A);
   check("growth PWR rate = 9", r.u8(l2rec + 4) === 9);
   check("skillmax#1 = 3 (D)", r.u8(l2rec + 16) === 3);
@@ -698,6 +703,67 @@ head("Unite rosters — guide characters shown, searchable, read-only");
   const ids = await page.locator("details.char").evaluateAll((ns) => ns.map((n) => n.dataset.i));
   check("filter by character name keeps both Mercenary B rows", ids.join(",") === "0,24", ids.join(","));
   await page.fill("#isoSearch", ""); await page.waitForTimeout(60);
+  await page.context().close();
+}
+
+head("Shops — counters by town and story stage, with rare finds");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="shops"]'); await page.waitForTimeout(120);
+  // the fixture stocks location 0, which the shop index names Vinay del Zexay
+  const locOpts = await page.locator("#shopLoc option").allTextContents();
+  check("location picker names the town and its counters",
+    /Vinay del Zexay/.test(locOpts[0]) && /Item\/Armor\/Rune/.test(locOpts[0]), locOpts.join(" | "));
+  check("only stocked locations are offered", locOpts.length === 1, String(locOpts.length));
+  check("the town name cites its evidence", /Yellow Scarf/.test(await page.textContent("#isoView")));
+  // all three counters render, each with its own record address
+  const heads = await page.locator(".bag-h").allTextContents();
+  for (const k of ["Item Shop", "Armor Shop", "Rune Shop"])
+    check(`${k} counter shown`, heads.some((h) => h.includes(k)), heads.join(" | "));
+  check("stage 1 of 2 labelled", /stage 1 of 2/.test(heads.join(" ")), heads.join(" | "));
+  // stock resolves to item names, not raw ids
+  const body = await page.textContent("#isoView");
+  check("stock slot shows the item name", /Medicine D/.test(body));
+  check("rarity section present", /rare finds/i.test(body));
+  check("shared tables start folded", (await page.locator(".shop-extra[open]").count()) === 0);
+  check("...so the price ladder is out of the way until asked for",
+    !(await page.locator("input.shopnum >> nth=0").isVisible()));
+  await page.click(".shop-extra > summary"); await page.waitForTimeout(80);
+  check("...and unfolds on click", await page.locator("input.shopnum >> nth=0").isVisible());
+  await page.click(".shop-extra > summary"); await page.waitForTimeout(80);
+  check("rarity roll is explained, not just labelled", /1-in-100 draw/.test(body) && /qty . spread/.test(body), "");
+  check("fixture rarity chance read from +0x0A", (await page.inputValue("input.shopchance >> nth=0")) === "40");
+  check("chance clamps to 100", await (async () => {
+    await page.fill("input.shopchance >> nth=0", "250");
+    await page.dispatchEvent("input.shopchance >> nth=0", "change"); await page.waitForTimeout(60);
+    const v = await page.inputValue("input.shopchance >> nth=0");
+    await page.fill("input.shopchance >> nth=0", "40"); await page.dispatchEvent("input.shopchance >> nth=0", "change");
+    return v === "100";
+  })());
+  // switching stage re-reads a different record: stage 2 has one more item than stage 1
+  const n1 = await page.locator("button.shopitem").count();
+  await page.selectOption("#shopStage", "1"); await page.waitForTimeout(120);
+  const n2 = await page.locator("button.shopitem").count();
+  check("later stage shows a longer stock list on each counter", n2 === n1 + 3, `${n1} -> ${n2}`);
+  check("stage label follows the picker", /stage 2 of 2/.test((await page.locator(".bag-h").allTextContents()).join(" ")));
+  // the empty tail is hidden until asked for, then all 30 slots appear per counter
+  await page.check("#shopEmpty"); await page.waitForTimeout(120);
+  check("show-empty reveals all 30 slots on each of the 3 counters",
+    (await page.locator("button.shopitem").count()) === 90);
+  await page.uncheck("#shopEmpty"); await page.waitForTimeout(120);
+  await page.context().close();
+}
+
+head("Shops — a gap in a stock list is called out");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="shops"]'); await page.waitForTimeout(120);
+  check("no warning on a contiguous list", !/hides the rest/.test(await page.textContent("#isoView")));
+  // clear slot 2 of 3 — the game stops reading at the first empty slot, so slot 3 goes dark
+  await page.click("button.shopitem >> nth=1"); await page.waitForSelector(".picker-search");
+  await page.click('.picker-row >> nth=0');          // "— none —" is always the first row
+  await page.waitForTimeout(120);
+  const t = await page.textContent("#isoView");
+  check("gap warning appears", /hides the rest/.test(t));
+  check("gap warning explains the consequence", /never appear/.test(t));
   await page.context().close();
 }
 

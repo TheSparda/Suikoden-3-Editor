@@ -653,6 +653,13 @@ Investigated mapping every shop by location + full inventory. Findings:
   slots (they sit in the same region and edit fine); they're a subset, not the whole
   shop system. Not expanding shop editing to avoid corrupting script data.
 
+> **SUPERSEDED (2026-08-30).** The conclusion above is wrong, and the reason it was
+> wrong is worth keeping: the spike searched for shop *records* by pattern in the
+> 0x3D0000..0x3EB000 data, found event-script noise, and stopped. Asking instead
+> *which code reads the tables we already had* answered it in one step — `item3_a`
+> and `item3_b` are record 0 of two of three flat, non-script arrays covering every
+> shop in the game. See "Shop counters — the whole system, decoded" below.
+
 ## Starting stats + EXP curve spike (2026-08-10, both NOT flat tables)
 Requested: edit character starting stats + the EXP/level curve.
 - STARTING STATS: parsed all 78 chars' starting PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK/HP
@@ -2212,3 +2219,103 @@ the battle-side party-scan routine disassembled first.
 `s3_unite_chars.json` is keyed by unite INDEX (names repeat: Han ×3, Adonis ×2, Knight B ×3).
 33 of 38 are covered; Griffon (#2), Duck (#18) and the three Han rows (#26/#32/#33) are absent
 from Suikosource's guide and render as "roster unknown" rather than a guess.
+
+
+## Shop counters — the whole system, decoded (2026-08-30)
+Supersedes the 2026-08-10 spike above, which concluded shop inventories were script data.
+They are not. Every shop in the game is a flat record in one of three arrays, and the arrays
+were already half-exposed: the editor's `item3_a` and `item3_b` were record 0 of two of them.
+
+**How it fell out.** `re_elf.py xref` on the four SHOP table addresses returned nothing,
+because no code materialises them directly. Widening the search to *near* hits (any lui+lo
+pair landing within ±0x400) put a single reference 0x1F0 below `item3_a` — and 0x30 later in
+the same function, another 0x1F0 below `item3_b`. That function is the accessor:
+
+```
+0x170DDF8(kind, loc, stage):
+    if (kind < 1 || kind > 3) return 0
+    if (loc >= 0x10) return 0
+    return BASE[kind] + loc*0x1F0 + stage*0x7C            // 0x1F0 == 4 * 0x7C
+```
+
+so the two known tables are `loc 0, stage 0` of a 3 x 14 x 4 array, and `kind 3` names a
+third array the editor had never seen at all.
+
+| kind | array base (file / VA) | what it sells |
+|------|------------------------|---------------|
+| 1 | 0x3EA550 / 0x19A2D50 | item shop (medicines, scrolls, accessories) |
+| 2 | 0x3DDCD0 / 0x19964D0 | armour shop (helms, armour, robes, shields, boots) |
+| 3 | 0x3EEB48 / 0x19A7348 | rune shop |
+
+14 locations, not 16: the bound in the accessor is `loc < 0x10`, but the stage picker at
+0x170DCD8 that feeds it jumps through a **14-entry** table at VA 0x19BCA40 and returns 0 for
+`loc >= 0xE`. 14 x 0x1F0 also lands each array exactly under the next known table
+(item -> spells @0x3EC2A0, armour -> list4 @0x3DFA08, rune -> item1 @0x3F1E74), which is a
+free consistency check and is asserted in `web/tests/validate.mjs`.
+
+**The 0x7C record.**
+
+| offset | size | meaning |
+|--------|------|---------|
+| +0x00 | 30 x u16 | stock, **zero-terminated** — the enumerator at 0x176C948 caps its scan with `slti $s2, 0x1e` and breaks on the first zero |
+| +0x3C | 4 x 16B | "rarity" (rare-find) entries |
+
+30 slots x 2 bytes is exactly the 60 bytes before +0x3C, so the two halves tile the record.
+The rarity block's shape is proved outright by its own accessor:
+
+```
+0x170DFB0(kind, loc, n):
+    rec = 0x170DEB8(kind, loc)                 // wrapper: picks the stage for this loc
+    if (!rec || n >= 4) return 0
+    return rec + (n << 4) + 0x3C
+```
+
+**The rarity entry (16 bytes).** Field offsets from `re_elf.py fields 0x170DFB0`; the three
+named ones are read straight out of the roll at 0x170E63C:
+
+```
+if (*(u16)(e+0) == 0) return 0                              // empty slot
+qty = *(u8)(e+0x0B) + (int)(*(u8)(e+0x0C) * (rand(100) - 50) / 100)
+if (qty < 0) qty = 0
+return  *(u8)(e+0x0A) < rand(100) ? 0 : qty                 // appearance test
+```
+
+| offset | size | meaning |
+|--------|------|---------|
+| +0x00 | u16 | item id |
+| +0x02, +0x04, +0x06, +0x08 | u16 | read by a separate price computation at 0x170E5E0 (`(total - *+8) / *+6`); **not identified**, left alone |
+| +0x0A | u8 | appearance chance out of 100 |
+| +0x0B | u8 | base quantity when it appears |
+| +0x0C | u8 | quantity spread (base +/- spread/2) |
+
+This also retires the 2026-08-09 audit line "SHOP RARE-FIND / % APPEARANCE — NOT PRESENT".
+It is present; it just lives past the 60-byte stock array the old flat view stopped at.
+
+**Naming the 14 locations.** The ELF has no shop-name strings, so names come from outside
+and each is pinned by an item only that town stocks. The Suikosource *Rare Armor* guide's
+"Rarity at <Item|Armor> Shop in <town>" lines and the GameFAQs walkthrough both key on rarity
+items, which is exactly the +0x3C block. Ten of the eleven stocked locations resolve, several
+of them twice over on two different counters:
+
+| loc | town | what pins it |
+|-----|------|--------------|
+| 0 | Vinay del Zexay | Yellow Scarf is a rarity at stage 3 and regular stock at stage 4 — the guide says it becomes a regular item at VdZ in chapter 5; Custom Armor / Custom Leather armour rarities |
+| 1 | Karaya Village | the Sacrificial Jizo the walkthrough sends you to the "Karaya Village Item Hut" for; clan bandanas / feather bands on its armour counter; one stage only, matching the village burning |
+| 2 | Duck Village | Hazy Rune rarity (guide: Duck Village / Alma Kinan) + the only rune counter stocking the Skunk Rune |
+| 3 | Great Hollow | DragonTail Ornament ("found at Great Hollow") + Crown of Destiny armour rarity |
+| 4 | Chisha Village | LionGod Ring + Prosperity Ring items, Prosperity Hat armour — all three guide-named at Chisha |
+| 5 | Alma Kinan | Killer Rune is a rarity at stage 1 and regular stock at stage 2, exactly as the guide describes; Hazy Rune too |
+| 6 | Iksay Village | Rose Brooch — guide lists it only at the Iksay item shop |
+| 7 | Le Buque | Custom Tunic armour rarity |
+| 8 | Caleria | WhiteRose Brooch item + Guardian Chain Mail armour |
+| 9 | Brass Castle | Custom Casque + Gold Emblem armour |
+| 10 | **unidentified** | one item counter, one stage, rarities are all generic consumables (Mega Medicine A, Kindness Drops, Dancing Flames, Berserk Blow). Not the VdZ Guild Hall — the guide's two Guild Hall rarities (Hunter Rune, Gold Emblem) are absent. Left unnamed rather than guessed. |
+
+Locs 11-13 are zero on all three counters.
+
+Emitted to `Editor/s3_shops.json` by `Editor/build_shop_index.py`; the web editor's Shops tab
+reads that file for the names and draws the counters from the geometry above.
+
+**Still open.** The four u16s at +0x02..+0x08; what selects the stage (0x170DCD8 reads a
+halfword table at VA 0x196A138 after two calls into 0x16D3700/0x16D3AC8 — presumably chapter
+and party); and loc 10's identity, which one savestate or one line of a walkthrough would settle.
