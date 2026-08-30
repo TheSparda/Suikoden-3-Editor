@@ -10,7 +10,15 @@
 // So the assertion is inverted from the usual: an IDENTICAL version line is the failure,
 // and only when web/ has otherwise changed.
 //
-//   node web/tests/version-drift.mjs
+//   node web/tests/version-drift.mjs                 # checks HEAD (what you would push)
+//   node web/tests/version-drift.mjs --branch foo     # checks another ref
+//   node web/tests/version-drift.mjs --worktree       # checks the checkout instead
+//
+// It checks a COMMIT, not the working tree, and that distinction is load-bearing here: this
+// repo is worked by several sessions sharing one checkout, and commits are made from an
+// explicit file list, so the working tree is not what gets pushed. Reading the checkout would
+// both count a peer's in-flight edits as yours and miss a stale version line that is actually
+// committed. `--worktree` is available for a normal single-user repo.
 //
 // Deliberately NOT part of `npm test`: it compares against whatever origin/main your repo
 // last fetched, so it is a pre-push check, not a CI check. Run `git fetch` first or it
@@ -33,8 +41,18 @@ for (const ref of ["origin/main", "origin/master", "main"]) {
 }
 if (!base) skip("no origin/main to compare against.");
 
+const argv = process.argv.slice(2);
+const useWorktree = argv.includes("--worktree");
+const bi = argv.indexOf("--branch");
+const ref = bi >= 0 ? argv[bi + 1] : "HEAD";
+if (!useWorktree) { try { git("rev-parse", "--verify", ref); } catch { skip(`no such ref: ${ref}`); } }
+const target = useWorktree ? "working tree" : `${ref} (${git("rev-parse", "--short", ref)})`;
+
 const show = (f) => { try { return git("show", `${base}:${f}`); } catch { return null; } };
-const read = (f) => { try { return fs.readFileSync(path.join(REPO, f), "utf8"); } catch { return null; } };
+const read = (f) => {
+  if (useWorktree) { try { return fs.readFileSync(path.join(REPO, f), "utf8"); } catch { return null; } }
+  try { return git("show", `${ref}:${f}`); } catch { return null; }
+};
 const pick = (txt, re) => { const m = txt && txt.match(re); return m && m[1]; };
 
 const VER = /·\s*v(\d+\.\d+\.\d+)\s*·/;
@@ -47,7 +65,9 @@ if (!remoteVer || !localVer || !remoteSw || !localSw) skip("couldn't read a vers
 // Did web/ change at all (excluding the two version files themselves)?
 let changed = [];
 try {
-  changed = git("diff", "--name-only", base, "--", "web/")
+  const args = useWorktree ? ["diff", "--name-only", base, "--", "web/"]
+                           : ["diff", "--name-only", base, ref, "--", "web/"];
+  changed = git(...args)
     .split("\n").filter((f) => f && f !== "web/index.html" && f !== "web/sw.js");
 } catch { skip("couldn't diff against " + base + "."); }
 
@@ -55,8 +75,15 @@ let fails = 0;
 const ok = (m) => console.log("  ✓ " + m);
 const bad = (m) => { console.log("  ✗ " + m); fails++; };
 
-console.log(`version drift vs ${base} (${git("rev-parse", "--short", base)}):`);
+console.log(`version drift: ${target} vs ${base} (${git("rev-parse", "--short", base)}):`);
 console.log(`  web/ files changed besides the version lines: ${changed.length}`);
+// Say plainly what was NOT looked at, so a shared checkout can't mislead.
+if (!useWorktree) {
+  let dirty = [];
+  try { dirty = git("diff", "--name-only", "--", "web/").split("\n").filter(Boolean); } catch { /* ignore */ }
+  if (dirty.length) console.log(`  note: ${dirty.length} uncommitted web/ file(s) in the checkout were NOT `
+    + `checked (this repo shares one tree; use --worktree to include them)`);
+}
 if (!changed.length) {
   ok("no web/ changes — version bump not required");
 } else {
