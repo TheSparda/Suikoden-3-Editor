@@ -163,6 +163,41 @@ console.log("list2 offsets (issue #2):");
   }
 }
 
+// 7b) spell/unite tail fields (radius + status chance). These live in the record's LAST 8
+// bytes, which the table stores one record out of phase — so a spell reads them at
+// base+stride+x while a unite (8 bytes longer) reads them inside its own record at +0x20+x.
+// Getting that phase wrong reads a neighbour's data, so pin both offset sets and the
+// s3patch.py constants that must agree with them.
+console.log("spell/unite tail fields (radius/chance):");
+{
+  const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
+  const patch = fs.readFileSync(path.join(REPO, "Editor", "s3patch.py"), "utf8");
+  const cons = (name) => {
+    const m = new RegExp(`const ${name} = (\\{[^}]*\\})`).exec(iso);
+    return m ? JSON.parse(m[1].replace(/([a-z]+):/g, '"$1":').replace(/0x[0-9A-Fa-f]+/g, (h) => parseInt(h, 16))) : null;
+  };
+  const SPELL = cons("SPELL"), UNITE = cons("UNITE");
+  const want = { SPELL: { radius: 0x21, chance: 0x26, elem: 0x24 }, UNITE: { radius: 0x21, chance: 0x24 } };
+  for (const [tbl, got] of [["SPELL", SPELL], ["UNITE", UNITE]]) {
+    if (!got) { bad(`iso.js ${tbl} table const not found`); continue; }
+    for (const [f, exp] of Object.entries(want[tbl]))
+      (got[f] === exp ? ok : bad)(`iso.js ${tbl}.${f} = 0x${(got[f] ?? 0).toString(16)} (want 0x${exp.toString(16)})`);
+    // the tail of the last record the editor actually reads must land inside the read block
+    // (a spell's tail is one record ahead, so the last readable spell is count-2)
+    const last = tbl === "SPELL" ? got.count - 2 : got.count - 1;
+    const tail = got.off + last * got.stride + got.chance + 2;
+    (tail <= ELF_END ? ok : bad)(`${tbl} last tail read ends at ${tail} (block ends ${ELF_END})`);
+  }
+  // s3patch.py must use the same phase, or the CLI reports a neighbour's values (the old "misc")
+  const py = (re, exp, label) => { const m = re.exec(patch); (m && eval(m[1]) === exp ? ok : bad)(`s3patch.py ${label} = ${m && m[1]} (want 0x${exp.toString(16)})`); };
+  py(/SPELL_RADIUS_OFF\s*=\s*SPELL_STRIDE \+ (0x[0-9A-Fa-f]+)/, 0x01, "SPELL_RADIUS_OFF - stride");
+  py(/SPELL_CHANCE_OFF\s*=\s*SPELL_STRIDE \+ (0x[0-9A-Fa-f]+)/, 0x06, "SPELL_CHANCE_OFF - stride");
+  py(/UNITE_RADIUS_OFF\s*=\s*(0x[0-9A-Fa-f]+)/, 0x21, "UNITE_RADIUS_OFF");
+  py(/UNITE_CHANCE_OFF\s*=\s*(0x[0-9A-Fa-f]+)/, 0x24, "UNITE_CHANCE_OFF");
+  // the phase-shifted "misc" field must be gone (it read the chance byte one record early)
+  (/"misc":/.test(patch) ? bad : ok)("s3patch.py no longer exposes the off-by-one-record 'misc' field");
+}
+
 // 8) guide reference overlays + .xdelta export wiring.
 console.log("Guide overlays + xdelta:");
 {
