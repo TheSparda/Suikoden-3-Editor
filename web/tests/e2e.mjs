@@ -901,6 +901,27 @@ head("Files view — sub-file browser is read-only and peeks real bytes");
   await page.context().close();
 }
 
+head("Reference — item sources, disc vs guide provenance, read-only");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="sources"]', { timeout: 3000 });
+  await page.click('[data-ref="sources"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("the browser explains chest contents aren't editable", /Chest contents are guide-only/.test(txt));
+  const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
+  check("rows carry a disc/guide provenance tag", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"), tags.slice(0, 4).join(","));
+  check("both provenance kinds are present", tags.includes("disc") && tags.includes("guide"));
+  // the filter reaches the source text, not just the item name
+  await page.fill("#isoSearch", "troll dragon"); await page.waitForTimeout(150);
+  const filtered = await page.textContent("#isoView");
+  check("filtering matches source text", /Pale Moon Casque/.test(filtered), filtered.slice(0, 120));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the sources browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
 head("Gear description overflow is rejected");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");

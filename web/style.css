@@ -314,3 +314,11 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .sfpeek { font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--mut);
   background:var(--input-bg); border:1px solid var(--line); border-radius:8px;
   padding:8px 10px; margin:0 0 6px; overflow-x:auto; white-space:pre; }
+
+/* item-source provenance rows (Reference view) */
+.srcrow { font-size:12px; line-height:1.5; margin-bottom:2px; }
+.srctag { display:inline-block; min-width:38px; text-align:center; font-size:10px;
+  text-transform:uppercase; letter-spacing:.05em; border-radius:5px; padding:1px 5px;
+  border:1px solid var(--line); color:var(--mut); }
+.srctag.disc { border-color:var(--acc); color:var(--acc2); }
+.srctag.guide { border-color:var(--line); color:var(--mut); }

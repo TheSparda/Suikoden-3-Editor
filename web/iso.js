@@ -471,6 +471,7 @@
     ]);
     const rooms = await grabOpt("../Editor/s3_rooms.json");        // per-area encounter rates
     const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
+    const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -483,7 +484,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef, rooms, subfiles };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef, rooms, subfiles, itemSources };
     return REF;
   }
 
@@ -3178,7 +3179,80 @@
 
   // ---- Reference (read-only item / skill browser) ----------------------------
   let REF_KIND = "items";
+  // "Where does this item come from" — the read-only half of everything the enemy index and
+  // the guides know. Two provenance kinds, deliberately kept apart in the UI as well as in
+  // the JSON: `drops` were decoded off this disc and are stated as fact; `guide` rows are
+  // text from the Suikosource Rare Armor guide and are labelled as such. They agree where
+  // they overlap (8 of the guide's 12 drop lines match the decoded tables exactly), which is
+  // why both are worth showing — but a reader should never have to guess which is which.
+  //
+  // Chest rows are guide-only and always will be: the disc rolls a chest's contents at
+  // runtime, so there is no on-disc list to read (Suikoden3_ISO_offsets.md, "The pickup
+  // ROLL, decoded"). Showing them here is how that stays useful without implying it's
+  // editable.
+  const SRC_LABEL = { chest: "Treasure chest", corpse: "Corpse", drop: "Dropped by",
+    "shop-rare": "Shop (rarity)", shop: "Shop", equipped: "Equipped to",
+    minigame: "Mini-game", battle: "Major battle" };
+
+  function sourceRows(id) {
+    const src = REF.itemSources && REF.itemSources.items && REF.itemSources.items[String(id)];
+    if (!src) return [];
+    const out = [];
+    (src.drops || []).forEach((d) => out.push({ disc: true,
+      what: `${d.enemy} · ${d.archive}`,
+      detail: `Lv ${d.lv} · drop weight ${d.weight}/1000 (${(d.weight / 10).toFixed(1)}%)` }));
+    (src.guide || []).forEach((g) => out.push({ disc: false,
+      what: SRC_LABEL[g.kind] || g.kind, detail: g.text }));
+    return out;
+  }
+
+  function drawSources(host) {
+    const idx = REF.itemSources && REF.itemSources.items;
+    if (!idx) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_item_sources.json</code>; it didn't load.</div>`;
+      wireRefTabs(host);
+      return;
+    }
+    const q2 = SEARCH;
+    const ids = Object.keys(idx).map(Number).sort((a, b) => a - b)
+      .filter((id) => !q2 || itemName(id).toLowerCase().includes(q2) || hex(id, 3).toLowerCase().includes(q2)
+        || sourceRows(id).some((r) => (r.what + " " + r.detail).toLowerCase().includes(q2)));
+    const body = ids.map((id) => {
+      const rows = sourceRows(id);
+      return `<tr><td class="sl">${hex(id, 3)}</td><td>${esc2(itemName(id))}
+          <div class="muted">${esc2(REF.cats[id] || "")}</div></td>
+        <td>${rows.map((r) => `<div class="srcrow"><span class="srctag ${r.disc ? "disc" : "guide"}"
+             title="${r.disc ? "decoded from this disc" : "from the Suikosource Rare Armor guide"}"
+             >${r.disc ? "disc" : "guide"}</span> <b>${esc2(r.what)}</b>
+             <span class="muted">${esc2(r.detail)}</span></div>`).join("")}</td></tr>`;
+    });
+    host.innerHTML = refTabs() +
+      `<div class="muted" style="margin:0 0 10px">Where each item can be found. Rows tagged
+        <span class="srctag disc">disc</span> are decoded from <b>this</b> disc's enemy tables — the enemy,
+        which archive's pack, that variant's level and the drop weight out of 1000. Rows tagged
+        <span class="srctag guide">guide</span> are text from the Suikosource <i>Rare Armor</i> guide.
+        The two agree where they overlap. <b>Chest contents are guide-only</b>: the game rolls a chest's
+        contents at runtime, so there is no list on the disc to read — and nothing here is editable.</div>
+      <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:26%">Item</th>
+        <th>Where it comes from</th></tr></thead>
+        <tbody>${body.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
+    wireRefTabs(host);
+  }
+
+  function refTabs() {
+    const n = (REF.itemSources && REF.itemSources.items) ? Object.keys(REF.itemSources.items).length : 0;
+    const on = (k) => (REF_KIND === k ? " on" : "");
+    return `<div class="subtabs" style="margin-bottom:10px">
+        <button class="chip${on("items")}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
+        <button class="chip${on("skills")}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button>
+        <button class="chip${on("sources")}" data-ref="sources">Item sources (${n})</button></div>`;
+  }
+  function wireRefTabs(host) {
+    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawReference(host); }));
+  }
+
   function drawReference(host) {
+    if (REF_KIND === "sources") return drawSources(host);
     const isItems = REF_KIND === "items";
     const list = isItems
       ? Object.keys(REF.items).map(Number).sort((a, b) => a - b).map((id) => ({ id, w: 3, nm: itemName(id), sub: REF.cats[id] || "", desc: itemDesc(id) }))
@@ -3186,11 +3260,9 @@
     const q2 = SEARCH;
     const rows = list.filter((o) => !q2 || o.nm.toLowerCase().includes(q2) || hex(o.id, o.w).toLowerCase().includes(q2))
       .map((o) => `<tr><td class="sl">${hex(o.id, o.w)}</td><td>${esc2(o.nm)}${o.desc ? `<div class="muted">${esc2(o.desc)}</div>` : ""}</td><td class="ty">${esc2(o.sub)}</td></tr>`);
-    host.innerHTML = `<div class="subtabs" style="margin-bottom:10px">
-        <button class="chip${isItems ? " on" : ""}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
-        <button class="chip${isItems ? "" : " on"}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button></div>
-      <table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
-    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawReference(host); }));
+    host.innerHTML = refTabs() +
+      `<table class="invtbl"><thead><tr><th>ID</th><th>Name</th><th>Category</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody></table>`;
+    wireRefTabs(host);
   }
 
   // ---- misc ------------------------------------------------------------------
