@@ -141,9 +141,10 @@ one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weap
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, and optional description rewrites),
-**Unites**, **Mounts** (**beta — testing only**: which rider sits on which mount in battle; the
-game hard-codes exactly three pairs, stock *Hugo+Fubar / Futch+Bright / Franz+Ruby*, and this
-rewrites those three comparisons — byte-verified but not yet confirmed in-game; see below),
+**Unites**, **Mounts** (**beta — testing only**: both of the game's mount systems — the
+per-character **assigned horse** that puts the six Zexen Knights on horseback in the field *and*
+in battle, and the hard-coded **three-pair** battle table, stock *Hugo+Fubar / Futch+Bright /
+Franz+Ruby* — byte-verified but not yet confirmed in-game; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on

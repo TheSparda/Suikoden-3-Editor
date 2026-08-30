@@ -66,6 +66,11 @@ export const MOUNT_PAIRS = [
   { riderSites: [0x1303A0, 0x1303AC], mountSite: 0x1303B4, rider: 41, mount: 42 },  // Franz + Ruby
 ];
 export const mountWord = (imm) => (0x24020000 | (imm & 0xFFFF)) >>> 0;   // addiu $v0,$zero,imm
+// The per-character assigned horse: u16 at list2 record +0x66. Stock has Chris on her own
+// horse (309) and the other five Zexen Knights on the knight horse (308).
+export const HORSE_OFF = 0x66;
+export const HORSE_STOCK = { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 };
+export const horseAddr = (roster) => TABLES.list2[0] + roster * TABLES.list2[1] + HORSE_OFF;
 export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
 export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
 export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
@@ -226,6 +231,7 @@ export function buildSynthIso() {
   SETS.counterOwnerSites.forEach((o) => w32(o, STOCK_OWNER_COUNTER));
   w32(SETS.healOwnerSite, STOCK_OWNER_HEAL); w32(SETS.squeakOwnerSite, STOCK_OWNER_SQUEAK);
   w32(SETS.halveMaskSite, STOCK_HALVE_MASK); w32(SETS.healDivRepair, STOCK_HEAL_DIV_SLOT);
+  for (const [roster, v] of Object.entries(HORSE_STOCK)) w16(horseAddr(+roster), v);
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));

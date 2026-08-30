@@ -142,6 +142,35 @@
     // The field-only horses (zkum / s2um / krum / kru2) have no battle set at all.
     mounts: [[8, "Fubar", "griffon"], [32, "Bright", "dragon"], [42, "Ruby", "horse"]],
     STOCK: [[1, 8], [31, 32], [41, 42]],      // Hugo+Fubar, Futch+Bright, Franz+Ruby
+
+    // ---- the OTHER mount system: a per-character assigned horse ----------------
+    // Separate from the three-pair table above and strictly more capable. The game asks
+    // `hasAssignedHorse(chara) || isValidRidePair(rider, mount)`, and the first half reads a
+    // u16 out of the character's own list2 record at +0x66 — undocumented space until now,
+    // sitting just past the starting-level bytes at +100/+101.
+    //
+    // Stock: Chris carries her own horse (309), and Roland / Leo / Percival / Borus / Salome
+    // carry the Zexen-knight horse (308) — i.e. exactly the six Zexen Knights. The generic
+    // knight NPC gets 308 from a hard-coded case, and `s2hr` (a Chris variant sharing her
+    // record) is explicitly excluded in code no matter what its record says.
+    //
+    // The consumer at 0x16c76e4 does `(value - 308) < 2` unsigned, so **only 308 and 309 are
+    // honoured**; any other id is read and silently discarded. Hence a fixed 3-option list.
+    // Unlike the pair table this needs no party membership — the horse is a plain NPC model —
+    // and it feeds both the field ride path and the battle one.
+    horse: {
+      off: 0x66, VALID: [[0, "— none —"], [308, "Zexen-knight horse"], [309, "Chris's horse"]],
+      // roster ids whose model carries ride animation, with what it can actually do.
+      // field = the 07x/97x ground bank; battle = the 301/320/340 mounted-battle bank.
+      riders: [
+        [1, "Hugo", "field+battle"], [2, "Chris", "field+battle"], [3, "Geddoe", "field"],
+        [12, "Roland", "field+battle"], [17, "Leo", "field+battle"], [19, "Percival", "field+battle"],
+        [20, "Borus", "field+battle"], [28, "Thomas", "field"], [30, "Futch", "field+battle"],
+        [36, "Franz", "field+battle"], [39, "Salome", "field"], [49, "Juan", "field (partial)"],
+        [69, "Sharon", "battle only"],
+      ],
+      STOCK: { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 },
+    },
   };
 
   const SETS = {
@@ -2468,6 +2497,17 @@
           </div>
         </div></details>`;
     }).join("");
+    const [l2base, l2stride] = TABLES.list2;
+    const horseOff = (roster) => l2base + roster * l2stride + MOUNTS.horse.off;
+    const horseRows = MOUNTS.horse.riders.map(([rid, nm, cap]) => {
+      const off = horseOff(rid), cur = r16(off), stock = MOUNTS.horse.STOCK[rid] || 0;
+      const known = MOUNTS.horse.VALID.some(([v]) => v === cur);
+      const opts = MOUNTS.horse.VALID.map(([v, lbl]) =>
+        `<option value="${v}"${v === cur ? " selected" : ""}>${esc2(lbl)}${v === stock && v ? " (stock)" : ""}</option>`)
+        .concat(known ? [] : [`<option value="${cur}" selected>${cur} — not honoured by the game</option>`]).join("");
+      return `<label class="field"><span>${esc2(nm)} <span class="muted">${esc2(cap)}</span></span>
+        <select class="mnt-horse" data-off="${off}" data-nm="${esc2(nm)}">${opts}</select></label>`;
+    }).join("");
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
         <div class="bag-h">Battle mounts <span class="u">BETA · testing only · patches game code</span></div>
         <div class="warnbox" style="margin:0 0 8px"><b>Beta — not yet confirmed in-game.</b> The code path
@@ -2496,6 +2536,26 @@
               won't be mis-seated by it.</li>
           </ul></details>
       </div>
+      <div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · field <i>and</i> battle</span></div>
+        <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route, and the more capable one:
+          each character's own record can name a horse, and the engine honours it in the field and in battle
+          without the horse needing to be in your party. Stock, this is what puts the six Zexen Knights on
+          horseback — Chris on her own horse, the other five on the knight horse.</div>
+        <div class="grid eq">${horseRows}</div>
+        <details class="note"><summary>Why only two horses, and what each character can actually do</summary>
+          <ul style="margin:4px 0 0 18px">
+            <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
+              are honoured</b>. Any other mount id is read and silently discarded — which is why the Karaya horse
+              and the flyers aren't offered here.</li>
+            <li><b>field+battle</b> characters carry both mounted animation banks. <b>field</b>-only ones
+              (Geddoe, Thomas, Salome) will ride correctly on the map but keep their normal pose in battle —
+              <i>Geddoe rides perfectly well outside combat</i>, which is the one thing the pair table above
+              can't give him.</li>
+            <li>Sharon has only a partial battle bank and Juan only a single field clip; both are offered but
+              expect rough edges.</li>
+          </ul></details>
+      </div>
       <div id="mountCards">${cards}</div>`;
     // Writes: rider rewrites every site for that pair (delay-slot duplicate included).
     const relabel = (i, what) => `Pair ${i + 1} ${what}`;
@@ -2513,6 +2573,15 @@
       if (dirty) btn.title = `Restore original (${origLabel})`;
       scheduleBadge();
     }
+    qa("select.mnt-horse", host).forEach((sel) => {
+      const off = +sel.dataset.off;
+      sel.onchange = () => {
+        writeW(off, 2, +sel.value || 0);
+        reg(off, 2, "num", "Assigned horse", sel.dataset.nm);
+        markField(sel, off, 2, "num");
+      };
+      markField(sel, off, 2, "num");
+    });
     qa("select.mnt-rider", host).forEach((sel) => {
       const i = +sel.dataset.i, offs = MOUNTS.pairs[i].riderSites;
       const orig = origW(offs[0], 2), origLbl = orig === 0 ? "none" : (riderName(orig) || `model ${orig}`);
