@@ -322,3 +322,22 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
   border:1px solid var(--line); color:var(--mut); }
 .srctag.disc { border-color:var(--acc); color:var(--acc2); }
 .srctag.guide { border-color:var(--line); color:var(--mut); }
+
+/* ===== Shops: three-column counters on a 320px screen =====
+   button.picker is white-space:nowrap, so a content-sized table takes its *full* label as the
+   column's minimum and a third column tips the page into horizontal scroll. Fixed layout lets
+   the item cell ellipsise instead. */
+.invtbl.fixed { table-layout:fixed; }
+.invtbl.fixed td.num, .invtbl.fixed th.num { width:92px; text-align:right; color:var(--mut); font-size:12px; }
+.invtbl.fixed td.num input { width:100%; }
+.shop-gap { color:var(--warn); font-size:12px; }
+/* The rarity row's three small numbers (chance % / quantity / spread) share one cell. The flex
+   container has to be a div INSIDE the cell: `display:flex` on a <td> takes it out of the table
+   layout, and the mis-sized table then overlapped the tab strip on a 320px screen. */
+.invtbl.fixed td.rar { width:132px; }
+.rar-n { display:flex; gap:4px; justify-content:flex-end; }
+.rar-n input { width:38px; padding-left:4px; padding-right:2px; text-align:right; }
+/* the two global shop tables fold away under the per-town counters */
+.shop-extra > summary { cursor:pointer; font-weight:600; color:var(--acc2); font-family:var(--titlefont);
+  margin:4px 2px 8px; padding:6px 2px; }
+.shop-extra[open] > summary { margin-bottom:12px; }

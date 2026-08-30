@@ -26,7 +26,9 @@ console.log("ISO offset bounds:");
 const ELF_BASE = 0xA4800, ELF_END = 0x465DF0;
 const TABLES = {
   list1: [4078716, 140, 80], list2: [4068152, 132, 80], list3: [4089904, 8, 35], list4: [4061704, 28, 28],
-  item3_a: [4105552, 2, 10], item3_b: [4054224, 2, 16], item2: [3970620, 4, 15], item1: [4136564, 4, 3],
+  // shop counters: 14 locations x 4 stages x 0x7C, so bound the whole array, not just record 0
+  shopItem: [4105552, 0x7C, 14 * 4], shopArmor: [4054224, 0x7C, 14 * 4], shopRune: [0x3EEB48, 0x7C, 14 * 4],
+  priceLadder: [3970620, 4, 15], item1: [4136564, 4, 3],
   spell: [0x3EC2A0, 0x20, 94], unite: [0x3ECF90, 0x28, 38], food: [0x3E91D0, 0x48, 60], enemy: [0x3E74E0, 0x14, 100],
   // rune item table is indexed by ITEM id; only ids 317..462 are runes, so bound that window
   runes: [0x3EAF78 + 317 * 0x20, 0x20, 462 - 317 + 1],
@@ -36,6 +38,37 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   const end = base + stride * count;
   if (base >= ELF_BASE && end <= ELF_END) ok(`${name} [${base}..${end})`);
   else bad(`${name} out of block: [${base}..${end}) vs [${ELF_BASE}..${ELF_END})`);
+}
+
+// 2b) shop counter index: the JSON the Shops tab labels itself from must agree with the
+// offsets above, and must not name a location that has no stock on the disc.
+console.log("Shop counter index:");
+{
+  const sp = path.join(REPO, "Editor", "s3_shops.json");
+  if (!fs.existsSync(sp)) bad("Editor/s3_shops.json missing");
+  else {
+    const j = JSON.parse(fs.readFileSync(sp, "utf8"));
+    const g = j.geometry || {};
+    (g.stride === 0x7C && g.variantStride === 0x1F0 && g.stockSlots === 30
+      && g.rarityOff === 0x3C && g.rarityStride === 0x10 && g.rarityCount === 4 ? ok : bad)("geometry matches iso.js");
+    (g.rarityOff + g.rarityCount * g.rarityStride === g.stride ? ok : bad)("rarity block exactly fills the record tail");
+    (g.stockSlots * 2 === g.rarityOff ? ok : bad)("stock slots exactly fill the record head");
+    const bases = { "Item Shop": 4105552, "Armor Shop": 4054224, "Rune Shop": 0x3EEB48 };
+    for (const c of j.counters || []) {
+      (bases[c.name] === c.base ? ok : bad)(`${c.name} base 0x${c.base.toString(16)}`);
+      const end = c.base + g.locations * g.variantStride;
+      (c.base >= ELF_BASE && end <= ELF_END ? ok : bad)(`${c.name} array stays in the read block`);
+    }
+    const stocked = new Set((j.counters || []).flatMap((c) => (c.stocked || []).map((x) => x.loc)));
+    const named = Object.keys(j.locationNames || {}).map(Number);
+    (named.length > 0 ? ok : bad)(`${named.length} locations named`);
+    (named.every((l) => stocked.has(l)) ? ok : bad)("every named location actually has stock");
+    (named.every((l) => (j.locationNames[l].evidence || "").length > 20) ? ok : bad)("every name cites its evidence");
+    // each counter's 14-location array must stop before the next known table starts
+    const NEXT = { "Item Shop": 0x3EC2A0 /* spells */, "Armor Shop": 4061704 /* list4 */, "Rune Shop": 4136564 /* item1 */ };
+    for (const c of j.counters || [])
+      (c.base + g.locations * g.variantStride <= NEXT[c.name] ? ok : bad)(`${c.name} stops before the next table`);
+  }
 }
 
 // 3) reference-table parsers (same rules as iso.js loadRef)

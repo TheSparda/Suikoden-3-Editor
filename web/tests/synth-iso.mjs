@@ -20,7 +20,15 @@ export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [
 // (Balance) alongside the magic runes in the character's slots.
 export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04 };
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
-export const SHOP = { item3_a: [4105552, 2], item3_b: [4054224, 2], item2: [3970620, 4], item1: [4136564, 4] };
+// Shop counters: three parallel arrays of 14 locations x 4 story stages x 0x7C, with 30
+// zero-terminated u16 stock slots at +0 and four 16-byte rarity entries at +0x3C. The fixture
+// stocks location 0 (Vinay del Zexay on the real disc) so the Shops view has something to draw.
+export const SHOPS = {
+  stride: 0x7C, varStride: 0x1F0, stock: 30, rarOff: 0x3C, rarStride: 0x10, rarCount: 4,
+  kinds: { item: 0x3EA550, armor: 0x3DDCD0, rune: 0x3EEB48 },
+};
+export const shopRec = (base, loc, stage) => base + loc * SHOPS.varStride + stage * SHOPS.stride;
+export const PRICE_LADDER = [3970620, 4], ITEM1 = [4136564, 4];
 export const VERSION_OFF = 4136544, VERSION_VAL = 0x40A69A01;
 // Armor sets: composition table + the in-block bonus-constant instruction words
 // (the potch pair lives ~1 GB into the disc — outside a synth file, so the Sets
@@ -174,6 +182,23 @@ export function buildSynthIso() {
   });
   { const o = UNITE.off; w32(o + 8, put("Test Unite")); w32(o + 0x0C, put("coop")); w32(o + 0x10, 65); w32(o + 0x14, 0x00000200); w32(o + 0x1C, 200); }
   { const o = FOOD.off; w32(o + FOOD.name, put("Medicine")); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100); }
+  // shop fixture: location 0, stages 0 and 1, on all three counters (+ one rarity each)
+  const SHOP_FIXTURE = { loc: 0, stages: 2, chance: 40, stock: null };
+  {
+    const stock = { item: [0x001, 0x00A, 0x009], armor: [firstArmor().id], rune: [0x1BD] };
+    SHOP_FIXTURE.stock = stock;
+    for (const [name, base] of Object.entries(SHOPS.kinds)) {
+      for (let stage = 0; stage < 2; stage++) {
+        const rec = shopRec(base, 0, stage);
+        // stage 1 carries one extra copy of the head item, so the two stages differ
+        const list = stage ? [...stock[name], stock[name][0]] : stock[name];
+        list.forEach((id, i) => w16(rec + i * 2, id));
+        w16(rec + SHOPS.rarOff, stock[name][0]);          // rarity 0 item id
+        bytes[rec + SHOPS.rarOff + 0x0A] = 40;            // ...its appearance chance out of 100
+        bytes[rec + SHOPS.rarOff + 0x0B] = 1;             // ...and one in stock when it lands
+      }
+    }
+  }
   const armor = firstArmor();
   const P = GEAR.P, st = P + GEAR.stride;
   w32(P, put("(x)")); w32(P + 8, 1000); w16(P + 0x10, 10); w32(P + 0x40, put(armor.name));
@@ -268,6 +293,7 @@ export function buildSynthIso() {
     const o = RUNE_TBL.off + r.id * RUNE_TBL.stride;
     w32(o + RUNE_TBL.name, put(r.name)); w32(o + RUNE_TBL.desc, put(r.desc));
   }
+  mapping.shops = SHOP_FIXTURE;
   mapping.runes = runeRows;
   mapping.balance = { ...balance, desc: "Maintains balance." };
 
