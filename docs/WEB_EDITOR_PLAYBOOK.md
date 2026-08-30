@@ -196,7 +196,13 @@ Each of these is small on its own; together they're the difference in quality. P
   bytes + name (+ the writable handle on desktop). For the *ISO*: **the `FileSystemFileHandle`
   only — never the 4 GB of bytes** (handles are structured-cloneable and survive in IDB). A
   one-tap **↻ Last opened** chip reopens it; a ✕ forgets it. On desktop, reopening an ISO
-  re-grants write permission so save-in-place is restored.
+  re-grants write permission so save-in-place is restored. The ISO side also **reopens itself**
+  when you enter the tab (an `auto-reopen` checkbox next to the chip, persisted in
+  `localStorage`, turns it off). It fires at most once per page load and never once a disc has
+  been opened, so **Close** stays closed instead of bouncing back in. Silent only when
+  `queryPermission` already says `granted` (Chrome's *allow on every visit* / installed PWA);
+  otherwise it prompts while the tab click's user activation is still live, and falls back to
+  the chip when there's no activation left.
 - **Save-in-place with fallback.** If you opened via the FS Access picker you hold a writable
   handle → **Apply & save to file** overwrites the original (after `queryPermission` /
   `requestPermission`). Browsers without the API (Android Chrome, Firefox, Safari) transparently

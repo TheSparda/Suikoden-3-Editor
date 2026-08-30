@@ -115,3 +115,6 @@ event — there, Share → Add to Home Screen.
   Access API is desktop-only), so this is the fastest round trip a web app can offer.
 - **Last opened.** The most recent save (bytes, plus the writable handle on desktop) is kept
   in on-device IndexedDB, so a **↻ Last opened** chip reopens it in one tap. A ✕ forgets it.
+  The ISO editor goes one further: the last disc **reopens by itself** when you open the ISO
+  Editor tab (uncheck *auto-reopen* beside the chip to stop that). If the browser hasn't
+  persisted file access it asks once instead, and the chip is always there as the fallback.

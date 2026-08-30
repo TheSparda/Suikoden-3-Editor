@@ -1493,7 +1493,22 @@ head("Last opened ISO (persist handle + reopen)");
   check("last-opened chip shows the ISO name", (await page.textContent("#isoReopen")).includes("synth.iso"));
   await page.click("#isoReopen"); await page.waitForSelector("#isoTabs", { timeout: 8000 });
   check("reopen loads the ISO editor", !!(await page.$("#isoTabs")));
+  // ...and on the NEXT visit it comes back by itself: same context (IndexedDB + the OPFS
+  // handle survive a reload), so opening the ISO Editor tab reopens the disc with no click.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.click('.mtab[data-mode="iso"]');
+  check("prior ISO reopens automatically on the next visit", await until(page, () => !!document.querySelector("#isoTabs"), undefined, 8000));
+  // Closing it must STAY closed — no bounce straight back into the disc just closed.
   await page.click("#isoClose"); await page.waitForSelector("#isoRecent .recent");
+  await page.waitForTimeout(300);
+  check("close stays closed (no auto-reopen loop)", !(await page.$("#isoTabs")));
+  // Opting out sticks across a reload: the chip is offered, nothing loads on its own.
+  await page.uncheck("#isoAuto");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.click('.mtab[data-mode="iso"]');
+  await page.waitForSelector("#isoRecent .recent", { timeout: 3000 });
+  await page.waitForTimeout(300);
+  check("auto-reopen can be switched off", !(await page.$("#isoTabs")) && !(await page.isChecked("#isoAuto")));
   await page.click("#isoForget");
   await until(page, () => !document.querySelector("#isoReopen"));
   check("forget clears the last-opened chip", !(await page.$("#isoReopen")));
