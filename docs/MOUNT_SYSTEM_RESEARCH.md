@@ -592,6 +592,83 @@ The hard limit is the consumer's own clamp: `(v - 308) < 2` unsigned means **onl
 work**. Writing the Karaya horse, Ruby or a flyer here is read and silently discarded, so the
 editor offers exactly three options.
 
+## 12. How a mounted pair works in battle
+
+### HP is per-half. There is no shared pool.
+
+The single entry point for every HP change is `0x16c8670(charaPtr, mode, amount)`:
+
+```
+cur = *(u16*)(ptr + 0x30)      ; current HP
+max = *(u16*)(ptr + 0x32)      ; max HP
+mode 0 : cur = min(cur + amount, max)          ; heal
+mode 1 : cur = (cur < amount) ? 0 : cur-amount ; damage, clamped at 0
+mode 2 : cur = min(amount, max)                ; set
+mode 3 : (read only)
+*(u16*)(ptr + 0x30) = cur
+```
+
+It takes **one** `charaPtr`, and the chain that produces it —
+`slot → 0x181b738 → 0x17dc568 (btlRec->0xc) → 0x17bbb20` — contains **no rider/mount
+indirection at any step**. So a hit resolves against exactly one half's HP bar. Rider and mount
+keep separate pools, and the same is true of every other stat: nothing in the lookup path
+substitutes one for the other.
+
+That matches the roster data — Fubar, Bright and Ruby each have their own HP growth curve,
+their own skill caps and their own fixed head rune.
+
+### What the pairing actually does
+
+`Mount(riderSlot, mountSlot)` @ `0x17de7b8` links two slots in the 14-entry battle array
+(`btlWork + 0x500 + slot*0x630`) and flags them **asymmetrically**:
+
+| | `rec->0x600` | `rec->0x602` | flags set | flags cleared |
+|---|---|---|---|---|
+| rider | mount's slot | `-1` | `0x00080000`, `0x40000000` | `0x00008000` |
+| mount | `-1` | rider's slot | `0x00100000`, `0x80000000`, `0x00008000` | — |
+
+Accessors `GetMountOf` (`0x17de718`) and `GetRiderOf` (`0x17debf0`) return the partner slot or
+`-1`, and are consulted from ~48 sites.
+
+### Effects propagate rider → mount
+
+In the damage/effect path at `0x188a2e0` the engine walks the target list (`count` at `+0xb2`,
+a `0x14`-stride array at `+0xb8`) and calls `0x17fc8b8` on each target. That helper does:
+
+```
+mount = GetMountOf(target)
+if (valid(mount) && testFlag(mount, 0x400))  setFlag(mount, 0x8000)
+if (testFlag(target, 0x400))                 setFlag(target, 0x8000)
+```
+
+— i.e. a flag landing on a rider is explicitly mirrored onto its mount (battle-record word
+`+0x30`, a different word from the one `Mount` writes). Since the horses carry exactly
+`b_N_damage` and `b_down_start` and nothing else, the obvious reading is that this is what makes
+the horse react and fall when its rider is hit. **That is an inference from the clip inventory,
+not proven** — the propagated bit is a flag, not HP, and HP is demonstrably not shared.
+
+Death while mounted has its own state machine, separate from the normal death path:
+`CHARA_DEAD_HORSE_START / INIT_END / END_START / END` at `0x17ee7e0`.
+
+### Editing the stats
+
+Nothing new is needed. **Fubar (roster 8), Bright (31) and Ruby (37) are ordinary roster
+entries** with their own list1 record (starting stats, equipment, rune slots — Fubar's head rune
+is Shining Wind, Bright's Spreading Flame, Ruby's Shining wing) and their own list2 record
+(growth rates, the 43 skill caps, starting level). All of that is already editable in the
+**Characters** and **Growth** tabs, and because the stat path never redirects across the pair,
+what you set there is what that half uses. They have no weapon level, which is what marks them
+as mounts rather than fighters.
+
+### Not established
+
+- Whether both halves can be independently *targeted* by the player, or whether the UI presents
+  the pair as one unit. Flag `0x00008000` is cleared on the rider and set on the mount by
+  `Mount`, which smells like a targetable/selectable bit, but its meaning was not confirmed.
+- The meanings of `0x00100000`, `0x40000000`, `0x80000000` (set by `Mount`) and of `0x400` /
+  `0x8000` in battle-record word `+0x30`.
+- Whether a mount dying forces the rider off, or vice versa.
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
