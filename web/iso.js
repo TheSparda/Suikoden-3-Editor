@@ -1425,7 +1425,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
-      mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons. Both halves of a pair still have to be in your party for it to trigger.",
+      mounts: "BETA — testing only, not yet confirmed in-game. Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons. Both halves of a pair still have to be in your party for it to trigger.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -2469,7 +2469,12 @@
         </div></details>`;
     }).join("");
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Battle mounts <span class="u">patches game code · three pairs, no more</span></div>
+        <div class="bag-h">Battle mounts <span class="u">BETA · testing only · patches game code</span></div>
+        <div class="warnbox" style="margin:0 0 8px"><b>Beta — not yet confirmed in-game.</b> The code path
+          behind this tab was read out of the disassembly and the byte writes are verified, but no re-paired
+          combination has been played through an emulator yet. Treat any non-stock pairing as an experiment:
+          keep a backup ISO, and expect the possibility that a rider sits oddly, animates wrong, or doesn't
+          mount at all. The three stock pairs are unaffected until you change them.</div>
         <div class="muted" style="margin:0 0 8px">The engine asks one question before seating a rider —
           <i>is this rider allowed on this mount?</i> — and answers it from three hard-coded comparisons.
           These dropdowns rewrite those three. There is no fourth slot to add.</div>
