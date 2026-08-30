@@ -1,6 +1,6 @@
 # Web editor tests
 
-Nine suites, all runnable with plain Node (v18+). `npm test` runs the eight browser-free
+Ten suites, all runnable with plain Node (v18+). `npm test` runs the nine browser-free
 ones; `npm run test:e2e` runs the Playwright suite:
 
 ## `validate.mjs` — fast, no browser (runs in CI + on session start)
@@ -27,6 +27,22 @@ guides omit — all of which correctly render no note.
 
 ```bash
 node web/tests/guide-core.mjs
+```
+
+## `health-core.mjs` — the save health check, no browser
+The Health panel's job is to tell someone their save is fine, so a **false negative is worse
+than no feature at all** — it blesses a broken file — and a false positive trains people to
+ignore the panel. This drives the real `web/health-core.js` both ways: a consistent save must
+produce **zero** findings, and each defect must produce exactly its own. It also asserts the
+property that makes the Fix buttons trustworthy — staging a finding's `fix.ops` back through
+the same edit maps the UI uses and re-auditing makes that finding **go away** — and that the
+audit sees *pending* edits, not just the bytes on disk. Finally it keeps the item
+classification (stackable bands, the nine exceptions, `ITEM_QTY_MAX` / `ITEM_ID_MAX`) in
+lockstep with `Editor/s3save.py`; that copy now lives in `health-core.js` and is what the
+inventory UI uses too, so a drift would misclassify items in both places at once.
+
+```bash
+node web/tests/health-core.mjs
 ```
 
 ## `text-core.mjs` — the in-ELF string scanner, no browser
@@ -122,6 +138,11 @@ bestiary view, the recruit section (per-character + story fade), the backup-nudg
 byte-exact save path, **planted-byte assertions that the verified table offsets still decode
 correctly** (skill-max +16, growth HP@+0, rune Head/Right/Left), and no horizontal overflow at
 320/360px.
+
+It also drives the **Health panel** against a synthetic save with planted defects: the tab
+badge, the rendered findings, and — the part that matters — that clicking a **Fix** only
+*stages* an edit (it lands in the review list and the finding disappears) rather than writing
+anything.
 
 It also covers the save editor's **guide overlays** end-to-end: Pyodide is aborted, so the
 suite hands `drawSlot()` a synthetic decoded save (the shape `s3save.decode_save` returns) and
