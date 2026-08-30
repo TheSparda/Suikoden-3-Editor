@@ -1215,6 +1215,75 @@ head("Save editor — guide overlays on character cards");
   await page.context().close();
 }
 
+// The save health check. health-core.mjs proves the rules; this proves the panel renders
+// them, that a Fix stages a real edit (and only stages — nothing is written), and that the
+// finding then goes away. Pyodide is aborted here, so the same synthetic-save trick is used.
+head("Save editor — health check panel");
+{ const page = await newPage();
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  const r = await page.evaluate(async () => {
+    const mk = (rosterIndex, name, over) => Object.assign({
+      rosterIndex, name, id: rosterIndex + 1, idExpected: rosterIndex + 1,
+      level: 30, weaponLv: 5, curHP: 200, maxHP: 200, expToNext: 100,
+      stats: { PWR: 100, SKL: 100, MAG: 100, REP: 100, MDF: 100, SPD: 100, LUK: 100 },
+      equip: { headRune: 0, rightRune: 0, leftRune: 0, helm: 0, armor: 0, shield: 0, boots: 0, gloves: 0, accessory: 0 },
+      skills: [{ slot: 0, id: 0, rank: 0 }],
+      recruited: true, recruitWord: 0x1d, recruiter: "", recruiters: [], hasData: true,
+    }, over || {});
+    const rune = { id: 0xa0, name: "Fury Rune", cat: "Runes", desc: "" };
+    REF = { items: [rune], skills: [], charById: { 1: "Hugo", 2: "Chris" } };
+    ITEM_BY_ID = { 0xa0: rune };
+    OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+    GUIDE = { caps: {}, growth: {}, slots: {} };   // skip the guide fetch/redraw
+    RECRUIT_META = {};
+    saves = [{
+      label: "slot", folder: "BASLUS-20387", checksumWord: 0, meta: {}, names: [],
+      global: { gold: 100, storyPhase: 6, merged: true, partyLeader: 1, playtime: "1:00" },
+      party: [1, 2, 0, 0, 0, 0],
+      characters: [mk(0, "Hugo", { curHP: 400 }), mk(1, "Chris", { recruited: false, recruitWord: 0 })],
+      // a rune carrying a stack count — the shape that used to eat spare copies
+      inventory: [{ region: "Party bag", base: 0, firstSlot: 0, capacity: 30, used: 1,
+        freeSlots: [], appendSlots: [], items: [{ slot: 0, addr: 0, id: 0xa0, qty: 1,
+          category: "equipment", stackable: false, displayed: false, rawId: 0xa0,
+          unknownId: false, state: [0, 0, 0, 0] }] }],
+      statNames: ["PWR", "SKL", "MAG", "REP", "MDF", "SPD", "LUK"], problems: [], notes: [],
+    }];
+    curSlot = 0;
+    renderEditor();
+    const badge = document.querySelector("#healthTab");
+    const badgeText = badge.textContent, badgeBad = badge.classList.contains("hz-bad");
+    badge.click();
+    const rows = () => [...document.querySelectorAll(".hz-item")];
+    const titles = () => rows().map((r) => r.querySelector(".hz-t").textContent.trim());
+    const before = titles();
+    const errors = rows().filter((r) => r.classList.contains("sev-error")).length;
+    // stage the inventory fix and confirm it becomes a pending edit rather than a write
+    const runeRow = rows().find((r) => /one-per-slot/.test(r.querySelector(".hz-t").textContent));
+    runeRow.querySelector("[data-hfix]").click();
+    const after = titles();
+    const staged = JSON.parse(JSON.stringify(INV));
+    // "Show" jumps to the view that owns the finding
+    const hpRow = rows().find((r) => /Current HP/.test(r.querySelector(".hz-t").textContent));
+    hpRow.querySelector("[data-hgo]").click();
+    return { badgeText, badgeBad, before, after, errors, staged, jumpedTo: SUB,
+      dirty: !!hasChanges(), diff: buildDiff().map((d) => d.g + ": " + d.t) };
+  });
+  check("the tab badges the problem count", /Health \(\d+\)/.test(r.badgeText), r.badgeText);
+  check("the badge marks an error-level save", r.badgeBad);
+  check("an unrecruited party member is listed", r.before.some((t) => /Chris, who is not recruited/.test(t)));
+  check("current HP above max is listed", r.before.some((t) => /Current HP 400 is above max HP 200/.test(t)));
+  check("a rune carrying a stack count is listed", r.before.some((t) => /one-per-slot but carries a count/.test(t)));
+  check("problems render at error severity", r.errors >= 2, String(r.errors));
+  check("applying a fix removes that finding", !r.after.some((t) => /one-per-slot but carries a count/.test(t)));
+  check("…leaving the others alone", r.after.length === r.before.length - 1);
+  check("the fix stages an inventory edit", JSON.stringify(r.staged) === JSON.stringify({ 0: { qty: 0 } }),
+    JSON.stringify(r.staged));
+  check("the fix is pending, not written", r.dirty === true);
+  check("…and shows up in the review list", r.diff.some((d) => /Inventory: Slot 0: .* ×1 →/.test(d)), r.diff.join(" | "));
+  check("Show jumps to the view that owns the finding", r.jumpedTo === "chars", r.jumpedTo);
+  await page.context().close();
+}
+
 for (const [w, h] of [[360, 640], [320, 480]]) {
   head(`Mobile ${w}px — no horizontal overflow`);
   const page = await newPage({ width: w, height: h });
