@@ -16,6 +16,9 @@ import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABL
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
+// concurrent runs of this suite half-overwrite each other's recipe files.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "s3e2e-run-"));
 const REPO = path.resolve(HERE, "..", "..");
 
 let chromium;
@@ -76,6 +79,65 @@ function reader(writes) {
   };
 }
 const getWrites = (page) => page.evaluate(() => window.__writes);
+
+// ---- deterministic waits ------------------------------------------------------------------
+// Two things in the editor land LATER than the action that caused them, and reading them on a
+// fixed sleep is what made this suite flaky on a loaded machine:
+//   * the "unsaved" badge is repainted on a requestAnimationFrame (iso.js scheduleBadge), so a
+//     read taken straight after an edit can still show the PREVIOUS frame's state;
+//   * the import/patch handlers are async (file read, then ranged reads off the disc), so
+//     #isoStatus can still be carrying the message from the step before.
+// These helpers wait for the state under test and then hand back what it ACTUALLY is, so a
+// genuine regression still fails its check (with the real value) instead of timing out here.
+async function until(page, fn, arg, timeout = 10000) {
+  try { await page.waitForFunction(fn, arg, { timeout }); return true; } catch { return false; }
+}
+// Run out the badge's PENDING repaint. scheduleBadge() queues its callback on the next
+// animation frame; ours is queued after it, so by the time ours runs the badge is current.
+// Without this a read can match the state the badge is about to LEAVE — which is how
+// "returning to the stock owner clears every staged byte" passed and failed at random
+// (badge still hidden from before the edit = accidental pass; repainted once = failure).
+const flushBadge = (page) => page.evaluate(() => new Promise((res) => {
+  let done = false;
+  const fin = () => { if (!done) { done = true; res(); } };
+  setTimeout(fin, 3000);                       // never hang if the page stops painting
+  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(fin, 0)));
+}));
+const readDirty = (page) => page.evaluate(() => { const d = document.querySelector("#isoDirty"); return !d || d.hidden; });
+async function dirtyHiddenIs(page, want) {
+  await flushBadge(page);
+  await until(page, (w) => { const d = document.querySelector("#isoDirty"); return (!d || d.hidden) === w; }, want);
+  return (await readDirty(page)) === want;
+}
+const nothingStaged = (page) => dirtyHiddenIs(page, true);    // badge hidden
+const somethingStaged = (page) => dirtyHiddenIs(page, false); // badge showing
+// Wait for the badge's label (it is rAF-repainted like its visibility) and return the text.
+async function dirtyLabel(page, re) {
+  await flushBadge(page);
+  await until(page, (src) => new RegExp(src[0], src[1]).test(document.querySelector("#isoDirty")?.textContent || ""), [re.source, re.flags]);
+  return page.textContent("#isoDirty");
+}
+// Wait for #isoStatus to carry the message under test, then return the real text for the check.
+async function statusText(page, re) {
+  await until(page, (src) => new RegExp(src[0], src[1]).test(document.querySelector("#isoStatus")?.textContent || ""), [re.source, re.flags]);
+  return page.textContent("#isoStatus");
+}
+const statusHas = async (page, re) => re.test(await statusText(page, re));
+// Feed a file to the import button and wait for the handler to actually finish. The status line
+// is cleared first so the previous step's message can't be mistaken for this one's, and the
+// import button re-enabling is the app's own "no longer busy" signal (iso.js setBusy) — the
+// xdelta path posts progress messages before its verdict.
+const IMPORT_DONE = () => {
+  const s = document.querySelector("#isoStatus"), b = document.querySelector("#isoImportBtn");
+  return !!s && s.textContent.trim().length > 0 && !!b && !b.disabled;
+};
+async function importFile(page, files) {
+  await page.evaluate(() => { const s = document.querySelector("#isoStatus"); if (s) s.textContent = ""; });
+  await page.setInputFiles("#isoRecipeFile", files);
+  await until(page, IMPORT_DONE, null, 20000);
+  await flushBadge(page);
+  return page.textContent("#isoStatus");
+}
 // Open a <details> record idempotently — cross-view open-state preservation can already
 // have opened it, and clicking the summary again would toggle it shut.
 async function openRec(page, detailsSel) {
@@ -103,8 +165,7 @@ function makeXdelta(src, tgt, lzma = false) {
 }
 // Feed bytes to the app's file input as if the user picked them.
 async function uploadPatch(page, data, name) {
-  await page.setInputFiles("#isoRecipeFile", { name, mimeType: "application/octet-stream", buffer: Buffer.from(data) });
-  await page.waitForTimeout(400);
+  return importFile(page, { name, mimeType: "application/octet-stream", buffer: Buffer.from(data) });
 }
 
 async function save(page) {
@@ -321,8 +382,9 @@ head("Heal-owner round trip leaves no stray bytes");
   await page.waitForSelector("#ownHeal", { timeout: 3000 });
   await page.selectOption("#ownHeal", "2");            // off stock -> repair patch written
   await page.selectOption("#ownHeal", "5");            // back to stock -> repair must be undone
-  const clean = await page.evaluate(() => !document.querySelector("#isoDirty") || document.querySelector("#isoDirty").hidden);
-  check("returning to the stock owner clears every staged byte", clean);
+  const clean = await nothingStaged(page);
+  check("returning to the stock owner clears every staged byte", clean,
+    clean ? "" : await page.evaluate(() => `badge="${document.querySelector("#isoDirty")?.textContent}" ownHeal=${document.querySelector("#ownHeal")?.value}`));
   await page.context().close();
 }
 
@@ -399,8 +461,7 @@ head("Enemies bulk tuning — idempotent multipliers + reset");
   // reset (pre-save) returns everything to disc originals -> no unsaved changes
   await page.click("#ebReset"); await page.waitForTimeout(150);
   check("reset restores originals", (await page.inputValue('input.en-num[data-f="hp"]')) === "40");
-  const clean = await page.evaluate(() => !document.querySelector("#isoDirty") || document.querySelector("#isoDirty").hidden);
-  check("reset leaves no staged bytes", clean);
+  check("reset leaves no staged bytes", await nothingStaged(page));
   // re-apply the kept multipliers and make sure the SAVED bytes hit every copy
   await page.click("#ebApply"); await page.waitForTimeout(150);
   const r = await save(page);
@@ -541,10 +602,10 @@ head("Spell description — editable, auto-updates on Power, length-capped");
   check("rewritten description is highlighted", await page.evaluate((s) => document.querySelector(s).classList.contains("dirty"), desc));
   await page.fill('details.char[data-i="0"] input[data-k="power"]', "100000"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change"); await page.waitForTimeout(60);
   check("over-length auto-rewrite is skipped", (await page.inputValue(desc)) === "Deals 300DMG");
-  check("over-length auto-rewrite warns", /length limit/i.test(await page.textContent("#isoStatus")));
+  check("over-length auto-rewrite warns", await statusHas(page, /length limit/i));
   await page.evaluate((s) => { const e = document.querySelector(s); e.value = "X".repeat(40); e.dispatchEvent(new Event("change", { bubbles: true })); }, desc);
   await page.waitForTimeout(60);
-  check("manual over-length description rejected", /too long/i.test(await page.textContent("#isoStatus")));
+  check("manual over-length description rejected", await statusHas(page, /too long/i));
   check("manual over-length not applied", (await page.inputValue(desc)) === "Deals 300DMG");
   await page.context().close();
 }
@@ -557,7 +618,7 @@ head("Unite description — editable + length-capped");
   check("unite description capped to slot (4)", +(await page.getAttribute(desc, "maxlength")) === 4);   // "coop"
   await page.evaluate((s) => { const e = document.querySelector(s); e.value = "X".repeat(10); e.dispatchEvent(new Event("change", { bubbles: true })); }, desc);
   await page.waitForTimeout(60);
-  check("unite over-length description rejected", /too long/i.test(await page.textContent("#isoStatus")));
+  check("unite over-length description rejected", await statusHas(page, /too long/i));
   await page.context().close();
 }
 
@@ -572,7 +633,7 @@ head("Food description — editable, auto-updates on heal, length-capped");
   check("rewritten food desc highlighted", await page.evaluate(() => document.querySelector("input.fddesc").classList.contains("dirty")));
   await page.evaluate(() => { const e = document.querySelector("input.fddesc"); e.value = "X".repeat(40); e.dispatchEvent(new Event("change", { bubbles: true })); });
   await page.waitForTimeout(60);
-  check("manual over-length food desc rejected", /too long/i.test(await page.textContent("#isoStatus")));
+  check("manual over-length food desc rejected", await statusHas(page, /too long/i));
   await page.context().close();
 }
 
@@ -585,8 +646,8 @@ head("Character rename panel — scoped, same-length-capped, staged");
   await page.fill('input.rename[data-orig="Geddoe"]', "Gideon"); await page.dispatchEvent('input.rename[data-orig="Geddoe"]', "input"); await page.waitForTimeout(40);
   check("staged rename highlights", await page.evaluate(() => document.querySelector('input.rename[data-orig="Geddoe"]').classList.contains("dirty")));
   // this harness uses the FS-Access (in-place) path, where renames can't reach disc-wide copies
-  await page.click("#isoSaveBtn"); await page.waitForTimeout(80);
-  check("rename-only in-place save warns it needs streaming", /streaming/i.test(await page.textContent("#isoStatus")));
+  await page.click("#isoSaveBtn");
+  check("rename-only in-place save warns it needs streaming", await statusHas(page, /streaming/i));
   await page.context().close();
 }
 
@@ -596,14 +657,14 @@ head("Per-field revert + Revert all + badge");
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "300"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change"); await page.waitForTimeout(60);
   const rev = page.locator('input.fd[data-kind="heal"]').first().locator('xpath=following-sibling::button[contains(@class,"revert")]');
   check("revert tooltip = original", (await rev.getAttribute("title")) === "Restore original (100)");
-  check("badge visible after edit", !(await page.locator("#isoDirty").isHidden()));
+  check("badge visible after edit", await somethingStaged(page));
   await rev.click(); await page.waitForTimeout(120);
   check("per-field revert restores value", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "100");
   // edit two, then Revert all
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "111"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   await page.fill('input.fd[data-kind="proc"] >> nth=0', "22"); await page.dispatchEvent('input.fd[data-kind="proc"] >> nth=0', "change");
   await page.click("#isoResetBtn"); await page.waitForTimeout(80);
-  check("Revert all clears dirty badge", await page.locator("#isoDirty").isHidden());
+  check("Revert all clears dirty badge", await nothingStaged(page));
   check("Revert all restores values", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "100");
   await page.context().close();
 }
@@ -623,7 +684,7 @@ head("Balance (Hard Mode) — idempotent + reset");
   check("hard again: 4 -> 3 (scales from disk, no runaway)", r.u8(pwrOff) === 3);
   // reset to 1.00x -> no changes staged
   await page.click('#isoTabs [data-v="balance"]'); await page.click('[data-preset="reset"]'); await page.click("#hm-apply"); await page.waitForTimeout(120);
-  check("reset preset stages nothing", await page.locator("#isoDirty").isHidden());
+  check("reset preset stages nothing", await nothingStaged(page));
   await page.context().close();
 }
 
@@ -647,7 +708,7 @@ head("Global encounter rate — scale all three movement paths");
   await page.click('[data-enc="25"]');
   check("Quarter preset sets the field to 25", (await page.inputValue("#encPct")) === "25");
   await page.click('[data-enc="100"]');
-  check("Stock preset returns to 100 with nothing staged", await page.locator("#isoDirty").isHidden());
+  check("Stock preset returns to 100 with nothing staged", await nothingStaged(page));
   // 50%: the ride path gains its own multiplier and branches into the shared MULT/100 block
   await page.fill("#encPct", "50"); await page.dispatchEvent("#encPct", "change");
   check("50% is described as fewer battles", /fewer battles/.test(await page.textContent("#encOut")));
@@ -687,14 +748,14 @@ head("Global encounter rate — 100% is a byte-exact restore, input clamps");
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "25"); await page.dispatchEvent("#encPct", "change");
-  check("25% stages a change", await page.locator("#isoDirty").isVisible());
+  check("25% stages a change", await somethingStaged(page));
   // going back to 100% must rewrite the stock words exactly, leaving nothing staged
   await page.fill("#encPct", "100"); await page.dispatchEvent("#encPct", "change");
-  check("back at 100% nothing is staged", await page.locator("#isoDirty").isHidden());
+  check("back at 100% nothing is staged", await nothingStaged(page));
   // the Restore button does the same from an arbitrary value
   await page.fill("#encPct", "300"); await page.dispatchEvent("#encPct", "change");
   await page.click("#encReset");
-  check("Restore 100% clears the staged words", await page.locator("#isoDirty").isHidden());
+  check("Restore 100% clears the staged words", await nothingStaged(page));
   check("Restore 100% resets the field", (await page.inputValue("#encPct")) === "100");
   // out-of-range input clamps instead of encoding a bogus instruction immediate
   await page.fill("#encPct", "99999"); await page.dispatchEvent("#encPct", "change");
@@ -710,7 +771,7 @@ head("Gear description overflow is rejected");
   // maxlength blocks typing past the slot, so force an over-length value + fire change
   await desc.evaluate((el, n) => { el.value = "X".repeat(n + 5); el.dispatchEvent(new Event("change", { bubbles: true })); }, max);
   await page.waitForTimeout(60);
-  check("over-length description warns", /too long/i.test(await page.textContent("#isoStatus")));
+  check("over-length description warns", await statusHas(page, /too long/i));
   check("over-length description not written", !(await getWrites(page)).length && !(await page.evaluate(() => window.__writes.length)));
   await page.context().close();
 }
@@ -733,14 +794,14 @@ head("Text tab — in-ELF strings: filtered, editable, length-capped, byte-exact
   await page.fill("#isoSearch", "everyone survived"); await page.waitForTimeout(80);
   await row.evaluate((el, n) => { el.value = "X".repeat(n + 4); el.dispatchEvent(new Event("change", { bubbles: true })); }, T.max);
   await page.waitForTimeout(60);
-  check("over-length text warns", /too long/i.test(await page.textContent("#isoStatus")));
+  check("over-length text warns", await statusHas(page, /too long/i));
   check("over-length text is not staged", (await row.inputValue()) === T.value);
 
   // a shorter edit is written over the whole slot and NUL-padded
   const NEW = "Everyone made it home";
   await row.fill(NEW); await row.dispatchEvent("change"); await page.waitForTimeout(60);
   check("edited field highlights dirty", await row.evaluate((el) => el.classList.contains("dirty")));
-  check("the change is counted as one labelled field", /1 unsaved/.test(await page.textContent("#isoDirty")));
+  check("the change is counted as one labelled field", /1 unsaved/.test(await dirtyLabel(page, /1 unsaved/)));
   const r = await save(page);
   let got = ""; for (let i = 0; i < T.max; i++) { const c = r.at(T.off + i); if (!c) break; got += String.fromCharCode(c); }
   check("new text written byte-exact", got === NEW);
@@ -768,7 +829,7 @@ head("Text tab — undo and per-field revert");
   check("redo re-applies the edit", (await row().inputValue()) === "Short text");
   await page.locator(`input.txt[data-off="${T.off}"] ~ button.revert`).click(); await page.waitForTimeout(80);
   check("per-field revert restores the original", (await row().inputValue()) === T.value);
-  check("nothing staged after revert", await page.locator("#isoDirty").isHidden());
+  check("nothing staged after revert", await nothingStaged(page));
   await page.context().close();
 }
 
@@ -777,18 +838,20 @@ head("Recipe export → reset → import round-trip");
   await page.click('#isoTabs [data-v="food"]');
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "321"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#isoRecipeBtn")]);
-  const recipePath = path.join(os.tmpdir(), "s3-test.s3mod"); await dl.saveAs(recipePath);
+  const recipePath = path.join(TMP, "s3-test.s3mod"); await dl.saveAs(recipePath);
   const mod = JSON.parse(fs.readFileSync(recipePath, "utf8"));
   check("recipe has patches + version word", mod.patches.length > 0 && mod.versionWord === 0x40A69A01);
   await page.click("#isoResetBtn"); await page.waitForTimeout(60);
   check("reset cleared the edit", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "100");
-  await page.setInputFiles("#isoRecipeFile", recipePath); await page.waitForTimeout(120);
-  check("import re-applies the edit", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "321");
+  await importFile(page, recipePath);
+  const reapplied = (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "321";
+  check("import re-applies the edit", reapplied, reapplied ? "" : await page.textContent("#isoStatus"));
   // wrong-version recipe is rejected
-  const badRecipe = path.join(os.tmpdir(), "s3-bad.s3mod");
+  const badRecipe = path.join(TMP, "s3-bad.s3mod");
   fs.writeFileSync(badRecipe, JSON.stringify({ format: "s3mod", versionWord: 0xDEADBEEF, patches: [] }));
-  await page.setInputFiles("#isoRecipeFile", badRecipe); await page.waitForTimeout(80);
-  check("wrong-region recipe rejected", /different game\/region/i.test(await page.textContent("#isoStatus")));
+  const badStatus = await importFile(page, badRecipe);
+  const rejected = /different game\/region/i.test(badStatus);
+  check("wrong-region recipe rejected", rejected, rejected ? "" : `status was "${badStatus}"`);
   await page.context().close();
 }
 
@@ -804,18 +867,18 @@ else { const page = await newPage(); await loadIso(page);
   tgt.set([0xE7, 0x03, 0x00, 0x00], at);          // 999
   const patch = makeXdelta(bytes, tgt);
   check("xdelta3 produced a patch", patch && patch.length > 0);
-  await uploadPatch(page, patch, "mod.xdelta");
-  check("status reports a checksum-verified apply", /applied patch/i.test(await page.textContent("#isoStatus")));
-  check("status says how much changed", /byte\(s\)/i.test(await page.textContent("#isoStatus")));
+  const applied = await uploadPatch(page, patch, "mod.xdelta");
+  check("status reports a checksum-verified apply", /applied patch/i.test(applied));
+  check("status says how much changed", /byte\(s\)/i.test(applied));
   check("the edit is staged, not silently written", !(await page.evaluate(() => window.__writes.length)));
-  check("dirty badge reflects the staged patch", !(await page.locator("#isoDirty").isHidden()));
+  check("dirty badge reflects the staged patch", await somethingStaged(page));
 
   // An imported patch is an edit like any other: one undo step for the whole patch, before
   // saving (a save re-baselines ORIG, so this has to be checked while it's still staged).
-  await page.click("#isoUndoBtn"); await page.waitForTimeout(120);
-  check("undo reverts the whole applied patch in one step", await page.locator("#isoDirty").isHidden());
-  await page.click("#isoRedoBtn"); await page.waitForTimeout(120);
-  check("redo re-applies it", !(await page.locator("#isoDirty").isHidden()));
+  await page.click("#isoUndoBtn");
+  check("undo reverts the whole applied patch in one step", await nothingStaged(page));
+  await page.click("#isoRedoBtn");
+  check("redo re-applies it", await somethingStaged(page));
 
   const r = await save(page);
   check("saving writes the patched bytes", r.u32(at) === 999);
@@ -828,32 +891,29 @@ else { const page = await newPage(); await loadIso(page);
   // 1. a patch that changes bytes OUTSIDE the editable block must be refused whole
   { const tgt = Uint8Array.from(bytes);
     tgt.set([1, 2, 3, 4], 0x1000);                // before ELF_BASE — can't be staged
-    await uploadPatch(page, makeXdelta(bytes, tgt), "outside.xdelta");
-    const s = await page.textContent("#isoStatus");
+    const s = await uploadPatch(page, makeXdelta(bytes, tgt), "outside.xdelta");
     check("patch touching bytes outside the block is refused", /outside the region/i.test(s));
     check("...and says nothing was applied", /nothing was applied/i.test(s));
-    check("...and stages nothing", await page.locator("#isoDirty").isHidden());
+    check("...and stages nothing", await nothingStaged(page));
   }
   // 2. xdelta3's DEFAULT encoding (LZMA secondary) must be refused with the fix, not mangled
   { const tgt = Uint8Array.from(bytes); tgt.set([9, 9, 9, 9], SPELL.off + 0x1C);
-    await uploadPatch(page, makeXdelta(bytes, tgt, true), "lzma.xdelta");
-    const s = await page.textContent("#isoStatus");
+    const s = await uploadPatch(page, makeXdelta(bytes, tgt, true), "lzma.xdelta");
     check("LZMA-compressed patch is refused", /secondary compression|delta sections/i.test(s));
     check("...and tells the user to re-encode with -S none", /-S none/.test(s));
   }
   // 3. a patch for a different-sized image is refused before any disc I/O
   { const small = bytes.slice(0, ELF_END - 4096);
     const tgt = Uint8Array.from(small); tgt.set([1, 2, 3], 0x200000);
-    await uploadPatch(page, makeXdelta(small, tgt), "wrongsize.xdelta");
-    check("patch for a different image size is refused", /different image/i.test(await page.textContent("#isoStatus")));
+    const s = await uploadPatch(page, makeXdelta(small, tgt), "wrongsize.xdelta");
+    check("patch for a different image size is refused", /different image/i.test(s));
   }
   // 4. a patch built against a MODIFIED source must fail the checksum rather than corrupt
   { const other = Uint8Array.from(bytes); other[SPELL.off + 0x40] ^= 0xFF;   // not our disc
     const tgt = Uint8Array.from(other); tgt.set([5, 5, 5, 5], SPELL.off + 0x1C);
-    await uploadPatch(page, makeXdelta(other, tgt), "othersrc.xdelta");
-    const s = await page.textContent("#isoStatus");
+    const s = await uploadPatch(page, makeXdelta(other, tgt), "othersrc.xdelta");
     check("patch built against a different disc fails its checksum", /checksum mismatch/i.test(s));
-    check("...and stages nothing", await page.locator("#isoDirty").isHidden());
+    check("...and stages nothing", await nothingStaged(page));
   }
   await page.context().close();
 }
@@ -862,8 +922,8 @@ head("Apply an .s3mod recipe through the same button (format sniffed, not by nam
 { const page = await newPage(); await loadIso(page);
   const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
     patches: [{ off: SPELL.off + 0x1C, new: "2a000000" }] });
-  await uploadPatch(page, new TextEncoder().encode(recipe), "recipe.xdelta");   // WRONG extension on purpose
-  check("a recipe named .xdelta is still recognised as a recipe", /applied recipe/i.test(await page.textContent("#isoStatus")));
+  const s = await uploadPatch(page, new TextEncoder().encode(recipe), "recipe.xdelta");   // WRONG extension on purpose
+  check("a recipe named .xdelta is still recognised as a recipe", /applied recipe/i.test(s));
   const r = await save(page);
   check("recipe bytes written", r.u32(SPELL.off + 0x1C) === 42);
   await page.context().close();
@@ -899,8 +959,8 @@ head("Save-progress UX + backup nudge (export path)");
   check("progress modal reaches completion", /Done/i.test(await page.textContent("#pgTitle")));
   check("completion readout shows time taken", /⏱\s*[\d.]+\s*s/.test(await page.textContent("#pgMeta")));
   await page.click("#pgClose");
-  check("status ok after save", /Saved/.test(await page.textContent("#isoStatus")));
-  check("badge cleared after save", await page.locator("#isoDirty").isHidden());
+  check("status ok after save", await statusHas(page, /Saved/));
+  check("badge cleared after save", await nothingStaged(page));
   await page.context().close();
 }
 
@@ -920,7 +980,8 @@ head("Last opened ISO (persist handle + reopen)");
   await page.click("#isoReopen"); await page.waitForSelector("#isoTabs", { timeout: 8000 });
   check("reopen loads the ISO editor", !!(await page.$("#isoTabs")));
   await page.click("#isoClose"); await page.waitForSelector("#isoRecent .recent");
-  await page.click("#isoForget"); await page.waitForTimeout(100);
+  await page.click("#isoForget");
+  await until(page, () => !document.querySelector("#isoReopen"));
   check("forget clears the last-opened chip", !(await page.$("#isoReopen")));
   await page.context().close();
 }
@@ -956,7 +1017,9 @@ head("Recruit section (save editor, Pyodide stubbed)");
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector('[data-sub="recruit"]', { timeout: 5000 });
   await page.click('[data-sub="recruit"]'); await page.waitForSelector("#rteam");
-  await page.waitForTimeout(120);   // let s3_recruit_meta.json load + re-render for story shading
+  // s3_recruit_meta.json is fetched after the first render; the story shading below only
+  // exists once it lands, so wait for the shading itself rather than for a fixed delay.
+  await until(page, () => document.querySelectorAll("#subview tr.story-auto").length >= 3);
   check("recruit roster renders", (await page.locator("#subview .invtbl tbody tr").count()) === 6);
   // story auto-join units are faded (Hugo/Chris/Geddoe are story); Salome is an optional recruit
   check("story units get the .story-auto fade", (await page.locator("#subview tr.story-auto").count()) >= 3);
@@ -1009,7 +1072,8 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector('[data-sub="stars"]', { timeout: 5000 });
   await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
-  await page.waitForTimeout(150);   // let s3_recruit_meta.json load + re-render (story/how)
+  // as above: the how-to rows come from the fetched guide metadata, so wait for one to appear.
+  await until(page, () => document.querySelectorAll(".starstbl tr.howrow .howto").length >= 1);
   // progress header counts recruited over the tracked set (Hugo/Geddoe/Rico = 3 recruited)
   check("stars progress shows recruited count", /\b3\b/.test(await page.textContent(".starsnum")));
   check("progress bar renders", (await page.locator(".starsbar > span").count()) === 1);
@@ -1230,5 +1294,6 @@ for (const [w, h] of [[360, 640], [320, 480]]) {
 
 await browser.close();
 srv.close();
+fs.rmSync(TMP, { recursive: true, force: true });
 console.log(fails ? `\nFAILED (${fails})` : "\nAll e2e checks passed.");
 process.exit(fails ? 1 : 0);
