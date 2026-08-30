@@ -42,17 +42,24 @@ def build(iso):
             continue
         if nm and nm not in spell:
             spell[nm] = d
+    # The rune's own menu text (RUNE_TBL). This is the only source for the 23 passive support
+    # runes — Balance, Fury, Fortune, Skunk … — which have no spell-table entry at all. Keep the
+    # "Grants <spells>" tail for magic runes; same shape the ISO editor builds live (iso.js:runeDesc).
+    own = S.read_rune_descs(iso)
     extra = {}
     for iid, nm in items.items():
         if cats.get(iid) != "Runes":
             continue
-        if spell.get(nm):
-            extra[iid] = spell[nm]; continue
         key = re.sub(r"rune$", "", re.sub(r"\s+", "", nm.lower()))
         st = S.RUNE_SPELLS.get(key)
         if st:
-            d0 = spell.get(st[0], "")
-            extra[iid] = "Grants " + ", ".join(st) + (f" — {st[0]}: {d0}" if d0 else "")
+            if own.get(iid):
+                extra[iid] = f"{own[iid]} — Grants " + ", ".join(st)
+            else:
+                d0 = spell.get(st[0], "")
+                extra[iid] = "Grants " + ", ".join(st) + (f" — {st[0]}: {d0}" if d0 else "")
+        elif own.get(iid) or spell.get(nm):
+            extra[iid] = own.get(iid) or spell[nm]
     # food: match food items to the recipe table by name (records 0..FOOD_COUNT-1 are real dishes)
     food = {}
     for fr in S.find_food_records(iso):

@@ -28,6 +28,8 @@ const TABLES = {
   list1: [4078716, 140, 80], list2: [4068152, 132, 80], list3: [4089904, 8, 35], list4: [4061704, 28, 28],
   item3_a: [4105552, 2, 10], item3_b: [4054224, 2, 16], item2: [3970620, 4, 15], item1: [4136564, 4, 3],
   spell: [0x3EC2A0, 0x20, 94], unite: [0x3ECF90, 0x28, 38], food: [0x3E91D0, 0x48, 60], enemy: [0x3E74E0, 0x14, 100],
+  // rune item table is indexed by ITEM id; only ids 317..462 are runes, so bound that window
+  runes: [0x3EAF78 + 317 * 0x20, 0x20, 462 - 317 + 1],
   versionword: [4136544, 4, 1],
 };
 for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
@@ -199,6 +201,17 @@ console.log("Guide overlays + xdelta:");
   (/count: 60,/.test(iso) ? ok : bad)("iso.js FOOD.count = 60 (drops non-dish tail records)");
   const sp = fs.readFileSync(path.join(REPO, "Editor", "s3patch.py"), "utf8");
   (/FOOD_COUNT\s*=\s*60\b/.test(sp) ? ok : bad)("s3patch.py FOOD_COUNT = 60");
+  // rune item table: the only source for the 23 passive support runes. Both editors must agree
+  // on its base, or one of them silently reads a neighbouring table and shows the wrong text.
+  const isoRune = /RUNE_TBL = \{ off: (0x[0-9A-Fa-f]+), stride: (0x[0-9A-Fa-f]+)/.exec(iso);
+  const pyRune = /RUNE_TBL_FILE\s*=\s*(0x[0-9A-Fa-f]+)/.exec(sp);
+  const pyRuneStride = /RUNE_TBL_STRIDE\s*=\s*(0x[0-9A-Fa-f]+)/.exec(sp);
+  (isoRune && pyRune && pyRuneStride && +isoRune[1] === +pyRune[1] && +isoRune[2] === +pyRuneStride[1]
+    ? ok : bad)("iso.js RUNE_TBL and s3patch.py RUNE_TBL_FILE agree");
+  (/function runeTblDesc/.test(iso) && /nameKey\(nm\) !== nameKey/.test(iso)
+    ? ok : bad)("iso.js validates each rune record's name before trusting its description");
+  (/function dropDescCaches/.test(iso) && (iso.match(/dropDescCaches\(\)/g) || []).length >= 5
+    ? ok : bad)("iso.js drops the name->desc caches on every staged edit / undo / revert");
   // save editor (no ISO) uses the pre-extracted rune/food descriptions + rich skill effects
   try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_rune_food_desc.json"), "utf8"));
     (Object.keys(j).length > 50 ? ok : bad)(`s3_rune_food_desc.json parses (${Object.keys(j).length} entries)`); }
