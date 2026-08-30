@@ -4,7 +4,7 @@
 // The boot ELF stores its English UI text as printable-ASCII runs. There is no table of
 // contents for them, so the desktop editor finds them by scanning for printable runs and
 // filtering out the ones that look like code/format strings rather than prose. This is a
-// direct port of `_looks_like_text` / `read_texts` in Editor/s3editor.py — the two MUST
+// originally a port of `_looks_like_text` / `read_texts` in the retired Editor/s3editor.py; the
 // agree, or the same disc would offer different strings in each editor, so the heuristic
 // lives here in one testable place and validate.mjs asserts the rules still match.
 //
