@@ -351,6 +351,57 @@ By contrast the Zexen-knight horse `zkum` does ship complete in **ZKTR (Brass Ca
 byte level — identical variant lists and identical `cha_bytes` (1,933,312). So the nearest
 thing to "Chris on horseback in more places" is a scene that already has `zkum`.
 
+## 8. The debug menu's `Toggle Mount` — and why it can't be switched back on
+
+The retail ELF still carries the development debug menu: 37 entries, each with a short label
+and a long description, in two parallel pointer arrays sharing a base at **`0x19832F8`**
+(label `N` at `+4N`, its description at `+4(N+38)`). Entry **12** is `Toggle Mount` /
+`Mount-Dismount Selectable Characters`. The action dispatch is a 37-way jump table at
+**`0x19C4C00`**, so entry 12's handler is `0x1787d38`, which tail-calls the real routine:
+
+```
+DebugToggleMount()                            ; 0x178ccc8
+  work = *(0x196A4D0)                         ; the field/scene work pointer
+  sel  = (s8)work->0x156                      ; debug "selected character"
+  if (sel >= 6) return                        ; party slots 0..5 only
+  rec  = GetEobjRecord(sel)
+  obj  = rec->0x3c
+  if (!obj) return
+  if (!TestFlag(obj, 0x00080000))             ; not currently mounted
+       mount = rec->0x1bc                     ; the character's ASSIGNED mount for this scene
+       if (!mount) return                     ; <-- nothing to ride: silent no-op
+       RideOn(obj)                            ; 0x179ec68, the same tail EdsCRideOnSetS calls
+  else RideOff(obj, EobjNoOf(obj->0x250), 2)  ; 0x179f478
+```
+
+**It never spawns a mount.** It toggles the selected character onto whatever is already in
+`rec->+0x1bc` — the per-character assigned-mount pointer the scene sets up (the same field the
+party-warp code at `0x1777b98` follows when it drags your horse along to a new position). On a
+map with no mount assigned, the dev tool does nothing at all. That is independent confirmation
+of §7: even Konami's own debug build could not mount you on a map that has no mount in it.
+
+### The menu is orphaned code
+
+Re-enabling it is not a flag flip. Three separate things were cut:
+
+1. **The dispatch has no caller.** The function owning the jump table (`0x1787be8`) has zero
+   `jal` references. Its only entry is a vtable slot at `0x1982720`.
+2. **That vtable is unreferenced.** `0x1982710` has no `lui`/`addiu` materializing it, no
+   `$gp`-relative reference, and no data word pointing at it. Nothing constructs the class.
+3. **The selection field is write-dead.** `work->+0x156`, which every debug handler reads to
+   know which character you picked, is read at five sites (all inside the debug module) and
+   **written by none**.
+
+On top of that the debug printf itself (`0x1712238`) is stubbed: it stores the vararg registers
+to the stack and returns without formatting anything, which is why ~39,000 debug strings survive
+in the ELF while the retail build prints nothing.
+
+So "expose the debug menu as a setting" would mean writing new code — construct the window,
+route pad input to it, and populate `+0x156` — not patching a constant. What *is* cheap is that
+the individual handlers survive intact and are ordinary callable functions; `0x178ccc8` in
+particular is self-contained. Hooking a call to it from somewhere reachable is a far smaller
+injection than reviving the menu, though it still only does anything where `+0x1bc` is set.
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
@@ -358,6 +409,6 @@ thing to "Chris on horseback in more places" is a scene that already has `zkum`.
 - The meaning of individual `3xx` variant numbers, and the `311` vs `321/322` split.
 - Whether the field ride state survives a map transition. The field state lives on per-scene
   EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
-- The `Toggle Mount` / `Mount-Dismount Selectable Characters` debug-menu handler (labels found
-  at `0x19caac8` / `0x19cae20`, handler table not located).
+- What populates `rec->+0x1bc` (a character's assigned mount for the scene) — presumably the
+  scene/party setup, but the writer was not traced.
 - Nothing here has been tested in an emulator. Every claim above is static analysis.
