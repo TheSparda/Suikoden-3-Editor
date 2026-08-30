@@ -15,6 +15,10 @@ export const UNITE = { off: 0x3ECF90, stride: 0x28 };
 export const FOOD = { off: 0x3E91D0, stride: 0x48, heal: 0x14, proc: 0x1E, name: 0x44, desc: 0x00 };
 export const ENEMY = { off: 0x3E74E0, stride: 0x14, count: 100 };
 export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
+// Rune item table (iso.js RUNE_TBL): indexed by ITEM id, name ptr @+0 / desc ptr @+4. It is
+// the only source of text for the passive support runes, so the fixture plants one of those
+// (Balance) alongside the magic runes in the character's slots.
+export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04 };
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
 export const SHOP = { item3_a: [4105552, 2], item3_b: [4054224, 2], item2: [3970620, 4], item1: [4136564, 4] };
 export const VERSION_OFF = 4136544, VERSION_VAL = 0x40A69A01;
@@ -252,6 +256,20 @@ export function buildSynthIso() {
   const rejAt = TEXT_AT + TEXT_PROSE.length + 1;
   bytes.set(enc(TEXT_REJECT), rejAt); bytes[rejAt + TEXT_REJECT.length] = 0;
   mapping.text = { off: TEXT_AT, value: TEXT_PROSE, max: TEXT_PROSE.length, rejected: TEXT_REJECT };
+
+  // ---- Rune description fixture -----------------------------------------------------------
+  // One row per rune the tests touch: the three in the character's slots (magic runes, which
+  // also carry a "Grants <spells>" tail) plus Balance, a passive support rune with no spell
+  // entry anywhere — before the rune table was read it showed nothing at all in the picker.
+  const balance = catItems("Runes").find((r) => r.name === "Balance");
+  const runeRows = [...runes.map((r, i) => ({ ...r, desc: `Rune slot ${i} text.` })),
+    { ...balance, desc: "Maintains balance." }];
+  for (const r of runeRows) {
+    const o = RUNE_TBL.off + r.id * RUNE_TBL.stride;
+    w32(o + RUNE_TBL.name, put(r.name)); w32(o + RUNE_TBL.desc, put(r.desc));
+  }
+  mapping.runes = runeRows;
+  mapping.balance = { ...balance, desc: "Maintains balance." };
 
   return { bytes, armor, mapping };
 }
