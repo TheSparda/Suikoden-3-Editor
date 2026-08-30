@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -452,6 +452,46 @@ head("Mounts view — rewrite the battle rider/mount pairs");
   check("pair 3 rider delay-slot copy also = addiu 1", r.u32(MOUNT_PAIRS[2].riderSites[1]) === mountWord(1));
   check("untouched pair 2 keeps both rider sites at 31",
     r.u32(MOUNT_PAIRS[1].riderSites[0]) === mountWord(31) && r.u32(MOUNT_PAIRS[1].riderSites[1]) === mountWord(31));
+  await page.context().close();
+}
+
+head("Mounted-pair mechanics — HP pooling and the Adrenaline pair-sum");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("select.mnt-mech", { timeout: 3000 });
+  const mech = (off) => `select.mnt-mech[data-off="${off}"]`;
+  const round = (off) => `input.mnt-round[data-off="${off}"]`;
+  check("HP pooling decodes to stock", (await page.inputValue(mech(MECH.pool.off))) === String(MECH.pool.stock));
+  check("Adrenaline pair-sum decodes to stock", (await page.inputValue(mech(MECH.adren.off))) === String(MECH.adren.stock));
+  check("rider rounding decodes to 1", (await page.inputValue(round(MECH.roundRider.off))) === "1");
+  // the tab must say the weighting itself lives in the Growth tab, since it isn't a constant
+  check("it points at Growth for the weighting", /Growth/.test(await page.textContent("#isoView")));
+  await page.selectOption(mech(MECH.pool.off), String(MECH.pool.alt));
+  await page.selectOption(mech(MECH.adren.off), String(MECH.adren.alt));
+  await page.fill(round(MECH.roundRider.off), "0"); await page.dispatchEvent(round(MECH.roundRider.off), "change");
+  const r = await save(page);
+  check("pooling gate became an unconditional branch", (r.u32(MECH.pool.off) >>> 0) === MECH.pool.alt);
+  check("...and kept its branch offset", (r.u32(MECH.pool.off) & 0xFFFF) === (MECH.pool.stock & 0xFFFF));
+  check("Adrenaline pair-sum became a nop", (r.u32(MECH.adren.off) >>> 0) === 0);
+  check("rider rounding is now 0", (r.u32(MECH.roundRider.off) & 0xFFFF) === 0);
+  check("...with the opcode half untouched",
+    (r.u32(MECH.roundRider.off) >>> 0 & 0xFFFF0000) === (MECH.roundRider.stock & 0xFFFF0000));
+  check("untouched mount rounding still 1", (r.u32(MECH.roundMount.off) & 0xFFFF) === 1);
+  await page.context().close();
+}
+
+head("Reference — Mounts browser, read-only");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.click('[data-ref="mountref"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("Geddoe is listed as field-yes / battle-no", /Geddoe[\s\S]{0,120}970/.test(txt));
+  check("the passive horses are described", /b_N_damage/.test(txt));
+  check("it lists what can't be exposed", /can't be exposed as fields/.test(txt));
+  check("it states residency isn't proof", /asset\s*\n?\s*residency/.test(txt.replace(/\s+/g, " ")) || /residency/.test(txt));
+  check("it says nothing is emulator-confirmed", /confirmed in an emulator/.test(txt));
+  check("the browser stages nothing", (await page.$$("#isoView input, #isoView select")).length === 0);
   await page.context().close();
 }
 
