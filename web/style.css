@@ -309,3 +309,8 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .hz-d { color:var(--mut); font-size:12px; line-height:1.45; margin-top:2px; max-width:78ch; }
 .hz-g { color:var(--acc2); font-size:11px; margin-top:3px; }
 .hz-act { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-left:auto; }
+
+/* sub-file browser */
+.sfpeek { font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--mut);
+  background:var(--input-bg); border:1px solid var(--line); border-radius:8px;
+  padding:8px 10px; margin:0 0 6px; overflow-x:auto; white-space:pre; }
