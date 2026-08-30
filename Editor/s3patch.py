@@ -20,7 +20,7 @@ Usage examples:
   python3 s3patch.py find-bytes "ISO/..." --hex "0B 02 01 02"
   python3 s3patch.py find-runetext "ISO/..."          # locate rune name strings
 """
-import argparse, os, struct, sys, shutil, datetime
+import argparse, os, re, struct, sys, shutil, datetime
 
 # ---------------------------------------------------------------------------
 # VERIFIED constants (decimal is authoritative; hex is derived)
@@ -94,6 +94,48 @@ SPELL_ELEM_OFF   = SPELL_STRIDE + 0x04   # +0x24 from a record's own base
 UNITE_TABLE_FILE = 0x3ECF90
 UNITE_COUNT      = 38
 UNITE_STRIDE     = 0x28
+
+# RUNE item table (located + verified 2026-08-30). This is where the game keeps the text it
+# prints in the rune/equip menu, and it is the ONLY source for the 23 passive support runes
+# (Balance, Fury, Fortune, Skunk, ...): those have no spell-table entry, so before this table
+# was found they showed no description at all.
+#   record  = RUNE_TBL_FILE + item_id * RUNE_TBL_STRIDE      (indexed by ITEM ID, not by rune #)
+#   +0x00  u32  -> name string (vaddr)
+#   +0x04  u32  -> description string (vaddr)
+# Rows for non-rune item ids are zeroed. Rune items occupy ids 317-365 (magic/attack runes) and
+# 440-462 (support runes); all 72 line up name-for-name against Suikoden3_item_ids.txt on a
+# pristine SLUS-20387, which is the check read_rune_descs() re-runs per record before trusting it.
+RUNE_TBL_FILE   = 0x3EAF78
+RUNE_TBL_STRIDE = 0x20
+RUNE_TBL_NAME   = 0x00
+RUNE_TBL_DESC   = 0x04
+
+
+def _name_key(s):
+    """Compare item names loosely: the disc writes 'Sword of Rage', the id list 'Sword Of Rage'."""
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def read_rune_descs(iso):
+    """Return {item_id: description} for every rune item whose RUNE_TBL row still names it."""
+    items = load_item_ids()
+    cats = load_item_categories()
+    out = {}
+    for iid, nm in items.items():
+        if cats.get(iid) != "Runes":
+            continue
+        rec = iso.rd(RUNE_TBL_FILE + iid * RUNE_TBL_STRIDE, RUNE_TBL_STRIDE)
+        nptr = struct.unpack_from("<I", rec, RUNE_TBL_NAME)[0]
+        dptr = struct.unpack_from("<I", rec, RUNE_TBL_DESC)[0]
+        try:
+            tn = iso.rd(va2off(nptr), 48).split(b"\x00")[0].decode("latin1", "replace")
+            td = iso.rd(va2off(dptr), 96).split(b"\x00")[0].decode("latin1", "replace")
+        except Exception:
+            continue
+        if tn and td and _name_key(tn) == _name_key(nm):
+            out[iid] = td
+    return out
+
 
 # Enemy NAME table (research spike, 2026-08-09). 100 entries x 0x14, names inline
 # (10-char truncated). Names are index-keyed; there is NO editable flat stat table
