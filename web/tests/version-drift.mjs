@@ -79,10 +79,19 @@ console.log(`version drift: ${target} vs ${base} (${git("rev-parse", "--short", 
 console.log(`  web/ files changed besides the version lines: ${changed.length}`);
 // Say plainly what was NOT looked at, so a shared checkout can't mislead.
 if (!useWorktree) {
+  // Must diff against HEAD, not the bare form: `git diff --name-only -- <path>` reports only
+  // UNSTAGED changes, and `git checkout <ref> -- <path>` stages. That silently dropped
+  // staged-but-uncommitted version bumps from the count — i.e. it under-reported exactly the
+  // two files this tool exists for.
   let dirty = [];
-  try { dirty = git("diff", "--name-only", "--", "web/").split("\n").filter(Boolean); } catch { /* ignore */ }
-  if (dirty.length) console.log(`  note: ${dirty.length} uncommitted web/ file(s) in the checkout were NOT `
-    + `checked (this repo shares one tree; use --worktree to include them)`);
+  try { dirty = git("diff", "--name-only", "HEAD", "--", "web/").split("\n").filter(Boolean); } catch { /* ignore */ }
+  if (dirty.length) {
+    console.log(`  note: ${dirty.length} uncommitted web/ file(s) in the checkout were NOT `
+      + `checked (this repo shares one tree; use --worktree to include them)`);
+    const vf = dirty.filter((f) => f === "web/index.html" || f === "web/sw.js");
+    if (vf.length) console.log(`  WARNING: ${vf.join(" and ")} ${vf.length > 1 ? "are" : "is"} `
+      + `among them — the version you are about to commit differs from the one just checked`);
+  }
 }
 if (!changed.length) {
   ok("no web/ changes — version bump not required");
