@@ -557,7 +557,7 @@ function charCard(c) {
   // Level gets the guide's join level; Max HP is the "HP" row of the growth table.
   const CORE_NOTE = { level: () => joinLvNote(c.name), maxHP: () => growthNoteSave(c.name, "HP") };
   const CORE_HINT = {
-    weaponLv: `sharpen level, 1–16 <span class="dim">(what older builds mislabelled as "Level")</span>`,
+    weaponLv: `sharpen level, 1–16`,
     expToNext: `<span class="dim">progress inside this level; 1000 = level up</span>`,
   };
   const core = [["Level", "level"], ["Weapon Lv", "weaponLv"], ["Cur HP", "curHP"],
