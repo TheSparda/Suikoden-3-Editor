@@ -399,6 +399,17 @@ console.log("Guide overlays + xdelta:");
       const rows = its.flatMap((x) => x.drops || []);
       (rows.every((r) => known.has(r.enemy) && r.weight > 0 && r.weight <= 1000 && r.lv >= 1 && r.lv <= 99)
         ? ok : bad)(`all ${rows.length} drop rows name a real enemy with a sane weight`);
+      // Rows are grouped by (enemy, level, weight) with the hosting archives listed, so the
+      // same fact can't appear once per archive. Ungrouped this was 625 rows for 188 facts.
+      (rows.every((r) => Array.isArray(r.archives) && r.archives.length >= 1) ? ok : bad)(
+        "every drop row carries its archive list");
+      { const key = (r) => `${r.enemy}|${r.lv}|${r.weight}`;
+        const dupes = its.filter((x) => x.drops &&
+          new Set(x.drops.map(key)).size !== x.drops.length).length;
+        (dupes === 0 ? ok : bad)(`no item repeats an (enemy, level, weight) fact (${dupes} do)`);
+        const spread = rows.reduce((a, r) => a + r.archives.length, 0);
+        (spread > rows.length ? ok : bad)(
+          `${rows.length} facts span ${spread} archive placements (grouping is doing work)`); }
       const kinds = new Set(its.flatMap((x) => (x.guide || []).map((g) => g.kind)));
       (kinds.has("chest") && kinds.has("drop") ? ok : bad)(`guide kinds present (${[...kinds].sort().join(", ")})`);
       // the cross-check that makes both halves credible: Troll Dragon -> Pale Moon Casque
