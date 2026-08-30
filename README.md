@@ -262,7 +262,11 @@ them per archive with each one's ISO offset, size and what it turned out to be �
 packs (monster records, spawn slots and formations, tagged with the game's own map id like
 `mori_101`), **town** data (which holds the room table the Encounter tab edits), **map**
 geometry, and **data** for the ~1,400 still unidentified. **Peek** reads the first 256 bytes
-straight off your disc as a hex dump. It is deliberately **read-only**: everything editable
+straight off your disc as a hex dump. Town entries also carry a **pickup census** — the
+chests, lootable corpses and herb spots on that map, counted from the game's own object names
+(`takara` 宝, `emono` 獲物, `herb_*`) and cross-checked against the walkthrough. What a pickup
+*contains* is not decoded, so nothing here edits loot; see the offsets doc for why the
+obvious candidate field turned out to be script operands. It is deliberately **read-only**: everything editable
 inside these files has its own tab, and a raw byte editor over thousands of unknown blobs
 would be a footgun rather than a feature. Rebuild the index from a pristine disc with
 `Editor/build_subfile_index.py`.
