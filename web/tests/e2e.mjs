@@ -11,6 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+  MOUNT_PAIRS, mountWord,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -420,6 +421,34 @@ head("Armor sets view — decode, edit, byte-exact save");
   check("counter site B = slti 50", r.u32(SETS.counterSites[1]) === 0x28420032);
   check("heal bias = addiu +1", r.u32(SETS.healBias) === 0x26220001);
   check("heal shift = sra 1", r.u32(SETS.healShift) === 0x00021043);
+  await page.context().close();
+}
+
+head("Mounts view — rewrite the battle rider/mount pairs");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
+  check("all 3 pair cards render", (await page.$$("#mountCards details.char")).length === 3);
+  // stock decode: Hugo(1)+Fubar(8), Futch(31)+Bright(32), Franz(41)+Ruby(42)
+  check("pair 1 rider decodes to Hugo", (await page.inputValue('select.mnt-rider[data-i="0"]')) === "1");
+  check("pair 1 mount decodes to Fubar", (await page.inputValue('select.mnt-mount[data-i="0"]')) === "8");
+  check("pair 2 rider decodes to Futch", (await page.inputValue('select.mnt-rider[data-i="1"]')) === "31");
+  check("pair 3 mount decodes to Ruby", (await page.inputValue('select.mnt-mount[data-i="2"]')) === "42");
+  // Geddoe must not be offered — his model has no 3xx mounted animation bank
+  check("Geddoe is not a rider option", (await page.textContent("#mountCards")).includes("Geddoe") === false);
+  // repair: Chris rides Bright, and give Hugo a second mount via pair 3
+  await page.selectOption('select.mnt-rider[data-i="0"]', "2");     // Chris
+  await page.selectOption('select.mnt-mount[data-i="0"]', "32");    // Bright
+  await page.selectOption('select.mnt-rider[data-i="2"]', "1");     // Hugo
+  await page.selectOption('select.mnt-mount[data-i="2"]', "42");    // Ruby (unchanged)
+  const r = await save(page);
+  check("pair 1 rider = addiu 2 (Chris)", r.u32(MOUNT_PAIRS[0].riderSites[0]) === mountWord(2));
+  check("pair 1 mount = addiu 32 (Bright)", r.u32(MOUNT_PAIRS[0].mountSite) === mountWord(32));
+  // the delay-slot duplicate is the whole point: BOTH rider sites must move together
+  check("pair 3 rider site A = addiu 1 (Hugo)", r.u32(MOUNT_PAIRS[2].riderSites[0]) === mountWord(1));
+  check("pair 3 rider delay-slot copy also = addiu 1", r.u32(MOUNT_PAIRS[2].riderSites[1]) === mountWord(1));
+  check("untouched pair 2 keeps both rider sites at 31",
+    r.u32(MOUNT_PAIRS[1].riderSites[0]) === mountWord(31) && r.u32(MOUNT_PAIRS[1].riderSites[1]) === mountWord(31));
   await page.context().close();
 }
 
