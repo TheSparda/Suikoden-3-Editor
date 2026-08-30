@@ -189,18 +189,24 @@ and the riding path originally had no multiplier at all, taking an implicit ×1.
 grafted in and pointed at the shared divide, which is why 100% still behaves exactly like the
 unmodified game: it computes ×100÷100.
 
-**Per-area rates — located, not yet wired into the tab.** Each zone's *own* base rate isn't
-in the executable: it's the `+0x04` halfword of a 60-byte room record inside the packed map
-archives (`DATA/*.BIN`). Both halves are now solved — the record by disassembly (traced from
-the record all the way into the encounter roll), and the archives by cracking
-**`DATA/FSECT.BIN`**, which turns out to be the disc's sub-file directory rather than the
-relocation table it was long taken for. `Editor/build_room_index.py` emits
-`Editor/s3_rooms.json`: **23 areas, 133 chapter-variant tables, 1,612 room records**, every
-offset verified on-disc and outside the executable region. The rates are per room and behave
-exactly as you'd hope — towns and interiors read 0, field and dungeon maps read 2–9 (Karaya
-9, Budehuc 5, Kuput Forest 4, Amur Plains 3). The **Encounter tab still offers the global
-scale only** until the per-area editor is built on top of that index. Full write-up in
-`Editor/Suikoden3_ISO_offsets.md`.
+**Per-area base rates — editable too.** Under the global slider the tab lists **every area on
+the disc** with its own per-map rate: **23 areas, 133 chapter-variant tables, 1,612 map
+records**. Towns and interiors read **0** (no random battles); field and dungeon maps read
+**2–9** — Karaya 9, Brass Castle and the Great Hollow 6, Budehuc 5, Kuput Forest 4, Amur
+Plains 3, the mountain path 2. Each area gets *None / Half / Stock / Double* presets that
+scale from the disc's own numbers (so re-applying never compounds and **Stock** is a
+byte-exact restore), plus a row per map for the rate and the post-battle **grace distance**.
+Where an area's chapter tables agree, one row writes all of them; where they disagree the map
+is split into a row each rather than showing one value that would be wrong for the others.
+
+> Lowering is always safe. **Raising a rate from 0 is not** — a map the game never fights on
+> has no monster party loaded, so rows at 0 are tagged and zone-less archives are flagged.
+
+Getting here meant cracking **`DATA/FSECT.BIN`**, which turns out to be the disc's sub-file
+directory rather than the relocation table it was long taken for, and decoding the 60-byte
+room record it leads to (the rate is its `+0x04` halfword, traced by disassembly all the way
+into the encounter roll). `Editor/build_room_index.py` rebuilds the index from a pristine
+disc; the full trail is in `Editor/Suikoden3_ISO_offsets.md`.
 
 </details>
 
