@@ -324,72 +324,51 @@ Two limits, both reported clearly rather than guessed around:
 - xdelta3 **compresses patches with LZMA by default**, which this editor can't read. Ask the
   author for one built with `xdelta3 -e -S none -s <source> <target> <patch>`.
 - A patch that changes bytes **outside the editable region** is refused whole (a half-applied
-  mod is worse than none) — use `xdelta3 -d` on a desktop for those.
+  mod is worse than none) — use `xdelta3 -d` for those.
 
 ---
 
-## Offline / desktop app (advanced & developers)
+## Repo layout & command line
 
-The repo also ships a self-contained Python app that runs the same engine locally. Most
-people don't need it — reach for it if you want to **script edits from the CLI**, produce
-**whole-ISO `xdelta` patches**, or work fully offline from source.
+The editor is `web/` — a browser app, and the only editor. There used to be a second,
+self-contained Python desktop app (`Editor/s3editor.py`); it was retired once the web editor
+covered everything it did, because keeping two implementations of the same ISO tables in step
+cost more than it caught. What it uniquely offered is covered now:
 
-### Run
-
-- **macOS:** double-click `Start Editor (Mac).command`
-- **Windows:** double-click `Start Editor (Windows).bat`
-- **Any:** `cd Editor && python3 s3editor.py`
-
-Requires Python 3.8+ (standard library only — no `pip install`). The app opens your browser
-at `http://127.0.0.1:8747/`. Open your ISO or save with a native file picker, or drop it near
-the app and pick it from the scan list. Edits stage in memory and highlight amber; click
-**Save** to write them (a `.bak` is made first, a toggle that's on by default). Every field
-has a **↺** restore and there's a light/dark theme toggle.
-
-### What the desktop app adds over the web editor
-
-- **Full-diff xdelta patches, and applying them** — a whole-ISO binary diff that captures
-  *everything*, including in-place text edits, **plus** applying any `.xdelta` back onto a
-  pristine disc. These carry a checksum (wrong source is detected, not silently mis-patched)
-  and require `xdelta3` (macOS `brew install xdelta`). The web editor can now *apply* a patch
-  as well, but only one whose changes fall inside its editable region and that isn't
-  LZMA-compressed; only the desktop app diffs the **whole** disc and applies any patch to it.
-- **CLI** — `Editor/s3patch.py` exposes the same engine for scripting:
+- **`.s3mod` recipes and `.xdelta` patches** — the web editor exports *and* applies both,
+  natively (`web/vcdiff.js` is a full VCDIFF encoder/decoder; no `xdelta3` needed).
+- **Diffing two arbitrary discs** — the one thing the web editor genuinely can't do, because
+  it only knows about edits you made in it. That's one shell command:
 
   ```bash
-  cd Editor
-  python3 s3patch.py verify   "/path/to/Suikoden III (USA).iso"
-  python3 s3patch.py set-field "…" --list 1 --index 2 --off 9 --u8 5
-  python3 s3patch.py mod-export "…" --note "my rebalance"      # -> <iso>.s3mod
-  python3 s3patch.py mod-apply  "…" --recipe mod.s3mod
-  python3 s3patch.py xdelta-make "…" --pristine clean.iso --out mod.xdelta
+  xdelta3 -e -S none -s clean.iso modded.iso out.xdelta
   ```
 
-  `Editor/s3save.py <memcard.ps2>` dumps the decoded saves on a card.
+  `-S none` matters: the web editor reads any VCDIFF patch except a secondary-compressed one.
 
-### Where the desktop app trails the web editor
+Two Python files remain, and neither is a second editor:
 
-New work lands in `web/` first, so the local app is behind on a few things: it has no **War**
-unit editor, no **108 Stars** dashboard, no disc-wide **character rename**, and no
-**JSON save snapshot**. Its ISO tabs otherwise line up (growth rates and support-character
-skills live inside its Characters tab, and runes get their own tab instead of the web
-editor's rune-reskin panel inside Spells).
+- **`Editor/s3save.py`** — the save engine. This is not legacy: the web app fetches it and
+  runs it under Pyodide, so it *is* the save editor. It also still works standalone —
+  `python3 Editor/s3save.py <memcard.ps2>` dumps a card's saves.
+- **`Editor/s3patch.py`** — an ISO-reading library (tables, offsets, the `Iso` class). Its
+  only consumer is `build_item_desc_extra.py`, which reads the disc to regenerate
+  `s3_rune_food_desc.json`. Its old CLI was removed with the desktop app.
 
 ### Layout
 
 ```
 Editor/
-  s3editor.py         local web app (all tabs + JSON API)
-  s3patch.py          ISO engine + CLI (verify / set / recipe / xdelta)
-  s3save.py           save engine (card / .psu / .psv / gamedata / .sps / .xps / .cbs)
-  s3fields.py         verified ISO field tables + schema
+  s3save.py           save engine (card / .psu / .psv / gamedata / .sps / .xps / .cbs).
+                      Loaded and run by the web app under Pyodide — do not treat as legacy.
+  s3patch.py          ISO reader library + verified field tables (used by build_item_desc_extra)
   build_*.py          regenerate the guide reference data (skills, caps, growth, rune slots,
                       bestiary, recruit story/optional flags, rune/food descriptions)
   suikosource/        saved Suikosource guide text the generators parse
-  s3_*.json / *_ids.txt   verified id→name / description / guide reference data
+  s3_*.json / *_ids.txt   verified id->name / description / guide reference data
+  Suikoden3_ISO_offsets.md   the reverse-engineering notebook (the source of truth for offsets)
 web/            the browser editor (also deployed to GitHub Pages)
 web/tests/      Node checks + a Playwright e2e suite (npm test / npm run test:e2e)
-Start Editor (Mac).command / (Windows).bat   launchers
 ```
 
 ---
@@ -398,8 +377,8 @@ Start Editor (Mac).command / (Windows).bat   launchers
 
 The repository contains **no game ROM/ISO, saves, audio, or story assets** — only small
 reverse-engineered reference tables (id→name maps, offsets) the editor needs to show
-meaningful labels. That's interoperability data, not the game. Whichever editor you use,
-nothing you open is uploaded anywhere.
+meaningful labels. That's interoperability data, not the game. The editor runs entirely in
+your browser — nothing you open is uploaded anywhere.
 
 ## Support
 
