@@ -2069,3 +2069,109 @@ roll draws from**. Finding it means following what fills `box+8` rather than rea
 `0x17B54C8`'s callers and the allocator behind the entry array. Worth stating plainly: a
 "chest editor" in the sense of "type in what this chest contains" may not be a thing this
 game has.
+
+## Rune item table — every rune's own menu text (2026-08-30)
+The "IMPORTANT LIMIT" above (runes have no name↔desc record) turns out to be wrong for runes
+specifically. There **is** a rune item table, and it is indexed by **item id**, not by rune
+number:
+
+```
+record   = 0x3EAF78 + item_id * 0x20
+  +0x00  u32 -> name string (vaddr)
+  +0x04  u32 -> description string (vaddr)
+```
+
+Rows for non-rune item ids are zeroed. All 72 rune items line up name-for-name against
+`Suikoden3_item_ids.txt` on a pristine SLUS-20387: ids **317–365** (magic / attack / weapon
+runes) and ids **440–462** (the passive support runes). Both editors re-run that name check per
+record before trusting a description, so a shifted or modded table degrades to "no text" rather
+than showing the wrong rune's line.
+
+Why it matters: the 23 support runes — Balance, Fury, Fortune, Skunk, Drain, Wall, … — have no
+spell-table entry at all, so the spell-name join that covered the magic runes left them
+completely blank in the pickers. This table is their only source. Examples straight off the
+disc: Balance → "Maintains balance.", Fury → "Always berserk.", Drain → "Right-hand rune. Heals
+33% HP from critical hits.", Wall → "PDF doubles, but no other movement is allowed."
+
+Located by searching the ELF string pool for a support-rune name ("Balance" @ file 0x424D18),
+then finding the single word in the block pointing at it (0x3EE7B8) — a (name, desc) pair whose
+0x20 stride and item-id indexing then reproduced all 72 runes exactly.
+
+Read by `s3patch.read_rune_descs()` (bakes `Editor/s3_rune_food_desc.json` for the save editor,
+which has no ISO) and live by `iso.js:runeTblDesc()` in the ISO editor. For magic runes the
+editors append the spell set the rune grants, e.g.
+`"A more powerful Fire Rune. — Grants Dancing Flames, Blazing Wall, Explosion, Final Flame"`.
+
+Related: the ISO editor now drops its name→description caches on every staged edit, undo and
+revert (`dropDescCaches`), and reads gear descriptions live from the gear record, so text
+rewritten on the Spells / Food / Gear tabs shows up in the item pickers straight away instead of
+after an ISO reload.
+
+---
+
+## The pickup ROLL, decoded — and why there is still nothing to edit (2026-08-30)
+
+Chased the "find what fills `box+8`" plan. The roll itself is now fully decompiled.
+
+**Box type dispatch** — `0x17B4AA8(box)` switches on `*(u8)(box+1)`:
+type 0 → `0x17B4C70` (weighted single-item pool), type 1 → `0x17B4D08`,
+type 2 → `0x17B4FF0` (the 0x1C multi-item list). `0x17B5230` validates
+`*(u8)(box+0) < 0x28` and prints `!!Takara No Error %d!!` when it doesn't.
+
+**The roll — `0x17B4B88(pool, boxIdx)`:**
+
+```
+if (!flag(boxIdx, kind 3)) {          // not rolled before
+    first = *(u32)(pool);             // slot 0 is the guaranteed item
+    if (validate(boxIdx, first) == 0) return first;
+}
+r = rand(100);  pool += 8;
+for (i = 1; i < 6; i++) {             // at most 6 slots
+    item = *(u32)(pool); if (!item) break;
+    if (r < *(u32)(pool+4) && validate(boxIdx, item)) return item;
+    r -= *(u8)(pool+4);               // walk the weights
+    pool += 8;
+}
+return 0;
+```
+
+So a pool is **`{u32 item, u32 weight}` × ≤6, slot 0 guaranteed, weights as percentages
+walked against `rand(100)`** — exactly the "pool and tier" shape the previous note predicted.
+Type 0's result is then written into the item-point table via `0x16D4580(idx, 2, item)`, with
+`0x8000` OR'd in when `0x16DBEF8(item)` is true.
+
+**The `0x0146` "Cyclone" reading is now DISPROVED, not just doubted.** In MORI's town data
+those words always pair as `[u16 0x0163][u16 0x0Dnn]` and `[u16 0x0146][u16 0x0006]`, and
+`0x0Dnn` is a **BgData id** — `(room << 8) | areaId`, and MORI's area id is `0x0D`. The
+operand is a map reference, so `0x0163`/`0x0146` are script opcodes. That closes the question
+the last two notes left open.
+
+**A real static table, found and understood** — `0x17B52B0(itemId, k)` reads
+**VA 0x1985D80 (file 0x3CD580)**:
+
+```
+if (item <= 0) return item;
+if (item < 5)  return tbl[k];          // Medicine D/C/B/A  (ids 1-4)
+if (item < 9)  return tbl[k + 6];      // Mega Medicine D/C/B/A (ids 5-8)
+return item;
+```
+
+with `tbl = [1,4,3,2,1,1, 5,8,7,6,5,5]` — a **grade-substitution table**: k=1 gives the
+strongest grade, k=0/4/5 the weakest. `0x17B4ED0` calls it with a hard-coded `k = 4`, i.e.
+that path always downgrades to Medicine D / Mega Medicine D. It is static, in-block and
+editable — but it is a *grade remap for the eight medicine ids*, not a chest's contents, and
+shipping it under that name would misrepresent it.
+
+**Where this leaves the pools.** The format is known exactly, so a pool is trivially editable
+once located — and it still cannot be located. Searching MORI for `{item, weight}×≤6` anchored
+by a box object (`+0` index < 0x28, `+1` type < 3, `+8` pointer) returns **zero**. That is
+now six independent failed searches: item-run fingerprint, pointer-under-K, box-object
+signature, guide-set exact match, guide-set clustering, and pool-shape. Every one fails the
+same way, and the guide's own "chests re-spawn with more loot" points at the same conclusion:
+**the pools are built at runtime, not shipped on the disc.**
+
+Six searches is enough to stop guessing. The next person should not repeat any of them. The
+one thing that settles it is a PCSX2 savestate taken with a pickup in view: EE RAM holds the
+248×12 item-point table at **0x196C420**, the box object, and `box+8` pointing straight at a
+live `{item, weight}` pool — and every one of those structures is now specified precisely
+enough to be recognised on sight.
