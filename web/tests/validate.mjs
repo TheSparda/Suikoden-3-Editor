@@ -165,32 +165,25 @@ console.log("QoL guards:");
 // 7) list2 growth + skill-max offsets (github issue #2 regression guard).
 // These were re-derived + verified against a real ISO (skill-max start +16 matches ~90% of
 // suikosource caps vs ~12% at the old +13; growth stat<->byte by correlation vs statgrowth).
-// The web (iso.js) and desktop (s3fields.py) editors MUST stay in lockstep, so we assert both.
+// iso.js is now the only implementation of these tables, so it is the only thing to assert.
 console.log("list2 offsets (issue #2):");
 {
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
-  const fields = fs.readFileSync(path.join(REPO, "Editor", "s3fields.py"), "utf8");
   // expected growth stat -> byte offset (HP at +0 is the tell-tale that the fix is in place)
   const GROWTH = { PWR: 4, SKL: 5, MAG: 6, REP: 7, MDF: 9, SPD: 10, LUK: 11, HP: 0 };
 
   // skill-max start must be 16 in BOTH editors
   const jsStart = /LIST2_SKILLMAX_START\s*=\s*(\d+)/.exec(iso);
-  const pyStart = /LIST2_SKILLMAX_START\s*=\s*(\d+)/.exec(fields);
   (jsStart && +jsStart[1] === 16 ? ok : bad)(`iso.js skill-max start = ${jsStart && jsStart[1]} (want 16)`);
-  (pyStart && +pyStart[1] === 16 ? ok : bad)(`s3fields.py skill-max start = ${pyStart && pyStart[1]} (want 16)`);
 
   // growth offsets must match the verified map in BOTH editors
   const jsGrowth = /const LIST2_GROWTH\s*=\s*\[([\s\S]*?)\];/.exec(iso);
-  const pyGrowth = /LIST2_GROWTH\s*=\s*\[([\s\S]*?)\]/.exec(fields);
   for (const [stat, off] of Object.entries(GROWTH)) {
     const re = new RegExp(`"${stat} growth[^"]*"\\s*,\\s*${off}\\b`);   // iso.js: ["PWR growth", 4, ...]
     (jsGrowth && re.test(jsGrowth[1]) ? ok : bad)(`iso.js ${stat} growth @+${off}`);
-    const reP = new RegExp(`"${stat} growth rate"\\s*,\\s*${off}\\b`);  // s3fields: ("PWR growth rate", 4, ...)
-    (pyGrowth && reP.test(pyGrowth[1]) ? ok : bad)(`s3fields.py ${stat} growth @+${off}`);
   }
-  // the bogus "rune level" fields must be gone from both
+  // the bogus "rune level" fields must be gone
   (jsGrowth && !/Rune Level/.test(jsGrowth[1]) ? ok : bad)("iso.js has no bogus 'Rune Level' growth fields");
-  (pyGrowth && !/Rune Level/.test(pyGrowth[1]) ? ok : bad)("s3fields.py has no bogus 'Rune Level' growth fields");
 
   // encoding must stay non-monotonic (1=A+), which the ISO verification confirmed is correct
   (/\[1,\s*"A\+"\]/.test(iso) ? ok : bad)("iso.js MAX_OPTS keeps 1=A+ (verified-correct encoding)");
@@ -200,19 +193,16 @@ console.log("list2 offsets (issue #2):");
   const RUNES = [["Head", 64], ["Right hand", 72], ["Left hand", 80]];
   for (const [slot, off] of RUNES) {
     (new RegExp(`"Rune ${slot}"\\s*,\\s*${off}\\b`).test(iso) ? ok : bad)(`iso.js Rune ${slot} @+${off}`);
-    (new RegExp(`"Rune ${slot} \\(hex\\)"\\s*,\\s*${off}\\b`).test(fields) ? ok : bad)(`s3fields.py Rune ${slot} @+${off}`);
   }
 }
 
 // 7b) spell/unite tail fields (radius + status chance). These live in the record's LAST 8
 // bytes, which the table stores one record out of phase — so a spell reads them at
 // base+stride+x while a unite (8 bytes longer) reads them inside its own record at +0x20+x.
-// Getting that phase wrong reads a neighbour's data, so pin both offset sets and the
-// s3patch.py constants that must agree with them.
+// Getting that phase wrong reads a neighbour's data, so pin both offset sets.
 console.log("spell/unite tail fields (radius/chance):");
 {
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
-  const patch = fs.readFileSync(path.join(REPO, "Editor", "s3patch.py"), "utf8");
   const cons = (name) => {
     const m = new RegExp(`const ${name} = (\\{[^}]*\\})`).exec(iso);
     return m ? JSON.parse(m[1].replace(/([a-z]+):/g, '"$1":').replace(/0x[0-9A-Fa-f]+/g, (h) => parseInt(h, 16))) : null;
@@ -229,14 +219,6 @@ console.log("spell/unite tail fields (radius/chance):");
     const tail = got.off + last * got.stride + got.chance + 2;
     (tail <= ELF_END ? ok : bad)(`${tbl} last tail read ends at ${tail} (block ends ${ELF_END})`);
   }
-  // s3patch.py must use the same phase, or the CLI reports a neighbour's values (the old "misc")
-  const py = (re, exp, label) => { const m = re.exec(patch); (m && eval(m[1]) === exp ? ok : bad)(`s3patch.py ${label} = ${m && m[1]} (want 0x${exp.toString(16)})`); };
-  py(/SPELL_RADIUS_OFF\s*=\s*SPELL_STRIDE \+ (0x[0-9A-Fa-f]+)/, 0x01, "SPELL_RADIUS_OFF - stride");
-  py(/SPELL_CHANCE_OFF\s*=\s*SPELL_STRIDE \+ (0x[0-9A-Fa-f]+)/, 0x06, "SPELL_CHANCE_OFF - stride");
-  py(/UNITE_RADIUS_OFF\s*=\s*(0x[0-9A-Fa-f]+)/, 0x21, "UNITE_RADIUS_OFF");
-  py(/UNITE_CHANCE_OFF\s*=\s*(0x[0-9A-Fa-f]+)/, 0x24, "UNITE_CHANCE_OFF");
-  // the phase-shifted "misc" field must be gone (it read the chance byte one record early)
-  (/"misc":/.test(patch) ? bad : ok)("s3patch.py no longer exposes the off-by-one-record 'misc' field");
 }
 
 // 8) guide reference overlays + .xdelta export wiring.
@@ -262,28 +244,22 @@ console.log("Guide overlays + xdelta:");
   // support-skill fade (list3): only utility skills 0x1C..0x26 are "used"; combat slots fade
   (/const supportActive = \(id\) => id >= 0x1C && id <= 0x26/.test(iso) && /listKey === "list3"/.test(iso)
     ? ok : bad)("iso.js fades unused combat skills in the Support view");
-  // desktop editor mirrors the overlays + fade
-  const py = fs.readFileSync(path.join(REPO, "Editor", "s3editor.py"), "utf8");
-  (/_rune_slot_note/.test(py) && /_growth_note/.test(py) && /_skill_cap_note/.test(py) && /skill_effect_text/.test(py)
-    ? ok : bad)("s3editor.py has the guide-overlay helpers");
-  (/0x1C <= d\["value"\] <= 0x26/.test(py) ? ok : bad)("s3editor.py fades unused support (list3) combat skills");
   // rune + food item-description enrichment (blank in the item-desc pool; sourced from the
   // spell + food tables read live from the ISO)
   (/function runeDesc/.test(iso) && /function foodDesc/.test(iso) && /const itemDesc =/.test(iso) && /desc: itemDesc\(id\)/.test(iso)
     ? ok : bad)("iso.js enriches rune + food item descriptions");
-  (/def _enriched_item_descs/.test(py) && /_enriched_item_descs\(\)/.test(py)
-    ? ok : bad)("s3editor.py enriches rune + food item descriptions");
   // food/recipe table is 60 dishes (recs 60-61 resolve to consumable items, not dishes)
   (/count: 60,/.test(iso) ? ok : bad)("iso.js FOOD.count = 60 (drops non-dish tail records)");
   const sp = fs.readFileSync(path.join(REPO, "Editor", "s3patch.py"), "utf8");
   (/FOOD_COUNT\s*=\s*60\b/.test(sp) ? ok : bad)("s3patch.py FOOD_COUNT = 60");
-  // rune item table: the only source for the 23 passive support runes. Both editors must agree
-  // on its base, or one of them silently reads a neighbouring table and shows the wrong text.
+  // rune item table: the only source for the 23 passive support runes. iso.js reads it live and
+  // build_item_desc_extra.py bakes it into s3_rune_food_desc.json for the save editor, so the two
+  // must agree on its base — otherwise the baked text and the live text describe different runes.
   const isoRune = /RUNE_TBL = \{ off: (0x[0-9A-Fa-f]+), stride: (0x[0-9A-Fa-f]+)/.exec(iso);
   const pyRune = /RUNE_TBL_FILE\s*=\s*(0x[0-9A-Fa-f]+)/.exec(sp);
   const pyRuneStride = /RUNE_TBL_STRIDE\s*=\s*(0x[0-9A-Fa-f]+)/.exec(sp);
   (isoRune && pyRune && pyRuneStride && +isoRune[1] === +pyRune[1] && +isoRune[2] === +pyRuneStride[1]
-    ? ok : bad)("iso.js RUNE_TBL and s3patch.py RUNE_TBL_FILE agree");
+    ? ok : bad)("iso.js RUNE_TBL and s3patch.py RUNE_TBL_FILE agree (live read vs baked JSON)");
   (/function runeTblDesc/.test(iso) && /nameKey\(nm\) !== nameKey/.test(iso)
     ? ok : bad)("iso.js validates each rune record's name before trusting its description");
   (/function dropDescCaches/.test(iso) && (iso.match(/dropDescCaches\(\)/g) || []).length >= 5
@@ -569,36 +545,27 @@ console.log("Guide overlays + xdelta:");
   } catch (e) { bad("s3_enemy_packs.json / s3_war_units.json — " + e.message); }
 }
 
-// 8) In-ELF text heuristic must stay in lockstep with the desktop editor.
-// There's no index of strings in the ELF — both editors FIND them with the same filter, so if
-// the rules drift the two tools offer different strings on the same disc (and one of them may
-// offer a format string the user can corrupt). Assert the literals agree, rule by rule.
-console.log("In-ELF text heuristic (web ⇄ desktop):");
+// 8) In-ELF text heuristic. There is no index of strings in the ELF — the editor FINDS them
+// with this filter, so a drift in the rules changes which strings it offers on a given disc
+// (and can start offering a format string the user is able to corrupt). The rules used to be
+// asserted against a second copy in the desktop editor; that copy is gone, so pin the literals
+// here instead — text-core.js is the only implementation now.
+console.log("In-ELF text heuristic:");
 {
   const T = (await import("../text-core.js")).default ||
     (await import("module")).createRequire(import.meta.url)(path.join(WEB, "text-core.js"));
-  const py = fs.readFileSync(path.join(REPO, "Editor", "s3editor.py"), "utf8");
-  const pick = (re, what) => { const m = re.exec(py); if (!m) bad(`could not find ${what} in s3editor.py`); return m && m[1]; };
 
-  const minLen = pick(/if len\(s\) < (\d+) or " " not in s:/, "min length");
-  (Number(minLen) === T.MIN_LEN ? ok : bad)(`min run length ${T.MIN_LEN} (py ${minLen})`);
+  (T.MIN_LEN === 8 ? ok : bad)(`min run length ${T.MIN_LEN} (want 8)`);
+  (T.PROSE_RATIO === 0.9 ? ok : bad)(`prose ratio ${T.PROSE_RATIO} (want 0.9)`);
+  (T.PROSE_PUNCT === " ,.'!?-@()" ? ok : bad)(`prose punctuation ${JSON.stringify(T.PROSE_PUNCT)}`);
+  (T.REJECT.source === "[%$/\\\\]|0x|->|::|_|[A-Za-z]\\d|\\d[A-Za-z]" ? ok : bad)(
+    `reject pattern ${T.REJECT.source}`);
 
-  const rej = pick(/_re\.search\(r"([^"]+)"/, "reject regex");
-  (rej === T.REJECT.source ? ok : bad)(`reject pattern matches` + (rej === T.REJECT.source ? "" : ` — js ${T.REJECT.source} vs py ${rej}`));
-
-  const punct = pick(/c\.isalpha\(\) or c in "([^"]+)"/, "prose punctuation");
-  (punct === T.PROSE_PUNCT ? ok : bad)(`prose punctuation matches` + (punct === T.PROSE_PUNCT ? "" : ` — js ${JSON.stringify(T.PROSE_PUNCT)} vs py ${JSON.stringify(punct)}`));
-
-  const ratio = pick(/return ok \/ len\(s\) > (0\.\d+)/, "prose ratio");
-  (Number(ratio) === T.PROSE_RATIO ? ok : bad)(`prose ratio ${T.PROSE_RATIO} (py ${ratio})`);
-
-  // Scan range. The desktop starts 0x1000 earlier, at the ELF *header* rather than PT_LOAD;
-  // those bytes are headers and program-header tables, which cannot pass the prose filter, so
-  // the two produce the same string set. The END must match exactly — that one is real data.
-  const pyHi = pick(/_TEXT_ELF_HI = (0x[0-9A-Fa-f]+)/, "_TEXT_ELF_HI");
-  const pyLo = pick(/_TEXT_ELF_LO = (0x[0-9A-Fa-f]+)/, "_TEXT_ELF_LO");
-  (Number(pyHi) === ELF_END ? ok : bad)(`scan end 0x${ELF_END.toString(16)} matches desktop (${pyHi})`);
-  (Number(pyLo) <= ELF_BASE ? ok : bad)(`desktop scan start ${pyLo} is at or before the web block (0x${ELF_BASE.toString(16)})`);
+  // behaviour, not just the constants: prose in, identifiers/format strings out
+  for (const good of ["Hugo the hero", "Restores all HP.", "A sturdy shield."])
+    (T.looksLikeText(good) ? ok : bad)(`accepts ${JSON.stringify(good)}`);
+  for (const bad_ of ["%s has fallen", "short", "0x1234 addr", "get_item_name", "PLAYER1 wins"])
+    (T.looksLikeText(bad_) ? bad : ok)(`rejects ${JSON.stringify(bad_)}`);
 
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/TextCore\.scanStrings\(ORIG, ELF_BASE\)/.test(iso) ? ok : bad)("iso.js scans ORIG (stable slot lengths), not BUF");
