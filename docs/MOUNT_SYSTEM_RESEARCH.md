@@ -248,25 +248,51 @@ roster alignment 1–75 exactly against `Editor/s3_names.json`.
 
 ## 5. Which models can actually be mounted or ridden
 
-From the `cha_<code>_NNN` variant sets in `ETC.BIN` (`docs/etc_inventory.json`).
-**Exactly ten models carry the `3xx` animation bank** — the mounted bank:
+> **Corrected 2026-08-30.** An earlier revision of this document read the `3xx` bank as *the*
+> mounted bank and concluded Geddoe was never rigged to ride. That was wrong. `3xx` is only the
+> **battle** half; the field half is `07x`/`97x`, and **Geddoe has a complete field ride set**.
+> The battle list below is unchanged and still correct.
 
-| code | character | 3xx variants |
-|---|---|---|
-| `syu1` | **Hugo** | 300 301 310 311 320 340 360 371 372 380 |
-| `futi` | **Futch** | 300 301 310 311 320 340 360 371 372 380 |
-| `mstk` | **Franz** | 301 310 311 320 340 360 371 372 380 |
-| `syu2` | **Chris** | 300 301 310 320 321 322 340 360 371 372 380 |
-| `bols` | **Borus** | same as Chris |
-| `psvl` | **Percival** | same as Chris |
-| `leoo` | **Leo** | same as Chris |
-| `loll` | **Roland** | 300 301 310 320 321 322 **341** 360 371 372 380 |
-| `zkk1` | generic Zexen knight NPC | same as Chris |
-| `mria` | Sharon | 300 301 310 311 only (partial) |
+Attribution here is **exact, not inferred**: ride clip names sit 48–80 bytes inside their own
+`cha_` record's payload header, so each clip can be assigned to the record that contains it.
+Scanning `ETC.BIN` that way gives a clean, model-independent legend:
 
-Two profiles: the three battle riders (+ Sharon) carry **311**; the five Zexen knights and the
-knight NPC carry **321/322** instead. The exact meaning of the individual variant numbers is
-**not confirmed** — only the presence/absence of the bank is.
+| variant | clips it holds |
+|---|---|
+| `070` / `970` | `rideon_L`, `rideon_R` — mounting up |
+| `071` / `971` | `rdwalk_start`, `rdwalk`, `rdwalk_stop` |
+| `072` / `972` | `rdfastwalk` |
+| `073` / `973` | `rdfastrun_loop` (or the `rdrun_*` set) |
+| `074` / `974` | `ride_neutral` |
+| `075` / `975` | `rd_inanaki` |
+| `080` | `rdfly_*` / `rdfloat_*` — **riding a flyer** |
+| `301` / `320` / `340` | `b_ride_neutral` / `b_rdwlk` / `b_rdatt_1` — **mounted battle** |
+
+`07x` and `97x` are two parallel copies of the same ground-ride set (which rig each belongs to
+is not established). So:
+
+| code | character | field ride (`07x`/`97x`) | fly (`080`) | battle (`301/320/340`) |
+|---|---|---|---|---|
+| `syu1` | **Hugo** | yes — both banks | — | **yes** |
+| `syu2` | **Chris** | yes `070–075` | — | **yes** |
+| `bols` | **Borus** | yes `071–075` | — | **yes** |
+| `leoo` | **Leo** | yes `071–075` | — | **yes** |
+| `loll` | **Roland** | yes `071–075` | — | **yes** |
+| `psvl` | **Percival** | yes `071–075` | — | **yes** |
+| `futi` | **Futch** | yes `071/073/074` | **yes** | **yes** |
+| `mstk` | **Franz** | yes `071/073/074` | **yes** | **yes** |
+| `zkk1` | Zexen knight NPC | yes `071–075` | — | **yes** |
+| `mria` | Sharon | — | — | partial (`301` only) |
+| **`syu3`** | **Geddoe** | **yes `970–975`** | — | **no** |
+| **`thms`** | **Thomas** | **yes `970–975`** | — | **no** |
+| `s2hr` | named NPC | yes `970–975` | — | no |
+| `msk1`/`msk2` | Le Buque villagers | yes `070/071/073/074` | yes | no |
+| `jyan` | Juan | `074` only | — | no |
+
+**Geddoe and Thomas can be shown mounted on the field but not in battle.** That is why the
+editor's Mounts tab — which edits the *battle* pair table — still correctly omits Geddoe: he
+would link to a mount and keep his normal battle pose. The ten models with `301/320/340` are
+exactly the tab's rider list, now justified by clip containment rather than by bank presence.
 
 And the mounts, split by whether they have a battle animation set (`1xx`/`14x`/`16x`/`18x`/`19x`):
 
@@ -445,6 +471,33 @@ single stray clip.
 Read this as **asset residency, not proof the game mounts you there**. A bundled rider model
 carries its ride clips whether or not that scene ever uses them — which is why DKVI, IKVI and
 friends list riders but no mount.
+
+### Which units can be shown mounted in each mount-bearing area
+
+Cross-referencing the mount models present against the riders whose ride clips are bundled in
+that same archive. "full" = all six ground clips present; "partial" lists what is there.
+
+| area | mounts bundled | units with ride clips there |
+|---|---|---|
+| **HGB1** · Yaza Plain (Budehuc gate) | Karaya horse | **Hugo** (full), Zexen knight NPC (full) |
+| **HNKT** · Budehuc Castle | Karaya horse, Zexen horse, Ruby, Le Buque horse, Fubar, Bright | **Hugo** (full), **Chris** (full), Borus, Leo, Roland, Percival (full), Zexen knight NPC (full), Futch, Franz (partial), Juan (`074` only) |
+| **KRVI** · Karaya Village | Karaya horse ×2, Zexen horse, Fubar | **Hugo** (full), Roland (full), Zexen knight NPC (full); Borus + Chris carry only the battle bank here |
+| **ZKTR** · Brass Castle | Zexen horse, Fubar | **Chris** (full), Borus, Leo, Roland, Percival (full), Zexen knight NPC (full); Hugo partial (`074`) |
+| **MSVI** · Le Buque | Ruby, Le Buque horse | Franz, Le Buque villagers 1 & 2 (partial + fly) |
+| **TSVI** · Chisha Village | Ruby, Le Buque horse, Fubar | Percival (full), Zexen knight NPC (full), Franz + villager (partial), Hugo partial |
+| **CRRA** · Caleria | Bright | Futch (partial) |
+| **YMMT** · Mountain Path | Bright | Futch, Franz (partial) |
+| **VDZK** · Vinay del Zexay | Fubar | Borus, Leo, Percival, Zexen knight NPC (full) |
+| **LZVI** · Great Hollow | Fubar | Chris (full), Zexen knight NPC (full) |
+| **LAST** · Ceremonial Site | Fubar | Chris (full), Zexen knight NPC (full), Hugo partial |
+| **AKMT** · Kuput Forest | Chris's horse, Zexen horse (1 clip each) | Borus, Chris — battle bank only |
+
+Two things worth noting. **Hugo is the only unit with the full ground set alongside a Karaya
+horse** (HGB1, KRVI, and HNKT) — which is exactly the pair the EDS handler hard-codes (§3a).
+And **the Zexen knight NPC `zkk1` is bundled ride-ready almost everywhere a mount is**, which is
+what makes the Zexen cavalry scenes work without bundling five named knights each time.
+
+Note also that "carries the clips" is still not "the script mounts them" — see the caveat above.
 
 ### What was tried and did not work
 
