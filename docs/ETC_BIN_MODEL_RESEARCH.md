@@ -20,6 +20,69 @@
 
 ---
 
+## Phase 1 — in-emulator / structural tests (2026-08-22)
+
+### Constants established
+- `DATA/ETC.BIN` sits at **LBA 453467 → absolute ISO offset `0x375AD800`** (928,700,416), size
+  386,756,608. Patch address = `0x375AD800 + <ETC-relative offset>`. (Region unchanged by any
+  same-size edit, so ISO9660 structure and file LBAs stay valid — PS2 does not checksum data
+  files.)
+- `ETC.BIN` splits into **~11 "bundles"** (detected by >2 MB offset gaps between `cha_` entries).
+  Bundle 0 (`0x2918ec … 0x7bf8fc0`, 1849 entries) is the big shared field/character bundle and
+  holds `syu1`/`syu2`/`syu3` together; later bundles are per-scene/cutscene sets.
+- Base **field models are single-copy** (`cha_syu1_010` etc. appear once); only the animation/
+  cutscene variants (`_700`, `_100`, `_200`, `imf_*_000`) are duplicated per scene.
+
+### Test 1 — name-based loading → **REJECTED**
+Built a clone and swapped **79 same-size name labels** `cha_syu1_* ↔ cha_syu2_*` across 26 matched
+variants (no bytes moved, fully symmetric/reversible). Booted Hugo's chapter in PCSX2:
+**Hugo rendered normally.** → The game resolves models by **precomputed index/offset**, and the
+embedded `cha_/imf_/ctx_` strings are **debug labels the runtime ignores**. Renaming can never
+change what loads.
+
+### Test 2 — payload byte-swap → **REJECTED (structurally impossible in place)**
+Next idea: overwrite Hugo's model bytes with Chris's at the same slot. Building it exposed the
+fatal fact — **the inline u32 at name+0x14 is the *uncompressed/allocation* size, not the on-disk
+size.** On disc the payloads are **compressed and variable-length, packed with no slack**:
+
+| entry | size-word (uncompressed) | actual on-disk bytes | ratio |
+|-------|--------------------------|----------------------|-------|
+| `cha_syu1_001` | 163,840 | 7,924 | ~20:1 |
+| `cha_syu1_010` | 425,984 | 24,888 | ~17:1 |
+| `cha_syu1_020` | 425,984 | 23,664 | ~18:1 |
+| `cha_syu1_074` | 98,304  | 20,256 | ~5:1 |
+
+(On-disk length measured as the gap to the next sequential entry.) Writing `size-word` bytes into
+a slot **overran and corrupted the following records** — a payload-swap clone failed verification
+(garbage where the next entry's name should be) and was destroyed before ever booting. Because two
+characters' *compressed* blobs differ in length and entries are tightly packed, **no in-place
+swap is possible.**
+
+### Consequence
+A working model swap now requires the full chain:
+1. **Reverse-engineer Konami's compression** (undocumented for S3; readable ASCII in the file is
+   only the directory/text, not the model payloads).
+2. Decompress source + target, recompress the replacement.
+3. **Repack the whole 386 MB `ETC.BIN`** — every entry after an edit shifts.
+4. **Find and fix the game's offset/index table** that the runtime actually uses (Test 1 proved it
+   exists; location unconfirmed — candidates: the boot ELF `SLUS_203.87`, or `FSECT.BIN`, which an
+   earlier spike identified as a monotonic u32 array of EE-RAM addresses / relocation pointers).
+
+That is an original archive-rebuild + compression-RE project, **not** an editor feature. Decision:
+**do not add a Model Swap section to `s3editor.py` / `s3patch.py`.**
+
+### If ever resumed — cheapest next probes (in order)
+1. **Locate the offset table**: since loading is index-based, find where the ELF maps a character
+   id → an `ETC.BIN` offset. Disassemble the model-load routine in `SLUS_203.87` (Ghidra) or watch
+   EE RAM in PCSX2 while a known character loads.
+2. **Identify the compression**: sample an on-disk payload and test common PS2/Konami codecs (LZSS
+   variants). The 5–20:1 ratios and the presence of an explicit uncompressed-size word are typical
+   of a dictionary/LZ scheme with a length header.
+3. Only then is a decompress→edit→recompress→repack→relink pipeline worth attempting, and it would
+   be a standalone tool, not part of the ELF-table editor.
+
+---
+
 ## Phase 0 — decode (retained for reference)
 
 Reverse-engineering notes for a future **model-swap** feature in the *offline* editor
