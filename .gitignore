@@ -31,8 +31,12 @@ Editor/Suikoden3EditorV12b.exe
 # third-party decompiled source — not distributed
 Editor/Suikoden3Editor_decompiled.cs
 
-# editor/session config — not part of the project
-.claude/
+# editor/session config — not part of the project.
+# Ignore local session state, but keep the shared hook + its settings tracked
+# (they pin cloud-session commit authorship to TheSparda).
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 Saves/
 
 # local cheat/reference files — not distributed
