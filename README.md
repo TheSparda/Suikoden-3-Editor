@@ -141,7 +141,12 @@ one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weap
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, and optional description rewrites),
-**Unites**, **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
+**Unites**, **Mounts** (**beta — testing only**: both of the game's mount systems — the
+per-character **assigned horse** that puts the six Zexen Knights on horseback in the field *and*
+in battle, and the hard-coded **three-pair** battle table, stock *Hugo+Fubar / Futch+Bright /
+Franz+Ruby* — plus the **pair mechanics**, including the HP pooling that re-splits a pair's HP
+proportionally the moment they mount; byte-verified but not yet confirmed in-game; see below),
+**Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
@@ -151,7 +156,9 @@ original byte length), **Balance** (idempotent hard-mode multiplier presets), **
 per-area enemy editor — stats, rewards, drops, bulk multipliers, and each zone's spawns &
 formations; see below), **War** (every war/major-battle unit on the disc; see below) and
 **Reference** — the read-only half, with sub-tabs for item and skill id → name lists, **Item
-sources** (where each item comes from) and **Files** (a browser over the disc's **4,403 packed
+sources** (where each item comes from), **Mounts** (the decoded mount system — rider and mount
+capability, which areas bundle a mount, and the mechanics that can't be exposed as fields) and
+**Files** (a browser over the disc's **4,403 packed
 sub-files** — every archive's contents by offset, size and kind, with a *Peek* hex dump; see
 below).
 
