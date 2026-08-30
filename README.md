@@ -1,49 +1,45 @@
 # Suikoden III ISO & Save Editor
 
-A cross-platform editor for **Suikoden III** (PS2, USA `SLUS-20387`) that lets you rebalance
-the game and edit your playthroughs. Two things:
+A browser-based editor for **Suikoden III** (PS2, USA `SLUS-20387`). It does two jobs:
 
 - **ISO editing** — rebalance spells, runes, unite attacks, gear, weapons, foods, shops,
-  enemies, and characters directly in the disc image. ISO edits apply to a **new game**.
+  enemies, war units and characters directly in the disc image. ISO edits apply to a
+  **new game**.
 - **Save editing** — open a PS2 **memory card** (or a standalone save export) and edit an
   existing playthrough: levels, HP, EXP, stats, skills, equipment, party, inventory, gold,
-  recruitment, and names. **No ISO required.**
+  recruitment and names. **No ISO required.**
 
-Nothing is ever uploaded — everything runs on your own device. The repo ships with **no
-game data**; supply your own legally-obtained ISO and/or saves.
+Nothing is uploaded — everything runs on your own device. The repo ships with **no game
+data**; supply your own legally-obtained ISO and/or saves.
 
-> ## 🌐 Use it online — no install
+> ## 🌐 Open it — nothing to install
 >
 > ### **https://thesparda.github.io/Suikoden-3-Editor/web/**
->
-> **This is the recommended way to use the editor for almost everyone.** It runs entirely
-> in your browser, your files never leave your device, and it now covers everything the
-> downloadable app does for day-to-day editing. There's nothing to install and it updates
-> itself.
 
 > **Feature requests / Support** on the **Toran Castle Discord**:
 > https://discord.gg/KesHMX5P2Z
 
 ---
 
-## The web editor (recommended)
+## The editor
 
 Open **https://thesparda.github.io/Suikoden-3-Editor/web/** in any modern browser. The page
 has two tabs — **Save Editor** and **ISO Editor** — and everything happens locally on your
-device (the save engine runs the real Python module in your browser via Pyodide/WebAssembly;
-nothing is uploaded).
+device. The save engine is the project's real Python module running in your browser through
+Pyodide/WebAssembly, so the browser and the reference implementation are the same code rather
+than two ports that can drift.
 
-- **Works on phones too.** The **Save Editor** works in any modern browser, including
-  Android — handy for editing a memory card on the same device you emulate on
-  (AetherSX2 / NetherSX2 / PCSX2).
-- **Installable app / offline.** It's a PWA: use your browser's **Install app** / **Add to
-  Home Screen** and, after the first visit, it works fully offline. It updates itself, and a
-  footer **↻ Force refresh** button clears the cache and reloads the latest build if one ever
-  gets stuck.
-- **Your data stays put.** No server, no upload. Saves and ISOs are read and written on
-  your device only.
+- **Works on phones.** The **Save Editor** runs in any modern browser, including Android —
+  handy for editing a memory card on the same device you emulate on (AetherSX2 / NetherSX2 /
+  PCSX2).
+- **Installable / offline.** It's a PWA: use your browser's **Install app** / **Add to Home
+  Screen** and, after the first visit, it works fully offline. It updates itself, and a footer
+  **↻ Force refresh** button clears the cache and reloads the latest build if one ever gets
+  stuck.
+- **Your data stays put.** No server, no upload. Saves and ISOs are read and written on your
+  device only.
 
-### Save Editor (web)
+### Save Editor
 
 Open a save with **Choose file…** or drag it in — no ISO needed. Supported containers:
 
@@ -121,7 +117,7 @@ reports). A save that doesn't decode cleanly says so loudly before you edit it; 
 discrepancies with a known explanation get a quiet note instead, so the loud warning keeps
 its meaning.
 
-### ISO Editor (web)
+### ISO Editor
 
 Edit the disc image directly. The editor only reads the ~3.75 MB executable region of the
 disc, verifies it's a USA `SLUS-20387` image, and never fully loads or uploads the multi-GB
@@ -328,17 +324,17 @@ Two limits, both reported clearly rather than guessed around:
 
 ---
 
-## Repo layout & command line
+## Repo layout
 
-The editor is `web/` — a browser app, and the only editor. There used to be a second,
-self-contained Python desktop app (`Editor/s3editor.py`); it was retired once the web editor
-covered everything it did, because keeping two implementations of the same ISO tables in step
-cost more than it caught. What it uniquely offered is covered now:
+`web/` is the editor. There is no second one — a self-contained Python desktop app
+(`Editor/s3editor.py`) was retired in v1.48.0 once the web editor covered everything it did,
+because keeping two implementations of the same ISO tables in step cost more than it caught.
+What it uniquely offered is covered:
 
 - **`.s3mod` recipes and `.xdelta` patches** — the web editor exports *and* applies both,
   natively (`web/vcdiff.js` is a full VCDIFF encoder/decoder; no `xdelta3` needed).
-- **Diffing two arbitrary discs** — the one thing the web editor genuinely can't do, because
-  it only knows about edits you made in it. That's one shell command:
+- **Diffing two arbitrary discs** — the one thing the web editor can't do, since it only knows
+  about edits made in it. That's one shell command:
 
   ```bash
   xdelta3 -e -S none -s clean.iso modded.iso out.xdelta
@@ -346,38 +342,73 @@ cost more than it caught. What it uniquely offered is covered now:
 
   `-S none` matters: the web editor reads any VCDIFF patch except a secondary-compressed one.
 
-Two Python files remain, and neither is a second editor:
-
-- **`Editor/s3save.py`** — the save engine. This is not legacy: the web app fetches it and
-  runs it under Pyodide, so it *is* the save editor. It also still works standalone —
-  `python3 Editor/s3save.py <memcard.ps2>` dumps a card's saves.
-- **`Editor/s3patch.py`** — an ISO-reading library (tables, offsets, the `Iso` class). Its
-  only consumer is `build_item_desc_extra.py`, which reads the disc to regenerate
-  `s3_rune_food_desc.json`. Its old CLI was removed with the desktop app.
-
-### Layout
-
 ```
+web/                the editor (also deployed to GitHub Pages)
+web/tests/          Node checks + a Playwright e2e suite (npm test / npm run test:e2e)
+
 Editor/
-  s3save.py           save engine (card / .psu / .psv / gamedata / .sps / .xps / .cbs).
-                      Loaded and run by the web app under Pyodide — do not treat as legacy.
-  s3patch.py          ISO reader library + verified field tables (used by build_item_desc_extra)
-  build_*.py          regenerate the guide reference data (skills, caps, growth, rune slots,
-                      bestiary, recruit story/optional flags, rune/food descriptions)
-  suikosource/        saved Suikosource guide text the generators parse
-  s3_*.json / *_ids.txt   verified id->name / description / guide reference data
-  Suikoden3_ISO_offsets.md   the reverse-engineering notebook (the source of truth for offsets)
-web/            the browser editor (also deployed to GitHub Pages)
-web/tests/      Node checks + a Playwright e2e suite (npm test / npm run test:e2e)
-tools/pcsx2/    PCSX2 automation: boot a patched ISO and read the tables back out of the
-                running game, plus RAM snapshot/diff tooling for research
+  s3save.py         the save engine. NOT legacy — web/app.js fetches it and runs it under
+                    Pyodide, so this file *is* the save editor. Also runs standalone:
+                    `python3 Editor/s3save.py <memcard.ps2>` dumps a card's saves.
+  s3patch.py        ISO reader library + verified field tables. Its one consumer is
+                    build_item_desc_extra.py; it is not a second editor.
+  build_*.py        regenerate the guide reference data (skills, caps, growth, rune slots,
+                    bestiary, recruit flags, rune/food descriptions, room and sub-file
+                    indexes) from a pristine disc + the saved guide text
+  suikosource/      saved Suikosource guide text the generators parse
+  s3_*.json / *_ids.txt    verified id->name / description / guide reference data
+  Suikoden3_ISO_offsets.md the reverse-engineering notebook — the source of truth for offsets
+
+tools/pcsx2/        PCSX2 automation: boot a patched ISO and read the tables back out of the
+                    running game, plus RAM snapshot/diff tooling for research
+docs/               research write-ups (see below)
 ```
 
-**PCSX2 automation** (`tools/pcsx2/`, stdlib only) drives the emulator from a script:
-`boot-verify` patches nothing but proves an edited disc's tables reach RAM intact — the
-one check no synthetic fixture can make — and the snapshot/diff commands are the research
-tooling behind [`docs/PCSX2_AUTOMATION.md`](docs/PCSX2_AUTOMATION.md). Start with
-`python3 -m tools.pcsx2.cli doctor`.
+### Verifying a change against the real game — `tools/pcsx2/`
+
+The test suite proves the editor writes the bytes it means to. It cannot prove the *game*
+reads them the way we think. `tools/pcsx2/` closes that gap by driving PCSX2 over its PINE
+socket (stdlib only, nothing to install):
+
+```bash
+python3 -m tools.pcsx2.cli doctor
+```
+
+`boot-verify` boots an edited disc and reads the tables back out of EE RAM — the one check no
+synthetic fixture can make. `snapshot` / `diff` / `scan` are the RAM research tooling behind
+new offset work: snapshot memory around a known in-game action, diff the states, and narrow
+to the bytes that moved. `read` / `poke` / `codes` / `states` round it out. Full guide in
+[`docs/PCSX2_AUTOMATION.md`](docs/PCSX2_AUTOMATION.md).
+
+`python3 tools/pcsx2/selftest.py` covers everything under the emulator — PINE framing,
+savestate parsing, scan narrowing, ELF calibration, PNG hashing — and runs in CI, where no
+disc or BIOS exists.
+
+### Research notes
+
+The offsets notebook ([`Editor/Suikoden3_ISO_offsets.md`](Editor/Suikoden3_ISO_offsets.md))
+is the primary record. Longer investigations get their own doc:
+
+| | |
+|---|---|
+| [`MOUNT_SYSTEM_RESEARCH.md`](docs/MOUNT_SYSTEM_RESEARCH.md) | both mount systems, the pair HP-pooling mechanics |
+| [`ENEMIES_IN_PLAYER_PARTY_RESEARCH.md`](docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md) | why enemies can't join the party; the three disjoint id spaces |
+| [`ETC_BIN_MODEL_RESEARCH.md`](docs/ETC_BIN_MODEL_RESEARCH.md) | character model swapping — decoded, and why it stays infeasible |
+| [`RECRUITMENT_RANDOMIZER_RESEARCH.md`](docs/RECRUITMENT_RANDOMIZER_RESEARCH.md) | recruitment-randomizer groundwork |
+| [`PCSX2_AUTOMATION.md`](docs/PCSX2_AUTOMATION.md) | driving the emulator for verification and RAM research |
+
+Several document things that turned out **not** to work. Those are kept deliberately — a
+recorded dead end is worth more than a question re-opened every few months.
+
+### Tests
+
+```bash
+cd web/tests && npm test          # Node checks: offsets, reference data, save round-trips, VCDIFF
+npm run test:e2e                  # Playwright against a synthetic ISO fixture
+python3 tools/pcsx2/selftest.py   # PCSX2 harness, no emulator required
+```
+
+Contributor conventions are in [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
