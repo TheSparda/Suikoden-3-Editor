@@ -26,14 +26,35 @@ const sref = J("s3_skill_ref.json");            // skill id -> {desc, effects}
 const itemDesc = (id) => extra[String(id)] || idesc[String(id)] || "";
 
 console.log("Item description merge (rune/food override the drifted pool):");
-check("Rage rune shows its granted spells (not the old 'Sword of Rage' drift)",
-  /^Grants /.test(itemDesc(idOf("Rage"))) && !/Sword of Rage/.test(itemDesc(idOf("Rage"))));
+check("Rage rune shows its own menu text then its granted spells (not the 'Sword of Rage' drift)",
+  /^A more powerful Fire Rune\. \u2014 Grants /.test(itemDesc(idOf("Rage"))) && !/Sword of Rage/.test(itemDesc(idOf("Rage"))));
 check("the drifted 'Sword of Rage' entry was blanked in s3_item_desc.json",
   !idesc[String(idOf("Rage"))]);
 check("Fire rune lists its spell set", /Flaming Arrows/.test(itemDesc(idOf("Fire"))));
 check("a command rune shows its spell effect (Phoenix)", /DMG/.test(itemDesc(idOf("Phoenix"))));
-check("food shows its heal (Scrambled Eggs → Heals 80HP)", itemDesc(idOf("Scrambled Eggs")) === "Heals 80HP");
+check("food shows its heal (Scrambled Eggs \u2192 Heals 80HP)", itemDesc(idOf("Scrambled Eggs")) === "Heals 80HP");
 check("a plain equipment desc still comes from the pool", /\(/.test(itemDesc(idOf("Wooden Shield")) || "(") );
+
+// The support runes (Balance, Fury, Fortune, ...) have no spell-table entry, so until the rune
+// item table was read they showed NOTHING in the picker. Coverage is the number that moves.
+console.log("Support runes (no spell-table entry \u2014 rune item table is their only source):");
+check("Balance rune (the report that started this)", itemDesc(idOf("Balance")) === "Maintains balance.");
+check("Fury rune", itemDesc(idOf("Fury")) === "Always berserk.");
+check("Fortune rune", /experience/i.test(itemDesc(idOf("Fortune"))));
+check("Drain rune", /critical hits/.test(itemDesc(idOf("Drain"))));
+{
+  // every item in the Runes section of the id list must resolve to non-empty text
+  const runeIds = []; let cur = "";
+  for (const line of idTxt.split(/\r?\n/)) {
+    const h = /\*\s*(.+?)\s*\*/.exec(line);
+    if (h && line.indexOf("\t") < 0) { cur = h[1].trim(); continue; }
+    const re = /([0-9A-Fa-f]{3})\t([^\t\n\r]+)/g; let m;
+    while ((m = re.exec(line))) if (cur === "Runes") runeIds.push(parseInt(m[1], 16));
+  }
+  const blank = runeIds.filter((id) => !itemDesc(id));
+  check(`all ${runeIds.length} rune items have a description (${blank.length} blank)`,
+    runeIds.length === 72 && blank.length === 0);
+}
 
 console.log("Skill effect text (all 43 skills, incl. utility):");
 const skillEffect = (id) => {

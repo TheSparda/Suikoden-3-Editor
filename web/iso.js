@@ -34,6 +34,13 @@
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
   const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
   const GEAR = { stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
+  // RUNE item table — the text the game itself shows in the rune/equip menu. Indexed by ITEM
+  // ID (record = off + id*stride), name ptr @+0x00 and description ptr @+0x04. Verified on a
+  // pristine SLUS-20387: all 72 rune items line up, ids 317-365 (magic/attack) and 440-462
+  // (the passive support runes — Balance, Fury, Fortune … — which have no spell-table entry
+  // at all, which is why they used to show nothing). Records for non-rune ids are zeroed, so
+  // every read is guarded by a name check against the item list before its desc is trusted.
+  const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, lo: 317, hi: 462 };
   const ENEMY = { off: 0x3E74E0, count: 100, stride: 0x14 };   // names only (no editable stat table)
 
   // ---- Armor sets (see Editor/Suikoden3_ISO_offsets.md "Armor sets ... CRACKED") ----
@@ -376,18 +383,19 @@
     const entries = [];
     rec.forEach((before, rel) => { if (before !== BUF[rel]) entries.push({ rel, before, after: BUF[rel] }); });
     if (!entries.length) return;
+    dropDescCaches();                                      // staged bytes may be a name/description
     UNDO.push(entries); if (UNDO.length > 200) UNDO.shift();
     REDO.length = 0; updateUndoUI();
   }
   function undo() {
     if (!UNDO.length) return;
     const e = UNDO.pop(); e.forEach((c) => { BUF[c.rel] = c.before; }); REDO.push(e);
-    updateUndoUI(); drawView();
+    dropDescCaches(); updateUndoUI(); drawView();
   }
   function redo() {
     if (!REDO.length) return;
     const e = REDO.pop(); e.forEach((c) => { BUF[c.rel] = c.after; }); UNDO.push(e);
-    updateUndoUI(); drawView();
+    dropDescCaches(); updateUndoUI(); drawView();
   }
   function resetUndo() { UNDO = []; REDO = []; REC = null; updateUndoUI(); }
   function updateUndoUI() {
@@ -744,7 +752,7 @@
     ROOMS = rareas; ROOMS_SKIPPED = rskipped;
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -1199,7 +1207,7 @@
       }
       edits.forEach((e) => (inBlk(e.off, e.bytes.length) ? writeBytes(e.off, e.bytes) : auxWriteBytes(e.off, e.bytes)));
       const n = edits.reduce((a, e) => a + e.bytes.length, 0);
-      TEXTS = null; gearCache = null;                          // staged bytes can move strings
+      TEXTS = null; gearCache = null; dropDescCaches();         // staged bytes can move strings
       drawView();
       setStatus(`Applied patch — ${n} byte(s) in ${edits.length} run(s), checksum-verified. ` +
         `Review, then Save to write.`, "ok");
@@ -1266,7 +1274,7 @@
       const isVcdiff = head[0] === 0xd6 && head[1] === 0xc3 && head[2] === 0xc4;
       if (isVcdiff) applyXdelta(f); else importRecipe(f);
     };
-    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); auxRevertAll(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
+    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); auxRevertAll(); dropDescCaches(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     q("#isoUndoBtn").onclick = undo;
     q("#isoRedoBtn").onclick = redo;
     updateUndoUI();
@@ -1459,10 +1467,11 @@
     }
     return t;
   }
-  // Runes have no name<->desc record (the item-desc pool drifts — that's the stray "no" text),
-  // but command/attack runes share their name with a spell-table entry and magic runes grant a
-  // known spell set — both carry accurate descriptions we read live from the loaded ISO.
-  let SPELL_DESC_BY_NAME = null;   // cache; cleared on ISO load (resetState)
+  // Runes are missing from the equipment desc pool (that pool drifts — it's the stray "no" text),
+  // but the disc does carry their real menu text in RUNE_TBL, plus the spell table for the spells
+  // a magic rune grants. Everything below is read live out of the loaded ISO, so a description
+  // edited on the Text/Spells tab shows up in the pickers straight away.
+  let SPELL_DESC_BY_NAME = null;   // cache; cleared on ISO load and on every staged byte edit
   function spellDescByName() {
     if (SPELL_DESC_BY_NAME) return SPELL_DESC_BY_NAME;
     const m = {};
@@ -1472,18 +1481,32 @@
     }
     return (SPELL_DESC_BY_NAME = m);
   }
+  // The rune's own menu text, straight out of RUNE_TBL. The table is item-id indexed and its
+  // unused rows are zeroed, so we only trust a record whose name string still matches the item
+  // (case/punctuation-insensitive — the disc writes "Sword of Rage", the id list "Sword Of Rage").
+  const nameKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+  function runeTblDesc(id) {
+    if (id < RUNE_TBL.lo || id > RUNE_TBL.hi) return "";
+    const o = RUNE_TBL.off + id * RUNE_TBL.stride;
+    if (!inBlk(o, RUNE_TBL.stride)) return "";
+    const nm = strAt(r32(o + RUNE_TBL.name));
+    if (!nm || nameKey(nm) !== nameKey(REF.items[id] || "")) return "";
+    return strAt(r32(o + RUNE_TBL.desc));
+  }
   function runeDesc(id) {
     if (!BUF || REF.cats[id] !== "Runes") return "";     // only runes; avoids name clashes (e.g. Fire Amulet)
     const nm = REF.items[id]; if (!nm) return "";
+    const own = runeTblDesc(id);                          // what the game prints in the rune menu
     const byName = spellDescByName();
-    if (byName[nm]) return byName[nm];                    // command/attack rune (name == spell)
     const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");   // magic rune → RUNE_SPELLS
     const set = RUNE_SPELLS[key];
-    if (set && set.length) {
+    if (set && set.length) {                              // magic rune: name the spells it grants
+      const grants = `Grants ${set.join(", ")}`;
+      if (own) return `${own} — ${grants}`;
       const d0 = byName[set[0]];
-      return `Grants ${set.join(", ")}` + (d0 ? ` — ${set[0]}: ${d0}` : "");
+      return grants + (d0 ? ` — ${set[0]}: ${d0}` : "");
     }
-    return "";
+    return own || byName[nm] || "";                       // command/attack rune (name == spell)
   }
   // Food items also lack a name<->desc record, but the Food effect table (0x3E91D0) has a name
   // pointer + desc/heal — so we map food item -> its dish record and show "Heals NNN HP" (live,
@@ -1505,9 +1528,22 @@
     if (!BUF || REF.cats[id] !== "Food Items") return "";
     const nm = REF.items[id]; return nm ? (foodDescByName()[nm.toLowerCase()] || "") : "";
   }
-  // desc to show for an item id in pickers/tooltips: rune effect (spell table) or food effect
-  // (food table) win for those categories, otherwise the equipment name<->desc record.
-  const itemDesc = (id) => runeDesc(id) || foodDesc(id) || REF.idesc[id] || "";
+  // Both maps above are keyed by a name string read out of the ISO, so a staged edit can change
+  // either side of the pair. Every edit funnels through commitEdit/undo/redo, which calls this —
+  // the next picker or tooltip then rebuilds from the current bytes (94 + 60 records, cheap).
+  // Rune and gear text is read per call, so it needs no cache to drop.
+  function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; }
+  // Equipment carries its description in its own gear record, so read that live too — a
+  // description rewritten on the Gear tab then shows up in every picker and tooltip. The
+  // bundled s3_item_desc.json stays as the fallback for items scanGear can't pin down.
+  function gearDesc(id) {
+    if (!BUF) return "";
+    const g = scanGear()[id];
+    return g ? strAt(r32(g + 0x00)) : "";
+  }
+  // desc to show for an item id in pickers/tooltips: rune text (rune table + spell table) or
+  // food effect (food table) win for those categories, otherwise the equipment desc record.
+  const itemDesc = (id) => runeDesc(id) || foodDesc(id) || gearDesc(id) || REF.idesc[id] || "";
   function wireFields(scope, recBase, group) {
     qa("button.picker[data-off]", scope).forEach((btn) => {
       const off = +btn.dataset.off, w = +btn.dataset.w, kind = btn.dataset.kind;
