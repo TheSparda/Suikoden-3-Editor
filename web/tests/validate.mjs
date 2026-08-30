@@ -34,10 +34,18 @@ const TABLES = {
   runes: [0x3EAF78 + 317 * 0x20, 0x20, 462 - 317 + 1],
   versionword: [4136544, 4, 1],
 };
+// IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
+// not a strided table, so bound-check them one by one.
+const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
 for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   const end = base + stride * count;
   if (base >= ELF_BASE && end <= ELF_END) ok(`${name} [${base}..${end})`);
   else bad(`${name} out of block: [${base}..${end}) vs [${ELF_BASE}..${ELF_END})`);
+}
+{
+  const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);
+  if (oob.length) bad(`mount pair sites out of block: ${oob.map((o) => "0x" + o.toString(16)).join(", ")}`);
+  else ok(`mount pair sites (${MOUNT_SITES.length} code sites in block)`);
 }
 
 // 2b) shop counter index: the JSON the Shops tab labels itself from must agree with the

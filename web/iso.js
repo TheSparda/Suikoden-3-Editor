@@ -112,6 +112,38 @@
   // 0 = slot unused). Row order = in-code set number: 1=Mole 2=Prosperity 3=Destiny
   // 4=Guardian 5=Pale Moon. The bonus constants are instruction immediates; every stock
   // word below was byte-verified against a pristine SLUS-20387 dump.
+  // ---- mounted rider/mount pairs (battle) -------------------------------------
+  // IsValidRidePair @ vaddr 0x16e8b78 is three hard-coded (rider, mount) model-id
+  // comparisons and nothing else gates mounting in battle; the candidates themselves
+  // come from party membership (0x17dede4 asks IsValidRidePair(partyLeader, otherMember)).
+  // Every id is the 16-bit immediate of an `addiu $v0,$zero,N`, so only the low half-word
+  // of the instruction changes and the opcode bytes (02 24) stay put.
+  //
+  // Riders #2 and #3 each live at TWO sites: the compiler hoisted the next comparison's
+  // constant into a branch delay slot, so both copies must be written together or the
+  // comparison chain silently stops matching. Rider #1 has only one site (its delay slot
+  // belongs to the null-argument guard above it).
+  //
+  // These are MODEL ids (the engine's own chara numbering, 1..611), NOT the list-1 roster
+  // index the other tabs use — see docs/s3_model_ids.json for the full cross-reference.
+  const MOUNTS = {
+    sig: [0x02, 0x24],                        // addiu $v0,$zero,imm — bytes at +2,+3 of each site
+    pairs: [
+      { riderSites: [0x130384],           mountSite: 0x130390 },
+      { riderSites: [0x13038C, 0x130398], mountSite: 0x1303A4 },
+      { riderSites: [0x1303A0, 0x1303AC], mountSite: 0x1303B4 },
+    ],
+    // Only models carrying the 3xx mounted animation bank can actually ride. Anyone else
+    // links to the mount and then keeps their normal battle pose, because the motion set
+    // call for slots 0xB8+ fails on the missing clips.
+    riders: [[1, "Hugo"], [2, "Chris"], [13, "Roland"], [18, "Leo"], [20, "Percival"],
+      [21, "Borus"], [31, "Futch"], [41, "Franz"], [76, "Sharon", "partial bank — 300/301/310/311 only"]],
+    // Party members whose model carries a battle animation bank (111/140/160/171/172/180).
+    // The field-only horses (zkum / s2um / krum / kru2) have no battle set at all.
+    mounts: [[8, "Fubar", "griffon"], [32, "Bright", "dragon"], [42, "Ruby", "horse"]],
+    STOCK: [[1, 8], [31, 32], [41, 42]],      // Hugo+Fubar, Futch+Bright, Franz+Ruby
+  };
+
   const SETS = {
     table: 0x3DDAB8, count: 5, stride: 8,
     slots: ["Head", "Body", "Shield", "Accessory"],
@@ -1311,7 +1343,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"]];
 
@@ -1393,6 +1425,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
+      mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons. Both halves of a pair still have to be in your party for it to trigger.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -1416,6 +1449,7 @@
     else if (VIEW === "shops") drawShops(host);
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
+    else if (VIEW === "mounts") drawMounts(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "sets") drawSets(host);
     else if (VIEW === "food") drawFood(host);
@@ -2394,6 +2428,106 @@
     if (cur && !list.includes(cur)) list.unshift(cur);
     return list.map((id) => `<option value="${id}"${id === cur ? " selected" : ""}>${hex(id, 2)} · ${skillName(id)}</option>`).join("");
   }
+  // ---- Mounts: the three hard-coded battle rider/mount pairs -------------------
+  function drawMounts(host) {
+    const riderName = (id) => (MOUNTS.riders.find((r) => r[0] === id) || [])[1] || null;
+    const mountName = (id) => (MOUNTS.mounts.find((m) => m[0] === id) || [])[1] || null;
+    // Guard: every site must still be an `addiu $v0,$zero,imm`. If the disc doesn't match,
+    // don't offer edits — better to say so than to write half a comparison chain.
+    const sites = MOUNTS.pairs.flatMap((p) => p.riderSites.concat([p.mountSite]));
+    const bad = sites.filter((o) => !inBlk(o, 4) || r8(o + 2) !== MOUNTS.sig[0] || r8(o + 3) !== MOUNTS.sig[1]);
+    if (bad.length) {
+      host.innerHTML = `<div class="card"><div class="warnbox" style="margin:0">
+        The rider/mount comparison chain doesn't look like stock code on this disc
+        (${bad.length} of ${sites.length} sites failed the <code>addiu $v0,$zero,imm</code> check),
+        so this tab won't edit it. Revert to a pristine USA SLUS-20387 ISO and reopen.</div></div>`;
+      return;
+    }
+    const cards = MOUNTS.pairs.map((p, i) => {
+      const rIdSites = p.riderSites, rId = r16(rIdSites[0]), mId = r16(p.mountSite);
+      const [sr, sm] = MOUNTS.STOCK[i];
+      // A rider whose two sites disagree is a broken chain — surface it rather than hide it.
+      const split = rIdSites.length > 1 && r16(rIdSites[0]) !== r16(rIdSites[1]);
+      const opt = (list, cur, none) => [`<option value="0"${cur === 0 ? " selected" : ""}>${none}</option>`]
+        .concat(list.map(([id, nm, note]) =>
+          `<option value="${id}"${id === cur ? " selected" : ""}${note ? ` title="${esc2(note)}"` : ""}>${esc2(nm)}${note ? " ⚠" : ""}</option>`))
+        .concat(cur !== 0 && !list.some(([id]) => id === cur)
+          ? [`<option value="${cur}" selected>model ${cur} (not in list)</option>`] : []).join("");
+      const stockNote = `stock: ${riderName(sr) || sr} + ${mountName(sm) || sm}`;
+      return `<details class="char" data-rec="${rIdSites[0]}" open><summary>
+          <span class="chev">▸</span><span class="nm">Pair ${i + 1}</span>
+          <span class="muted">${esc2(stockNote)}</span></summary>
+        <div class="char-body">
+          ${split ? `<div class="warnbox" style="margin:0 0 8px">This pair's two rider sites disagree
+            (${r16(rIdSites[0])} vs ${r16(rIdSites[1])}) — pick a rider to rewrite both.</div>` : ""}
+          <div class="grid">
+            <label class="field"><span>Rider</span>
+              <select class="mnt-rider" data-i="${i}">${opt(MOUNTS.riders, rId, "— none (pair disabled) —")}</select></label>
+            <label class="field"><span>Mount</span>
+              <select class="mnt-mount" data-i="${i}">${opt(MOUNTS.mounts, mId, "— none (pair disabled) —")}</select></label>
+          </div>
+        </div></details>`;
+    }).join("");
+    host.innerHTML = `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Battle mounts <span class="u">patches game code · three pairs, no more</span></div>
+        <div class="muted" style="margin:0 0 8px">The engine asks one question before seating a rider —
+          <i>is this rider allowed on this mount?</i> — and answers it from three hard-coded comparisons.
+          These dropdowns rewrite those three. There is no fourth slot to add.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>Both halves must be in your party.</b> The candidate
+          mount is drawn from party membership, so e.g. Chris on Bright still needs Futch recruited (that's
+          how Bright joins) and both Chris and Bright deployed.</div>
+        <details class="note"><summary>Why only these names are listed, and how to give one rider two mounts</summary>
+          <ul style="margin:4px 0 0 18px">
+            <li><b>Riders</b> are the models that carry the <code>3xx</code> mounted animation bank — Hugo,
+              Chris, Roland, Leo, Percival, Borus, Futch, Franz, and Sharon (partial). <b>Geddoe has none of it</b>,
+              so he would link to a mount and then just stand there in his normal battle pose.</li>
+            <li><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and Ruby.
+              The field horses the Zexen knights and Hugo ride have no battle animations at all, so they aren't offered.</li>
+            <li><b>One rider, two mounts</b> works: set two pairs to the same rider with different mounts
+              (e.g. Hugo+Fubar and Hugo+Bright). The comparisons are checked in order and fall through cleanly.</li>
+            <li>Rider seating in battle does <i>not</i> use the field saddle-offset table, so an unusual pair
+              won't be mis-seated by it.</li>
+          </ul></details>
+      </div>
+      <div id="mountCards">${cards}</div>`;
+    // Writes: rider rewrites every site for that pair (delay-slot duplicate included).
+    const relabel = (i, what) => `Pair ${i + 1} ${what}`;
+    function markSites(el, offs, origLabel) {
+      const dirty = offs.some((o) => isDirty(o, 2));
+      el.classList.toggle("dirty", dirty);
+      let btn = el._revBtn;
+      if (!btn) {
+        if (!dirty) { scheduleBadge(); return; }
+        btn = document.createElement("button"); btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+        btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); offs.forEach((o) => revertRange(o, 2)); drawView(); };
+        el.insertAdjacentElement("afterend", btn); el._revBtn = btn;
+      }
+      btn.classList.toggle("show", dirty);
+      if (dirty) btn.title = `Restore original (${origLabel})`;
+      scheduleBadge();
+    }
+    qa("select.mnt-rider", host).forEach((sel) => {
+      const i = +sel.dataset.i, offs = MOUNTS.pairs[i].riderSites;
+      const orig = origW(offs[0], 2), origLbl = orig === 0 ? "none" : (riderName(orig) || `model ${orig}`);
+      sel.onchange = () => {
+        offs.forEach((o, n) => { writeW(o, 2, +sel.value || 0);
+          reg(o, 2, "num", "Battle mounts", relabel(i, `rider${n ? " (delay-slot copy)" : ""}`)); });
+        markSites(sel, offs, origLbl);
+      };
+      markSites(sel, offs, origLbl);
+    });
+    qa("select.mnt-mount", host).forEach((sel) => {
+      const i = +sel.dataset.i, off = MOUNTS.pairs[i].mountSite;
+      const orig = origW(off, 2), origLbl = orig === 0 ? "none" : (mountName(orig) || `model ${orig}`);
+      sel.onchange = () => {
+        writeW(off, 2, +sel.value || 0);
+        reg(off, 2, "num", "Battle mounts", relabel(i, "mount"));
+        markSites(sel, [off], origLbl);
+      };
+      markSites(sel, [off], origLbl);
+    });
+  }
+
   function drawGear(host) {
     const g = scanGear();
     const ids = Object.keys(g).map(Number).sort((a, b) => a - b);

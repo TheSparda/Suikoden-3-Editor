@@ -210,6 +210,14 @@ first two bytes** of the word:
 Riders #2 and #3 each appear **twice** because the compiler hoisted the next comparison's
 constant into a branch delay slot. Change only one of the pair and the check breaks.
 
+This is what the web editor's **Mounts** tab writes (`drawMounts` in `web/iso.js`). It offers
+only riders whose model carries the `3xx` bank and only mounts with a battle animation set,
+refuses to edit if any of the eight sites is no longer an `addiu $v0,$zero,imm`, and always
+writes a rider's delay-slot duplicate alongside its primary site.
+
+Because the comparisons fall through cleanly, setting two pairs to the **same rider with
+different mounts** works — e.g. Hugo+Fubar and Hugo+Bright lets Hugo take either.
+
 The ids are **model ids**, not the roster ids the ISO editor's list 1 uses — see
 [`s3_model_ids.json`](s3_model_ids.json) for the full 517-entry map and the roster
 cross-reference (e.g. roster 2 Chris = model **2**, roster 39 Salome = model **45**,
