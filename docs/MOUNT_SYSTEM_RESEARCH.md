@@ -402,6 +402,80 @@ the individual handlers survive intact and are ordinary callable functions; `0x1
 particular is self-contained. Hooking a call to it from somewhere reachable is a far smaller
 injection than reviving the menu, though it still only does anything where `+0x1bc` is set.
 
+## 9. Which maps can actually mount — a disc census
+
+**The area archives are uncompressed.** Dialogue is plain ASCII in `DATA/*.BIN`, and so are the
+asset record names (`cha_/imf_/ctx_`) and the animation clip names. That makes a direct census
+possible without a decompressor. Machine-readable output: [`s3_mount_areas.json`](s3_mount_areas.json).
+
+Two independent signals were scanned across all 28 area archives:
+
+- **Mount models** — `krum`/`kru2`/`zkum`/`s2um` (ground horses), `mskr`/`msx1`/`msx2`/`mskn`
+  (Le Buque horses), `guli`/`brit` (flyers), `uma1` (scenery). `ground_complete` in the JSON
+  means the archive carries the full `001/002/005/010/020/021` field ride set. That test is
+  krum-shaped and deliberately does not fit `mskr`/`msx1` (party-character rigs) or the flyers.
+- **Rider models with their `07x` bank** — the **field** half of the mounted animation set.
+  `3xx` is the battle half; the same ten models carry both, plus `msk1`/`msk2`/`jyan`, which
+  are field-only. `syu3` (Geddoe) has neither, in any archive.
+
+| area | mounts present (**bold** = complete ground set) | riders with the `07x` field-mount bank |
+|---|---|---|
+| HGB1 · Yaza Plain (Budehuc gate) | **krum** | zkk1 |
+| HNKT · Budehuc Castle | **krum**, brit, guli, mskr, msx1, uma1, zkum | bols futi jyan leoo loll mstk psvl syu1 syu2 zkk1 |
+| KRVI · Karaya Village | **krum**, kru2, guli, zkum | loll zkk1 |
+| ZKTR · Brass Castle | **zkum**, guli | bols leoo loll psvl syu1 syu2 zkk1 |
+| MSVI · Le Buque | mskr, msx1 | msk1 msk2 mstk |
+| TSVI · Chisha Village | mskr, msx1, guli | msk1 mstk psvl syu1 zkk1 |
+| CRRA · Caleria | brit, uma1 | futi |
+| YMMT · Mountain Path | brit | futi mstk |
+| AKMT · Kuput Forest | s2um, zkum (single clip each) | — |
+| VDZK · Vinay del Zexay | guli | bols leoo psvl syu2 zkk1 |
+| LAST · Ceremonial Site | guli | syu1 syu2 zkk1 |
+| LZVI · Great Hollow | guli | syu2 zkk1 |
+| KSKR · Ancient Highway | guli | — |
+| MORI · Zexen Forest | guli | — |
+| AKVI, HGB2 | uma1 (scenery only) | — |
+| DKVI, IKVI, ICEW, FAKE, HAKA, SOGE | — | riders bundled, no mount |
+| CVIS, GDOP, KTDO, LKOE, RVER, SKBN | — | — |
+
+**Only four archives ship a mount with a complete ground-ride set: HGB1, HNKT, KRVI (all `krum`)
+and ZKTR (`zkum`).** Everything else is a flyer, a scenery horse, a party-character rig, or a
+single stray clip.
+
+Read this as **asset residency, not proof the game mounts you there**. A bundled rider model
+carries its ride clips whether or not that scene ever uses them — which is why DKVI, IKVI and
+friends list riders but no mount.
+
+### What was tried and did not work
+
+Scanning the archives for the `RideOn` opcode directly. The EDS interpreter reads a u16 opcode
+from the script stream and indexes a 359-entry handler table at **`0x19828F8`**
+(`opcode = (handler - 0x19828F8) / 4`), which gives **op 22 = `EdsCRideOnSetS`**,
+**24 = `RideOffSetS`**, **108 = `HorseDashSetS`**, **109 = `HorseInanakiE`**; `RideOnSetS` is an
+8-byte instruction (opcode, rider EOBJ, mount EOBJ, param record). Searching for that byte shape
+is pure noise: MORI and KTDO, which contain no mount at all, return *more* even-aligned hits
+(6,673 and 7,384) than HGB1 does (5,654). Locating the script blobs first would be needed to
+make this work, and that was not done.
+
+## 10. "Always mounted in those areas" — why it isn't an editor feature
+
+The operation itself is small; §8 shows the debug build doing exactly it. The problem is where
+to put it and what it can reach.
+
+1. **There is no flag to flip.** Mounting is an *action*, invoked by a script opcode or by the
+   (dead) debug handler. Making it happen automatically needs a per-scene or per-frame hook —
+   new MIPS code plus a redirected call. Every code patch the editor ships today rewrites an
+   existing instruction in place; this is a different class of change.
+2. **It can only reach scenes that already assign a mount.** Both the debug toggle
+   (`0x178ccc8`) and the party-warp code (`0x1777b98`) read the assigned mount from `+0x1bc`,
+   and no code path writes a per-object `+0x1bc` with a literal offset — the only two literal
+   writers (`0x1712894`, `0x1713458`) *clear* the field-work global. So it is populated by
+   scene setup, which means precisely the places the game already intends you to ride.
+
+Net: such a hook would keep you mounted across scripted dismounts inside the four areas that
+already mount you. It cannot add mounting to a map that has no mount in it — the same wall
+§7 and §8 hit from two other directions.
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
@@ -409,6 +483,9 @@ injection than reviving the menu, though it still only does anything where `+0x1
 - The meaning of individual `3xx` variant numbers, and the `311` vs `321/322` split.
 - Whether the field ride state survives a map transition. The field state lives on per-scene
   EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
-- What populates `rec->+0x1bc` (a character's assigned mount for the scene) — presumably the
-  scene/party setup, but the writer was not traced.
+- What populates `rec->+0x1bc` (a character's assigned mount for the scene). No literal-offset
+  writer exists; the two that do write it only clear the field-work global. Presumably scene
+  setup via a computed offset or a struct copy, but it was not traced.
+- Where the EDS script blobs actually live inside an area archive, which is what a reliable
+  "does this scene call RideOn" scan would need (see §9).
 - Nothing here has been tested in an emulator. Every claim above is static analysis.
