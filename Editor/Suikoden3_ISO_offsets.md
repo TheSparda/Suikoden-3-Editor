@@ -2037,3 +2037,35 @@ search into a lookup — a PCSX2 savestate taken with a chest open. EE RAM then 
 248×12 item-point table at 0x196C420 and the box object itself, and its bytes can be searched
 straight back into the town sub-file. Until someone produces that, no chest editor should
 ship; reading contents by hand through the Files view's Peek is what is honestly available.
+
+**Guide ground truth exists — and it rules the static search OUT (2026-08-30).**
+The Suikosource *Rare Armor* guide (`Guides/…Rare Armor….pdf`) does list chest contents, by
+location: 60 rare items, each tagged `Treasure Chest: <location> - Guardian: <boss>`, giving
+six sets of 4–13 items. All 60 map cleanly to item ids. That is exactly the multi-item anchor
+the earlier note said was missing, so it was worth testing properly. Three results:
+
+1. **Exact 0x1C runs: zero.** No item run anywhere in any town sub-file contains even 3 of
+   any location's set.
+2. **Stride-agnostic clustering: chance level.** Sliding a 2 KB window for ≥4 distinct
+   set members returns 1,000–20,000 "hits" per archive, and the best window in *every*
+   archive contains the *entire* set. The rare-armor ids are 60 values packed into
+   0xA7–0x141, so any dense binary region satisfies them. Same failure mode as the 2026-08-17
+   value matching.
+3. **Guardian drop tables are NOT chest contents.** Checked against the enemy index: Chimera
+   guards the North Cavern chest holding a Guardian Casque, but drops Gold Beak /
+   BladeTailOrnmt / Feather Earrings. (The index does reproduce the guide's *drop* lines
+   exactly — Troll Dragon drops Pale Moon Casque at w64, as the guide says — so the check is
+   sound; drops and chests are simply different systems.)
+
+Read with the walkthrough's own description — a looted chest **re-spawns with more loot and
+more cash**, on a timer — the conclusion is that **chest contents are generated at runtime,
+not stored**. The 0x1C entry array proved from `0x17B4FF0` is then the *live* box contents
+built in RAM when the chest is rolled, which explains why five independent static searches
+(item-run fingerprint, pointer-under-K, box-object signature, guide-set exact, guide-set
+clustering) all found nothing: there is very likely nothing static to find.
+
+If that is right, the editable thing is not a chest's item list but the **pool and tier the
+roll draws from**. Finding it means following what fills `box+8` rather than reading it —
+`0x17B54C8`'s callers and the allocator behind the entry array. Worth stating plainly: a
+"chest editor" in the sense of "type in what this chest contains" may not be a thing this
+game has.
