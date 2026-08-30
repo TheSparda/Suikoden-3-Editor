@@ -325,6 +325,7 @@
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
   let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
+  let ROOMS = [], ROOMS_SKIPPED = 0;        // per-area room tables (Encounter view)
   let WPACKS_SKIPPED = 0;                                    // war packs unavailable on this disc (War view)
   const EREG = {};    // enemy-field review registry: key -> {group,label,offs,w,fmt}
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
@@ -460,6 +461,7 @@
       grabOpt("../Editor/s3_bestiary.json"), grabOpt("../Editor/s3_enemy_packs.json"),
       grabOpt("../Editor/s3_war_units.json"), grabOpt("../Editor/s3_war_ref.json"),
     ]);
+    const rooms = await grabOpt("../Editor/s3_rooms.json");   // per-area encounter rates
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -472,7 +474,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef, rooms };
     return REF;
   }
 
@@ -697,10 +699,48 @@
         wskipped = epsrc.packs.filter((p) => p.war).length;
       }
     }
+    // room windows: the per-area encounter-rate tables from s3_rooms.json. Each room
+    // record contributes its 4-byte [grace, rate] pair; a table's records are 0x3C apart
+    // so one table coalesces into one window. Unlike the enemy packs there are no
+    // streaming duplicates — a room's rate lives at exactly one offset per chapter
+    // variant (see Suikoden3_ISO_offsets.md, "FSECT.BIN CRACKED").
+    let rareas = [], rskipped = 0;
+    const rsrc = (typeof window !== "undefined" && window.S3_TEST_ROOMS) || (REF && REF.rooms);
+    if (rsrc && Array.isArray(rsrc.areas)) {
+      const rspans = [];
+      for (const a of rsrc.areas) {
+        const offs = [];
+        for (const t of a.tables) for (const r of t.rooms) offs.push(r.graceOff);
+        if (offs.some((o) => o + 4 > file.size)) { rskipped++; continue; }
+        rareas.push(a); rspans.push(...offs);
+      }
+      rspans.sort((x, y) => x - y);
+      const rranges = [];
+      for (const o of rspans) {
+        if (rranges.length && o - rranges[rranges.length - 1][1] <= 0x2000) {
+          rranges[rranges.length - 1][1] = Math.max(rranges[rranges.length - 1][1], o + 4);
+        } else rranges.push([o, o + 4]);
+      }
+      try {
+        for (const [s0, e0] of rranges) {
+          // An enemy window already covering this range can serve the reads/writes
+          // (auxWin searches every window); adding a second overlapping one would split
+          // the dirty tracking, so skip it.
+          if (aux.some((w) => s0 >= w.off && e0 <= w.off + w.len)) continue;
+          const a2 = new Uint8Array(await file.slice(s0, e0).arrayBuffer());
+          if (a2.length !== e0 - s0) throw new Error("short read");
+          aux.push({ off: s0, len: e0 - s0, tag: "room", buf: a2, orig: a2.slice() });
+        }
+      } catch (err) {
+        aux = aux.filter((w) => w.tag !== "room");     // half-loaded would lie
+        rareas = []; rskipped = rsrc.areas.length;
+      }
+    }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     AUX = aux;
     EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped; WPACKS_SKIPPED = wskipped;
+    ROOMS = rareas; ROOMS_SKIPPED = rskipped;
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
@@ -761,12 +801,15 @@
       if (oldMask !== newMask)
         rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
     }
-    // Enemy fields (registered on edit; dirty state re-checked live so reverts drop out)
-    let enemyCovered = 0;
+    // Enemy and room fields (registered on edit; dirty state re-checked live so reverts
+    // drop out of the list). Room rows are counted apart so the per-area bulk summary
+    // below can't be inflated by labelled enemy edits, or vice versa.
+    let enemyCovered = 0, roomCovered = 0;
     for (const k in EREG) {
       const m = EREG[k];
       if (!eDirty(m.offs, m.w)) continue;
-      enemyCovered += m.offs.length * m.w;
+      if (m.room) roomCovered += m.offs.length * m.w;
+      else enemyCovered += m.offs.length * m.w;
       const ov = m.fmt(eOrig(m.offs, m.w)), nv = m.fmt(eRead(m.offs, m.w));
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}${m.offs.length > 1 ? ` (×${m.offs.length} copies)` : ""}` });
     }
@@ -779,6 +822,15 @@
     }, 0);
     if (enemyDirty > enemyCovered)
       rows.push({ g: "Enemies", t: `${enemyDirty - enemyCovered} more enemy byte(s) changed (bulk multipliers), all pack copies included` });
+    // Same for the Encounter view's whole-area presets, which rewrite every room record
+    // in an area without registering each one.
+    const roomDirty = AUX.reduce((acc, w) => {
+      if (w.tag !== "room") return acc;
+      let n = 0; for (let i = 0; i < w.len; i++) if (w.buf[i] !== w.orig[i]) n++;
+      return acc + n;
+    }, 0);
+    if (roomDirty > roomCovered)
+      rows.push({ g: "Encounters", t: `${roomDirty - roomCovered} more room byte(s) changed (per-area rate presets)` });
     // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
     if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. Balance multipliers)` });
@@ -1198,7 +1250,7 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; renderLoader(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; ROOMS = []; ROOMS_SKIPPED = 0; renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoXdeltaBtn").onclick = exportXdelta;
@@ -2319,9 +2371,7 @@
         <button class="chip" id="encReset">Restore 100%</button>
         <span class="muted" id="encOut"></span>
       </div>
-      <div class="muted">Only the <b>global</b> rate is editable. Each area's own base rate lives in the packed
-        map archives (<code>DATA/*.BIN</code>) rather than the executable, so it can't be retuned per-zone —
-        but scaling globally preserves every area's relative difference.</div>`;
+      <div id="encRooms"></div>`;
     const pctEl = q("#encPct", host), rngEl = q("#encRange", host), outEl = q("#encOut", host);
     const dirty = () => ENC.sites.some((o) => isDirty(o, 4));
     const note = (v) => v === 100 ? "stock rate" : v === 0 ? "random encounters off"
@@ -2347,6 +2397,149 @@
     pctEl.onchange = () => apply(pctEl.value);
     qa("[data-enc]", host).forEach((b) => (b.onclick = () => apply(+b.dataset.enc)));
     q("#encReset", host).onclick = () => { ENC.sites.forEach((o) => revertRange(o, 4)); sync(orig === null ? 100 : orig); updateDirtyBadge(); };
+    drawRoomRates(q("#encRooms", host));
+  }
+
+  // ---- Per-area base rates ----------------------------------------------------
+  // The percentage above is a global multiplier over THESE numbers — each map's own base
+  // rate, read from the packed archives via Editor/s3_rooms.json (built by
+  // build_room_index.py; the decode trail is in Suikoden3_ISO_offsets.md, "FSECT.BIN
+  // CRACKED"). An area ships several chapter-variant tables. Where they agree on a room's
+  // stock value the room gets ONE row that writes all of them; where they disagree it gets
+  // one row per distinct value, because a single row would have to lie about the rest.
+  function roomRows(a) {
+    const byRoom = new Map();
+    for (const t of a.tables) for (const r of t.rooms) {
+      if (!byRoom.has(r.room)) byRoom.set(r.room, []);
+      byRoom.get(r.room).push(r);
+    }
+    const out = [];
+    for (const room of [...byRoom.keys()].sort((x, y) => x - y)) {
+      const groups = new Map();
+      for (const r of byRoom.get(room)) {
+        const k = r.rate + ":" + r.grace;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+      }
+      const split = groups.size > 1;
+      for (const rs of groups.values()) {
+        out.push({ room, rate: rs[0].rate, grace: rs[0].grace, split, variants: rs.length,
+                   rateOffs: rs.map((r) => r.rateOff), graceOffs: rs.map((r) => r.graceOff) });
+      }
+    }
+    return out;
+  }
+
+  // Scale every room in one area from the DISC's own value, so re-applying never compounds
+  // and 100% restores the original bytes exactly (same rule as the global control).
+  function scaleArea(a, pct) {
+    let n = 0;
+    for (const t of a.tables) for (const r of t.rooms) {
+      const o = auxO16(r.rateOff);
+      if (o === null) continue;
+      auxW16(r.rateOff, Math.max(0, Math.min(999, Math.round((o * pct) / 100))));
+      n++;
+    }
+    return n;
+  }
+  const revertArea = (a) => {
+    for (const t of a.tables) for (const r of t.rooms) { eRevert([r.rateOff], 2); eRevert([r.graceOff], 2); }
+  };
+
+  const ROOM_PRESETS = [["None", 0], ["Half", 50], ["Stock", 100], ["Double", 200]];
+
+  function drawRoomRates(host) {
+    if (!host) return;
+    if (!ROOMS.length) {
+      host.innerHTML = ROOMS_SKIPPED
+        ? `<div class="warnbox">Per-area rates are indexed for the full USA disc — none of those offsets exist in
+             this file, so only the global scale is editable here.</div>`
+        : `<div class="muted">Per-area rates need <code>Editor/s3_rooms.json</code>; it didn't load, so only the
+             global scale is available.</div>`;
+      return;
+    }
+    const parts = [`<h3 class="sec">Per-area base rates</h3>`,
+      `<div class="muted" style="margin:0 0 10px">Each map's own rate, read straight from the packed archives —
+        the percentage above multiplies <b>these</b>. <b>0</b> means no random battles on that map, which is how
+        the game marks towns and interiors; the disc's field and dungeon maps sit between <b>2 and 9</b>.
+        <b>Grace</b> is how far you must travel after a battle before another can trigger. A rate at or above 100
+        makes every roll a battle. Areas carry the disc's own archive tag and, where the enemy index knows them,
+        the game's map ids.</div>`,
+      `<div class="warnbox" style="margin:0 0 10px">Lowering a rate is always safe. <b>Raising one from 0 is not</b> —
+        a map the game never fights on has no monster party loaded for it, so forcing an encounter there is not a
+        state the game builds. Rows sitting at the disc's 0 are tagged <span class="opt-tag">no battles</span>, and
+        an area with no battle zones indexed is flagged in full.</div>`];
+    const q2 = SEARCH;
+    ROOMS.forEach((a, ai) => {
+      const zones = (a.zones || []).join(", ");
+      if (q2 && !(a.archive + " " + zones).toLowerCase().includes(q2)) return;
+      const rows = roomRows(a);
+      const live = rows.filter((r) => r.rate > 0).length;
+      parts.push(`<details class="char rarea" data-ra="${ai}" data-i="ra${ai}"><summary><span class="chev">▸</span>
+          <span class="nm">${esc2(a.archive)}</span>
+          <span class="muted">${esc2(zones || "no battle zones indexed")}</span>
+          <span class="lv">${rows.length} map row(s) · ${a.tables.length} chapter table(s) · ${live} with encounters</span></summary>
+        <div class="char-body"><div class="muted">expanding…</div></div></details>`);
+    });
+    host.innerHTML = parts.join("");
+    qa("details.rarea", host).forEach((det) => det.addEventListener("toggle", () => {
+      if (!det.open || det._built) return;
+      det._built = true;
+      buildAreaBody(det, ROOMS[+det.dataset.ra], +det.dataset.ra);
+    }));
+  }
+
+  function buildAreaBody(det, a, ai) {
+    const rows = roomRows(a);
+    const body = det.querySelector(".char-body");
+    // An area the enemy index found no battle zones in has nothing to spawn: raising a rate
+    // here asks the game for an encounter it has no monster party for.
+    const noZones = !(a.zones || []).length;
+    body.innerHTML = `
+      ${noZones ? `<div class="warnbox" style="margin:0 0 8px">No battle zones are indexed for this archive — its
+        maps are towns and interiors. Raising a rate here asks for an encounter the game has no monster party to
+        fill, so treat anything above 0 as untested.</div>` : ""}
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        <span class="muted">Whole area:</span>
+        ${ROOM_PRESETS.map(([l, v]) => `<button class="chip" data-rp="${v}">${l}</button>`).join("")}
+        <button class="chip" data-rrev="1">↺ Restore area</button>
+        <span class="muted">scaled from the disc's own values — re-applying never compounds</span>
+      </div>
+      <table class="invtbl"><thead><tr><th style="width:34%">Map</th><th style="width:20%">Rate</th>
+        <th style="width:20%">Grace</th><th>Applies to</th></tr></thead>
+        <tbody>${rows.map((r, i) => `<tr>
+          <td class="sl">Room ${r.room}${r.split ? ` <span class="opt-tag" title="this room's chapter tables don't all carry the same value">variant</span>` : ""}${
+            r.rate === 0 ? ` <span class="opt-tag" title="the disc has no random battles on this map — raising it asks for an encounter with nothing to spawn">no battles</span>` : ""}</td>
+          <td><input type="number" class="rm-f" data-r="${i}" data-k="rate" min="0" max="999" style="width:84px"></td>
+          <td><input type="number" class="rm-f" data-r="${i}" data-k="grace" min="0" max="4000" style="width:84px"></td>
+          <td class="muted">${r.variants} table${r.variants === 1 ? "" : "s"}</td></tr>`).join("")}</tbody></table>`;
+    wireRoomFields(body, a, ai, rows);
+    qa("[data-rp]", body).forEach((b) => (b.onclick = () => {
+      const n = scaleArea(a, +b.dataset.rp);
+      setStatus(`${a.archive}: ${+b.dataset.rp}% of the disc's own rates across ${n} room record(s). Review, then Save to write.`, "ok");
+      drawView();
+    }));
+    const rev = q("[data-rrev]", body);
+    if (rev) rev.onclick = () => { revertArea(a); setStatus(`${a.archive} restored to the disc's values.`, "ok"); drawView(); };
+  }
+
+  function wireRoomFields(scope, a, ai, rows) {
+    qa("input.rm-f", scope).forEach((inp) => {
+      const r = rows[+inp.dataset.r], rate = inp.dataset.k === "rate";
+      const offs = rate ? r.rateOffs : r.graceOffs;
+      const mark = () => markMulti(inp, eDirty(offs, 2), () => { eRevert(offs, 2); drawView(); }, String(eOrig(offs, 2)));
+      inp.value = eRead(offs, 2);
+      inp.onchange = () => {
+        const v = Math.max(0, Math.min(+inp.value || 0, rate ? 999 : 4000));
+        inp.value = v;
+        eWrite(offs, 2, v);
+        EREG[`room:${a.archive}:${r.room}:${inp.dataset.r}:${inp.dataset.k}`] = {
+          group: `Encounters — ${a.archive}`, label: `Room ${r.room} ${rate ? "rate" : "grace"}`,
+          offs, w: 2, fmt: String, room: true };
+        mark();
+      };
+      mark();
+    });
   }
 
   // ---- Enemies (read-only names) ---------------------------------------------

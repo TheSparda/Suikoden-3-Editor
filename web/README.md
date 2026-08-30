@@ -55,7 +55,7 @@ Reference data is fetched from `../Editor/` rather than duplicated: `s3save.py`,
 `Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, `s3_names.json`, `s3_item_desc.json`,
 `s3_skill_desc.json`, `s3_rune_food_desc.json`, `s3_skill_ref.json`, `s3_skill_caps.json`,
 `s3_growth_ref.json`, `s3_rune_slots.json`, `s3_recruit_meta.json`, `s3_bestiary.json`,
-`s3_enemy_packs.json`, `s3_war_ref.json`, `s3_war_units.json`.
+`s3_enemy_packs.json`, `s3_war_ref.json`, `s3_war_units.json`, `s3_rooms.json`.
 
 ## Running locally
 
