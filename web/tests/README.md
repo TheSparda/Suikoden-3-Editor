@@ -13,6 +13,14 @@ pre-push check, not a CI one). Run `git fetch` first, then:
 node web/tests/version-drift.mjs
 ```
 
+It checks **`HEAD` — the commit you would push — not the working tree**, and in this repo that
+distinction is load-bearing. Several sessions share one checkout and commit from an explicit
+file list, so the tree is *not* what gets pushed. Reading the checkout would both count a peer's
+in-flight edits as yours and miss a stale version line that is genuinely committed. When there
+are uncommitted `web/` files it says so, rather than quietly ignoring them. `--branch <ref>`
+checks another ref; `--worktree` checks the checkout, which is the right mode in an ordinary
+single-user repo.
+
 **Why it exists.** Two branches that both bump `web/index.html` and `web/sw.js` to the *same*
 number rebase with **no conflict at all** — git sees identical content on both sides, so there
 is nothing to flag. The loser's branch ends up byte-identical to main on both lines, its feature
