@@ -8,14 +8,20 @@ NOT touch the ISO and does NOT require one. It opens an 8 MB PS2 memory-card ima
 folders (BASLUS-20387...), and decodes each save's `gamedata` payload.
 
 Layout facts (validated 2026-08-10 against 4 real saves + the herrvillain save-offset
-map; see Editor/Suikoden3_ISO_offsets.md):
+map; character-record and inventory offsets re-derived 2026-08-30 from a 28-save corpus
+for github issue #5 — see Editor/Suikoden3_ISO_offsets.md):
   - Card pages are 512 data + 16 ECC spare = 528 bytes on disk.
   - `gamedata` is 53264 (0xD010) bytes; meaningful data ends ~0xCE48.
   - Character records: base 0x33AC, stride 0x8C (140 bytes), roster order
-    Flame Champion(real), Hugo, Chris, Geddoe, Lucia, Fred, Rico, Viki, Fubar, ...
-    Per record: +0x00 u32 EXP-to-next, +0x08 u16 current HP, +0x0C u8 char id,
-    +0x0D u8 level, +0x20.. u16 stat block.
-  - Global: +0x12 party-leader id, +0x14 story phase.
+    Hugo, Chris, Geddoe, Lucia, Fred, Rico, Viki, Fubar, ... (the real story Flame
+    Champion record sits one block earlier and is not a party member).
+    Per record: +0x00 u16 EXP progress in level, +0x0C u8 char id, +0x0D u8 weapon
+    (sharpen) level, +0x10 skills, +0x20.. u16 stat block, +0x30 u16 current HP,
+    +0x32 u16 max HP, +0x40 u8 LEVEL, +0x44.. equipment.
+  - Inventory: eight 30-entry bags at 0x7060 + n*0xF0; what they mean depends on the
+    story phase (see inv_regions). Entry = u16 item id | 0x8000 "on display", u16 count
+    (stackables only), 4 bytes of per-item state.
+  - Global: +0x12 party-leader id, +0x14 story phase (>= 5 == the parties have merged).
 
 WRITING is intentionally not implemented yet: gamedata word@0 is a checksum whose
 algorithm is not yet cracked, so writing a modified save could make it fail to load.
@@ -72,19 +78,76 @@ def fix_gamedata_checksum(data):
 CHAR_BASE   = 0x33AC
 CHAR_STRIDE = 0x8C
 CHAR_COUNT  = 100              # map documents ~99 slots incl. the real Flame Champion
-OFF_EXP     = 0x00            # u32 EXP toward next level (resets on level-up)
-OFF_CURHP   = 0x08            # u16 current HP
+OFF_EXP     = 0x00            # u16 EXP progress inside the current level, 0..999
 OFF_ID      = 0x0C            # u8 character id
-OFF_LEVEL   = 0x0D            # u8 level
-OFF_MAXHP   = 0x30            # u16 max HP
-OFF_STATS   = 0x20            # u16[8] stat block
-# NOTE: per-character weapon (sharpen) level is intentionally NOT exposed. Its offset was
-# never confirmed on real saves — 0x0D aliases the level byte and 0x0E/0x0F read as 0 — so
-# writing it risked clobbering level. Left out per the "never write unverified fields" rule.
+OFF_WEAPONLV = 0x0D           # u8 weapon (sharpen) level, 1..16
 OFF_SKILLS  = 0x10            # 8 x (skill id u8, rank u8) — verified vs skill-id table
 SKILL_SLOTS = 8
+OFF_STATS   = 0x20            # u16 stat block, see STAT_OFFSETS (0x28 is NOT a stat)
+OFF_CURHP   = 0x30            # u16 current HP
+OFF_MAXHP   = 0x32            # u16 max HP
+OFF_LEVEL   = 0x40            # u8 character level, 1..99
+EXP_MAX     = 999             # level-up fires at 1000; 990 is the highest value observed
+WEAPONLV_MAX = 16             # herrvillain doc: weapon level 1-16
+LEVEL_MAX   = 99
+# ---------------------------------------------------------------------------
+# Offsets corrected 2026-08-30 (github issue #5) against 28 real saves — 2100 non-empty
+# character records — extracted from every save in the corpus. What was wrong and why the
+# new values are right:
+#
+#   LEVEL. Was 0x0D; the real level is 0x40. The PS2 browser title of every S3 save carries
+#   the chapter protagonist's level ("Suikoden3〔07〕Cpt.4 L54/ 61:15"), and 0x40 matches it
+#   in 20/20 saves that have a title, across all four protagonists (see PHASE_PROTAGONIST).
+#   0x0D is the WEAPON (sharpen) level: its domain over the corpus is exactly 1..16 — the
+#   documented weapon-level cap — and it reads 1 for all five non-human units (Fubar,
+#   Bright, Ruby, Koroku, Gadget Z), which carry no weapon. A chapter-2 Chris with a
+#   sharpen-8 weapon is what the old code reported as "Lv8".
+#
+#   CUR/MAX HP. Was (0x08, 0x30); the real pair is (0x30, 0x32). cur <= max holds in
+#   2100/2100 records with the new pair, and the old pair violates it 47 times. 0x30 and
+#   0x32 are equal for a character saved at full health and differ exactly for the wounded
+#   ones. 0x08 is a separate u32 counter of unknown meaning — no longer read or written.
+#
+#   STATS. Suikoden III has SEVEN stats, not eight (confirmed against s3_growth_ref.json,
+#   which lists PWR/SKL/MAG/REP/MDF/SPD/LUK + HP). The old 8-name list inserted a phantom
+#   "PDF" at 0x28, a slot that is zero for every human record and nonzero only for the five
+#   non-human units — so editing "PDF" poked a byte whose meaning is unknown. The seven
+#   real stats keep their previously-verified offsets; only the phantom is gone.
+#
+#   EXP. 0x00 is a u16 (0x02/0x03 are zero in all 2100 records), rises as the character
+#   fights, resets on level-up, and never reaches 1000 (max observed 990 at every level
+#   band) — i.e. progress inside the current level out of 1000, not a total.
+# ---------------------------------------------------------------------------
 # stat order confirmed against herrvillain per-character RAM codes (relative spacing)
-STAT_NAMES  = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"]
+STAT_NAMES   = ["PWR", "SKL", "MAG", "REP", "MDF", "SPD", "LUK"]
+STAT_OFFSETS = {"PWR": 0x20, "SKL": 0x22, "MAG": 0x24, "REP": 0x26,
+                "MDF": 0x2A, "SPD": 0x2C, "LUK": 0x2E}
+
+# Which protagonist's level the save title reports, keyed by story phase (0x14). Verified on
+# every titled save in the corpus: phases 1-4 are the four pre-merge chapters, and from the
+# merge (phase 5+) the title tracks Hugo. Used by validate_save() to cross-check the level
+# offset against a value the save itself carries, so an offset drift fails loudly.
+PHASE_PROTAGONIST = {1: "Hugo", 2: "Chris", 3: "Geddoe", 4: "Thomas"}
+MERGE_PHASE = 5               # story phase at which the three parties (and bags) merge
+
+# Character id stored at +0x0C of each record, per roster index. Unanimous across all 28
+# saves in the corpus (zero disagreements), which is what disproves the "roster order is
+# off" theory. Mostly rosterIndex+1, except the five non-human units, which live in their
+# own 72.. id band: Fubar 72, Bright 73, Ruby 74, Koroku 75. Roster slots past 74 are the
+# non-combat 108 Stars — they have no character record at all, so their expected id is
+# None. decode_character() reports a mismatch instead of silently mislabeling a row.
+ROSTER_IDS = [
+    1, 2, 3, 4, 5, 6, 7, 72,
+    8, 9, 10, 11, 12, 13, 14, 15,
+    16, 17, 18, 19, 20, 21, 22, 23,
+    24, 25, 26, 27, 28, 29, 73, 30,
+    31, 32, 33, 34, 74, 35, 36, 37,
+    38, 39, 40, 41, 42, 43, 44, 75,
+    45, 46, 47, 48, 49, 50, 51, 52,
+    53, 54, 55, 56, 57, 58, 59, 60,
+    61, 62, 63, 64, 65, 66, 67, 68,
+    69, 70, 71,
+]
 
 # Active-party composition: up to 6 member char-ids (u16) at file 0x3216 (herrvillain
 # map), ids in the exe list1 space (1=Hugo, 63=Hallec, ...). 0 = empty slot.
@@ -199,21 +262,116 @@ def detect_carryover(gamedata):
     }
 
 # --- Inventory ------------------------------------------------------------------
-# Entries are 8 bytes: item id (u16) + quantity (u16) + 4 reserved. Empty slot = id 0.
-# Early game, Hugo/Chris/Geddoe run THREE separate parties (Thomas has a 4th bag too);
-# they merge into one shared inventory + storage after the Flame Champion is chosen.
-# The herrvillain save-offset map documents each bag separately (validated vs real saves):
+# Entries are 8 bytes: item id (u16) + count (u16) + 4 bytes of per-item state.
+# Empty slot = id 0. The whole region is a uniform array of EIGHT 30-entry bags at
+# INV_BASE + n*INV_BLOCK (0x7060 .. 0x77DF); block 8 onward is always zero and the data
+# past it (a castle-decoration placement table at 0x7A00) is a different structure.
+#
+# What the eight blocks MEAN depends on the story phase (corrected 2026-08-30, issue #5):
+#
+#   Pre-merge (phase < 5): blocks 0-3 are the four teams' carried bags and blocks 4-7 are
+#   the same four teams' storage. Proved by which block moves when the story phase changes
+#   across the corpus's chapter sequence: phase 1 -> {0,4}, 2 -> {1,5}, 3 -> {2,6},
+#   4 -> {3,7}, with no cross-talk.
+#
+#   Post-merge (phase >= 5): block 0 is the single shared party bag and blocks 1-7 are ONE
+#   contiguous 210-slot shared storage. Proved by a fully-stocked endgame save where blocks
+#   1-7 form a single ascending run — each block's last id equals the next block's first —
+#   and by the fill order: block n+1 only holds items once block n is full.
+#
+# The old model (four bags plus a single 90-slot "Storage" at 0x7420) mislabeled blocks 1-3
+# after the merge, invented one list spanning three independent pre-merge lists, and never
+# exposed block 7 at all.
 INV_ENTRY  = 8
-INV_REGIONS = [
-    ("Hugo",    0x7060, 30),
-    ("Chris",   0x7150, 30),
-    ("Geddoe",  0x7240, 30),
-    ("Thomas",  0x7330, 30),
-    ("Storage", 0x7420, 90),
-]
-# Sanity bound for a real item id (the game uses < 0x300; empty slots may hold a
-# high-bit sentinel like 0x81xx, which we treat as empty rather than a bogus item).
+INV_BASE   = 0x7060
+INV_BLOCK  = 30 * INV_ENTRY     # 0xF0 — one bag
+INV_BLOCKS = 8
+INV_TEAMS  = ["Hugo", "Chris", "Geddoe", "Thomas"]
+
+def inv_regions(story_phase=0):
+    """The bag layout for a save at this story phase -> [(label, base, capacity)].
+    Slots stay numbered from INV_BASE regardless of layout, so a slot index means the
+    same byte offset in both layouts and round-trips on write."""
+    if story_phase >= MERGE_PHASE:
+        return [("Party bag", INV_BASE, 30),
+                ("Storage", INV_BASE + INV_BLOCK, (INV_BLOCKS - 1) * 30)]
+    return ([(t, INV_BASE + i * INV_BLOCK, 30) for i, t in enumerate(INV_TEAMS)] +
+            [(t + " storage", INV_BASE + (4 + i) * INV_BLOCK, 30)
+             for i, t in enumerate(INV_TEAMS)])
+
+# Kept as the pre-merge layout for callers that predate inv_regions(); the write path uses
+# INV_BASE directly, so nothing depends on this being the current save's layout.
+INV_REGIONS = [(l, b, c) for l, b, c in inv_regions(0)]
+
+# Sanity bound for a real item id (the game's table ends at 0x264).
 ITEM_ID_MAX = 0x2FF
+# Bit 15 of an item id is a FLAG, not part of the id: every id seen with it set is a castle
+# ornament (Graffiti, Peeing Boy, Hex Doll, the paintings, the urns, Plant Vase...), the same
+# ids appear unflagged in other saves, and there is a decoration-placement table at 0x7A00
+# listing exactly these items — so 0x8000 means "currently on display in the castle".
+# It is a REAL, occupied slot. Treating it as empty (the old `iid > ITEM_ID_MAX` test) both
+# hid the item from the editor and offered its slot as free, so "+ Add item" overwrote it.
+ITEM_FLAG_DISPLAYED = 0x8000
+ITEM_ID_MASK = 0x7FFF
+
+# Stackable vs one-per-slot, from the count field's behaviour over 2327 real entries:
+#   consumables/food   id < 0x0A0    count 0..6   (stackable; per-item stack size)
+#   equipment & runes   0x0A0-0x1EF  count 0 in 986/986 entries — one item per slot
+#   trade goods         0x1F0-0x1FF  count 1..9   (stackable)
+#   key items/valuables 0x200+       count 0 in 443/444 entries — one item per slot
+# The game holds N copies of a one-per-slot item as N separate slots, each with count 0 —
+# never as one slot with count N (Escape Scroll x6, New Chain Mail x6, Graffiti x6, Power
+# Gloves x5 all appear that way). A rune written with count 1 is therefore a shape the game
+# never produces: it displays, but the whole slot is freed the moment one item leaves it,
+# which is exactly the reported "attach 1 Fury Rune and the other 2 vanish".
+ITEM_QTY_MAX = 9              # herrvillain doc: item qty 0-9
+# The bands above are the default, but they are not the whole story: the corpus covers 213
+# of the 508 item ids, and nine of those contradict a pure band test. Embedded as exceptions
+# so the classification follows the data rather than a tidy boundary.
+#   Stat stones read count 0 in every save despite sitting in the consumable band. Six of
+#   the seven are observed (0x0B-0x0E, 0x10, 0x11) and all agree, so the contiguous category
+#   block 0x0B-0x11 is treated as one-per-slot — 0x0F (Stone Of Mag-Def) by interpolation.
+#   Sacrificial Jizo and Dragon Incense likewise read 0.
+ITEM_ONE_PER_SLOT_EXC = set(range(0x0B, 0x12)) | {0x9E, 0x9F}
+#   Grape is an ingredient in the key-item band and does carry a count.
+ITEM_STACKABLE_EXC = {0x202}
+
+def item_stackable(iid):
+    """True if this item id carries a real count; False if it is one-item-per-slot.
+
+    Beware: ~58% of the item table never appears in the sample saves, so for those ids this
+    is the band rule's best guess, not a verified fact. apply_edits_to_gamedata prefers the
+    evidence in the save being edited when the same item is already held somewhere in it."""
+    iid &= ITEM_ID_MASK
+    if iid in ITEM_ONE_PER_SLOT_EXC:
+        return False
+    if iid in ITEM_STACKABLE_EXC:
+        return True
+    return iid < 0xA0 or 0x1F0 <= iid < 0x200
+
+
+def item_stackable_for(gamedata, iid):
+    """item_stackable(), refined by how THIS save already stores that item.
+
+    Since ~58% of the item table never appears in the sample saves, the band rule is a guess
+    for those ids — but if the player already holds the item, the entries in their own save
+    settle it. The override is deliberately ONE-DIRECTIONAL: the save may only demote an item
+    to one-per-slot, never promote it to stackable. A save edited by an older build can
+    contain runes carrying a bogus count of 1 (the bug being fixed here), and promoting on
+    that evidence would keep writing the broken shape for exactly the players who hit it.
+    Demoting is safe in both directions: the old build never wrote 0 for a new item, and
+    one-per-slot is the shape that provably survives."""
+    iid &= ITEM_ID_MASK
+    guess = item_stackable(iid)
+    if not iid or not guess:
+        return guess
+    counts = [qty for slot in range(INV_BLOCKS * 30)
+              for raw, qty in [struct.unpack_from("<HH", gamedata,
+                                                  INV_BASE + slot * INV_ENTRY)]
+              if raw and (raw & ITEM_ID_MASK) == iid]
+    if counts and max(counts) == 0:
+        return False              # the game's own entries hold this one per slot
+    return True
 
 # Roster order for the character blocks. CHAR_BASE (0x33AC) is HUGO — the real
 # story "Flame Champion" record lives one block earlier (0x3320) and is not a
@@ -393,7 +551,7 @@ def decode_character(gamedata, roster_index):
     rec = gamedata[off:off + CHAR_STRIDE]
     if len(rec) < CHAR_STRIDE:
         return None
-    stats = list(struct.unpack_from("<8H", rec, OFF_STATS))
+    stats = {n: struct.unpack_from("<H", rec, STAT_OFFSETS[n])[0] for n in STAT_NAMES}
     equip = {name: struct.unpack_from("<H", rec, eo)[0] for name, eo in EQUIP_SLOTS}
     skills = [{"slot": k, "id": rec[OFF_SKILLS + k*2], "rank": rec[OFF_SKILLS + k*2 + 1]}
               for k in range(SKILL_SLOTS)]
@@ -402,23 +560,31 @@ def decode_character(gamedata, roster_index):
     # across saves in playtime order. This is the authoritative "have I got them" signal,
     # unlike the character block which is pre-initialized for every roster slot.
     recruit_word = struct.unpack_from("<H", gamedata, RECRUIT_OFF + roster_index * 2)[0]
+    # The record carries its own character id. Compare it with the id this roster slot is
+    # supposed to hold so a future layout shift shows up as a flagged row instead of a
+    # whole roster silently attributed to the wrong people.
+    want_id = ROSTER_IDS[roster_index] if roster_index < len(ROSTER_IDS) else None
+    got_id = rec[OFF_ID]
     return {
         "rosterIndex": roster_index,
         "name": ROSTER[roster_index] if roster_index < len(ROSTER) else f"#{roster_index}",
         "addr": off,
-        "id": rec[OFF_ID],
+        "id": got_id,
+        "idExpected": want_id,
+        "idMismatch": bool(got_id) and want_id is not None and got_id != want_id,
         "level": lvl,
+        "weaponLv": rec[OFF_WEAPONLV],
         "curHP": struct.unpack_from("<H", rec, OFF_CURHP)[0],
         "maxHP": struct.unpack_from("<H", rec, OFF_MAXHP)[0],
-        "expToNext": struct.unpack_from("<I", rec, OFF_EXP)[0],
-        "stats": dict(zip(STAT_NAMES, stats)),
+        "expToNext": struct.unpack_from("<H", rec, OFF_EXP)[0],
+        "stats": stats,
         "equip": equip,
         "skills": skills,
         "recruited": recruit_word != 0,
         "recruitWord": recruit_word,
         "recruiter": recruiter_of(recruit_word),
         "recruiters": recruiters_of(recruit_word),
-        "hasData": lvl > 0 or sum(stats) > 0,
+        "hasData": lvl > 0 or sum(stats.values()) > 0,
         "raw": list(rec),
     }
 
@@ -439,36 +605,122 @@ def item_category(iid):
         return "equipment"
     return "consumable"
 
-def decode_inventory(gamedata):
-    """Decode the item inventory grouped by bag (Hugo/Chris/Geddoe/Thomas/Storage).
-    Returns [{region, base, firstSlot, capacity, used, freeSlots, items:[...]}].
-    `slot` is the absolute entry index from the start of the first bag, so it
-    round-trips on write. Only non-empty slots appear in `items`; `freeSlots` lists the
-    absolute indices of empty slots in this bag (for adding new items)."""
-    base0 = INV_REGIONS[0][1]
+def decode_inventory(gamedata, story_phase=0):
+    """Decode the item inventory grouped by bag (layout depends on story_phase; see
+    inv_regions). Returns [{region, base, firstSlot, capacity, used, freeSlots,
+    appendSlots, items:[...]}]. `slot` is the absolute entry index from INV_BASE, so it
+    round-trips on write regardless of layout.
+
+    Only non-empty slots appear in `items`. `freeSlots` lists the truly-empty slots.
+    `appendSlots` is the subset of those that sit AFTER the bag's last used entry — the
+    only safe place to add an item, because the game keeps each bag packed from its base
+    and appends new pickups at the tail. Writing into an interior gap risks the game
+    treating the run as ending there when it next repacks."""
     groups = []
-    for name, base, count in INV_REGIONS:
+    for name, base, count in inv_regions(story_phase):
         items, free = [], []
-        first_slot = (base - base0) // INV_ENTRY
+        first_slot = (base - INV_BASE) // INV_ENTRY
+        last_used = -1
         for k in range(count):
             off = base + k * INV_ENTRY
             if off + 4 > len(gamedata):
                 break
-            slot = (off - base0) // INV_ENTRY
-            iid = struct.unpack_from("<H", gamedata, off)[0]
+            slot = (off - INV_BASE) // INV_ENTRY
+            raw = struct.unpack_from("<H", gamedata, off)[0]
             qty = struct.unpack_from("<H", gamedata, off + 2)[0]
-            if iid == 0 or iid > ITEM_ID_MAX:      # empty or high-bit sentinel slot
+            if raw == 0:
                 free.append(slot)
                 continue
+            iid = raw & ITEM_ID_MASK
+            last_used = k
             items.append({"slot": slot, "addr": off, "id": iid, "qty": qty,
-                          "category": item_category(iid)})
+                          "category": item_category(iid),
+                          "stackable": item_stackable_for(gamedata, iid),
+                          "displayed": bool(raw & ITEM_FLAG_DISPLAYED),
+                          "rawId": raw,
+                          "unknownId": iid > ITEM_ID_MAX,
+                          "state": list(gamedata[off + 4:off + 8])})
+        append = [s for s in free if s - first_slot > last_used]
         groups.append({"region": name, "base": base, "firstSlot": first_slot,
                        "capacity": count, "used": len(items),
-                       "freeSlots": free, "items": items})
+                       "freeSlots": free, "appendSlots": append, "items": items})
     return groups
 
 
-def decode_save(gamedata):
+def validate_save(gamedata, chars, inventory, meta=None):
+    """Cross-check the decoded save against invariants that only hold if the record layout
+    is right, and return a list of human-readable warnings (empty = all good).
+
+    This exists because issue #5 was a silent mislabel: the editor read a plausible-looking
+    number from the wrong byte and nobody could tell. Every check below is something a
+    correct layout cannot violate, so an offset drift surfaces as a warning on a real save
+    instead of quietly writing to the wrong place.
+
+    The strongest check is the last one: the PS2 browser title of an S3 save states the
+    chapter protagonist's level, so the save carries its own answer for the field this issue
+    got wrong. If our decoded level disagrees with the title, the level offset is wrong.
+
+    Each entry is (severity, text). "error" means the layout looks wrong and editing is
+    unsafe; "info" means the discrepancy has a benign explanation the user should simply be
+    told. Keeping them apart matters: the title-vs-level check legitimately trips on a save
+    whose protagonist level was edited here and then reloaded, and crying corruption at that
+    would train people to ignore the banner that catches the real bug."""
+    warn = []
+    err = lambda t: warn.append(("error", t))
+    info = lambda t: warn.append(("info", t))
+    bad_ids = [c for c in chars if c.get("idMismatch")]
+    if bad_ids:
+        err("character record id mismatch at roster %s (expected %s, found %s) — the "
+                    "roster order may have shifted; treat character edits as unsafe" % (
+                        ", ".join(str(c["rosterIndex"]) for c in bad_ids[:5]),
+                        bad_ids[0]["idExpected"], bad_ids[0]["id"]))
+    over = [c for c in chars if c["hasData"] and c["curHP"] > c["maxHP"]]
+    if over:
+        err("%d character(s) decode with current HP above max HP (first: %s %d/%d) — "
+                    "the HP offsets look wrong" % (len(over), over[0]["name"],
+                                                   over[0]["curHP"], over[0]["maxHP"]))
+    bad_lv = [c for c in chars if c["level"] > LEVEL_MAX or c["weaponLv"] > WEAPONLV_MAX]
+    if bad_lv:
+        err("%d character(s) decode outside the level/weapon-level caps (first: %s "
+                    "Lv%d WLv%d)" % (len(bad_lv), bad_lv[0]["name"], bad_lv[0]["level"],
+                                     bad_lv[0]["weaponLv"]))
+    bad_item = [it for bag in inventory for it in bag["items"] if it["unknownId"]]
+    if bad_item:
+        err("%d inventory slot(s) hold an id past the end of the item table (first: "
+                    "0x%04X) — the bag layout may be wrong" % (len(bad_item),
+                                                               bad_item[0]["rawId"]))
+    phase = gamedata[GLOBAL["storyPhase"][0]]
+    merged = phase >= MERGE_PHASE
+    # Structural signature of the merged layout: storage blocks fill strictly in order, so a
+    # later block only holds items once the one before it is full. Disagreeing with the phase
+    # means MERGE_PHASE (or the phase offset) is off for this save.
+    seq = [sum(1 for k in range(30)
+               if struct.unpack_from("<H", gamedata,
+                                     INV_BASE + n * INV_BLOCK + k * INV_ENTRY)[0])
+           for n in range(1, INV_BLOCKS)]
+    sequential = all(seq[i] == 30 for i in range(len(seq) - 1) if seq[i + 1] > 0)
+    if merged != sequential and any(seq):
+        err("story phase %d says the parties are %s but the storage blocks look %s — "
+                    "the bag labels for this save may be wrong" % (
+                        phase, "merged" if merged else "separate",
+                        "merged" if sequential else "separate"))
+    want = (meta or {}).get("level")
+    who = PHASE_PROTAGONIST.get(phase, "Hugo")
+    if want:
+        got = next((c["level"] for c in chars if c["name"] == who), None)
+        if got is not None and got != want:
+            # The title is written by the GAME when it saves, so it legitimately goes stale
+            # the moment this editor changes that character's level — say so, or a user who
+            # edits the protagonist and reloads their own file gets told it is corrupt.
+            info("the save title says %s is Lv%d but the character record decodes "
+                        "Lv%d. Expected if you changed that level here and reloaded the "
+                        "result (the game rewrites the title on its next save). If you have "
+                        "not edited it, the level offset is wrong — please report it."
+                        % (who, want, got))
+    return warn
+
+
+def decode_save(gamedata, meta=None):
     """Decode one save's gamedata payload into globals + names + character list + inventory."""
     g = {}
     for k, (off, w) in GLOBAL.items():
@@ -479,29 +731,41 @@ def decode_save(gamedata):
     g["playtimeSeconds"] = pt
     g["playtime"] = f"{pt//3600}:{(pt%3600)//60:02d}:{pt%60:02d}"
     g["gold"] = struct.unpack_from("<I", gamedata, GOLD_OFF)[0]
+    g["merged"] = g.get("storyPhase", 0) >= MERGE_PHASE
+    chars = [c for c in (decode_character(gamedata, i)
+                         for i in range(min(CHAR_COUNT, len(ROSTER)))) if c]
+    inv = decode_inventory(gamedata, g.get("storyPhase", 0))
+    checks = validate_save(gamedata, chars, inv, meta)
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
             "party": decode_party(gamedata),
-            "characters": [
-                c for c in (decode_character(gamedata, i)
-                            for i in range(min(CHAR_COUNT, len(ROSTER)))) if c],
-            "inventory": decode_inventory(gamedata)}
+            "characters": chars,
+            "inventory": inv,
+            "statNames": list(STAT_NAMES),
+            # "problems" are layout errors (editing is unsafe); "notes" are discrepancies
+            # with a benign explanation. `warnings` stays as the flat list of texts so
+            # existing callers keep working.
+            "problems": [t for sev, t in checks if sev == "error"],
+            "notes": [t for sev, t in checks if sev == "info"],
+            "warnings": [t for _, t in checks]}
 
 
-# Editable per-character scalar fields -> (offset within the 140-byte block, byte width).
+# Editable per-character scalar fields -> (offset within the 140-byte block, byte width, cap).
 CHAR_FIELDS = {
-    "level":       (OFF_LEVEL, 1),
-    "curHP":       (OFF_CURHP, 2),
-    "maxHP":       (OFF_MAXHP, 2),
-    "expToNext":   (OFF_EXP,   4),
+    "level":       (OFF_LEVEL,    1, LEVEL_MAX),
+    "weaponLv":    (OFF_WEAPONLV, 1, WEAPONLV_MAX),
+    "curHP":       (OFF_CURHP,    2, None),
+    "maxHP":       (OFF_MAXHP,    2, None),
+    "expToNext":   (OFF_EXP,      2, EXP_MAX),
 }
-# stat block: 8 u16 at OFF_STATS, addressed by stat name
-STAT_INDEX = {n: i for i, n in enumerate(STAT_NAMES)}
 # equip slots addressable by name -> offset
 EQUIP_OFF = dict(EQUIP_SLOTS)
 
-def _clamp(v, width):
-    return max(0, min((1 << (8*width)) - 1, int(v)))
+def _clamp(v, width, cap=None):
+    hi = (1 << (8*width)) - 1
+    if cap is not None:
+        hi = min(hi, cap)
+    return max(0, min(hi, int(v)))
 
 NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
 
@@ -561,9 +825,8 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         for k, v in fields.items():
             if k == "stats":
                 for sname, sval in (v or {}).items():
-                    if sname in STAT_INDEX:
-                        struct.pack_into("<H", b, base + OFF_STATS + STAT_INDEX[sname]*2,
-                                         _clamp(sval, 2))
+                    if sname in STAT_OFFSETS:
+                        struct.pack_into("<H", b, base + STAT_OFFSETS[sname], _clamp(sval, 2))
                         changed += 1
             elif k == "equip":
                 for ename, eval_ in (v or {}).items():
@@ -581,26 +844,52 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
                     if "rank" in sk:
                         b[so + 1] = _clamp(sk["rank"], 1); changed += 1
             elif k in CHAR_FIELDS:
-                off, w = CHAR_FIELDS[k]
+                off, w, cap = CHAR_FIELDS[k]
                 fmt = {1: "<B", 2: "<H", 4: "<I"}[w]
-                struct.pack_into(fmt, b, base + off, _clamp(v, w))
+                struct.pack_into(fmt, b, base + off, _clamp(v, w, cap))
                 changed += 1
+    # Inventory. The count field is only meaningful for stackable items; equipment, runes
+    # and key items are strictly ONE PER SLOT with count 0 (986/986 and 443/444 real
+    # entries), and the game holds several copies as several slots. Writing count>0 on a
+    # one-per-slot item produces an entry the game never makes: it shows in the bag, but the
+    # whole slot is freed as soon as one item leaves it — issue #5's "attach 1 Fury Rune and
+    # the other 2 disappear", and the reason editor-added runes did not survive a chapter
+    # transition. So the count is derived from the item, not from the caller's default.
+    # Read the save's own evidence from the ORIGINAL bytes, before this batch's writes
+    # muddy the picture.
+    def stackable(iid):
+        return item_stackable_for(gamedata, iid)
     for slot, ent in (inv_edits or {}).items():
         slot = int(slot)
-        off = INV_REGIONS[0][1] + slot * INV_ENTRY   # slot is relative to the first bag
-        if off + 4 > len(b):
+        off = INV_BASE + slot * INV_ENTRY        # slot is absolute, from the first bag
+        if off + INV_ENTRY > len(b) or slot >= INV_BLOCKS * 30:
             continue
+        cur_id = struct.unpack_from("<H", b, off)[0]
         if "id" in ent:
-            new_id = _clamp(ent["id"], 2)
+            new_id = _clamp(ent["id"], 2) & ITEM_ID_MASK
+            # Preserve the "on display in the castle" flag when only the count changes on an
+            # existing item; a genuinely different item is not the one on display.
+            if new_id and new_id == (cur_id & ITEM_ID_MASK):
+                new_id |= cur_id & ITEM_FLAG_DISPLAYED
             struct.pack_into("<H", b, off, new_id); changed += 1
-            # ensure the 4 reserved bytes are clean when (re)filling/clearing a slot
-            struct.pack_into("<I", b, off + 4, 0)
-            if new_id == 0:                     # clearing a slot -> zero its quantity too
+            if new_id != cur_id:
+                # The trailing 4 bytes are per-item state, not padding — real saves carry
+                # values there on cooking ingredients and food. They belong to the item that
+                # was in the slot, so they are cleared only when the item actually changes.
+                struct.pack_into("<I", b, off + 4, 0)
+            if (new_id & ITEM_ID_MASK) == 0:     # clearing a slot -> zero its count too
                 struct.pack_into("<H", b, off + 2, 0)
-            elif "qty" not in ent and struct.unpack_from("<H", b, off + 2)[0] == 0:
-                struct.pack_into("<H", b, off + 2, 1)   # new item with no qty -> default 1
+            elif "qty" not in ent:
+                struct.pack_into("<H", b, off + 2, 1 if stackable(new_id) else 0)
         if "qty" in ent:
-            struct.pack_into("<H", b, off + 2, _clamp(ent["qty"], 2)); changed += 1
+            iid = struct.unpack_from("<H", b, off)[0] & ITEM_ID_MASK
+            if not iid:
+                qty = 0
+            elif stackable(iid):
+                qty = max(1, _clamp(ent["qty"], 2, ITEM_QTY_MAX))
+            else:
+                qty = 0                          # one item per slot; the count must be 0
+            struct.pack_into("<H", b, off + 2, qty); changed += 1
     for slot, cid in (party_edits or {}).items():
         slot = int(slot)
         if 0 <= slot < PARTY_SLOTS:
@@ -970,11 +1259,12 @@ def read_all_s3_saves(path):
         gd = card.read_file(s["cluster"], s["length"], "gamedata")
         if not gd:
             continue
-        dec = decode_save(gd)
+        ic = card.read_file(s["cluster"], s["length"], "icon.sys")
+        meta = _title_from_icon_sys(ic)
+        dec = decode_save(gd, meta)
         dec["folder"] = s["folder"]
         dec["label"] = slot_label(s["folder"])
-        ic = card.read_file(s["cluster"], s["length"], "icon.sys")
-        dec["meta"] = _title_from_icon_sys(ic)
+        dec["meta"] = meta
         saves.append(dec)
     return saves
 
@@ -987,10 +1277,11 @@ def _read_psu_saves(path):
     gd = psu.read_file("gamedata")
     if not gd or len(gd) < GAMEDATA_SIZE:
         return []
-    dec = decode_save(gd)
+    meta = _title_from_icon_sys(psu.read_file("icon.sys"))
+    dec = decode_save(gd, meta)
     dec["folder"] = psu.folder
     dec["label"] = slot_label(psu.folder)
-    dec["meta"] = _title_from_icon_sys(psu.read_file("icon.sys"))
+    dec["meta"] = meta
     return [dec]
 
 
@@ -1018,10 +1309,11 @@ def _read_individual_save(path, fmt):
         return []
     if not folder or not folder.startswith(S3_PREFIX):
         return []                             # not a Suikoden III (USA) save
-    dec = decode_save(gd)
+    meta = _title_from_icon_sys(files.get("icon.sys"))
+    dec = decode_save(gd, meta)
     dec["folder"] = folder
     dec["label"] = slot_label(folder)
-    dec["meta"] = _title_from_icon_sys(files.get("icon.sys"))
+    dec["meta"] = meta
     return [dec]
 
 
