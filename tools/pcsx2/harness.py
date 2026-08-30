@@ -46,7 +46,11 @@ def find_pcsx2():
     for d in (os.path.expanduser("~/Applications"), os.path.expanduser("~/Downloads")):
         if not os.path.isdir(d):
             continue
-        for name in sorted(os.listdir(d)):
+        try:
+            entries = sorted(os.listdir(d))
+        except OSError:
+            continue      # macOS TCC / sandboxed shells refuse ~/Downloads; not fatal
+        for name in entries:
             if name.lower().startswith("pcsx2") and name.lower().endswith(".appimage"):
                 return os.path.join(d, name)
     if sys.platform == "darwin":
