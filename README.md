@@ -60,8 +60,11 @@ Multi-save memory cards show a **slot switcher**. Every write recomputes the sav
 **checksum** (and card **ECC**) automatically, so the result is byte-compatible with the game.
 Editable per save:
 
-- **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, playtime,
-  story phase, party leader, and Suikoden I/II carryover detection.
+- **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, chapter,
+  playtime, story phase, party leader, and Suikoden I/II carryover detection — plus a
+  **JSON snapshot** (⬇ Export / ⬆ Import) of the whole save: a human-readable file you can
+  edit or share and re-import, which stages the differences through the normal review-and-Apply
+  path rather than writing anything directly.
 - **Characters** — level, weapon (sharpen) level, current/max HP, EXP, all 7 stats, equipped runes + armour
   (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
   per-character recruitment (recruited toggle + "recruited by"). Fields carry the same
@@ -69,12 +72,17 @@ Editable per save:
   range, Max HP the HP row, Level the level that character joins at, each rune slot whether
   it's innate or **opens at Lv N**, and each skill slot that character's **maximum grade**
   (or a note that they can't learn it at all).
-- **Party** — the active battle party (up to 6), by character name.
 - **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
   (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
   characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
   manually is unneeded and can soft-lock an early save (the story/optional split is derived
   from the character guide).
+- **108 Stars** — a completion dashboard over the Stars of Destiny: how many you have, the
+  Hugo / Chris / Geddoe / Thomas / shared spread, filters (recruited vs missing, optional vs
+  story), the guide's how-to line under each missing **optional** star, and a **＋ recruit**
+  button that stages it without leaving the list. It reflects staged edits live, so it doubles
+  as a worklist for a completion run.
+- **Party** — the active battle party (up to 6), by character name.
 - **Inventory** — every bag, split into Party Items vs Key/Valuables, with name-resolved
   item pickers, quantities, add and remove. The bag layout follows the save: before the
   parties merge each of Hugo / Chris / Geddoe / Thomas has their own bag *and* their own
@@ -90,10 +98,17 @@ units the guides omit; those simply show no note rather than a guess.
 
 Quality-of-life: **searchable pickers** (type-to-filter, with id + name + in-game
 description + category), a **review-changes** confirmation (an explicit old → new list before
-anything is written), an **unsaved-changes guard**, and a one-tap **↻ Last opened** chip.
+anything is written), an **unsaved-changes guard**, a one-tap **↻ Last opened** chip, and two
+themes (*Crimson & Gold*, *Parchment*).
 On desktop Chromium the app keeps a writable handle so **Apply & save to file** overwrites
 the original in place; other browsers fall back to **Apply & download**. On Android it can
 also **Apply & share…** the edited file straight to your file manager or emulator folder.
+
+Every save is **cross-checked against invariants a correct layout can't violate** as it
+decodes (including the level it reads against the level the save's own PS2 browser title
+reports). A save that doesn't decode cleanly says so loudly before you edit it; benign
+discrepancies with a known explanation get a quiet note instead, so the loud warning keeps
+its meaning.
 
 ### ISO Editor (web)
 
@@ -106,7 +121,10 @@ file. How edits are saved depends on the browser:
 - **Other browsers** (Firefox / Safari / Android) — **stream a patched copy** to your
   downloads that you swap in, or **export a recipe / `.xdelta`** to apply elsewhere.
 
-Views: **Characters** (starting stats, equipment — rune Head/Right/Left, skills + ranks),
+Views: **Characters** (starting stats, equipment — rune Head/Right/Left, skills + ranks, and
+an experimental **disc-wide rename** for the playable cast — the new name replaces the old
+everywhere on the disc, menus, battle and dialogue alike, so it's same-length only and needs
+the streaming *save patched copy* path, which the in-place write can't reach),
 **Growth** (stat-growth rates, fixed skills, and the 43-skill maximum-level caps with
 one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
@@ -263,8 +281,7 @@ Two limits, both reported clearly rather than guessed around:
 
 The repo also ships a self-contained Python app that runs the same engine locally. Most
 people don't need it — reach for it if you want to **script edits from the CLI**, produce
-**whole-ISO `xdelta` patches**, edit the disc's **in-ROM text strings**, or work fully offline
-from source.
+**whole-ISO `xdelta` patches**, or work fully offline from source.
 
 ### Run
 
@@ -298,6 +315,14 @@ has a **↺** restore and there's a light/dark theme toggle.
   ```
 
   `Editor/s3save.py <memcard.ps2>` dumps the decoded saves on a card.
+
+### Where the desktop app trails the web editor
+
+New work lands in `web/` first, so the local app is behind on a few things: it has no **War**
+unit editor, no **108 Stars** dashboard, no disc-wide **character rename**, and no
+**JSON save snapshot**. Its ISO tabs otherwise line up (growth rates and support-character
+skills live inside its Characters tab, and runes get their own tab instead of the web
+editor's rune-reskin panel inside Spells).
 
 ### Layout
 
