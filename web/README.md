@@ -26,8 +26,8 @@ So every container the desktop editor supports works here, byte-identically: `.p
 `.mc2` / `.bin` memory cards, `.psu`, `.psv`, SharkPort `.sps` / `.xps`, `.cbs`, and raw
 `gamedata`.
 
-**ISO Editor — a JS port.** `iso.js` is a client-side port of `Editor/s3patch.py` +
-`s3fields.py`. It reads only the ~3.75 MB executable region, verifies a USA `SLUS-20387`
+**ISO Editor.** `iso.js` is the client-side ISO editor — originally a port of the Python
+`s3patch.py`/`s3fields.py` tables, now the only implementation. It reads only the ~3.75 MB executable region, verifies a USA `SLUS-20387`
 image, and never loads the multi-GB file. Saving is per-browser: Chromium desktop writes the
 changed bytes **in place** (File System Access API); elsewhere it **streams a patched copy**
 to downloads through the service worker (a ~4 GB image can't be held in memory), or exports a

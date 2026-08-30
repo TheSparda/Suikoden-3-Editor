@@ -88,11 +88,11 @@ literals, identifiers and ALL-CAPS labels rejected) and the scanner (absolute of
 slot lengths, runs split by control bytes, and the safety property that **every returned slot
 is entirely printable**, since the editor writes `max` bytes back over it).
 
-`validate.mjs` additionally asserts the heuristic stays in lockstep with the desktop's
-`_looks_like_text` in `Editor/s3editor.py` — min length, reject pattern, prose punctuation,
-ratio and scan range are compared literal by literal, so the two editors can't drift into
-offering different strings for the same disc. The JS port was differential-tested against the
-Python over 6,000 randomized strings (0 mismatches).
+`validate.mjs` additionally pins the heuristic's literals (min length, reject pattern, prose
+punctuation, ratio) and checks the accept/reject behaviour on known-good and known-bad runs.
+These used to be compared against a second copy in the desktop editor; that editor is gone and
+`text-core.js` is now the only implementation, so the literals are pinned here directly. The JS
+port was differential-tested against the Python over 6,000 randomized strings (0 mismatches).
 
 ```bash
 node web/tests/text-core.mjs
