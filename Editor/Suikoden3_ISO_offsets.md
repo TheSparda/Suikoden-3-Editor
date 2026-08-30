@@ -2175,3 +2175,40 @@ one thing that settles it is a PCSX2 savestate taken with a pickup in view: EE R
 248×12 item-point table at **0x196C420**, the box object, and `box+8` pointing straight at a
 live `{item, weight}` pool — and every one of those structures is now specified precisely
 enough to be recognised on sight.
+
+## Unite membership — who performs a unite is NOT on the disc as data (2026-08-30)
+The Unites tab now shows each unite's roster (web editor, v1.31.0). It is **guide reference
+only**, read from `Editor/s3_unite_chars.json`, and there is no editable field behind it —
+here is why, so nobody re-runs these searches.
+
+Four independent searches for a member list, all negative:
+
+1. **Inside the 0x28-byte unite record.** Every u8 and every u16 slot in the record was
+   correlated against the 33 rosters we know. Best hit is `+0x26`, which names a character in
+   only **15/33** rows (Geddoe for Mercenary B, Lucia for Clan Chief/Lovely Woman, Viki for
+   Pretty Girl, Chris for the three Knight B rows) and mismatches the rest (Griffon→0,
+   Bow-Wow→Yumi, Twister→Edge). With `+0x27` carrying flag bits (0x01/0x02/0x04/0x08/0x10/
+   0x20/0x40) it reads as an animation/model id that happens to correlate with the unite's
+   lead actor — not the party requirement. `+0x00`/`+0x04` are the same anim/effect link
+   halfwords the spell table has (Mercenary B at #24 holds the run 0x01D2..0x01D5); no
+   correlation at all (0/33).
+2. **Per-character field in list1/list2.** Inverted the map (character → unite indices they
+   appear in) and correlated every byte column of both stat tables: best is 6/55, i.e. noise.
+3. **Party bitmask.** Searched the whole boot ELF for a 10-byte window whose set bits are
+   exactly a known roster, at both `bit = id` and `bit = id-1`. No table; the few hits are
+   isolated and don't repeat per unite.
+4. **Contiguous id list anywhere in the ELF.** Scanned every 24-byte window for one that
+   contains all of a roster's ids as u8. The only unite with a distinctive enough roster to
+   settle it is Bow-Wow (Koroku 0x30 + the four dogs 0x4C-0x4F): **4 hits, all ASCII**
+   (`"LMNO"` inside debug format strings). The two `32,33,34` hits are the sequential remap
+   tables at 0x3B0FCA/0x3B10AA, and the `31,32,33` hit at 0x3ED990 is skill-rank data in the
+   table that follows the unites (0x3ED718, stride 0x20, name/desc ptr + cost + rank quad).
+
+Conclusion: the party check lives in battle code, not in a data table this editor can address
+— same shape of answer as the once-per-battle rune limit. Power/cast/target/AoE/description
+stay editable; the roster is displayed and searchable but read-only. Making it editable needs
+the battle-side party-scan routine disassembled first.
+
+`s3_unite_chars.json` is keyed by unite INDEX (names repeat: Han ×3, Adonis ×2, Knight B ×3).
+33 of 38 are covered; Griffon (#2), Duck (#18) and the three Han rows (#26/#32/#33) are absent
+from Suikosource's guide and render as "roster unknown" rather than a guess.
