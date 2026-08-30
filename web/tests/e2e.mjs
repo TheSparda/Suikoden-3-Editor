@@ -1601,6 +1601,11 @@ head("Damage+heal slot — move Shining Wind's split effect to another spell");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitBox");
   check("the damage+heal card starts collapsed", !(await page.locator("#spSplitSpell").isVisible()));
+  // two collapsed bars in a row are ambiguous — each section carries a captioned rule
+  { const secs = await page.locator("#isoView > .secdiv > span").allTextContents();
+    check("the tab reads as three labelled sections",
+      secs.length === 3 && /Special effect/.test(secs[0]) && /Bulk edit/.test(secs[1]) && /Every spell/.test(secs[2]),
+      secs.join(" | ")); }
   await openFold(page, "#spSplitBox");
   // the fixture ships the stock wiring: spell id 17 (row 16) + a 300 HP heal
   check("the slot decodes the disc's own wiring", /heals 300 HP/.test(await page.textContent("#spSplitInfo")),
