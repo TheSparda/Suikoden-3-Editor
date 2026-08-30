@@ -33,9 +33,44 @@ KINDS = ["data", "map", "town", "battle"]          # index -> name, as stored in
 ZNAME = re.compile(rb"^[a-z][a-z0-9_]{3,11}\x00")
 MAP_MARKER = 0x310                                 # word at +0x0C on the geometry family
 
+# Town sub-files carry the map's named scene objects in 32-byte, 16-aligned name fields.
+# Three of those names are pickups, and the game names them in romaji: `takara*` (宝,
+# "treasure") is a chest, `emono` (獲物, "catch/prey") is a lootable corpse, and `herb_*`
+# is a herb-picking spot. Counting them tells you which maps have something to find —
+# verified against the walkthrough for Kuput Forest, which describes exactly the herbs and
+# the single corpse MORI's town data contains.
+OBJ_NAME = re.compile(rb"(?=([A-Za-z][A-Za-z0-9_]{2,15})\x00)")
+PICKUPS = (("takara", "chest"), ("emono", "corpse"), ("herb", "herbs"))
 
-def classify(head):
-    """(kind, label) for a sub-file, from its first 0x400 bytes."""
+
+def scene_objects(buf):
+    """Names of the 32-byte scene-object fields in a town sub-file."""
+    out = []
+    for m in OBJ_NAME.finditer(buf):
+        o = m.start()
+        if o % 16:
+            continue
+        nm = m.group(1)
+        fld = buf[o:o + 32]
+        if len(fld) == 32 and fld[len(nm)] == 0 and all(c == 0 for c in fld[len(nm):]):
+            out.append(nm.decode("latin1"))
+    return out
+
+
+def pickup_note(buf):
+    """"3 herbs · 1 corpse" for a town sub-file, or "" when it has none."""
+    names = scene_objects(buf)
+    bits = []
+    for prefix, label in PICKUPS:
+        n = sum(1 for x in names if x.startswith(prefix))
+        if n:
+            bits.append(f"{n} {label}")
+    return " · ".join(bits)
+
+
+def classify(head, whole=None):
+    """(kind, label) for a sub-file. `head` is its first 0x400 bytes; `whole` (optional)
+    is the entire sub-file, used only to count a town's pickups."""
     if len(head) < 0x20:
         return "data", ""
     w = struct.unpack_from("<4I", head)
@@ -44,7 +79,9 @@ def classify(head):
     for o in range(0, min(len(head) - R.REC, 0x300), 4):
         rs, area = R.read_run(head, o)
         if len(rs) >= 2:
-            return "town", f"area 0x{area:02X} · {len(rs)} rooms"
+            lbl = f"area 0x{area:02X} · {len(rs)} rooms"
+            note = pickup_note(whole) if whole is not None else ""
+            return "town", lbl + (f" · {note}" if note else "")
     if w[3] == MAP_MARKER:
         return "map", ""
     return "data", ""
@@ -67,7 +104,12 @@ def main():
             files = []
             for sect, size in dirs[name]:
                 f.seek(base + sect * SEC)
-                kind, label = classify(f.read(min(size * SEC, 0x400)))
+                head = f.read(min(size * SEC, 0x400))
+                whole = None
+                if struct.unpack_from("<I", head, 0x0C)[0] != MAP_MARKER:
+                    f.seek(base + sect * SEC)
+                    whole = f.read(size * SEC)          # only the small non-geometry ones
+                kind, label = classify(head, whole)
                 tally[kind] += 1
                 files.append([sect, size, KINDS.index(kind), label])
             out["archives"].append({"archive": name, "base": base,
