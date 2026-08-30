@@ -411,6 +411,8 @@
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...}, shops:{...} }
   let VIEW = "chars", SEARCH = "";
   let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
+  let spSplitOpen = false, spReskinOpen = false;   // Spells-tab tool cards: collapsed until asked for,
+                                                   // and kept open across the drawView() an Apply triggers
   let gearCache = null;                     // {itemId: absStatsOffset}
   let gearAlias = {};                       // renamed gear: newName -> itemId. scanGear anchors a
                                             // record by its on-disc name, so a rename would hide it
@@ -2030,8 +2032,9 @@
       ? `<div class="warnbox" style="margin-bottom:10px">The two halves currently disagree: the split is on
            #${st.idx}, but the fixed heal number belongs to #${st.amtIdx}, so the split spell heals for its own
            Power instead. Applying puts both on the same spell.</div>` : "";
-    return `<div class="card" style="margin:0 0 12px">
-      <div class="bag-h">Damage + heal <span class="u">the one spell that hits foes and heals allies</span></div>
+    return `<details class="card fold" id="spSplitBox" style="margin:0 0 12px"${spSplitOpen ? " open" : ""}>
+      <summary class="bag-h"><span class="chev">▸</span>Damage + heal
+        <span class="u">the one spell that hits foes and heals allies</span></summary>
       <div class="muted" style="margin:0 0 10px">Shining Wind is the only spell that does two different things to
         the two sides — and the game hardcodes it by spell number, not by any field on the record. Hand that number
         to a different spell and it inherits the whole behaviour: foes take its <b>Power</b> as damage, allies are
@@ -2048,7 +2051,7 @@
         also set that spell's Target to “All foes + allies” <span class="u">· both sides have to be in the target list for this to show</span></label>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="spSplitApply">Apply</button>
         <button class="chip mini" id="spSplitReset">Restore original</button>
-        <span class="muted" id="spSplitInfo"></span></div></div>`;
+        <span class="muted" id="spSplitInfo"></span></div></details>`;
   }
   function splitInfo(host) {
     const st = splitState(), el = q("#spSplitInfo", host); if (!el) return;
@@ -2076,8 +2079,9 @@
     const runeOpts = Object.keys(RUNE_SPELLS).map((r) => `<option value="${r}">${r}</option>`).join("");
     const elemOptsBlank = `<option value="">— no change —</option>` + Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
     const statOptsBlank = `<option value="">— no change —</option>` + ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}">${s}</option>`).join("");
-    const reskin = `<div class="card" style="margin:0 0 12px">
-      <div class="bag-h">Rune reskin <span class="u">apply the fields you set to every spell a rune grants</span></div>
+    const reskin = `<details class="card fold" id="spReskinBox" style="margin:0 0 12px"${spReskinOpen ? " open" : ""}>
+      <summary class="bag-h"><span class="chev">▸</span>Rune reskin
+        <span class="u">apply the fields you set to every spell a rune grants</span></summary>
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">
         <label class="field"><span>Rune</span><select id="rsRune">${runeOpts}</select></label>
         <label class="field"><span>Power</span><input type="number" id="rsPower" min="0" placeholder="no change"></label>
@@ -2100,7 +2104,7 @@
         <button class="chip mini" data-rspreset="clear">Clear fields</button>
         <span class="u">fills the fields — then Apply</span></div>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
-        <span class="muted" id="rsInfo"></span></div></div>`;
+        <span class="muted" id="rsInfo"></span></div></details>`;
     const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes</label>`;
 
     const rows = [];
@@ -2141,6 +2145,9 @@
     host.innerHTML = splitCard() + reskin + updBox + body;
 
     wireSplit(host);
+    const fold = (id, set) => { const d = q(id, host); if (d) d.ontoggle = () => set(d.open); };
+    fold("#spSplitBox", (v) => { spSplitOpen = v; });
+    fold("#spReskinBox", (v) => { spReskinOpen = v; });
     q("#spUpd", host).onchange = (e) => { spDescOn = e.target.checked; };
     q("#rsApply", host).onclick = () => runeReskin();
     qa("[data-rspreset]", host).forEach((b) => (b.onclick = () => {
