@@ -382,8 +382,9 @@ console.log("Guide overlays + xdelta:");
       const towns = sf.archives.reduce((a, x) => a + x.files.filter((f2) => sf.kinds[f2[2]] === "town").length, 0);
       const tables = rm.areas.reduce((a, x) => a + x.tables.length, 0);
       (towns === tables ? ok : bad)(`town sub-files match the room index's tables (${towns} vs ${tables})`); }
-    (/s3_subfiles\.json/.test(iso) && /function drawFiles/.test(iso)
-      && /data-ref="files"/.test(iso) && /REF_KIND === "files"/.test(iso)
+    // the Reference tab strip is data-driven (REF_MODES), so "registered" means an entry there
+    const refMode = (k) => new RegExp(`\\["${k}", "[^"]+", \\(\\) =>`).test(iso);
+    (/s3_subfiles\.json/.test(iso) && /function drawFiles/.test(iso) && refMode("files")
       ? ok : bad)("iso.js registers the read-only Files browser under Reference");
     // Item sources (Reference view). Provenance must stay split: `drops` are decoded from
     // the disc, `guide` rows are somebody's notes. A row that can't say which is worthless.
@@ -417,7 +418,7 @@ console.log("Guide overlays + xdelta:");
         (v.guide || []).some((g) => /Troll Dragon/.test(g.text)));
       (pmc && (pmc[1].drops || []).some((d) => /TrollDragn/.test(d.enemy)) ? ok : bad)(
         "spot-check: the guide's Troll Dragon drop is also in the decoded tables"); }
-    (/s3_item_sources\.json/.test(iso) && /function drawSources/.test(iso) && /data-ref="sources"/.test(iso)
+    (/s3_item_sources\.json/.test(iso) && /function drawSources/.test(iso) && refMode("sources")
       ? ok : bad)("iso.js registers the Item-sources reference browser");
     // Pickup locations. The per-archive counts are the MAX over chapter variants, never the
     // sum — summing would report one chest per chapter as several chests.
@@ -431,12 +432,73 @@ console.log("Guide overlays + xdelta:");
         "pickup spot-check: MORI = area 0x0D, 1 corpse, 3 herbs (matches the walkthrough)");
       (ch.every((c) => c.items.length >= 4 && c.items.every((i) => +i.item >= 1)) ? ok : bad)(
         "every guide chest names at least 4 real items");
-      (/function drawPickups/.test(iso) && /data-ref="places"/.test(iso) ? ok : bad)(
+      (/function drawPickups/.test(iso) && refMode("places") ? ok : bad)(
         "iso.js registers the Pickups reference browser");
       (/aren't linked/.test(iso) ? ok : bad)(
         "the Pickups view states the disc and guide tables aren't joined"); }
     (/srctag \$\{r\.disc \? "disc" : "guide"\}/.test(iso) ? ok : bad)(
       "every source row is tagged disc vs guide");
+    // Rune + skill lookups (Reference view). Both are pure joins over committed guide data, so
+    // what can break is the join, not the rendering: a rune family range that stops covering the
+    // item list, or a guide name that stops matching the disc's spelling of the same rune.
+    { const rf = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_rune_food_desc.json"), "utf8"));
+      const ro = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_rune_owner.json"), "utf8"));
+      const rs2 = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_rune_slots.json"), "utf8"));
+      const sr = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_skill_ref.json"), "utf8"));
+      // same id/category parse iso.js does, so a category rename in the id list shows up here
+      const items = {}, itemCats = {};
+      { let cur = "";
+        for (const line of itemsTxt.split(/\r?\n/)) {
+          const h = /\*\s*(.+?)\s*\*/.exec(line);
+          if (h && line.indexOf("\t") < 0) { cur = h[1].trim(); continue; }
+          const re = /([0-9A-Fa-f]{3})\t([^\t\n\r]+)/g; let m;
+          while ((m = re.exec(line))) { const id = parseInt(m[1], 16); items[id] = m[2].trim(); itemCats[id] = cur; } } }
+      // the rune families are ID RANGES in iso.js, so they have to keep partitioning the
+      // "Runes" category exactly — no rune outside a family, no non-rune inside one
+      const groups = [...iso.matchAll(/\["(magic|attack|support)", "[^"]+", (0x[0-9A-Fa-f]+), (0x[0-9A-Fa-f]+),/g)]
+        .map((m) => [m[1], parseInt(m[2], 16), parseInt(m[3], 16)]);
+      const inGroup = (id) => groups.filter(([, lo, hi]) => id >= lo && id <= hi);
+      const runeIds = Object.keys(itemCats).map(Number).filter((id) => itemCats[id] === "Runes");
+      (groups.length === 3 && runeIds.every((id) => inGroup(id).length === 1) ? ok : bad)(
+        `all ${runeIds.length} runes land in exactly one family (${groups.map(([g, lo, hi]) => `${g} ${lo.toString(16)}..${hi.toString(16)}`).join(", ")})`);
+      const strays = groups.flatMap(([, lo, hi]) => {
+        const out = []; for (let id = lo; id <= hi; id++) if (itemCats[id] !== "Runes") out.push(id); return out; });
+      (strays.length === 0 ? ok : bad)(`no non-rune item falls inside a rune family (${strays.map((x) => x.toString(16)).join(",")})`);
+      // every rune has menu text to show, whether or not a disc is open
+      const noText = runeIds.filter((id) => !rf[String(id)]);
+      (noText.length === 0 ? ok : bad)(`every rune has bundled description text (${runeIds.length} runes)`);
+      // "— Grants a, b, c" is how the magic runes name their spells; the browser splits on it
+      const grants = runeIds.filter((id) => /—\s*Grants\s+/.test(rf[String(id)] || ""));
+      (grants.length >= 20 ? ok : bad)(`${grants.length} runes list the spells they grant`);
+      // the join that would silently empty the "who has it" column: the guides spell rune names
+      // their own way ("Eight Devil", "Shining wing"), so both files must still match by nameKey
+      const key = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+      const runeKeys = new Set(runeIds.map((id) => key(items[id])));
+      const ownMiss = Object.keys(ro).filter((n) => !runeKeys.has(key(n)));
+      (ownMiss.length === 0 ? ok : bad)(`all ${Object.keys(ro).length} s3_rune_owner names match a rune item (${ownMiss})`);
+      const slotRunes = [...new Set(Object.values(rs2).flatMap((v) =>
+        ["head", "right", "left"].map((k) => (v[k] || {}).state === "rune" ? v[k].rune : null).filter(Boolean)))];
+      const slotMiss = slotRunes.filter((n) => !runeKeys.has(key(n)));
+      (slotMiss.length === 0 ? ok : bad)(`all ${slotRunes.length} runes in s3_rune_slots match a rune item (${slotMiss})`);
+      // Skills: the browser's Utility chip and the Support view's fade must name the same set
+      const utility = Object.keys(sr).filter((k) => sr[k].type === "Utility").map(Number).sort((a, b) => a - b);
+      const gate = /const supportActive = \(id\) => id >= (0x[0-9A-Fa-f]+) && id <= (0x[0-9A-Fa-f]+)/.exec(iso);
+      (gate && utility[0] === parseInt(gate[1], 16) && utility[utility.length - 1] === parseInt(gate[2], 16) &&
+        utility.length === parseInt(gate[2], 16) - parseInt(gate[1], 16) + 1 ? ok : bad)(
+        `"Utility" skills == supportActive()'s range (${utility.length} skills, ${utility[0]}..${utility[utility.length - 1]})`);
+      const types = new Set(Object.values(sr).map((s) => s.type));
+      ([...types].every((t) => new RegExp(`\\["${t}", "`).test(iso)) ? ok : bad)(
+        `every skill type has a filter chip (${[...types].sort().join(", ")})`);
+      // every rank shown in the effect table must be a rank the editor can actually set
+      const ranks = new Set(Object.values(sr).flatMap((s) => (s.effects || []).flatMap((e) => Object.keys(e.ranks || {}))));
+      const rankOpts = new Set([...iso.matchAll(/\[\d, "(E|D|C|B\+?|A\+?|S)"\]/g)].map((m) => m[1]));
+      ([...ranks].every((g) => rankOpts.has(g)) ? ok : bad)(`guide ranks are all in RANK_OPTS (${[...ranks].join(" ")})`); }
+    (/function drawRunes/.test(iso) && refMode("runes") &&
+      /function drawSkillsRef/.test(iso) && refMode("skills") &&
+      refMode("items") && /function drawItemsRef/.test(iso) ? ok : bad)(
+      "iso.js registers the Items, Rune and Skill reference browsers");
+    (/s3_rune_food_desc\.json/.test(iso) && /s3_rune_owner\.json/.test(iso) ? ok : bad)(
+      "iso.js loadRef fetches the rune description + owner tables");
     const areas = rm.areas.map((a) => a.area);
       (new Set(areas).size === areas.length ? ok : bad)("every archive has a distinct area id");
       const mori = rm.areas.find((a) => a.archive === "MORI");
