@@ -14,7 +14,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
-  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX } from "./synth-iso.mjs";
+  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -1585,6 +1585,40 @@ head("Undo/redo + skill-cap & rune presets");
   await page.selectOption('details.char[data-i="1"] select[data-k="status"]', "none");
   const rs = await save(page);
   check("clearing status zeroes flags18 (removes unbalance)", rs.u32(SPELL.off + 1 * 0x20 + 0x18) === 0);
+  await page.context().close();
+}
+head("Damage+heal slot — move Shining Wind's split effect to another spell");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitSpell");
+  // the fixture ships the stock wiring: spell id 17 (row 16) + a 300 HP heal
+  check("the slot decodes the disc's own wiring", /heals 300 HP/.test(await page.textContent("#spSplitInfo")),
+    await page.textContent("#spSplitInfo"));
+  await page.selectOption("#spSplitSpell", "2");            // Blazing Wall
+  await page.fill("#spSplitHeal", "450");
+  await page.click("#spSplitApply"); await page.waitForTimeout(60);
+  check("the note names the spell that now splits", /Blazing Wall/.test(await page.textContent("#spSplitInfo")),
+    await page.textContent("#spSplitInfo"));
+  const { r, review } = await saveAndReview(page);
+  check("the review labels the patched instructions and reads the ids as spells",
+    /Damage\+heal/.test(review) && /heal HP: 300 . 450/.test(review) && /Blazing Wall \(#2\)/.test(review),
+    review.slice(0, 240));
+  // both immediates must move together, or the spell heals for its Power instead of the number
+  check("route immediate = spell id 3 (row 2 + 1)", (r.u32(SPLIT.route) & 0xFFFF) === 3 && (r.u32(SPLIT.route) >>> 16) === 0x2402);
+  check("heal-owner immediate = the same id", (r.u32(SPLIT.amtSel) & 0xFFFF) === 3 && (r.u32(SPLIT.amtSel) >>> 16) === 0x3AC3);
+  check("heal amount immediate = 450", (r.u32(SPLIT.amt) & 0xFFFF) === 450 && (r.u32(SPLIT.amt) >>> 16) === 0x2412);
+  // ...and the spell has to actually pull both sides into the target list
+  check("the spell's target byte became foes+allies (0x03)", ((r.u32(SPELL.off + 2 * SPELL.stride + 0x14) >> 8) & 0x7F) === 0x03);
+  await page.context().close();
+}
+head("Damage+heal slot — restore puts the original bytes back");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitSpell");
+  await page.selectOption("#spSplitSpell", "1");
+  await page.click("#spSplitApply"); await page.waitForTimeout(60);
+  await page.click("#spSplitReset"); await page.waitForTimeout(60);
+  const r = await save(page);
+  check("all three instructions are byte-exact again",
+    [SPLIT.route, SPLIT.amtSel, SPLIT.amt].every((o, i) => r.u32(o) === SPLIT_STOCK[i]));
   await page.context().close();
 }
 head("Skill-cap preset (Growth view)");

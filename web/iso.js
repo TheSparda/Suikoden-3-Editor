@@ -54,6 +54,43 @@
   // INSIDE its own record (+0x20..+0x27) — no next-record guard needed there.
   const SPELL = { off: 0x3EC2A0, count: 94, stride: 0x20, elem: 0x24, radius: 0x21, chance: 0x26 };
   const UNITE = { off: 0x3ECF90, count: 38, stride: 0x28, radius: 0x21, chance: 0x24 };
+  // ---- Split spell: damage the foe side, heal the ally side (Shining Wind) ----
+  // Shining Wind is the only thing in the game that hits BOTH sides with two different
+  // effects ("500DMG to foes. Heals 300HP for allies."), and that is not a data flag —
+  // it is a hardcoded `if (spellId == 17)` in the boot ELF. Empty World proves it: same
+  // flags14 (0x0001030A), same flags18 (0), same radius, and its allies take damage.
+  //
+  // The engine indexes the spell table by a 1-BASED id (`rec = 0x019A4A88 + id*0x20`, so
+  // game id = this editor's row + 1) and a record really begins at the name pointer:
+  // name +0x00, desc +0x04, cast +0x08, flags14 +0x0C, flags18 +0x10, power +0x14 (u16),
+  // then the tail bytes this editor reads one record ahead. Two sites carry Shining Wind:
+  //   • ROUTE, file 0x25A8A4 = `addiu $v0,$zero,0x11`, feeding `bne $s6,$v0` two
+  //     instructions later. On a match the applier DISCARDS the record's own flags and
+  //     substitutes a whole profile per side: allies get flags14 0x00110186 + flags18
+  //     0x1DE7 (heal HP and clear status, whole ally side), foes get flags14 0x0001020A
+  //     + flags18 0 (plain damage, whole foe side). The record's own target byte 0x03
+  //     is what puts both sides in the target list to begin with; this substitution is
+  //     what makes the two sides get different things. Any other 0x03 spell takes the
+  //     damage branch on both sides — hence Empty World's "45DMG to allies".
+  //   • AMOUNT, file 0xE1C90/0xE1C9C = `addiu $s2,$zero,300` + `xori $v1,$s6,0x11`
+  //     feeding `movn $s2,$v0,$v1` — the heal number is 300 for spell 17 and the spell's
+  //     own Power for everything else. That single hack is the only reason Shining Wind
+  //     heals 300 while dealing 500.
+  // A whole-ELF scan finds no third id-17 site, so "which spell splits" and "how much it
+  // heals" are each exactly one 16-bit immediate. Repointing them moves the behaviour to
+  // another spell byte-for-byte reversibly. The game has ONE such slot: this relocates
+  // the trick, it can't clone it.
+  const SPLIT = {
+    route: 0x25A8A4, amtSel: 0xE1C9C, amt: 0xE1C90,
+    stockRoute: 0x24020011, stockAmtSel: 0x3AC30011, stockAmt: 0x2412012C,
+    routeOp: 0x24020000,      // addiu $v0,$zero,imm
+    amtSelOp: 0x3AC30000,     // xori  $v1,$s6,imm
+    amtOp: 0x24120000,        // addiu $s2,$zero,imm
+    stockSpell: 16, stockHeal: 300, maxHeal: 9999,
+    allyF14: 0x00110186, foeF14: 0x0001020A,   // the substituted per-side profiles
+  };
+  const splitWord = (op, imm) => (op | (imm & 0xFFFF)) >>> 0;
+  const splitImm = (w, op) => (((w >>> 0) & 0xFFFF0000) === op ? (w & 0xFFFF) : null);
   // 60 recipe/dish records (0..59). Records 60-61 name-resolve to consumable ITEMS (Sacrificial
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
   const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
@@ -636,6 +673,12 @@
     if (kind === "aoe") return (v & AREA_BIT) ? "AOE on" : "AOE off";
     if (kind === "flags14") return decodeTarget(v);
     if (kind === "status") return decodeF18(v);
+    if (kind === "imm16") return String(v & 0xFFFF);   // a patched MIPS word: only the immediate moved
+    if (kind === "spellid") {                          // ...and that immediate is a 1-based spell number
+      const i = (v & 0xFFFF) - 1;
+      const nm = i >= 0 && i < SPELL.count ? strAt(r32(SPELL.off + i * SPELL.stride + 0x08)) : "";
+      return nm ? `${nm} (#${i})` : `spell no. ${v & 0xFFFF}`;
+    }
     return String(v);
   }
   function anyChanges() { return BUF && ORIG && (diffRuns(1).length > 0 || auxDirty()); }
@@ -1346,7 +1389,7 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
@@ -1940,6 +1983,94 @@
     if (!TARGET_OPTS.some(([v]) => v === cur)) html += `<option value="${cur}" selected>custom 0x${hex(cur, 2)}</option>`;
     return html;
   };
+  // ---- the damage+heal slot (see the SPLIT constant for how it was pinned) ----
+  // Read the three instruction immediates back. `idx`/`amtIdx` are editor rows (game id - 1);
+  // either is null when the word is no longer the instruction we know how to rewrite.
+  function splitState() {
+    const id = splitImm(readW(SPLIT.route, 4), SPLIT.routeOp);
+    const amtId = splitImm(readW(SPLIT.amtSel, 4), SPLIT.amtSelOp);
+    const heal = splitImm(readW(SPLIT.amt, 4), SPLIT.amtOp);
+    const known = id !== null && amtId !== null && heal !== null;
+    const inRange = (v) => v !== null && v >= 1 && v <= SPELL.count;
+    return { idx: inRange(id) ? id - 1 : null, amtIdx: inRange(amtId) ? amtId - 1 : null, heal, known,
+      dirty: [SPLIT.route, SPLIT.amtSel, SPLIT.amt].some((o) => isDirty(o, 4)) };
+  }
+  // Point both immediates at one spell (editor row) and set the heal number. `setTarget`
+  // also gives that spell the both-sides target byte — without it the ally side never
+  // enters the target list and the heal profile has nobody to land on.
+  function applySplit(idx, heal, setTarget) {
+    const id = clampInt(idx, 0, SPELL.count - 1) + 1;
+    writeW(SPLIT.route, 4, splitWord(SPLIT.routeOp, id));
+    reg(SPLIT.route, 4, "spellid", "Damage+heal", "spell that splits");
+    writeW(SPLIT.amtSel, 4, splitWord(SPLIT.amtSelOp, id));
+    reg(SPLIT.amtSel, 4, "spellid", "Damage+heal", "spell the heal number belongs to");
+    writeW(SPLIT.amt, 4, splitWord(SPLIT.amtOp, clampInt(heal, 0, SPLIT.maxHeal)));
+    reg(SPLIT.amt, 4, "imm16", "Damage+heal", "heal HP");
+    if (setTarget) applySpell(idx, { target: 0x03 }, false);
+  }
+  function splitCard() {
+    const st = splitState();
+    const cur = st.idx == null ? SPLIT.stockSpell : st.idx;
+    const opts = [];
+    let curListed = false;
+    for (let i = 0; i < SPELL.count; i++) {
+      const nm = strAt(r32(SPELL.off + i * SPELL.stride + 0x08));
+      if (!nm || nm === "no") continue;                       // blank/placeholder rows
+      if (i === cur) curListed = true;
+      opts.push(`<option value="${i}"${i === cur ? " selected" : ""}>${esc2(nm)} \u00b7 #${i}</option>`);
+    }
+    // the slot can point at an unnamed row (a modified disc, or a table with gaps) — keep it
+    // selectable rather than silently snapping the dropdown to some other spell
+    if (!curListed) opts.unshift(`<option value="${cur}" selected>#${cur} (unnamed row)</option>`);
+    const warn = !st.known
+      ? `<div class="warnbox" style="margin-bottom:10px">These three instructions aren't stock and weren't written by
+           this editor (${[SPLIT.route, SPLIT.amtSel, SPLIT.amt].map((o) => hex(readW(o, 4), 8)).join(" ")}) — applying
+           a spell here overwrites them.</div>`
+      : st.amtIdx !== st.idx
+      ? `<div class="warnbox" style="margin-bottom:10px">The two halves currently disagree: the split is on
+           #${st.idx}, but the fixed heal number belongs to #${st.amtIdx}, so the split spell heals for its own
+           Power instead. Applying puts both on the same spell.</div>` : "";
+    return `<div class="card" style="margin:0 0 12px">
+      <div class="bag-h">Damage + heal <span class="u">the one spell that hits foes and heals allies</span></div>
+      <div class="muted" style="margin:0 0 10px">Shining Wind is the only spell that does two different things to
+        the two sides — and the game hardcodes it by spell number, not by any field on the record. Hand that number
+        to a different spell and it inherits the whole behaviour: foes take its <b>Power</b> as damage, allies are
+        healed the amount below and have their status cleared. There is exactly one such slot in the game, so this
+        <b>moves</b> the trick rather than copying it — whichever spell you pick, Shining Wind goes back to being a
+        plain damage spell. Its description text is just text; edit it below to match.</div>
+      ${warn}
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">
+        <label class="field"><span>Spell</span><select id="spSplitSpell">${opts.join("")}</select></label>
+        <label class="field"><span>Heals allies (HP)</span>
+          <input type="number" id="spSplitHeal" min="0" max="${SPLIT.maxHeal}" value="${st.heal == null ? SPLIT.stockHeal : st.heal}"></label>
+      </div>
+      <label class="row" style="gap:6px;cursor:pointer;margin:8px 0 0"><input type="checkbox" id="spSplitTgt" checked>
+        also set that spell's Target to “All foes + allies” <span class="u">· both sides have to be in the target list for this to show</span></label>
+      <div class="row" style="margin-top:8px"><button class="primary mini" id="spSplitApply">Apply</button>
+        <button class="chip mini" id="spSplitReset">Restore original</button>
+        <span class="muted" id="spSplitInfo"></span></div></div>`;
+  }
+  function splitInfo(host) {
+    const st = splitState(), el = q("#spSplitInfo", host); if (!el) return;
+    const nm = st.idx == null ? "" : strAt(r32(SPELL.off + st.idx * SPELL.stride + 0x08));
+    el.textContent = (st.idx == null ? "not set to a spell in this table"
+      : `now on ${nm || "#" + st.idx} (#${st.idx}), heals ${st.heal} HP`) + (st.dirty ? " · staged" : "");
+  }
+  function wireSplit(host) {
+    const sel = q("#spSplitSpell", host); if (!sel) return;
+    splitInfo(host);
+    q("#spSplitApply", host).onclick = () => {
+      const idx = +sel.value;
+      applySplit(idx, +q("#spSplitHeal", host).value, q("#spSplitTgt", host).checked);
+      drawView();
+      setStatus(`“${strAt(r32(SPELL.off + idx * SPELL.stride + 0x08))}” now damages foes and heals allies. Review, then Save.`, "ok");
+    };
+    q("#spSplitReset", host).onclick = () => {
+      [SPLIT.route, SPLIT.amtSel, SPLIT.amt].forEach((o) => revertRange(o, 4));
+      drawView(); updateDirtyBadge();
+      setStatus("Damage+heal restored to this disc's own wiring.", "ok");
+    };
+  }
   function drawSpells(host) {
     const upd = spDescOn;
     const runeOpts = Object.keys(RUNE_SPELLS).map((r) => `<option value="${r}">${r}</option>`).join("");
@@ -2007,8 +2138,9 @@
             <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
-    host.innerHTML = reskin + updBox + body;
+    host.innerHTML = splitCard() + reskin + updBox + body;
 
+    wireSplit(host);
     q("#spUpd", host).onchange = (e) => { spDescOn = e.target.checked; };
     q("#rsApply", host).onclick = () => runeReskin();
     qa("[data-rspreset]", host).forEach((b) => (b.onclick = () => {
