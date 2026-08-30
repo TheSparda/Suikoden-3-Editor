@@ -62,7 +62,7 @@ Editable per save:
 
 - **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, playtime,
   story phase, party leader, and Suikoden I/II carryover detection.
-- **Characters** — level, current/max HP, EXP, all 8 stats, equipped runes + armour
+- **Characters** — level, weapon (sharpen) level, current/max HP, EXP, all 7 stats, equipped runes + armour
   (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
   per-character recruitment (recruited toggle + "recruited by"). Fields carry the same
   **guide overlays** as the ISO editor: each stat shows its growth rate and expected Lv-99
@@ -75,8 +75,13 @@ Editable per save:
   characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
   manually is unneeded and can soft-lock an early save (the story/optional split is derived
   from the character guide).
-- **Inventory** — every bag (Hugo / Chris / Geddoe / Thomas / Storage), split into Party Items
-  vs Key/Valuables, with name-resolved item pickers, quantities, add and remove.
+- **Inventory** — every bag, split into Party Items vs Key/Valuables, with name-resolved
+  item pickers, quantities, add and remove. The bag layout follows the save: before the
+  parties merge each of Hugo / Chris / Geddoe / Thomas has their own bag *and* their own
+  storage; afterwards it's one shared party bag plus one shared 210-slot storage. Runes,
+  armour and key items are **one per slot** (the game holds three Fury Runes as three
+  slots, not one slot with a count of 3), so only stackables show a quantity, and new
+  items are appended after a bag's last entry rather than dropped into a gap.
 
 Item and skill pickers throughout the save editor show **guide details** — rune effects and
 food heals (which lack an in-game description record), plus per-rank skill effects. The
