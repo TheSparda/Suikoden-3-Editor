@@ -4,7 +4,7 @@
 // This heuristic is the whole feature: there is no index of strings in the ELF, so a run
 // that slips through the filter is a *format string or identifier the user can corrupt*,
 // and a run wrongly rejected is text they can't reach. It is also a port of
-// `_looks_like_text` in Editor/s3editor.py, so the two editors must agree on a given disc —
+// `_looks_like_text` in the retired Editor/s3editor.py, whose rules this now solely owns —
 // the rules are asserted here and the port was differential-tested against the Python.
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);

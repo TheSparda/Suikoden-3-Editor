@@ -15,10 +15,6 @@ ISO/
 *.s3mod.json
 *.xdelta
 
-# Editor local state
-Editor/.s3editor.json
-.s3editor.json
-
 # Python
 __pycache__/
 *.pyc
@@ -44,4 +40,4 @@ Cheat files/
 Guides/
 
 # web test deps
-web/tests/node_modules/
+web/tests/node_modules
