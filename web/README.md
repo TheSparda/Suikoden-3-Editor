@@ -1,40 +1,64 @@
-# Web save editor (prototype — Option B)
+# `web/` — the browser editor
 
-A **fully client-side** Suikoden III save editor that runs in any modern browser,
-including Android. It reuses the real, unmodified `Editor/s3save.py` by running
-CPython in the browser via [Pyodide](https://pyodide.org) (WebAssembly).
+The **primary** Suikoden III editor: a fully client-side app with two modes — a **Save
+Editor** and an **ISO Editor** — deployed to GitHub Pages at
+<https://thesparda.github.io/Suikoden-3-Editor/web/>. New work lands here first; the Python
+app in `Editor/` is the legacy local build.
 
-Your save file **never leaves the device** — there is no server-side upload. This
-makes it a natural fit for editing saves on the phone where you already play via a
-PS2 emulator (AetherSX2 / NetherSX2 / PCSX2).
+Nothing is uploaded. Saves and ISOs are read and written on the device only, which is what
+makes it usable on the phone you already emulate on (AetherSX2 / NetherSX2 / PCSX2).
 
-## How it works
+For the user-facing feature list, see the [root README](../README.md). This file covers how
+the folder is put together.
 
-1. Pyodide boots CPython in the browser and fetches `../Editor/s3save.py`.
-2. Your uploaded save is written into Pyodide's in-memory filesystem at `/save.bin`.
-3. The page calls the existing path-based functions unchanged —
-   `read_all_s3_saves()` to decode and `write_save_edits()` to apply edits (with
-   correct gamedata checksum and, for memory cards, per-page ECC).
-4. The edited container is read back out of the in-memory FS and downloaded as
-   `<name>.edited.<ext>`.
+## The two engines
 
-Because it drives the real module, every container the desktop editor supports works
-here too: `.ps2` / `.mcd` memory cards, `.psu`, `.psv`, `.cbs`, SharkPort `.xps`,
-and raw `gamedata`. The edited container is byte-identical to what the desktop tool
-produces (same checksum, same ECC).
+**Save Editor — the real Python module, in the browser.** [Pyodide](https://pyodide.org)
+boots CPython (WebAssembly) and runs `../Editor/s3save.py` *unmodified*:
+
+1. Pyodide fetches `s3save.py`; your file is written into its in-memory FS at `/save.bin`.
+2. The page calls the existing path-based functions unchanged — `read_all_s3_saves()` to
+   decode, `write_save_edits()` to apply (correct gamedata checksum, and per-page ECC for
+   memory cards).
+3. The edited container is read back out and saved in place, downloaded, or shared.
+
+So every container the desktop editor supports works here, byte-identically: `.ps2` / `.mcd` /
+`.mc2` / `.bin` memory cards, `.psu`, `.psv`, SharkPort `.sps` / `.xps`, `.cbs`, and raw
+`gamedata`.
+
+**ISO Editor — a JS port.** `iso.js` is a client-side port of `Editor/s3patch.py` +
+`s3fields.py`. It reads only the ~3.75 MB executable region, verifies a USA `SLUS-20387`
+image, and never loads the multi-GB file. Saving is per-browser: Chromium desktop writes the
+changed bytes **in place** (File System Access API); elsewhere it **streams a patched copy**
+to downloads through the service worker (a ~4 GB image can't be held in memory), or exports a
+`.s3mod` recipe / `.xdelta` patch. It also *applies* both formats, sniffed by content.
 
 ## Files
 
-- `index.html` — page shell.
-- `style.css` — styling.
-- `app.js` — Pyodide bootstrap, reference-table parsing, and the full editor UI.
+| File | What it is |
+|---|---|
+| `index.html` | Page shell: mode tabs, loader, footer (version string lives here) |
+| `style.css` | All styling, plus the two themes (Crimson & Gold / Parchment) |
+| `app.js` | Pyodide bootstrap, reference-table parsing, and the whole save-editor UI |
+| `iso.js` | The ISO editor: field tables, all 16 views, staging, save/patch paths |
+| `recruit-core.js` | Recruit bit math (recruited flag + per-team bits), shared by UI and tests |
+| `rename-core.js` | Same-length disc-wide character rename used by the streaming save |
+| `guide-core.js` | Joins Suikosource guide data onto characters by name (overlay notes) |
+| `text-core.js` | In-ELF string scanner + prose filter for the Text tab |
+| `vcdiff.js` | `.xdelta` (RFC 3284 VCDIFF) encoder **and** decoder |
+| `sw.js` | Service worker: offline cache, share target, streaming ISO download |
+| `manifest.webmanifest`, `icons/` | PWA install metadata and home-screen icons |
+| `tests/` | Node checks + Playwright e2e — see [`tests/README.md`](tests/README.md) |
 
-Reference data pulled from `../Editor/`: `s3save.py`, `Suikoden3_item_ids.txt`,
-`Suikoden3_skill_ids.txt`, `s3_names.json`.
+Reference data is fetched from `../Editor/` rather than duplicated: `s3save.py`,
+`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, `s3_names.json`, `s3_item_desc.json`,
+`s3_skill_desc.json`, `s3_rune_food_desc.json`, `s3_skill_ref.json`, `s3_skill_caps.json`,
+`s3_growth_ref.json`, `s3_rune_slots.json`, `s3_recruit_meta.json`, `s3_bestiary.json`,
+`s3_enemy_packs.json`, `s3_war_ref.json`, `s3_war_units.json`.
 
 ## Running locally
 
-Serve the **repository root** (so `../Editor/s3save.py` resolves), then open `/web/`:
+Serve the **repository root** (so the `../Editor/` fetches resolve), then open `/web/`:
 
 ```bash
 python3 -m http.server 8791
@@ -42,101 +66,51 @@ python3 -m http.server 8791
 
 Then browse to `http://localhost:8791/web/`.
 
+Tests:
+
+```bash
+npm --prefix web/tests test
+```
+
+`npm --prefix web/tests run test:e2e` runs the headless-Chromium suite (needs
+`playwright-core` + a Chromium binary; skips cleanly without them). CI runs both on any push
+touching `web/**` or `Editor/**` (`.github/workflows/web-tests.yml`).
+
 ## Deploying on GitHub Pages
 
-Yes — this hosts on GitHub Pages as-is. The page fetches `../Editor/s3save.py` plus the
-three reference files (all committed to the repo), so it just needs to be served from the
-repo root:
+It hosts as-is, served from the repo root (the page fetches `../Editor/` files, all committed):
 
-1. Repo **Settings → Pages → Build and deployment → Source: Deploy from a branch**.
-2. Pick the branch (e.g. `main`) and folder **`/ (root)`**. Save.
-3. The editor lives at `https://<user>.github.io/<repo>/web/`
-   (e.g. `https://thesparda.github.io/Suikoden-3-Editor/web/`).
+1. **Settings → Pages → Build and deployment → Source: Deploy from a branch**.
+2. Branch `main`, folder **`/ (root)`**. Save.
+3. It lives at `https://<user>.github.io/<repo>/web/`.
 
-Pages serves over HTTPS, which the service worker and "Add to Home screen" require. On
-Android, open that URL in Chrome and use the ⋮ menu → **Install app** / **Add to Home
-screen**.
+Pages serves over HTTPS, which the service worker and "Add to Home screen" require.
 
-To ship `web/` as a standalone folder instead, copy `Editor/s3save.py`,
-`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, and `s3_names.json` next to `app.js`
-and change the four `../Editor/` fetch paths in `app.js`.
+To ship `web/` standalone instead, copy the `../Editor/` files listed above next to `app.js`
+and rewrite the fetch paths in `app.js` / `iso.js`.
 
-## Installable PWA / offline
+## PWA, offline, and updates
 
-`manifest.webmanifest` + `sw.js` make it an installable Progressive Web App. On first visit
-everything downloads from the network; the service worker then caches the app shell, the
-`../Editor/` files, and the Pyodide runtime (`.wasm` / `.asm.js` / `python_stdlib.zip`), so
-from the **second visit on it works fully offline** — handy on a phone with no signal.
-`icons/` holds the home-screen icons (192, 512, and a 512 maskable).
+`manifest.webmanifest` + `sw.js` make it installable. Same-origin files (app shell +
+`../Editor/`) are **network-first**, so an installed copy picks up new commits on its next
+online launch — no reinstall. The Pyodide runtime is **cache-first** and version-pinned
+(`v0.26.2` in `app.js`); it changes only when that pin moves. Offline works from the second
+visit on.
 
-An **"Install app"** button appears in the header only when the browser actually offers
-installation (Chrome/Android's `beforeinstallprompt`) and is hidden once installed or when
-already running standalone. iOS Safari has no such event — there, use Share → Add to Home
-Screen.
+**Releasing a change:** bump the version string in `index.html` *and* `CACHE` in `sw.js`
+(`s3editor-vNN`) in the same commit. Bumping `CACHE` purges the old offline cache on
+activation, which is what guarantees stale installed copies drop it. The footer's **↻ Force
+refresh** button does the same from the user's side if a build ever gets stuck.
 
-### How an installed copy gets updates
+An **"Install app"** button appears in the header only when the browser offers installation
+(Chrome/Android's `beforeinstallprompt`), and is hidden once installed. iOS Safari has no such
+event — there, Share → Add to Home Screen.
 
-Updates are **automatic whenever the phone is online** — an installed PWA is not a frozen
-snapshot. The service worker serves same-origin files (`index.html`, `app.js`, `style.css`,
-and the `../Editor/` files) **network-first**: each launch fetches the latest from GitHub
-Pages and only falls back to the cached copy when offline. So pushing a new commit to the
-Pages branch means users get it on their next online launch, with no reinstall.
+## Android specifics
 
-Two caveats:
-- The **Pyodide runtime** is cache-first and version-pinned (`v0.26.2` in `app.js`); it
-  changes only when you bump that version, which points at fresh CDN URLs.
-- Bumping `CACHE` in `sw.js` (e.g. `s3editor-v2`) forces the old offline cache to be purged
-  on activation — do this when you want to guarantee stale *offline* copies are dropped.
-  It isn't needed for online users, who are already network-first.
-
-## Scope — full parity with the desktop save editor
-
-The web UI covers everything the desktop save editor does:
-
-- **Overview** — names, gold, playtime, story phase, party leader, Suikoden I/II carryover.
-- **Characters** — level / cur HP / max HP / EXP, the 8 stats, equipped runes + armour
-  (category-filtered, name-resolved dropdowns), 8 skill slots (id + rank), and recruitment
-  (recruited toggle + "recruited by").
-- **Party** — the active battle party (up to 6), by character name.
-- **Inventory** — every bag (Hugo / Chris / Geddoe / Thomas / Storage), split into Party
-  Items vs Key/Valuables, with name-resolved item dropdowns, quantities, add and remove.
-- **Multi-slot** memory cards show a slot switcher.
-
-Item / skill / character names come from the same reference files the desktop server uses
-(`Suikoden3_item_ids.txt`, `Suikoden3_skill_ids.txt`, `s3_names.json`, plus
-`s3_item_desc.json` / `s3_skill_desc.json` for descriptions), parsed with the same rules and
-fetched from `../Editor/` alongside `s3save.py`.
-
-## Quality-of-life
-
-- **Faster Android workflow (Web Share)** — the installed PWA registers as a **share target**,
-  so in your file manager (or an emulator that can share) you tap **Share → S3 Save Editor**
-  and the memory card opens straight in the editor — no download, no "Choose file". After
-  editing, **Apply & share…** hands the edited file to the Android share sheet to send it
-  back to your file manager / the emulator folder / cloud. Turns copy→download→move into
-  *Share → edit → Share back*. (True overwrite-in-place isn't possible in a web app on
-  Android — the File System Access API is desktop-only — so this is the fastest web option;
-  a native wrapper would be needed for literal in-place saving.)
-- **Remembers the last opened save** — the most recent save (its bytes, on desktop also its
-  writable handle) is kept in on-device IndexedDB, so a **↻ Last opened** chip on the loader
-  lets you reopen it in one tap next visit (on desktop that reopen restores save-in-place).
-  A ✕ forgets it. Nothing is uploaded; it lives only in your browser.
-- **Save in place** (desktop Chromium) — when you open a file via **Choose file…** or drag it
-  in, the app keeps a writable handle (File System Access API), so "Apply & save to file"
-  overwrites the original directly (a "Download copy" button stays available too). Browsers
-  without the API — Android Chrome, Firefox, Safari — automatically fall back to
-  "Apply & download". The original is only overwritten on an explicit save-to-file, after you
-  confirm the change list and grant write permission.
-- **Searchable pickers** — items, skills, equipment, and party members open a type-to-filter
-  modal instead of a giant native dropdown (essential with 500+ items, especially on mobile).
-  Rows show the id, name, in-game description, and category.
-- **Review changes before writing** — "Apply" first shows an explicit *old → new* list of
-  every field that will change, grouped by character / section. Confirm to download.
-- **Unsaved-changes guard** — warns before you close or navigate away with pending edits.
-- **Value hints** — number fields carry sensible min/max; the module still clamps to the
-  real byte width on write.
-- **Boot progress** — the first-load Pyodide download shows staged progress instead of a bare
-  spinner.
-
-**ISO patching stays desktop-only** — it needs the multi-GB ISO and does not belong in a
-browser tool.
+- **Share target.** The installed PWA registers as one, so **Share → S3 Save Editor** in a
+  file manager opens the card straight in the editor. **Apply & share…** hands the edited file
+  back to the share sheet. True in-place overwrite isn't possible on Android (File System
+  Access API is desktop-only), so this is the fastest round trip a web app can offer.
+- **Last opened.** The most recent save (bytes, plus the writable handle on desktop) is kept
+  in on-device IndexedDB, so a **↻ Last opened** chip reopens it in one tap. A ✕ forgets it.
