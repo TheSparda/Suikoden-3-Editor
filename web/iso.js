@@ -1221,8 +1221,8 @@
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
-    ["text", "Text"], ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
-    ["files", "Files"], ["ref", "Reference"]];
+    ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
+    ["files", "Files"], ["text", "Text"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
