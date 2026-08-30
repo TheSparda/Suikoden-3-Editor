@@ -17,7 +17,8 @@ independent layers, and each layer restricts things differently:
 | Layer | What it is | Who it lets ride |
 |---|---|---|
 | **Link primitive** | `RideLink(riderEobj, mountEobj)` @ `0x16e84c0` | **anyone on anything** — no ID check at all |
-| **Field mounting** | EDS event-script opcodes `RideOn` / `RideOff` | anyone the map's script says |
+| **Field ground ride** | EDS opcodes `RideOn` / `RideOff` | anyone the map's script says — but **horses only** |
+| **Field flying ride** | EDS opcodes `FlyMove*` (a separate path) | scripted flight; this is the only way Fubar/Bright carry anyone outside battle |
 | **Battle mounting** | automatic, gated by a hardcoded pair table @ `0x16e8b78` | **exactly three pairs**, see below |
 
 So: *mechanically* the engine will pair any two objects. What actually stops
@@ -93,9 +94,14 @@ else     SetMotion(eobj, 0x93);          // b_start (normal)
 `SetMotion` @ `0x16ef4f0` returns nonzero on success, so a model with no ride clips
 **fails silently** and keeps its previous pose rather than crashing.
 
-## 3. Field mounting: an event-script command
+## 3. Field mounting: two separate script-driven paths
 
-Field mounts are driven entirely by the map's EDS script. The opcodes are
+Field mounts are driven entirely by the map's EDS script, and there are **two independent
+mechanisms** that must not be confused:
+
+### 3a. Ground ride — horses only
+
+The opcodes are
 
 `EdsCRideOnSetS` (`0x179ecc0`) · `EdsCRideOnE` · `EdsCRideOffSetS` (`0x179f534`) ·
 `EdsCRideOffE` · `EdsCHorseInanakiE` (`0x17a2xxx`) · `EdsCHorseDashSetS`
@@ -106,11 +112,18 @@ links them, and ends by putting the rider into motion `0x40` (`ride_neutral`).
 `!!! evono %x is not horse. !!!`, then plays motion `0x63` (`uma_inanaki`) / `0x60`
 (`uma_neutral`) — i.e. **object kind 7 == HORSE**.
 
-The only character-specific code in the whole field path is a cosmetic fix-up: when the rider
-is model **1 (Hugo)** on mount **325/353 (`krum`/`kru2`, the Karaya horses)**, or the rider is
-model **45 (Salome)**, the handler calls `0x16d7f60(clump, name)` seven times to strip the
-clips named `ride_neutral`, `rdrun_stop`, `rdrun`, `rdrun_start`, `rdwalk_stop`, `rdwalk`,
-`rdwalk_start` from the rider's clump (a duplicate-clip cleanup). It does not gate anything.
+There is one character-specific block, and it is the most informative thing in the whole
+field path. When the rider is model **1 (Hugo)** and the mount is **325/353 (`krum`/`kru2`,
+the Karaya horses)**, the handler calls `0x16d7f60(clump, name)` seven times, for
+`ride_neutral`, `rdrun_stop`, `rdrun`, `rdrun_start`, `rdwalk_stop`, `rdwalk`, `rdwalk_start`.
+`0x16d7f60` walks the clump's 128-entry clip table (`clump+0x40`, stride `0x20`), finds the
+**first** clip with that name, and `bzero`s its record (`0x188b830` is a plain `bzero`) — i.e.
+it **deletes** that clip binding.
+
+The natural reading: Hugo's model ships **two** mounted rigs — one built for Fubar and one for
+a horse — with colliding clip names, so mounting a horse has to shed the Fubar-rigged copies
+first. Model **45 (Salome)** takes a parallel branch that skips the strip and goes straight to
+the shared tail. Neither block gates anything; both are rig fix-ups.
 
 ### The rideable-mount whitelist (saddle offsets)
 
@@ -130,6 +143,31 @@ zero saddle offset. This is a placement table, not a permission check.
 
 `uma1` (the plain ambient horse), `usi1` (cow) and `pig1` are **not** in the list — the
 scenery horses genuinely cannot be ridden properly.
+
+**Critically, `guli` (Fubar) and `brit` (Bright) are not in this list either.** There is no
+saddle offset for a griffon or a dragon, because they are never *ground* mounts. Confirmed by
+the call graph: `GetRiderOffset` has exactly two callers, `0x16e8888` and `0x179ef20`, both on
+the `RideOn` ground path.
+
+### 3b. Flying ride — how Fubar and Bright actually carry someone on the field
+
+A completely separate set of EDS opcodes (`EdsCFlyMoveE`, `EdsCFlyMoveInfinityE`,
+`EdsCFlyPersonPositionMoveE`, `EdsCFlyPosDirSetS`, `EdsCDoveFlyMoveE`) drives airborne
+movement. At `0x179c210`:
+
+```
+SetMotion(mount, 0x127);                 // fly_loop  — the flyer's own wings
+if (TestFlag(mount, 0x00080000)) {       // is it carrying a rider?
+     SetMotion(mount->+0x250, 0x4E);     // rdfly_loop — the rider's flying-ride clip
+}
+```
+
+So the rider slots `0x4A–0x4F` (`rdfloat_*`, `rdfly_*`) belong to **this** path, not to
+`RideOn`. The pair still uses the same `+0x250` link and the same `0x00080000` flag, but the
+rider's world position comes from the scripted flight path rather than from a saddle-offset
+table — which is exactly why `guli`/`brit` need no entry in that table.
+
+This is scripted cutscene flight, not a player-steerable mount.
 
 ## 4. Battle mounting: the hardcoded three-pair table
 
@@ -253,35 +291,55 @@ appear in a scene whose archive carries it:
 | `zkum` (Zexen horse) | AKMT, HNKT, KRVI, ZKTR |
 | `krum` (Karaya horse) | HGB1, HNKT, KRVI |
 | `kru2` | KRVI |
-| **`s2um` (Chris's horse)** | **AKMT only** |
+| **`s2um` (Chris's horse)** | **AKMT only, and only the single record `cha_s2um_172`** |
 | `uma1` (scenery horse) | AKVI, CRRA, HGB2, HNKT |
+
+Presence is not the same as usability. Only these archives carry a **complete** ground-ride
+variant set (`cha_*_001/002/005/010/020/021`):
+
+| mount | complete in |
+|---|---|
+| `krum` (Karaya horse — Hugo's) | HGB1, HNKT, KRVI |
+| `zkum` (Zexen-knight horse) | ZKTR only (AKMT/HNKT/KRVI carry just `cha_zkum_172`) |
+| `s2um` (Chris's horse) | **nowhere** — only `cha_s2um_172` in AKMT |
+| `mskr` (Ruby), `msx1` | MSVI, TSVI (both including the `111/140/160/171/172/180` battle bank) |
 
 ## 7. Answers to the questions that started this
 
-**Can someone else ride Fubar / Bright?**
-In battle, no — not without patching the three-pair table at ISO `0x130384`–`0x1303B4`. The
-patch itself is trivial (eight 2-byte immediates, remembering the two duplicated delay-slot
-constants). But a substituted rider will only *animate* correctly if their model carries the
-`3xx` bank, which is only Hugo, Futch, Franz, Chris, Borus, Percival, Leo, Roland, `zkk1` and
-(partially) Sharon. Anyone else pairs up and then silently keeps their normal battle pose,
-because `SetMotion` fails on the missing `0xB8`+ clips.
+**Hugo's field mount is a Karaya horse, not Fubar.** The engine says so directly: the only
+rider/mount pair hardcoded anywhere in the *field* path is Hugo (model 1) on `krum`/`kru2`
+(models 325/353), the Karaya horses. `guli` is absent from the ground-mount table entirely.
+Fubar carries Hugo only through the separate scripted-flight path (§3b) and is otherwise a
+battle-only party member. Ditto Bright for Futch.
 
-On the field there is no pair check at all — an EDS `RideOn` will link any two EOBJs. The mount
-just needs to be one of the eight whitelisted models to get a correct saddle offset.
+`krum` is bundled with a complete field ride set (`cha_krum_001/002/005/010/020/021` +
+three `ctx_`) in **HGB1 (Yaza Plain), HNKT (Budehuc Castle) and KRVI (Karaya Village)** —
+three areas. `kru2` adds `ctx_` entries in KRVI.
+
+**Can someone else ride Fubar / Bright?**
+In battle, only by patching the three-pair table at ISO `0x130384`–`0x1303B4` (eight 2-byte
+immediates, remembering the two duplicated delay-slot constants). The patch is trivial; the
+animation is not. A substituted rider only animates correctly if their model carries the `3xx`
+bank — Hugo, Futch, Franz, Chris, Borus, Percival, Leo, Roland, `zkk1` and (partially) Sharon.
+Anyone else pairs up and then silently keeps their normal battle pose, because `SetMotion`
+returns failure on the missing `0xB8`+ clips.
+
+On the field there is no pair check at all — an EDS `RideOn` will link any two EOBJs — but the
+mount must be one of the eight whitelisted **horses** to get a correct saddle offset, and
+there is no ground-ride entry for a griffon or dragon to borrow.
 
 **Can Hugo ride on multiple maps? Can Chris?**
-Field mounting is per-scene script, so "which maps" is a property of each map's EDS script plus
-whether that area's archive bundles the models. Chris's horse `s2um` is bundled in **AKMT
-(Kuput Forest) only**, so putting her on horseback elsewhere means getting `s2um` into that
-area's archive — which runs straight into the repacking blocker already documented in
+Hugo already does: three areas ship the full `krum` set. Adding a fourth means getting `krum`
+into that area's archive, which runs into the repacking blocker documented in
 `ETC_BIN_MODEL_RESEARCH.md` (compressed variable-length payloads, no offset table found).
-Hugo/Fubar is the easiest case: `guli` is already bundled in seven archives.
 
-**Hugo does not have a horse.** His mount is Fubar the griffon (`guli`), which is why the
-rider set includes `rdfloat_*` and `rdfly_*` (slots `0x4A–0x4F`) and the battle set includes
-`b_fly_att_start/end`.
-
----
+Chris is the harder case despite her model being fully rigged (`syu2` carries the complete
+`3xx` bank). **No area archive carries a usable copy of her horse**: `s2um` appears in AKMT as
+the single record `cha_s2um_172` and nowhere else; the full set exists only inside `ETC.BIN`.
+By contrast the Zexen-knight horse `zkum` does ship complete in **ZKTR (Brass Castle)**
+(`cha_zkum_001/002/004/005/010/020/021/171/172`), and `zkum` and `s2um` are the same rig at
+byte level — identical variant lists and identical `cha_bytes` (1,933,312). So the nearest
+thing to "Chris on horseback in more places" is a scene that already has `zkum`.
 
 ## Not established
 
