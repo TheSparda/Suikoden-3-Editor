@@ -514,7 +514,8 @@ Ground truth: 68 enemies' Lv+HP parsed from Suikosource bestiary
   both turned out to be repetitive non-stat blocks (animation/identity matrices,
   0x08-0x0A spacing).
 - Disassembled the ONE code site that loads the name-table address (code va
-  0x16C70BC / file 0x10E8B4). Addresses it computes nearby:
+  0x16C70BC / file 0x10E8BC — corrected 2026-08-29, this line read 0x10E8B4).
+  Addresses it computes nearby:
     0x3E13A0, 0x3E69F0, 0x3E74E0(names), 0x3B0FA8, 0x3B1088, 0x3E0B68, 0x400BC0.
   The candidate at 0x3E69F0 is exactly 0x1C*100 below the name table (structurally
   a parallel 100xrecord table!) but its columns are NOT HP: +0x12 is constant 100,
@@ -1103,7 +1104,7 @@ NOT enemy stat records. Do not edit them expecting enemy changes.
    this Mac (play happens on the Windows desktop per the memcard sync names).
 2. MIPS fallback — capstone 5.0.7 with MIPS support IS available locally; disassemble the
    battle-init path in the boot ELF (known code anchor: name-table loader at file
-   0x10E8B4 / va 0x16C70BC) and trace where enemy HP is computed/copied from. Larger
+   0x10E8BC / va 0x16C70BC) and trace where enemy HP is computed/copied from. Larger
    effort, fully autonomous.
 
 ---
@@ -1662,3 +1663,107 @@ check — the decoded protagonist level against the level the save's own title r
 the bag layout tiles the region exactly in both phases, stackable classification, one-per-
 slot write semantics, count clamping, flag preservation) and that each guard actually fires
 when the corresponding offset is broken.
+
+---
+
+## Per-area encounter rates — room record fully decoded, table NOT located (2026-08-29)
+
+Spike against the standing gap in the Encounter tab: the rate is a global multiplier
+because each zone's own `area_rate` lives in a "room record" in the map archives, not in
+the ELF. The record is now decoded and its rate field is confirmed end to end by
+disassembly. **Locating the record TABLE on disc failed** — it needs a live-memory anchor,
+same gate as the 2026-08-17 enemy round. Recorded here so the next round starts from the
+decode instead of re-deriving it, and does not repeat the two scans that don't work.
+
+**Correction to an earlier note.** This section's VAs use the real mapping
+`file = vaddr - 0x165D000 + 0xA4800` (delta **0x15B8800**), read straight from the ELF
+program header (PT_LOAD, filesz 0x38D430). The 2026-08-25 enemy note's anchor pair "code
+va 0x16C70BC / file 0x10E8B4" is 8 low — the correct file offset is 0x10E8BC. Shipped code
+was never affected (`s3patch.ELF_PL_VADDR` and `iso.js` already use 0x165D000); it is only
+that one doc line, but disassembling at the doc's delta lands you 8 bytes into the previous
+function's epilogue, which reads as `jr $ra` and looks like a dead end.
+
+**The fetch — VA 0x17B7750** (17 callers), exactly as the 2026-08-24 note guessed:
+
+```
+work = *(0x196A4D0)
+idx  = work->[7]                 ; u8, so at most 256 rooms per loaded map
+tbl  = *(work->[0x12D0] + 0xC)   ; work->0x12D0 = resource type 5 ("town data")
+return tbl + idx * 0x3C
+```
+
+**`+0x04` IS the encounter rate — proved, not inferred.** `0x17B7978` copies the two fields
+into the movement object, and the roll's caller reads them straight back out:
+
+```
+0x17B7978:  room = getRoom(); obj->0x52 = room->0x02;  obj->0x54 = room->0x04
+0x1774014:  lhu $a2, 0x52($s0)   ; grace
+            lhu $a1, 0x54($s0)   ; area_rate
+            jal 0x17023A8        ; the encounter roll — $a1 is the `rate` of rate*MULT/100
+```
+
+**Room record field map (0x3C bytes).** Every offset below is a load or store observed at
+one of the 17 call sites; the 0x3C stride is fully accounted for, which is itself a check.
+
+| Off | Width | What |
+|---|---|---|
+| +0x00 | u16 | `mPartyRank` — named by the printf `townDatNo=%d mPartyRank=0x%x` (0x19C9488) |
+| +0x02 | u16 | post-battle grace distance |
+| +0x04 | u16 | **area encounter rate** |
+| +0x06 | u16 | ? |
+| +0x08 | u16 | BgData id — passed to `EdsBgDataLoadReq` (0x19C2EA0) |
+| +0x0A | u8 | ? |
+| +0x0C | u32 | pointer (tested non-zero at 5 sites; NULL is normal) |
+| +0x10/+0x14/+0x18 | f32 | three floats, read with `lwc1` |
+| +0x1C | s16 | flag, tested non-zero at 6 sites |
+| +0x1F | s8 | ? |
+| +0x22, +0x24 | u16 | ? |
+| +0x28…+0x38 | u32 ×5 | ? (read as words; likely more pointers) |
+
+**FSECT.BIN is a directory after all** (superseding the 2026-08-09 "relocation table"
+verdict). The loader is at 0x1734278 (`\DATA\FSECT.BIN;1` @0x19BE018) and the entry
+accessors decode the record exactly:
+
+```
+0x171F500(e):  sect = *(u32)e & 0x000FFFFF     ; sector
+0x171F520(e):  size = *(u32)e >> 20            ; size in sectors
+0x171F5C8(e):  name = e + 4
+```
+
+printed by `%s: No.=%02xH sect=%6xH size=%6xH name=%s` (0x19BD7A0). But it is **not
+directly parseable from the file**: FSECT.BIN (ISO 0x4F6000, 89,388 bytes) is a serialized
+pointer graph — 9,095 of its 22,347 words are absolute EE addresses in 0x1572078…0x1587D28
+— and the three "get" accessors above are reached through vtables at 0x197AE28…0x197AE58,
+so entries come in several flavours. The load base must satisfy
+`0x01572000 <= L <= 0x01572078` (max pointer must stay inside the file, min pointer must not
+go negative), a 31-candidate window that no structural scoring separated. It contains no
+name strings at all, so the `name` an entry reports belongs to a different flavour of the
+same interface. Pinning `L` needs the same RAM anchor as everything else below.
+
+**Two scans that DO NOT work — do not repeat them:**
+
+1. **Sequential-id scan.** Premise was that `+0x00` is a table index counting 0,1,2,… A
+   vectorised sweep for 0x3C-stride runs of ≥8 records with `u16@+0x00` incrementing found
+   **0 hits in all 29 DATA archives**. The premise was simply wrong: the printf's argument
+   order makes `+0x00` `mPartyRank`, not `townDatNo`.
+2. **Field-shape scan.** Runs of ≥6 records with `mPartyRank ≤ 64`, `rate ≤ 200`,
+   `grace ≤ 20000`, `bgId ≤ 4096`, ≥2 non-zero `+0x0C` pointers agreeing in their top byte,
+   and at least one non-zero rate. Result: **~3,000–4,000 candidate tables per archive** —
+   chance level. Mostly-zero data satisfies every constraint, and there is no
+   cross-validating pointer (the enemy index gets its power from recovering each copy's
+   file↔vaddr delta K and validating pointers against it; a room table found in isolation
+   has no K to check against).
+
+**The unblock — one PCSX2 savestate, taken on a field map with random encounters** (Kuput
+Forest is ideal: `mori_101` is already indexed with its spawn slots). The .p2s holds full EE
+RAM, so the chain is mechanical: read `*(0x196A4D0)` → `+0x12D0` → `+0xC` = the live table
+address, dump 0x3C×N from it, then search those bytes back into the DATA archives to find
+the on-disc source and its copies. That single artifact converts this from a search problem
+into a lookup — exactly as it would for the 2026-08-17 enemy round, which was gated on the
+same thing before the (hp,hp,lv) fingerprint made it unnecessary. There is no equivalent
+fingerprint here: a rate is a small number with no redundant partner to check it against.
+
+**Second, code-only path if no savestate is available:** recover FSECT's load base by
+disassembling the walker that consumes it (callers of 0x171F500/0x171F520 and the vtables
+at 0x197AE28…0x197AE58), then use the directory to enumerate and extract sub-files by
+sector/size and look for the town-data one directly. Larger, but fully autonomous.
