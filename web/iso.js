@@ -461,7 +461,8 @@
       grabOpt("../Editor/s3_bestiary.json"), grabOpt("../Editor/s3_enemy_packs.json"),
       grabOpt("../Editor/s3_war_units.json"), grabOpt("../Editor/s3_war_ref.json"),
     ]);
-    const rooms = await grabOpt("../Editor/s3_rooms.json");   // per-area encounter rates
+    const rooms = await grabOpt("../Editor/s3_rooms.json");        // per-area encounter rates
+    const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -474,7 +475,7 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef, rooms };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef, rooms, subfiles };
     return REF;
   }
 
@@ -1212,7 +1213,8 @@
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
-    ["text", "Text"], ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"], ["ref", "Reference"]];
+    ["text", "Text"], ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
+    ["files", "Files"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -1323,6 +1325,7 @@
     else if (VIEW === "encounter") drawEncounter(host);
     else if (VIEW === "enemies") drawEnemies(host);
     else if (VIEW === "war") drawWar(host);
+    else if (VIEW === "files") drawFiles(host);
     else if (VIEW === "ref") drawReference(host);
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
@@ -3012,6 +3015,99 @@
       };
       mark();
     });
+  }
+
+  // ---- Files (read-only sub-file browser) ------------------------------------
+  // DATA/FSECT.BIN is the disc's archive directory, so every sub-file's offset and size is
+  // known (Editor/s3_subfiles.json, built by build_subfile_index.py). This view is the plain
+  // window onto that: which archive holds what, where each piece starts, how big it is, and
+  // what it turned out to be. It is deliberately READ-ONLY — the editable pieces inside these
+  // files have their own views (battle packs → Enemies/War, room tables → Encounter), and a
+  // raw byte editor over 4,403 unknown blobs would be a footgun, not a feature.
+  const KIND_NOTE = {
+    battle: "monster packs, spawn slots and formations — edited in the Enemies / War views",
+    town: "map data, including the room table the Encounter view edits",
+    map: "geometry / model data",
+    data: "not yet identified",
+  };
+  function drawFiles(host) {
+    const idx = (typeof window !== "undefined" && window.S3_TEST_SUBFILES) || (REF && REF.subfiles);
+    if (!idx || !Array.isArray(idx.archives)) {
+      host.innerHTML = `<div class="muted">Needs <code>Editor/s3_subfiles.json</code>; it didn't load.</div>`;
+      return;
+    }
+    const kinds = idx.kinds || [];
+    const total = idx.archives.reduce((a, x) => a + x.files.length, 0);
+    const tally = {};
+    idx.archives.forEach((a) => a.files.forEach((fl) => { const k = kinds[fl[2]]; tally[k] = (tally[k] || 0) + 1; }));
+    const parts = [`<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
+      <b>${total.toLocaleString()}</b> across ${idx.archives.length} archives — from the directory in
+      <code>DATA/FSECT.BIN</code>. ${kinds.map((k) => `<b>${tally[k] || 0}</b> ${k}`).join(" · ")}.
+      Read-only: the editable pieces inside these files have their own views. <b>Peek</b> reads the first
+      256 bytes off your disc so you can see what a blob actually is. Filter matches archive, kind or map id.</div>`];
+    if (!isoFile) parts.push(`<div class="warnbox">Peek needs the open ISO.</div>`);
+    const q2 = SEARCH;
+    idx.archives.forEach((a, ai) => {
+      const rows = a.files.map((fl, i) => [i, fl]).filter(([, fl]) =>
+        !q2 || (a.archive + " " + kinds[fl[2]] + " " + (fl[3] || "")).toLowerCase().includes(q2));
+      if (!rows.length) return;
+      const c = {};
+      a.files.forEach((fl) => { const k = kinds[fl[2]]; c[k] = (c[k] || 0) + 1; });
+      parts.push(`<details class="char sfarch" data-sa="${ai}" data-i="sf${ai}"><summary><span class="chev">▸</span>
+          <span class="nm">${esc2(a.archive)}.BIN</span>
+          <span class="muted">${fmtSize(a.size)}</span>
+          <span class="lv">${a.files.length} sub-files · ${kinds.filter((k) => c[k]).map((k) => `${c[k]} ${k}`).join(" · ")}</span></summary>
+        <div class="char-body"><div class="muted">expanding…</div></div></details>`);
+    });
+    host.innerHTML = parts.join("");
+    qa("details.sfarch", host).forEach((det) => det.addEventListener("toggle", () => {
+      if (!det.open || det._built) return;
+      det._built = true;
+      buildArchiveBody(det, idx, +det.dataset.sa, kinds);
+    }));
+  }
+
+  function buildArchiveBody(det, idx, ai, kinds) {
+    const a = idx.archives[ai], q2 = SEARCH;
+    const rows = a.files.map((fl, i) => [i, fl]).filter(([, fl]) =>
+      !q2 || (a.archive + " " + kinds[fl[2]] + " " + (fl[3] || "")).toLowerCase().includes(q2));
+    det.querySelector(".char-body").innerHTML = `
+      <table class="invtbl"><thead><tr><th style="width:8%">#</th><th style="width:14%">Kind</th>
+        <th style="width:26%">What it is</th><th style="width:20%">ISO offset</th>
+        <th style="width:16%">Size</th><th></th></tr></thead>
+      <tbody>${rows.map(([i, fl]) => {
+        const off = a.base + fl[0] * 2048, kind = kinds[fl[2]];
+        return `<tr><td class="sl">${i}</td>
+          <td><span class="opt-tag" title="${esc2(KIND_NOTE[kind] || "")}">${esc2(kind)}</span></td>
+          <td class="muted">${esc2(fl[3] || KIND_NOTE[kind] || "")}</td>
+          <td class="sl">0x${off.toString(16).toUpperCase()}</td>
+          <td class="sl">${fmtSize(fl[1] * 2048)}</td>
+          <td>${isoFile ? `<button class="chip mini" data-peek="${off}">Peek</button>` : ""}</td></tr>
+          <tr class="howrow"><td colspan="6"><pre class="sfpeek" data-at="${off}" hidden></pre></td></tr>`;
+      }).join("")}</tbody></table>`;
+    qa("[data-peek]", det).forEach((b) => (b.onclick = async () => {
+      const off = +b.dataset.peek, pre = q(`.sfpeek[data-at="${off}"]`, det);
+      if (!pre.hidden) { pre.hidden = true; b.textContent = "Peek"; return; }
+      b.disabled = true;
+      try {
+        const bytes = new Uint8Array(await isoFile.slice(off, off + 256).arrayBuffer());
+        pre.textContent = hexDump(bytes, off);
+        pre.hidden = false; b.textContent = "Hide";
+      } catch (e) { setStatus("Could not read that region: " + e.message, "err"); }
+      b.disabled = false;
+    }));
+  }
+
+  // 16-bytes-per-line hex + ASCII, the way every other tool prints it.
+  function hexDump(bytes, base) {
+    const out = [];
+    for (let i = 0; i < bytes.length; i += 16) {
+      const row = bytes.subarray(i, i + 16);
+      const hexs = [...row].map((x) => x.toString(16).padStart(2, "0")).join(" ");
+      const asc = [...row].map((x) => (x >= 32 && x < 127 ? String.fromCharCode(x) : ".")).join("");
+      out.push(`${(base + i).toString(16).toUpperCase().padStart(9, "0")}  ${hexs.padEnd(47)}  ${asc}`);
+    }
+    return out.join("\n");
   }
 
   // ---- Reference (read-only item / skill browser) ----------------------------

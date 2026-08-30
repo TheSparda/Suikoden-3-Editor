@@ -125,6 +125,21 @@ export const ROOM_TEST_INDEX = {
   }],
 };
 
+// Sub-file browser fixture: the synth file described as one archive of four "sub-files",
+// pointing at regions that really exist in it so Peek reads bytes rather than off the end.
+export const SUBFILE_TEST_INDEX = {
+  format: "s3subfiles", schema: 1, kinds: ["data", "map", "town", "battle"],
+  archives: [{
+    archive: "TEST", base: 0, size: ELF_END + SYNTH_EXTRA,
+    files: [
+      [0, 1, 1, ""],                                        // map, sector 0
+      [Math.floor(ROOM_TABLE_A / 2048), 1, 2, "area 0x20 · 3 rooms"],
+      [Math.floor(ENEMY_REC_A / 2048), 1, 3, "test_101"],
+      [Math.floor(WAR_REC_A / 2048), 1, 0, ""],
+    ],
+  }],
+};
+
 // items of a category (id + exact name), in id order, from the shipped id list.
 export function catItems(cat, n = 99) {
   const txt = fs.readFileSync(path.join(REPO, "Editor", "Suikoden3_item_ids.txt"), "latin1");
