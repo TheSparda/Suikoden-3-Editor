@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -452,6 +452,32 @@ head("Mounts view — rewrite the battle rider/mount pairs");
   check("pair 3 rider delay-slot copy also = addiu 1", r.u32(MOUNT_PAIRS[2].riderSites[1]) === mountWord(1));
   check("untouched pair 2 keeps both rider sites at 31",
     r.u32(MOUNT_PAIRS[1].riderSites[0]) === mountWord(31) && r.u32(MOUNT_PAIRS[1].riderSites[1]) === mountWord(31));
+  await page.context().close();
+}
+
+head("Assigned horse — the per-character list2 field, field + battle");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("select.mnt-horse", { timeout: 3000 });
+  const sel = (roster) => `select.mnt-horse[data-off="${horseAddr(roster)}"]`;
+  // stock decode: Chris on her own horse, Borus on the knight horse, Hugo on nothing
+  check("Chris decodes to her own horse (309)", (await page.inputValue(sel(2))) === "309");
+  check("Borus decodes to the Zexen-knight horse (308)", (await page.inputValue(sel(20))) === "308");
+  check("Hugo decodes to none", (await page.inputValue(sel(1))) === "0");
+  // Geddoe must be offered HERE even though the pair table above excludes him — he has the
+  // field bank but no battle one, which is exactly the distinction this section exists to make
+  check("Geddoe is offered an assigned horse", (await page.$(sel(3))) !== null);
+  check("Geddoe is labelled field-only", /Geddoe[\s\S]{0,80}field/.test(await page.textContent("#isoView")));
+  // only 308/309 are honoured by the game, so only those may be offered
+  const optVals = await page.$$eval(sel(1), (els) => Array.from(els[0].options).map((o) => o.value));
+  check("only none/308/309 are offered", JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]),
+    optVals.join(","));
+  await page.selectOption(sel(1), "308");     // give Hugo a knight horse
+  await page.selectOption(sel(2), "0");       // take Chris's away
+  const r = await save(page);
+  check("Hugo's record now names the knight horse", r.u16(horseAddr(1)) === 308);
+  check("Chris's record is cleared", r.u16(horseAddr(2)) === 0);
+  check("untouched Borus still 308", r.u16(horseAddr(20)) === HORSE_STOCK[20]);
   await page.context().close();
 }
 
