@@ -10,8 +10,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
 
 export const ELF_BASE = 0xA4800, ELF_END = 0x465DF0, ELF_VADDR = 0x165D000;
-export const SPELL = { off: 0x3EC2A0, stride: 0x20, elem: 0x24 };
-export const UNITE = { off: 0x3ECF90, stride: 0x28 };
+// radius/chance are tail fields: a spell keeps them one record ahead (+stride+x), a unite
+// (8 bytes longer) keeps them inside its own record at +0x20+x. See iso.js SPELL/UNITE.
+export const SPELL = { off: 0x3EC2A0, stride: 0x20, elem: 0x24, radius: 0x21, chance: 0x26 };
+export const UNITE = { off: 0x3ECF90, stride: 0x28, radius: 0x21, chance: 0x24 };
 export const FOOD = { off: 0x3E91D0, stride: 0x48, heal: 0x14, proc: 0x1E, name: 0x44, desc: 0x00 };
 export const ENEMY = { off: 0x3E74E0, stride: 0x14, count: 100 };
 export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };

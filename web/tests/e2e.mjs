@@ -277,6 +277,9 @@ head("Byte-exact edits across every editable view");
   await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2");
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1");
   await page.selectOption('details.char[data-i="0"] select[data-k="status"]', "sleep");
+  // radius + status chance (tail fields, stored one record ahead for spells)
+  await page.fill('details.char[data-i="0"] input[data-k="radius"]', "3"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="radius"]', "change");
+  await page.fill('details.char[data-i="0"] input[data-k="chance"]', "75"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="chance"]', "change");
   // ally-pair targeting (0x41, the Kindness Drops / Vengeful Child byte) on a second spell
   await openRec(page, 'details.char[data-i="1"]');
   await page.selectOption('details.char[data-i="1"] select[data-k="target"]', "65");
@@ -284,6 +287,9 @@ head("Byte-exact edits across every editable view");
   await page.click('#isoTabs [data-v="unites"]'); await openRec(page, 'details.char[data-i="0"]');
   await page.fill('details.char[data-i="0"] input[data-k="power"]', "555"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change");
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1");
+  await page.fill('details.char[data-i="0"] input[data-k="radius"]', "2"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="radius"]', "change");
+  await page.fill('details.char[data-i="0"] input[data-k="chance"]', "40"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="chance"]', "change");
+  const uniteSum = await page.textContent('details.char[data-i="0"] .un-sum');
   // Gear: DEF/price/effect/desc
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
   await page.fill('input.gr[data-l="DEF"]', "42"); await page.dispatchEvent('input.gr[data-l="DEF"]', "change");
@@ -308,8 +314,15 @@ head("Byte-exact edits across every editable view");
   { const f14 = r.u32(SPELL.off + 0x14); check("spell0 target=all-foes + AOE bit", ((f14 >> 8) & 0x0F) === 0x02 && !!(f14 & 0x8000)); }
   { const f14 = r.u32(SPELL.off + SPELL.stride + 0x14); check("spell1 target=ally-pair (0x41)", ((f14 >> 8) & 0x7F) === 0x41 && !(f14 & 0x8000)); }
   check("spell0 status = sleep(bit10)", r.u32(SPELL.off + 0x18) === (1 << 10));
+  // tail fields land one record ahead for spells — a wrong phase would write spell0's own record
+  check("spell0 radius = 3 (one record ahead)", r.u8(SPELL.off + SPELL.radius) === 3);
+  check("spell0 chance = 75%", r.u16(SPELL.off + SPELL.chance) === 75);
+  check("spell0's own record 0x00..0x07 untouched", r.u32(SPELL.off) === 0 && r.u32(SPELL.off + 4) === 0);
   check("unite0 power = 555", r.u32(UNITE.off + 0x1C) === 555);
   check("unite0 AOE bit set", !!(r.u32(UNITE.off + 0x14) & 0x8000));
+  check("unite0 radius = 2 (in-record tail)", r.u8(UNITE.off + UNITE.radius) === 2);
+  check("unite0 chance = 40%", r.u16(UNITE.off + UNITE.chance) === 40);
+  check("unite summary shows the radius", /r2/.test(uniteSum), uniteSum);
   check("gear DEF = 42", r.u16(GEAR.P + GEAR.stride + GEAR.def) === 42);
   check("gear price = 9999", r.u32(GEAR.P + GEAR.stride + GEAR.price) === 9999);
   check("gear effect0 type = 1", r.u16(GEAR.P + GEAR.stride + GEAR.effs[0]) === 1);
