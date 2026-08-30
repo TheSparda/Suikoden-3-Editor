@@ -2483,9 +2483,11 @@
           how Bright joins) and both Chris and Bright deployed.</div>
         <details class="note"><summary>Why only these names are listed, and how to give one rider two mounts</summary>
           <ul style="margin:4px 0 0 18px">
-            <li><b>Riders</b> are the models that carry the <code>3xx</code> mounted animation bank — Hugo,
-              Chris, Roland, Leo, Percival, Borus, Futch, Franz, and Sharon (partial). <b>Geddoe has none of it</b>,
-              so he would link to a mount and then just stand there in his normal battle pose.</li>
+            <li><b>Riders</b> are the models that carry the <code>301/320/340</code> <i>mounted battle</i>
+              clips — Hugo, Chris, Roland, Leo, Percival, Borus, Futch, Franz, and Sharon (partial).
+              <b>Geddoe is not one of them</b>, so he would link to a mount and then just stand there in his
+              normal battle pose. (He <i>does</i> have a full <i>field</i> ride set — the game can show him on
+              horseback out of battle — but this tab edits the battle pairing, which he has no animation for.)</li>
             <li><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and Ruby.
               The field horses the Zexen knights and Hugo ride have no battle animations at all, so they aren't offered.</li>
             <li><b>One rider, two mounts</b> works: set two pairs to the same rider with different mounts
