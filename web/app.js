@@ -367,7 +367,18 @@ function drawSlot() {
   if (saves.length > 1) $("#slotmeta").textContent =
     `${s.folder} · checksum 0x${(s.checksumWord >>> 0).toString(16).toUpperCase()}`;
 
+  // The engine cross-checks the decoded save against invariants a correct layout cannot
+  // violate — including the level it reads against the level the save's own PS2 browser
+  // title reports. Anything it flags means editing this save is unsafe, so say so loudly
+  // rather than letting a mislabelled field get written back.
+  const warns = (s.warnings || []).length
+    ? `<div class="warnbox" style="margin:0 0 10px"><b>⚠ This save does not decode cleanly.</b>
+         Editing it may write to the wrong place — please report it with the save attached.
+         <ul style="margin:6px 0 0 18px">${s.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`
+    : "";
+
   $("#slotbody").innerHTML = `
+    ${warns}
     <div class="card">
       <div class="muted" style="margin:-2px 0 8px">${metaBits}</div>
       <div class="row" style="margin-bottom:10px"><span class="muted">Carryover:</span>
@@ -459,7 +470,9 @@ function showSub() {
     $("#subhint").innerHTML = `Active battle party (up to 6). Leaving story-required leaders in place avoids soft-locks.`;
     drawParty();
   } else {
-    $("#subhint").innerHTML = `Party + storage items (id · quantity). Use <b>+ Add item</b> for an empty slot, ✕ to remove. New items default to qty 1.`;
+    $("#subhint").innerHTML = `Party + storage items. Use <b>+ Add item</b> to append to a bag, ✕ to remove. ` +
+      `Only consumables, food and trade goods carry a quantity (max 9); runes, armour and key items are ` +
+      `<b>one per slot</b> — click <b>+ Add item</b> once per copy.`;
     drawItems();
   }
 }
@@ -522,7 +535,10 @@ function drawChars() {
   shown.forEach(wireChar);
 }
 
-const CHAR_CAP = { level: 99, curHP: 9999, maxHP: 9999, expToNext: 99999999 };
+// Caps match s3save.CHAR_FIELDS — the engine clamps to the same values, so the input can't
+// offer a number the game would reject. Weapon (sharpen) level tops out at 16 and EXP is
+// progress inside the current level (level-up fires at 1000).
+const CHAR_CAP = { level: 99, weaponLv: 16, curHP: 9999, maxHP: 9999, expToNext: 999 };
 function charCard(c) {
   const num = (k, val, stat) => {
     const max = stat ? 999 : (CHAR_CAP[k] ?? 999999);
@@ -532,8 +548,14 @@ function charCard(c) {
   const statCells = STAT_NAMES().map((n) =>
     `<label class="field"><span>${n}</span>${num(null, c.stats[n], n)}${fnote(growthNoteSave(c.name, n))}</label>`).join("");
   // Level gets the guide's join level; Max HP is the "HP" row of the growth table.
-  const CORE_NOTE = { level: () => joinLvNote(c.name), maxHP: () => growthNoteSave(c.name, "HP") };
-  const core = [["Level", "level"], ["Cur HP", "curHP"], ["Max HP", "maxHP"], ["EXP→next", "expToNext"]]
+  const CORE_NOTE = {
+    level: () => joinLvNote(c.name),
+    maxHP: () => growthNoteSave(c.name, "HP"),
+    weaponLv: () => `sharpen level, 1–16 <span class="dim">(this is what older builds mislabelled as "Level")</span>`,
+    expToNext: () => `<span class="dim">progress inside this level; 1000 = level up</span>`,
+  };
+  const core = [["Level", "level"], ["Weapon Lv", "weaponLv"], ["Cur HP", "curHP"],
+                ["Max HP", "maxHP"], ["EXP in level", "expToNext"]]
     .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}${fnote(CORE_NOTE[k] ? CORE_NOTE[k]() : "")}</label>`).join("");
   const equip = EQ.map(([key, lbl]) => {
     const cur = c.equip[key] || 0;
@@ -550,7 +572,7 @@ function charCard(c) {
       <span class="chev">▸</span><span class="nm">${esc(c.name)}</span>
       <span class="muted">#${c.rosterIndex}</span>
       <span class="pill${c.recruited ? " on" : ""}">${c.recruited ? "recruited" : "not recruited"}</span>
-      <span class="lv">Lv ${c.level} · HP ${c.maxHP}</span></summary>
+      <span class="lv">Lv ${c.level} · WLv ${c.weaponLv} · HP ${c.curHP}/${c.maxHP}</span></summary>
     <div class="char-body" data-roster="${c.rosterIndex}">
       <div class="row" style="gap:16px;margin-top:4px">
         <label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-recruit="${c.rosterIndex}" ${c.recruited ? "checked" : ""}> recruited</label>
@@ -789,6 +811,8 @@ function drawParty() {
 }
 
 // ---- Inventory -------------------------------------------------------------
+// The four pre-merge carried bags, by the label s3save.inv_regions() gives them.
+const TEAM_BAGS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 function drawItems() {
   const s = saves[curSlot];
   const inv = s.inventory || [];
@@ -796,38 +820,68 @@ function drawItems() {
   const nKey = inv.reduce((a, b) => a + b.items.filter((it) => it.category === "key").length, 0);
   const nReg = inv.reduce((a, b) => a + b.items.length, 0) - nKey;
 
+  // Equipment, runes and key items are ONE PER SLOT in this game: the count field is 0 and
+  // several copies live in several slots. A count > 0 on one of them is an entry the game
+  // never writes — it displays, but the whole slot is freed the moment one item leaves it
+  // (that is why attaching one Fury Rune took the spares with it). So the Qty cell is only
+  // editable for the items that really stack, and adding N copies allocates N slots.
+  const qtyCell = (it) => it.stackable
+    ? `<input type="number" min="1" max="9" style="width:74px" data-invslot="${it.slot}" data-k="qty" data-def="${it.qty}" value="${Math.max(1, it.qty)}">`
+    : `<span class="muted" title="this item is one-per-slot — the game stores several copies as several slots, with the count left at 0">1 <span class="dim">per slot</span></span>`;
   const rowHTML = (it) => `<tr>
       <td class="sl">${it.slot}</td>
-      <td><button type="button" class="picker" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.id}">${esc(itemLabel(it.id))}</button></td>
-      <td><input type="number" min="0" max="99" style="width:74px" data-invslot="${it.slot}" data-k="qty" data-def="${it.qty}" value="${it.qty}"></td>
+      <td><button type="button" class="picker" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.id}">${esc(itemLabel(it.id))}</button>${
+        it.displayed ? ` <span class="pill" title="this item is currently on display in the castle">on display</span>` : ""}</td>
+      <td>${qtyCell(it)}</td>
       <td class="ty">${it.category}</td>
       <td><button class="rm mini" data-clearslot="${it.slot}" title="remove">✕</button></td></tr>`;
 
+  const merged = !!(s.global && s.global.merged);
   const bags = inv.map((bag, bi) => {
     const items = bag.items.filter((it) => (it.category === "key") === wantKey &&
       (!SEARCH || (ITEM_BY_ID[it.id]?.name || "").toLowerCase().includes(SEARCH) ||
        String(it.slot) === SEARCH || it.id.toString(16).includes(SEARCH)));
-    const added = (ADDED[bi] || []).map((sl) => ({ slot: sl, id: 0, qty: 0, category: wantKey ? "key" : "consumable" }));
+    const added = (ADDED[bi] || []).map((sl) => ({ slot: sl, id: 0, qty: 0, stackable: true, category: wantKey ? "key" : "consumable" }));
     const list = items.concat(added);
-    const free = (bag.freeSlots || []).filter((sl) => !(ADDED[bi] || []).includes(sl));
+    // Only append AFTER the bag's last used entry: the game keeps each bag packed from its
+    // base and adds new pickups at the tail, so a slot in an interior gap can be dropped
+    // the next time it repacks the list.
+    const free = (bag.appendSlots || bag.freeSlots || []).filter((sl) => !(ADDED[bi] || []).includes(sl));
     const rows = list.map(rowHTML).join("") || `<tr><td colspan="5" class="muted">no items</td></tr>`;
+    // A team's CARRIED bag being empty before the merge means their chapter hasn't started:
+    // the game stocks that bag itself at the start of the chapter, overwriting whatever is
+    // in it, so anything added now is thrown away. (Their storage list filling up later is
+    // normal and says nothing, so the note is only shown on the carried bags.)
+    const unstarted = !merged && bag.used === 0 && TEAM_BAGS.includes(bag.region)
+      ? `<div class="warnbox" style="margin:6px 0 0">This bag is empty, which means ${esc(bag.region)}'s chapter hasn't started yet.
+           The game stocks the bag when that chapter begins and overwrites what's there — so add items after you've played as them, not before.</div>`
+      : "";
     return `<div class="bag"><div class="bag-h">${esc(bag.region)}
         <span class="u">${bag.used}/${bag.capacity} slots</span>
-        ${free.length ? `<button class="chip mini" data-addbag="${bi}" data-freeslot="${free[0]}">+ Add item</button>` : `<span class="u">bag full</span>`}</div>
+        ${free.length ? `<button class="chip mini" data-addbag="${bi}" data-freeslot="${free[0]}">+ Add item</button>
+           <span class="u">${free.length} free</span>` : `<span class="u">bag full</span>`}</div>
+      ${unstarted}
       <table class="invtbl"><thead><tr><th>Slot</th><th>Item</th><th>Qty</th><th>Type</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }).join("");
 
   $("#subview").innerHTML = `<div class="subtabs">
       <button class="chip${wantKey ? "" : " on"}" data-invcat="regular">Party Items (${nReg})</button>
       <button class="chip${wantKey ? " on" : ""}" data-invcat="key">Key / Valuables (${nKey})</button></div>
-    <div class="muted" style="margin:-4px 2px 10px">Early game, Hugo / Chris / Geddoe carry separate bags (they merge after the Flame Champion is chosen).</div>
+    <div class="muted" style="margin:-4px 2px 10px">${merged
+      ? `The parties have merged: one shared party bag plus one shared storage.`
+      : `Before the merge each of Hugo / Chris / Geddoe / Thomas has their own bag and their own storage. They all collapse into one shared bag + storage when the parties join, which rewrites every list — so treat additions made now as temporary until you are past that point.`}
+      <br>Runes, armour and key items are one per slot: to carry three Fury Runes, add three slots, not one slot with a count of 3.</div>
     ${bags || `<div class="muted">none</div>`}`;
 
   $$("[data-invcat]").forEach((b) => (b.onclick = () => { INVCAT = b.dataset.invcat; drawItems(); }));
   $$("input[data-invslot]").forEach((inp) => (inp.onchange = () => {
     const sl = +inp.dataset.invslot;
-    (INV[sl] = INV[sl] || {}).qty = +inp.value;
-    inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
+    // The game's count field only holds 1-9, so pin the input to what will actually be
+    // stored rather than letting a typed 50 look accepted and come back as 9.
+    const v = Math.max(1, Math.min(ITEM_QTY_MAX, +inp.value || 1));
+    inp.value = v;
+    (INV[sl] = INV[sl] || {}).qty = v;
+    inp.classList.toggle("dirty", String(v) !== inp.dataset.def);
   }));
   $$("button.picker[data-invslot]").forEach((btn) => (btn.onclick = () => {
     const sl = +btn.dataset.invslot, cur = +btn.dataset.val;
@@ -835,6 +889,7 @@ function drawItems() {
       btn.dataset.val = id; btn.textContent = itemLabel(id);
       btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
       (INV[sl] = INV[sl] || {}).id = id;
+      syncQtyCell(btn, sl, id);
     });
   }));
   $$("[data-addbag]").forEach((btn) => (btn.onclick = () => {
@@ -847,6 +902,35 @@ function drawItems() {
     Object.keys(ADDED).forEach((bi) => (ADDED[bi] = ADDED[bi].filter((x) => x !== sl)));
     drawItems();
   }));
+}
+
+// Mirrors s3save.item_stackable — the count field is real only for consumables/food and the
+// 0x1F0-0x1FF trade goods. Everything else is one item per slot with the count left at 0.
+function itemStackable(id) { return id > 0 && (id < 0xa0 || (id >= 0x1f0 && id < 0x200)); }
+const ITEM_QTY_MAX = 9;              // s3save.ITEM_QTY_MAX — the game's count domain is 0-9
+
+// Mirrors s3save.item_category.
+function itemCategory(id) { return id >= 0x200 ? "key" : id >= 0xa0 ? "equipment" : "consumable"; }
+
+// Picking a different item can flip a row between "has a count" and "one per slot", so the
+// Qty cell is rebuilt in place (a full redraw would drop the other rows' staged edits).
+function syncQtyCell(btn, slot, id) {
+  const row = btn.closest("tr");
+  const cell = row?.children[2];
+  if (row?.children[3]) row.children[3].textContent = id ? itemCategory(id) : "";
+  if (!cell) return;
+  if (itemStackable(id)) {
+    const q = Math.max(1, (INV[slot] && INV[slot].qty) || 1);
+    cell.innerHTML = `<input type="number" min="1" max="9" style="width:74px" data-invslot="${slot}" data-k="qty" data-def="" value="${q}">`;
+    const inp = cell.firstElementChild;
+    inp.onchange = () => {
+      const v = Math.max(1, Math.min(ITEM_QTY_MAX, +inp.value || 1));
+      inp.value = v; (INV[slot] = INV[slot] || {}).qty = v; inp.classList.add("dirty");
+    };
+  } else {
+    cell.innerHTML = `<span class="muted" title="this item is one-per-slot — the game stores several copies as several slots, with the count left at 0">1 <span class="dim">per slot</span></span>`;
+    if (INV[slot]) delete INV[slot].qty;      // the engine forces 0 for these anyway
+  }
 }
 
 // ---- Write & download ------------------------------------------------------
@@ -863,7 +947,8 @@ function buildDiff() {
   const rows = [];
   const byRi = {}; s.characters.forEach((c) => (byRi[c.rosterIndex] = c));
   const invBySlot = {}; (s.inventory || []).forEach((b) => b.items.forEach((it) => (invBySlot[it.slot] = it)));
-  const FIELD_LABEL = { level: "Level", curHP: "Cur HP", maxHP: "Max HP", expToNext: "EXP→next" };
+  const FIELD_LABEL = { level: "Level", weaponLv: "Weapon Lv", curHP: "Cur HP", maxHP: "Max HP",
+                        expToNext: "EXP in level" };
 
   if (GOLD !== null && GOLD !== s.global.gold) rows.push({ g: "Gold", t: `${s.global.gold} → ${GOLD}` });
   Object.entries(NAMES).forEach(([k, v]) => {
@@ -898,9 +983,14 @@ function buildDiff() {
   });
   Object.entries(INV).forEach(([slot, ent]) => {
     const old = invBySlot[slot] || { id: 0, qty: 0 };
-    const nid = "id" in ent ? ent.id : old.id, nq = "qty" in ent ? ent.qty : old.qty;
+    const nid = "id" in ent ? ent.id : old.id;
+    // Show the count the engine will actually store, not the raw request: one-per-slot items
+    // are forced to 0 and stackables to at least 1.
+    const nq = !nid ? 0 : !itemStackable(nid) ? 0
+      : Math.max(1, Math.min(ITEM_QTY_MAX, "qty" in ent ? ent.qty : old.qty));
+    const amt = (id, q) => (id && itemStackable(id) ? ` ×${q}` : "");
     if (nid !== old.id || nq !== old.qty)
-      rows.push({ g: "Inventory", t: `Slot ${slot}: ${itemLabel(old.id)} ×${old.qty} → ${itemLabel(nid)} ×${nq}` });
+      rows.push({ g: "Inventory", t: `Slot ${slot}: ${itemLabel(old.id)}${amt(old.id, old.qty)} → ${itemLabel(nid)}${amt(nid, nq)}` });
   });
   return rows;
 }
@@ -935,13 +1025,18 @@ function exportSaveJSON() {
     const equip = {}; EQ.forEach(([k]) => { const id = c.equip?.[k] || 0; if (id) equip[k] = { id, name: ITEM_BY_ID[id]?.name || ("#" + id) }; });
     const skills = (c.skills || []).filter((sk) => sk.id).map((sk) => ({ slot: sk.slot, id: sk.id, rank: sk.rank, name: SKILL_BY_ID[sk.id]?.name || ("#" + sk.id) }));
     return { rosterIndex: c.rosterIndex, name: c.name, recruited: !!c.recruited, teams: (c.recruiters || []),
-      level: c.level, curHP: c.curHP, maxHP: c.maxHP, expToNext: c.expToNext,
+      level: c.level, weaponLv: c.weaponLv, curHP: c.curHP, maxHP: c.maxHP, expToNext: c.expToNext,
       stats: Object.assign({}, c.stats), equip, skills };
   });
   const names = {}; (s.names || []).forEach((n) => (names[n.key] = n.value));
   const party = (s.party || []).map((id) => ({ id, name: id ? (REF.charById[id] || ("id " + id)) : null }));
   const inventory = (s.inventory || []).map((b) => ({ region: b.region,
-    items: b.items.map((it) => ({ slot: it.slot, id: it.id, name: ITEM_BY_ID[it.id]?.name || ("#" + it.id), qty: it.qty })) }));
+    items: b.items.map((it) => Object.assign(
+      { slot: it.slot, id: it.id, name: ITEM_BY_ID[it.id]?.name || ("#" + it.id) },
+      // One-per-slot items (runes, armour, key items) carry no count; leaving it out keeps a
+      // round-tripped JSON from reintroducing the malformed "one slot, count N" entry.
+      it.stackable ? { qty: it.qty } : { _onePerSlot: true },
+      it.displayed ? { _onDisplay: true } : {})) }));
   const out = { _format: SAVE_JSON_FORMAT, _schema: 1,
     _note: "Human-readable snapshot. Edit numeric ids/values, then re-import to stage them for Apply. Keys starting with _ and every *name field are read-only labels, ignored on import.",
     _folder: s.folder, _label: s.label, _playtime: s.global.playtime, _storyPhase: s.global.storyPhase,
@@ -976,7 +1071,7 @@ async function importSaveJSON(file) {
     const ri = jc && jc.rosterIndex;
     if (typeof ri !== "number" || !(ri in byRi)) return;   // skip unknown/guest roster slots
     const e = (EDITS[ri] = EDITS[ri] || {});
-    ["level", "curHP", "maxHP", "expToNext"].forEach((k) => { if (typeof jc[k] === "number") { e[k] = jc[k]; staged++; } });
+    ["level", "weaponLv", "curHP", "maxHP", "expToNext"].forEach((k) => { if (typeof jc[k] === "number") { e[k] = jc[k]; staged++; } });
     if (jc.stats && typeof jc.stats === "object") { e.stats = e.stats || {}; Object.entries(jc.stats).forEach(([st, val]) => { if (typeof val === "number") e.stats[st] = val; }); staged++; }
     if (jc.equip && typeof jc.equip === "object") { e.equip = e.equip || {}; EQ.forEach(([k]) => { if (k in jc.equip) e.equip[k] = idOf(jc.equip[k]); }); staged++; }
     if (Array.isArray(jc.skills)) { e.skills = e.skills || {}; jc.skills.forEach((sk) => { if (sk && typeof sk.slot === "number") e.skills[sk.slot] = { id: idOf(sk.id), rank: sk.rank | 0 }; }); staged++; }
@@ -987,7 +1082,11 @@ async function importSaveJSON(file) {
     }
   });
   if (Array.isArray(data.inventory)) data.inventory.forEach((b) => (b && Array.isArray(b.items) ? b.items : []).forEach((it) => {
-    if (it && typeof it.slot === "number") { INV[it.slot] = { id: idOf(it.id), qty: it.qty | 0 }; staged++; }
+    if (it && typeof it.slot === "number") {
+      const id = idOf(it.id);
+      INV[it.slot] = (typeof it.qty === "number" && itemStackable(id)) ? { id, qty: it.qty | 0 } : { id };
+      staged++;
+    }
   }));
 
   if (!staged) return setStatus("Import: nothing recognized to apply in that JSON.", "warn");
@@ -1129,8 +1228,13 @@ function showInstallHelp() {
 }
 
 // ---- misc ------------------------------------------------------------------
-let _STAT_NAMES = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"];
-function STAT_NAMES() { return _STAT_NAMES; }
+// Suikoden III has SEVEN stats. The engine reports its own list (save.statNames) so this
+// can never drift from the offsets again; the literal is only the pre-load fallback.
+let _STAT_NAMES = ["PWR", "SKL", "MAG", "REP", "MDF", "SPD", "LUK"];
+function STAT_NAMES() {
+  const s = saves && saves[curSlot];
+  return (s && s.statNames && s.statNames.length) ? s.statNames : _STAT_NAMES;
+}
 function setStatus(msg, kind) { const el = $("#status"); if (el) { el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); } }
 function setDropMsg(msg, isErr) { $("#engineStatus").innerHTML = (isErr ? "⚠ " : "") + msg; }
 function bootProgress(pct, msg) {
