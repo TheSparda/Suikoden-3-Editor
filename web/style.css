@@ -364,3 +364,11 @@ details.fold > summary { list-style:none; cursor:pointer; user-select:none; marg
 details.fold > summary::-webkit-details-marker { display:none; }
 details.fold > summary:hover .chev { color:var(--acc2); }
 details.fold[open] > summary { margin:0 0 10px; }
+
+/* Labelled section divider. The Spells tab stacks two collapsed tool cards and then the
+   spell table; without a captioned rule between them the three read as one list of bars. */
+.secdiv { display:flex; align-items:center; gap:10px; margin:20px 2px 10px; }
+.secdiv:first-child { margin-top:2px; }
+.secdiv > span { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut);
+  font-weight:600; }
+.secdiv::after { content:""; flex:1 1 auto; min-width:0; height:1px; background:var(--line); }
