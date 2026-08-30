@@ -471,6 +471,7 @@
     ]);
     const rooms = await grabOpt("../Editor/s3_rooms.json");        // per-area encounter rates
     const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
+    const uniteChars = await grabOpt("../Editor/s3_unite_chars.json");  // who is in each unite
     const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
     const items = {}, cats = {};
     let cur = "";
@@ -484,7 +485,8 @@
     for (const line of skillsTxt.split(/\r?\n/)) {
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
-    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary, enemyPacks, warUnits, warRef, rooms, subfiles, itemSources };
+    REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
+            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources };
     return REF;
   }
 
@@ -1302,7 +1304,7 @@
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Shop item slots (pick an item), the price ladder, and the item1 group. Prices are potch.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
-      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect.",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       gear: "Equipment records: DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill).",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -1455,6 +1457,52 @@
     if (s.state === "opens") return `guide: slot opens at <b>Lv ${s.lv}</b>`;
     if (s.state === "rune") return `guide: ${esc2(s.rune)}`;
     return `<span class="dim">guide: empty/none</span>`;
+  }
+  // ---- unite rosters (guide reference — NOT an ISO field) ---------------------
+  // Editor/s3_unite_chars.json is the Suikosource unite guide keyed by unite INDEX, because
+  // the disc reuses names (Han x3, Adonis x2, Knight B x3) and only the index is unique. 33 of
+  // the 38 records are covered; the other five (Griffon, Duck and the three Han rows) aren't in
+  // the guide at all — likely enemy/unused — so they say "unknown" rather than show a guess.
+  //
+  // Membership is READ-ONLY here on purpose: it is not in the 0x28-byte unite record. Every
+  // byte/halfword slot in that record was correlated against the 33 known rosters and none
+  // holds a member list (the best, +0x26, matches a member in only 15/33 rows — it tracks an
+  // animation/model id, not the party requirement). Nor is it a per-character field in list1/
+  // list2, nor a 79-bit party bitmask, nor a contiguous id list anywhere in the boot ELF (all
+  // four searched, 2026-08-30). The party check lives in battle code, so there is nothing to
+  // expose as an editable field. See Editor/Suikoden3_ISO_offsets.md.
+  let CHAR_NEEDLES = null;
+  function charNeedles() {
+    if (CHAR_NEEDLES) return CHAR_NEEDLES;
+    const l = (REF.names && REF.names.list1) || {}, out = [];
+    for (const k in l) out.push([l[k].toLowerCase(), +k]);
+    // the guide spells a few of them its own way
+    out.push(["viki(big)", 7], ["viki(small)", 70], ["sanae y", 68]);
+    out.sort((a, b) => b[0].length - a[0].length);   // longest first: "Melville" before "Mel"
+    return (CHAR_NEEDLES = out);
+  }
+  const uniteRoster = (i) => {
+    const e = REF.uniteChars && REF.uniteChars[String(i)];
+    return (e && e.chars) || "";
+  };
+  // Character ids named in a roster string, in the order they appear. Matching is longest-name
+  // first with a claimed-span mask so "Mel" can't be found inside "Melville", and it copes with
+  // the guide's prose forms ("Chris and any two: Leo/Percival/Borus", "Futch mounted on Bright").
+  function uniteMembers(i) {
+    const raw = uniteRoster(i); if (!raw) return [];
+    const s = raw.toLowerCase(), taken = new Array(s.length).fill(false), found = [];
+    for (const [needle, id] of charNeedles()) {
+      for (let p = s.indexOf(needle); p >= 0; p = s.indexOf(needle, p + needle.length)) {
+        let free = true;
+        for (let k = p; k < p + needle.length; k++) if (taken[k]) { free = false; break; }
+        if (!free) continue;
+        for (let k = p; k < p + needle.length; k++) taken[k] = true;
+        found.push({ id, at: p });
+      }
+    }
+    found.sort((a, b) => a.at - b.at);
+    const seen = new Set();
+    return found.filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
   }
   // one-line skill description + a couple of key per-rank effects (for tooltips / reference)
   function skillEffectText(skillId) {
@@ -1840,22 +1888,32 @@
   function drawUnites(host) {
     const rows = [];
     for (let i = 0; i < UNITE.count; i++) {
-      const off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
-      if (SEARCH && !name.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
-      rows.push({ i, off, name });
+      const off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08)), who = uniteRoster(i);
+      if (SEARCH && !name.toLowerCase().includes(SEARCH) && !who.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
+      rows.push({ i, off, name, who });
     }
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes</label>`;
-    host.innerHTML = updBox + (rows.map(({ i, off, name }) => {
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes</label>`
+      + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
+    host.innerHTML = updBox + (rows.map(({ i, off, name, who }) => {
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
       const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
       const descField = dmax > 0
         ? `<label class="field" style="margin:0 0 10px"><span>Description <span class="muted">(max ${dmax} chars)</span></span>
              <input type="text" class="undesc" data-i="${i}" maxlength="${dmax}" value="${esc2(dcur)}"></label>`
         : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
+      const mem = uniteMembers(i);
+      const chips = mem.map((m) => `<span class="tag">${esc2(REF.names.list1[m.id] || "#" + m.id)} <span class="dim">#${m.id}</span></span>`).join(" ");
+      const whoField = who
+        ? `<div class="field" style="margin:0 0 10px"><span>Characters <span class="muted">(guide reference — not editable)</span></span>
+             <div class="row" style="flex-wrap:wrap;gap:5px;margin-top:4px">${chips}</div>
+             ${mem.length === 0 || /any|mounted/i.test(who) ? `<div class="fnote" style="margin-top:4px">${esc2(who)}</div>` : ""}</div>`
+        : `<div class="field" style="margin:0 0 10px"><span>Characters</span>
+             <div class="fnote" style="margin-top:4px"><span class="dim">not listed in the unite guide — roster unknown (likely an enemy/unused record)</span></div></div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
+          <span class="muted un-who" style="flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc2(who || "")}">${esc2(who || "—")}</span>
           <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
-        <div class="char-body">${descField}
+        <div class="char-body">${whoField}${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
