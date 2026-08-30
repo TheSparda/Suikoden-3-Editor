@@ -1545,3 +1545,120 @@ Thomas=Anne; inequality across groups) found nothing but noise, and the war
 overlay in ETC.BIN (skill-name strings at ~0x41B1A930, `<type>_wart_<map>` asset
 modules, `imf_<char>_100` portrait table at ~0x41B19B20) exposes no assignment
 table. The guide's skill list ships as read-only reference (`s3_war_ref.json`).
+
+## Save Editor v5: character-record + inventory layout corrected (2026-08-30, issue #5)
+
+Two user-reported bugs — "Chris is Lv31 in game but the editor says Lv8" and "runes I
+added to a bag disappear" — turned out to be one class of problem: several fields had been
+read from plausible-looking but wrong bytes, and nothing in the editor could tell.
+
+**Method.** Re-derived the layout from a 28-save corpus (every distinct S3 save in
+`Saves/`: 20 sequential `.xps` saves from one playthrough, four memory cards, a PS3 `.psv`,
+the multi-team test card, and the extracted raw payloads) — 2100 non-empty character
+records and 2327 inventory entries. The key lever: **the PS2 browser title of an S3 save
+states the chapter protagonist's level** (`Suikoden3〔07〕Cpt.4 L54/ 61:15`), so each save
+carries its own ground truth for the field that was wrong.
+
+### Character record (stride 0x8C) — corrections
+
+| field | was | is | how it was established |
+|---|---|---|---|
+| level | 0x0D | **0x40** | matches the save-title level in 20/20 titled saves, across all four protagonists |
+| weapon (sharpen) level | not exposed | **0x0D** | domain over the corpus is exactly 1..16 (the documented cap) and reads 1 for all five non-human units (Fubar/Bright/Ruby/Koroku/Gadget Z) |
+| current HP | 0x08 | **0x30** | cur ≤ max holds 2100/2100 with (0x30, 0x32); the old (0x08, 0x30) pair violates it 47 times |
+| max HP | 0x30 | **0x32** | as above; 0x30 == 0x32 for a character saved at full health, and they differ exactly for the wounded ones |
+| EXP | u32 @0x00 | **u16 @0x00**, 0..999 | 0x02/0x03 are zero in all 2100 records; the value rises while fighting, resets on level-up, and never reaches 1000 (max 990 at every level band) → progress inside the level, level-up at 1000 |
+| stats | 8 names incl. "PDF" | **7 names** | S3 has seven stats (`s3_growth_ref.json`: PWR/SKL/MAG/REP/MDF/SPD/LUK + HP). The phantom "PDF" mapped to 0x28, which is zero for every human record and non-zero only for the five non-human units. The seven real stats keep their offsets (0x20/0x22/0x24/0x26/0x2A/0x2C/0x2E) |
+
+0x08 is a separate u32 counter of unknown meaning — no longer read or written. So is the
+u32 at 0x04. Per the "never write unverified fields" rule, neither is exposed.
+
+**Roster mapping is NOT off** (the other candidate explanation). The id byte at +0x0C
+agrees with the roster order unanimously across all 28 saves. That mapping is now pinned in
+`ROSTER_IDS` and checked on decode, so a future shift is reported instead of silently
+mislabeling the roster. Ids are rosterIndex+1 except the non-human units, which use their
+own band: Fubar 72, Bright 73, Ruby 74, Koroku 75. Roster slots past 74 are the non-combat
+108 Stars and have no character record at all.
+
+### Inventory — corrected model
+
+The region is a uniform array of **eight 30-entry bags** at `0x7060 + n*0xF0`
+(0x7060..0x77DF). Block 8 onward is always zero; the item-shaped data further on
+(0x7A00..) is the castle **decoration-placement** table, a different structure.
+
+What the eight blocks mean depends on the story phase at 0x14:
+
+- **phase < 5 (pre-merge):** blocks 0-3 = the four teams' carried bags, blocks 4-7 = the
+  same four teams' storage. Established by which block moves when the phase changes across
+  the corpus's chapter sequence: phase 1 → {0,4}, 2 → {1,5}, 3 → {2,6}, 4 → {3,7}, with no
+  cross-talk.
+- **phase ≥ 5 (post-merge):** block 0 = the single shared party bag, blocks 1-7 = ONE
+  contiguous 210-slot shared storage. Established on a fully-stocked endgame save where
+  blocks 1-7 form a single ascending run (each block's last id equals the next block's
+  first) and fill strictly in order — block n+1 only holds items once block n is full.
+
+The previous model (four bags + one 90-slot "Storage" at 0x7420) mislabeled blocks 1-3
+after the merge, invented a single list spanning three independent pre-merge lists, and
+never exposed block 7 at all (30 slots invisible).
+
+### Entry format — the 8 bytes are not what the v2 note said
+
+`u16 item id | 0x8000, u16 count, 4 bytes of per-item state`
+
+- **Bit 15 of the id is a flag, not part of the id.** Every id seen with it set is a castle
+  ornament (Graffiti, Peeing Boy, Hex Doll, the paintings, the urns, Plant Vase, …), the
+  same ids appear unflagged elsewhere, and the decoration-placement table at 0x7A00 lists
+  exactly these items → **0x8000 = currently on display in the castle**. The old
+  `iid > ITEM_ID_MAX` test treated these as EMPTY slots, which both hid a real item and
+  offered its slot to "+ Add item". On a real chapter-2 save in the corpus, `freeSlots[0]`
+  for Chris's bag was the slot holding a displayed Graffiti — adding an item destroyed it.
+- **The count is only meaningful for stackable items.** Over 2327 real entries:
+  consumables/food (< 0xA0) count 0..6; equipment and runes (0xA0-0x1EF) count **0 in
+  986/986**; trade goods (0x1F0-0x1FF) count 1..9; key items/valuables (0x200+) count 0 in
+  443/444. Domain 0..9, matching the herrvillain doc's "item qty 0-9".
+  The bands are the default but not the whole rule — nine observed ids contradict a pure
+  band test and are embedded as exceptions: the **stat stones** (0x0B-0x11; six of the seven
+  observed, all count 0, 0x0F by interpolation within the contiguous category block) plus
+  **Sacrificial Jizo 0x9E** and **Dragon Incense 0x9F** are one-per-slot despite sitting in
+  the consumable band, and **Grape 0x202** carries a count despite being a key item. With
+  those exceptions the classification agrees with the game's own count on **2327/2327** real
+  entries — zero disagreements.
+  Coverage caveat: only **213 of the 508** item ids appear in the corpus at all, so for the
+  remaining 58% the band rule is a reasoned guess. `item_stackable_for()` therefore refines
+  it using the save being edited — if the player already holds the item, their own entries
+  settle it. That override is **one-directional** (it may only demote an item to
+  one-per-slot, never promote it): a save written by an older build can contain runes
+  carrying a bogus count of 1, and promoting on that evidence would keep writing the broken
+  shape for exactly the players who hit the bug. Demotion also requires every entry for
+  that id to read 0, so one stray zero cannot demote an item the save holds properly.
+  The game holds N copies of a one-per-slot item as **N separate slots, each with count 0**
+  — never as one slot with count N (Escape Scroll ×6, New Chain Mail ×6, Graffiti ×6,
+  Power Gloves ×5 all appear that way). The editor used to default a new item's count to 1,
+  producing a rune entry the game never writes: it displays, but the whole slot is freed the
+  moment one item leaves it. That is exactly the reported "attach one Fury Rune and the
+  other two disappear", and why editor-added runes did not survive a chapter transition.
+- **The trailing 4 bytes are per-item state, not padding.** 27 entries in the corpus carry
+  non-zero values there, exclusively on cooking ingredients and food (Okonomiyaki, Minced
+  Chicken, Fire Cake, Lunch Box, Mapo Bun, Asian Herbs, Grape). They are now cleared only
+  when the slot's item actually changes.
+- **Bags are packed from the base**, and the game appends new pickups at the tail (each bag
+  shows a sorted prefix plus a jumbled recent-acquisition tail, re-sorted on some event).
+  So `appendSlots` — the empty slots *after* the last used entry — is the only safe place to
+  add, not "the first slot the decoder called empty".
+
+### Ruled out
+
+- **No per-bag or global item-count field exists.** Exhaustive u8 and u16 scan of all
+  53264 bytes against per-bag and total used counts across 28 saves: zero candidates.
+- **No mirror/master copy of the bag** anywhere in the payload.
+
+### Guard rails (so this cannot silently recur)
+
+`validate_save()` runs on every decode and returns warnings the web editor shows as a
+banner. It checks record-id vs roster, cur ≤ max HP, level/weapon-level caps, item ids past
+the table, the bag layout's structural signature vs the story phase, and — the strongest
+check — the decoded protagonist level against the level the save's own title reports.
+`web/tests/save_roundtrip.py` asserts the layout invariants (no overlapping writable field,
+the bag layout tiles the region exactly in both phases, stackable classification, one-per-
+slot write semantics, count clamping, flag preservation) and that each guard actually fires
+when the corresponding offset is broken.
