@@ -44,6 +44,7 @@ to downloads through the service worker (a ~4 GB image can't be held in memory),
 | `recruit-core.js` | Recruit bit math (recruited flag + per-team bits), shared by UI and tests |
 | `rename-core.js` | Same-length disc-wide character rename used by the streaming save |
 | `guide-core.js` | Joins Suikosource guide data onto characters by name (overlay notes) |
+| `health-core.js` | Save-rule constants (item stackability, field caps, slot categories) + the health audit |
 | `text-core.js` | In-ELF string scanner + prose filter for the Text tab |
 | `vcdiff.js` | `.xdelta` (RFC 3284 VCDIFF) encoder **and** decoder |
 | `sw.js` | Service worker: offline cache, share target, streaming ISO download |
