@@ -373,6 +373,22 @@ console.log("Guide overlays + xdelta:");
         "spot-check: the guide's Troll Dragon drop is also in the decoded tables"); }
     (/s3_item_sources\.json/.test(iso) && /function drawSources/.test(iso) && /data-ref="sources"/.test(iso)
       ? ok : bad)("iso.js registers the Item-sources reference browser");
+    // Pickup locations. The per-archive counts are the MAX over chapter variants, never the
+    // sum — summing would report one chest per chapter as several chests.
+    { const pl = isrc.places || [], ch = isrc.chests || [];
+      (pl.length >= 8 && ch.length === 6 ? ok : bad)(
+        `pickup places (${pl.length} archives) + guide chests (${ch.length})`);
+      (pl.every((p) => p.chest + p.corpse + p.herbs > 0 && p.variants >= 1) ? ok : bad)(
+        "every listed archive actually has a pickup");
+      const mori = pl.find((p) => p.archive === "MORI");
+      (mori && mori.corpse === 1 && mori.herbs === 3 && mori.area === 0x0d ? ok : bad)(
+        "pickup spot-check: MORI = area 0x0D, 1 corpse, 3 herbs (matches the walkthrough)");
+      (ch.every((c) => c.items.length >= 4 && c.items.every((i) => +i.item >= 1)) ? ok : bad)(
+        "every guide chest names at least 4 real items");
+      (/function drawPickups/.test(iso) && /data-ref="places"/.test(iso) ? ok : bad)(
+        "iso.js registers the Pickups reference browser");
+      (/aren't linked/.test(iso) ? ok : bad)(
+        "the Pickups view states the disc and guide tables aren't joined"); }
     (/srctag \$\{r\.disc \? "disc" : "guide"\}/.test(iso) ? ok : bad)(
       "every source row is tagged disc vs guide");
     const areas = rm.areas.map((a) => a.area);
