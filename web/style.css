@@ -357,3 +357,10 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .shop-extra > summary { cursor:pointer; font-weight:600; color:var(--acc2); font-family:var(--titlefont);
   margin:4px 2px 8px; padding:6px 2px; }
 .shop-extra[open] > summary { margin-bottom:12px; }
+
+/* Collapsible tool card (Spells tab): the .bag-h header IS the toggle, body hidden until
+   opened. Same chevron as details.char, so the two read as one affordance. */
+details.fold > summary { list-style:none; cursor:pointer; user-select:none; margin:0; }
+details.fold > summary::-webkit-details-marker { display:none; }
+details.fold > summary:hover .chev { color:var(--acc2); }
+details.fold[open] > summary { margin:0 0 10px; }
