@@ -2323,3 +2323,82 @@ reads that file for the names and draws the counters from the geometry above.
 **Still open.** The four u16s at +0x02..+0x08; what selects the stage (0x170DCD8 reads a
 halfword table at VA 0x196A138 after two calls into 0x16D3700/0x16D3AC8 — presumably chapter
 and party); and loc 10's identity, which one savestate or one line of a walkthrough would settle.
+
+## Shining Wind's damage+heal split — CRACKED (2026-08-30)
+"Wind MGC. 500DMG to foes. Heals 300HP for allies." is the only spell in the game that does
+two *different* things to the two sides. Empty World rules out any data explanation: same
+flags14 (`0x0001030A`), same flags18 (`0`), same radius, same everything the record carries —
+and its allies take damage ("900DMG to foes. 45DMG to allies"). The split is a hardcoded
+`if (spellId == 17)` in the boot ELF.
+
+### The record's real shape (from the engine's own accessor)
+`0x16DC888` is `spellRecord(id)`:
+```
+beq  a0,zero,ret0 ; sltiu v0,a0,0x66 ; ... ; lui v0,0x19A ; sll v1,a0,5
+addiu v0,v0,0x4A88 ; jr ra ; addu v0,v1,v0        ->  0x019A4A88 + id*0x20
+```
+So the id is **1-based** (game id = this editor's row + 1, because `0x019A4A88 + 1*0x20` is
+row 0's *name pointer*), and a record actually begins at the name field:
+
+| Off | Field | Getter |
+|-----|-------|--------|
+| +0x00 | name ptr | 0x16E1C98 |
+| +0x04 | description ptr | 0x16E1CC0 |
+| +0x08 | cast MOV (u16 read) | 0x16E1D38 |
+| +0x0C | flags14 | 0x16E1CE8 |
+| +0x10 | flags18 | 0x16E1D60 |
+| +0x14 | **power (u16)** | 0x16E1D88 (setter 0x16E1DB0) |
+| +0x18 | kind byte (bits 0x02 magic / 0x08+0x10 weapon / 0x20 turn-last / 0x80 lose-balance) | 0x16E1D10 |
+| +0x19 | radius | |
+| +0x1A | 0x8080 marker | |
+| +0x1C | element (low byte) / rune tag (high) | 0x16E1E08 |
+| +0x1E | status chance % | |
+
+That is exactly the web editor's layout shifted by one record — the "tail fields live one
+record ahead" rule is just this base offset seen from the wrong anchor. Power being a **u16**
+is new: the editor writes 4 bytes, but the engine reads `lhu` and its own setter (0x16E1DB0)
+does `andi $s0,$a1,0xFFFF ; sw $s0,0x14($v0)` — a full word with the top half zeroed. All 94
+stock records have that upper half at 0, so the editor's u32 write is byte-identical to what
+the game would do; values above 65535 simply wrap, they don't clobber a neighbouring field.
+
+Ids 102..181 resolve to a second table at VA `0x019AF7F0` (same stride) — not investigated.
+
+### The two hardcoded sites
+1. **Which spell splits** — file `0x25A8A4`, VA `0x18130A4`, `addiu $v0,$zero,0x11`, feeding
+   `bne $s6,$v0` two instructions later. On a match the applier throws away the record's own
+   flags and substitutes a whole profile *per side*:
+   ```
+   ally: flags14 = 0x00110186, flags18 = 0x1DE7   (heal HP + clear status, whole ally side)
+   foe : flags14 = 0x0001020A, flags18 = 0        (plain damage, whole foe side)
+   ```
+   Both profiles are ordinary values from elsewhere in the table — `0x…0186` is Great
+   Blessing's shape, `0x0001020A` is Eternal Wind's. The record's own target byte `0x03` is
+   what puts both sides in the target list to begin with; this substitution is what makes the
+   two sides get different things. Every other `0x03` spell takes the damage branch on both
+   sides, which is Empty World's "45DMG to allies" and Explosion's "target+foes+allies".
+2. **How much it heals** — file `0xE1C90`/`0xE1C9C`, VA `0x169A490`/`0x169A49C`:
+   ```
+   addiu $s2,$zero,0x12C     ; 300
+   jal   getPower($s6)
+   xori  $v1,$s6,0x11
+   movn  $s2,$v0,$v1         ; s2 = (id == 17) ? 300 : power
+   ```
+   The heal is then clamped to the target's missing HP. So the *mechanism* is generic — every
+   other spell that reaches this path heals for its own Power — and only Shining Wind's
+   **number** is special-cased, which is why it heals 300 while dealing 500.
+
+A whole-ELF scan for `addiu/xori/andi/slti … , 0x11` within ±14 instructions of any spell-table
+getter finds **exactly these two sites**, so nothing else keys on spell 17.
+
+### What that buys
+Both are single 16-bit immediates, so "which spell splits" and "how much it heals" are each one
+`writeW`. Repointing them hands the whole behaviour to another spell, byte-for-byte reversibly.
+The game has **one** such slot: this moves the trick, it can't clone it. Shipped as the
+**Damage + heal** card at the top of the web editor's Spells tab (`SPLIT` in `web/iso.js`),
+which also offers to set the chosen spell's Target to "All foes + allies" — without both sides
+in the target list the ally profile has nobody to land on.
+
+Not attempted: making the check data-driven (e.g. "any spell whose target byte is 0x03 and
+whose kind byte is 0x02"). There are only two instruction slots to spend at the branch and the
+obvious rewrites would also catch Set!, Dancing Flames and Explosion, all of which currently
+damage allies on purpose.
