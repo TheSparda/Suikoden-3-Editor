@@ -347,8 +347,9 @@ console.log("Guide overlays + xdelta:");
       const towns = sf.archives.reduce((a, x) => a + x.files.filter((f2) => sf.kinds[f2[2]] === "town").length, 0);
       const tables = rm.areas.reduce((a, x) => a + x.tables.length, 0);
       (towns === tables ? ok : bad)(`town sub-files match the room index's tables (${towns} vs ${tables})`); }
-    (/s3_subfiles\.json/.test(iso) && /function drawFiles/.test(iso) && /\["files", "Files"\]/.test(iso)
-      ? ok : bad)("iso.js registers the read-only Files view");
+    (/s3_subfiles\.json/.test(iso) && /function drawFiles/.test(iso)
+      && /data-ref="files"/.test(iso) && /REF_KIND === "files"/.test(iso)
+      ? ok : bad)("iso.js registers the read-only Files browser under Reference");
     // Item sources (Reference view). Provenance must stay split: `drops` are decoded from
     // the disc, `guide` rows are somebody's notes. A row that can't say which is worthless.
     const isrc = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_item_sources.json"), "utf8"));
