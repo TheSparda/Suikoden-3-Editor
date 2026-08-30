@@ -369,7 +369,15 @@ Editor/
   Suikoden3_ISO_offsets.md   the reverse-engineering notebook (the source of truth for offsets)
 web/            the browser editor (also deployed to GitHub Pages)
 web/tests/      Node checks + a Playwright e2e suite (npm test / npm run test:e2e)
+tools/pcsx2/    PCSX2 automation: boot a patched ISO and read the tables back out of the
+                running game, plus RAM snapshot/diff tooling for research
 ```
+
+**PCSX2 automation** (`tools/pcsx2/`, stdlib only) drives the emulator from a script:
+`boot-verify` patches nothing but proves an edited disc's tables reach RAM intact — the
+one check no synthetic fixture can make — and the snapshot/diff commands are the research
+tooling behind [`docs/PCSX2_AUTOMATION.md`](docs/PCSX2_AUTOMATION.md). Start with
+`python3 -m tools.pcsx2.cli doctor`.
 
 ---
 
