@@ -349,6 +349,31 @@ console.log("Guide overlays + xdelta:");
       (towns === tables ? ok : bad)(`town sub-files match the room index's tables (${towns} vs ${tables})`); }
     (/s3_subfiles\.json/.test(iso) && /function drawFiles/.test(iso) && /\["files", "Files"\]/.test(iso)
       ? ok : bad)("iso.js registers the read-only Files view");
+    // Item sources (Reference view). Provenance must stay split: `drops` are decoded from
+    // the disc, `guide` rows are somebody's notes. A row that can't say which is worthless.
+    const isrc = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_item_sources.json"), "utf8"));
+    { const its = Object.values(isrc.items);
+      (isrc.format === "s3itemsources" && its.length >= 100 ? ok : bad)(
+        `s3_item_sources.json parses (${its.length} items)`);
+      const nd = its.filter((x) => x.drops).length, ng = its.filter((x) => x.guide).length;
+      (nd >= 90 && ng >= 50 ? ok : bad)(`${nd} items with decoded drops, ${ng} with guide notes`);
+      // every drop row must name a real enemy/archive and a weight in the engine's 0..1000
+      const ep2 = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_enemy_packs.json"), "utf8"));
+      const known = new Set(ep2.packs.flatMap((p2) => p2.enemies.map((e) => e.name)));
+      const rows = its.flatMap((x) => x.drops || []);
+      (rows.every((r) => known.has(r.enemy) && r.weight > 0 && r.weight <= 1000 && r.lv >= 1 && r.lv <= 99)
+        ? ok : bad)(`all ${rows.length} drop rows name a real enemy with a sane weight`);
+      const kinds = new Set(its.flatMap((x) => (x.guide || []).map((g) => g.kind)));
+      (kinds.has("chest") && kinds.has("drop") ? ok : bad)(`guide kinds present (${[...kinds].sort().join(", ")})`);
+      // the cross-check that makes both halves credible: Troll Dragon -> Pale Moon Casque
+      const pmc = Object.entries(isrc.items).find(([, v]) =>
+        (v.guide || []).some((g) => /Troll Dragon/.test(g.text)));
+      (pmc && (pmc[1].drops || []).some((d) => /TrollDragn/.test(d.enemy)) ? ok : bad)(
+        "spot-check: the guide's Troll Dragon drop is also in the decoded tables"); }
+    (/s3_item_sources\.json/.test(iso) && /function drawSources/.test(iso) && /data-ref="sources"/.test(iso)
+      ? ok : bad)("iso.js registers the Item-sources reference browser");
+    (/srctag \$\{r\.disc \? "disc" : "guide"\}/.test(iso) ? ok : bad)(
+      "every source row is tagged disc vs guide");
     const areas = rm.areas.map((a) => a.area);
       (new Set(areas).size === areas.length ? ok : bad)("every archive has a distinct area id");
       const mori = rm.areas.find((a) => a.archive === "MORI");
