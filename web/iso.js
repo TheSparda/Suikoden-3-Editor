@@ -237,11 +237,18 @@
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
   const MAX_BY_GRADE = {}; MAX_OPTS.forEach(([v, l]) => (MAX_BY_GRADE[l] = v));   // "B+"->5, "A+"->1, "S"->7
   // spell/unite target byte (flags14 bits 8..15). AOE is a separate bit (0x8000).
-  // Low nibble = who (0xA foe, 0x2 all foes, 0x3 foes+allies, 0x1 ally side); bit 0x40 = pick
-  // ONE ally pair instead of the whole side (verified in the ISO: Kindness Drops / Vengeful
-  // Child = 0x41, Clay Guardian / Canopy Defense = 0x01 — same nibble, only the pair bit differs).
+  // The byte is a bit set, not an enum: 0x01 = ally side, 0x02 = foe side (0x03 = both),
+  // 0x04 = centred on the CASTER (no aiming step), 0x08 = aim at one unit, 0x10 = line/front,
+  // 0x40 = pick ONE ally pair instead of the whole side. So 0x0A = one foe, 0x09 = one ally
+  // (Healing Wind / Mother Ocean: "Restores ... of 1 ally"), 0x05 = the caster alone (the
+  // Sword/Amulet runes: "Enhances chanter's ..."), 0x41 = one ally pair (Kindness Drops /
+  // Vengeful Child = 0x41 vs Clay Guardian / Canopy Defense = 0x01 — same side, pair bit only).
+  // 0x06 = 0x04|0x02: an area of foes centred on the caster, with nothing to aim at. Every
+  // spell carrying it is a self-centred burst — War Horse (Cecile), Watari Special ("Explosion.
+  // DMGx1.5 to foes in area") and Goss (the axe swing) — and their descriptions say "to foes in
+  // area" where the aimed area spells at 0x82 all say "to TARGET+foes in area".
   const TARGET_OPTS = [[0x0A, "Single target"], [0x02, "All foes"], [0x03, "All foes + allies"],
-    [0x01, "All allies"], [0x41, "Single ally (pair)"]];
+    [0x01, "All allies"], [0x41, "Single ally (pair)"], [0x06, "Foes around caster"]];
 
   // gear effect-slot semantics (mirror s3patch.py)
   const GEAR_EFFECT_TYPES = { 0: "(none)", 1: "HP regen/turn", 2: "Stat bonus", 3: "Accuracy +%",
@@ -529,7 +536,8 @@
   }
   function decodeTarget(f14) {
     const tb = (f14 >>> 8) & 0xFF, area = !!(f14 & AREA_BIT), low = tb & 0x0F;
-    let who = { 0xA: "single", 0x2: "all-foes", 0x3: "foes+allies", 0x1: "self/ally" }[low] || "who" + low;
+    let who = { 0xA: "single", 0x2: "all-foes", 0x3: "foes+allies", 0x1: "self/ally",
+      0x6: "foes-around-caster" }[low] || "who" + low;
     if (tb & 0x40) who += "(1 pair)";       // pair-select bit: target one ally pair, not the side
     const shape = area ? "AREA" : (tb & 0x10) ? "LINE" : low === 0xA ? "single" : "spread";
     return `${shape}:${who}`;
