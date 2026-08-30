@@ -13,7 +13,8 @@ import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOP, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
-  WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B } from "./synth-iso.mjs";
+  WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
+  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -166,6 +167,20 @@ function makeXdelta(src, tgt, lzma = false) {
 // Feed bytes to the app's file input as if the user picked them.
 async function uploadPatch(page, data, name) {
   return importFile(page, { name, mimeType: "application/octet-stream", buffer: Buffer.from(data) });
+}
+
+// save(), but also hands back the text of the review dialog it confirmed — for the cases
+// where what the review SAYS is part of the contract, not just the bytes it writes.
+async function saveAndReview(page) {
+  await page.evaluate(() => { window.__writes = []; });
+  await page.click("#isoSaveBtn");
+  try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
+  await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const review = await page.textContent(".cf-list");
+  await page.click("#cfOk");
+  await page.waitForSelector("#pgClose:visible", { timeout: 5000 });
+  await page.click("#pgClose");
+  return { r: reader(await getWrites(page)), review };
 }
 
 async function save(page) {
@@ -760,6 +775,68 @@ head("Global encounter rate — 100% is a byte-exact restore, input clamps");
   // out-of-range input clamps instead of encoding a bogus instruction immediate
   await page.fill("#encPct", "99999"); await page.dispatchEvent("#encPct", "change");
   check("out-of-range rate clamps to the max", (await page.inputValue("#encPct")) === "1000");
+  await page.context().close();
+}
+
+head("Per-area encounter rates — decode, split variants, byte-exact write");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("details.rarea", { timeout: 3000 });
+  check("the area is listed with its map ids", /test_101/.test(await page.textContent("details.rarea summary")));
+  await page.click("details.rarea summary");
+  await page.waitForSelector("input.rm-f", { timeout: 3000 });
+  // rooms 1 and 2 agree across both chapter tables -> one row each; room 3 does not -> two.
+  const rowText = await page.$$eval("details.rarea tbody tr", (rs) => rs.map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+  check("agreeing rooms collapse to one row each", rowText.filter((t) => /^Room [12] /.test(t)).length === 2);
+  check("a room whose tables disagree is split, and says so",
+    rowText.filter((t) => /^Room 3 variant/.test(t)).length === 2, rowText.join(" | "));
+  const rates = await page.$$eval('input.rm-f[data-k="rate"]', (es) => es.map((e) => e.value));
+  check("rates decode from the disc", rates.join(",") === "4,0,9,2", rates.join(","));
+  const graces = await page.$$eval('input.rm-f[data-k="grace"]', (es) => es.map((e) => e.value));
+  check("grace decodes from the disc", graces.join(",") === "6,0,4,4", graces.join(","));
+  // an agreeing row writes BOTH chapter tables; a split row writes only its own
+  const setRow = async (i, k, v) => { const sel = `input.rm-f[data-r="${i}"][data-k="${k}"]`;
+    await page.fill(sel, String(v)); await page.dispatchEvent(sel, "change"); };
+  await setRow(0, "rate", 7);          // room 1 — both tables
+  await setRow(0, "grace", 12);
+  await setRow(2, "rate", 1);          // room 3, the rate-9 variant only
+  const { r, review } = await saveAndReview(page);
+  check("the review names the area", /Encounters — TEST/.test(review), review.slice(0, 160));
+  check("...and states the old → new rate", /Room 1 rate: 4 → 7/.test(review), review.slice(0, 160));
+  check("room 1 rate written to chapter table A", r.u16(ROOM_TABLE_A + 4) === 7);
+  check("room 1 rate written to chapter table B", r.u16(ROOM_TABLE_B + 4) === 7);
+  check("room 1 grace written to both", r.u16(ROOM_TABLE_A + 2) === 12 && r.u16(ROOM_TABLE_B + 2) === 12);
+  check("the split row wrote only its own table", r.u16(ROOM_TABLE_A + 0x78 + 4) === 1);
+  check("...leaving the other table's value alone", r.u16(ROOM_TABLE_B + 0x78 + 4) === 2);
+  check("untouched room 2 is unchanged", r.u16(ROOM_TABLE_A + 0x3C + 4) === 0);
+  await page.context().close();
+}
+
+head("Per-area encounter rates — presets scale from the disc and never compound");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("details.rarea", { timeout: 3000 });
+  await page.click("details.rarea summary");
+  await page.waitForSelector('[data-rp="200"]', { timeout: 3000 });
+  // drawView() keeps the open <details> open, so the rows stay on screen across presets.
+  const rateVals = () => page.$$eval('input.rm-f[data-k="rate"]', (es) => es.map((e) => e.value).join(","));
+  const preset = async (v) => { await page.click(`[data-rp="${v}"]`); await page.waitForTimeout(120); };
+  await preset(200);
+  check("Double doubles every room from the disc value", (await rateVals()) === "8,0,18,4", await rateVals());
+  await preset(200);
+  check("applying Double twice does not compound", (await rateVals()) === "8,0,18,4", await rateVals());
+  await preset(0);
+  check("None zeroes the whole area", (await rateVals()) === "0,0,0,0", await rateVals());
+  check("a zeroed area is staged", await somethingStaged(page));
+  await preset(100);
+  check("Stock is a byte-exact restore — nothing left staged", await nothingStaged(page));
+  await preset(0);
+  await page.click("[data-rrev]"); await page.waitForTimeout(120);
+  check("Restore area clears it too", await nothingStaged(page));
   await page.context().close();
 }
 

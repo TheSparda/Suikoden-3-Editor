@@ -310,7 +310,14 @@ console.log("Guide overlays + xdelta:");
       const outOfBlock = offs.every((o) => o >= ELF_HI && o + 2 <= ISO_MAX);
       (outOfBlock && new Set(offs).size === offs.length ? ok : bad)(
         `all ${offs.length} room offsets out-of-block, on-disc and unique`);
-      const areas = rm.areas.map((a) => a.area);
+      (/s3_rooms\.json/.test(iso) && /S3_TEST_ROOMS/.test(iso) ? ok : bad)(
+      "iso.js loads the room index (with the test override hook)");
+    (/function drawRoomRates/.test(iso) && /function roomRows/.test(iso) && /function scaleArea/.test(iso)
+      ? ok : bad)("iso.js Encounter tab renders per-area rates");
+    (/tag: "room"/.test(iso) ? ok : bad)("room windows are tagged apart from the enemy windows");
+    (!/Only the <b>global<\/b> rate is editable/.test(iso) ? ok : bad)(
+      "the 'global only' caveat is gone from the Encounter tab");
+    const areas = rm.areas.map((a) => a.area);
       (new Set(areas).size === areas.length ? ok : bad)("every archive has a distinct area id");
       const mori = rm.areas.find((a) => a.archive === "MORI");
       (mori && mori.area === 0x0d && mori.tables[0].rooms.length === 6 &&
