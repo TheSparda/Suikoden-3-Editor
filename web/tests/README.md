@@ -1,6 +1,7 @@
 # Web editor tests
 
-Five layers, all runnable with plain Node (v18+):
+Nine suites, all runnable with plain Node (v18+). `npm test` runs the eight browser-free
+ones; `npm run test:e2e` runs the Playwright suite:
 
 ## `validate.mjs` — fast, no browser (runs in CI + on session start)
 Checks the client JS parses, every ISO table offset stays inside the read block, the
@@ -46,6 +47,37 @@ Python over 6,000 randomized strings (0 mismatches).
 
 ```bash
 node web/tests/text-core.mjs
+```
+
+## `recruit-logic.mjs` — recruit bit math, no browser
+The save editor's Recruit and 108 Stars views stage recruitment by rewriting bits 2-5 of each
+character's recruit word. That staging math is the part a wrong edit corrupts, and the UI
+around it needs Pyodide (unavailable headless). This drives the real `web/recruit-core.js`
+against the committed team map: bulk recruit / move / un-recruit, the team presets, and the
+per-team counts.
+
+```bash
+node web/tests/recruit-logic.mjs
+```
+
+## `rename-core.mjs` — the disc-wide rename, no browser
+The ISO editor's character rename is a same-length global byte replacement applied during a
+streaming save, so a bug writes wrong bytes across the whole disc. This drives the real
+`web/rename-core.js`: the same-length rule, space padding of shorter names, rejection of
+longer ones, and the streaming replacer across chunk boundaries.
+
+```bash
+node web/tests/rename-core.mjs
+```
+
+## `desc-merge.mjs` — the description merge, no browser
+Item and skill pickers show merged descriptions: rune/food text from `s3_rune_food_desc.json`
+overrides the drifted equipment pool in `s3_item_desc.json`, and skills prefer the per-rank
+effects in `s3_skill_ref.json`. The save editor stubs Pyodide in e2e, so this is the only
+place the merged strings are asserted — against the real committed data.
+
+```bash
+node web/tests/desc-merge.mjs
 ```
 
 ## `vcdiff.mjs` — the .xdelta encoder **and** decoder
