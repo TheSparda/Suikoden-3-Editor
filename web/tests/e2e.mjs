@@ -904,12 +904,16 @@ head("Per-area encounter rates — presets scale from the disc and never compoun
   await page.context().close();
 }
 
-head("Files view — sub-file browser is read-only and peeks real bytes");
+head("Files browser — a Reference sub-tab, read-only, peeks real bytes");
 { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_SUBFILES = ${JSON.stringify(SUBFILE_TEST_INDEX)};`);
   await loadIso(page);
-  await page.click('#isoTabs [data-v="files"]');
+  check("Files is no longer a top-level tab", (await page.locator('#isoTabs [data-v="files"]').count()) === 0);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="files"]', { timeout: 3000 });
+  await page.click('[data-ref="files"]');
   await page.waitForSelector("details.sfarch", { timeout: 3000 });
+  check("the sub-tab hint follows the sub-tab", /packed sub-file/.test(await page.textContent("#isoHint")), await page.textContent("#isoHint"));
   const sum = await page.textContent("details.sfarch summary");
   check("the archive summarises its sub-files by kind", /4 sub-files/.test(sum) && /1 town/.test(sum) && /1 battle/.test(sum), sum);
   await page.click("details.sfarch summary");

@@ -149,10 +149,11 @@ battle messages, menu labels, prize/error prompts and character blurbs, each cap
 original byte length), **Balance** (idempotent hard-mode multiplier presets), **Encounter**
 (a global **random-encounter rate** as a plain percentage — see below), **Enemies** (the full
 per-area enemy editor — stats, rewards, drops, bulk multipliers, and each zone's spawns &
-formations; see below), **War** (every war/major-battle unit on the disc; see below),
-**Files** (a read-only browser over the disc's **4,403 packed sub-files** — every archive's
-contents by offset, size and kind, with a *Peek* hex dump; see below) and
-**Reference** (item/skill id → name lists).
+formations; see below), **War** (every war/major-battle unit on the disc; see below) and
+**Reference** — the read-only half, with sub-tabs for item and skill id → name lists, **Item
+sources** (where each item comes from) and **Files** (a browser over the disc's **4,403 packed
+sub-files** — every archive's contents by offset, size and kind, with a *Peek* hex dump; see
+below).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
@@ -255,9 +256,10 @@ indexer — is in `Editor/Suikoden3_ISO_offsets.md`.
 
 </details>
 
-**Files — the sub-file browser.** `DATA/FSECT.BIN` is the disc's archive directory (one u32
-per sub-file: sector relative to the archive, plus size, both in 2048-byte sectors), so the
-whole packed layout is enumerable: **4,403 sub-files across 28 archives**. The Files tab lists
+**Files — the sub-file browser** (a *Reference* sub-tab, alongside Items, Skills and Item
+sources). `DATA/FSECT.BIN` is the disc's archive directory (one u32 per sub-file: sector
+relative to the archive, plus size, both in 2048-byte sectors), so the whole packed layout is
+enumerable: **4,403 sub-files across 28 archives**. The browser lists
 them per archive with each one's ISO offset, size and what it turned out to be — **battle**
 packs (monster records, spawn slots and formations, tagged with the game's own map id like
 `mori_101`), **town** data (which holds the room table the Encounter tab edits), **map**
