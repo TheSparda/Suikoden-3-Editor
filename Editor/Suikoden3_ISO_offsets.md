@@ -1881,3 +1881,70 @@ expose. Closing that means decoding a pack without a bestiary anchor: with the s
 and K both known, the node walk (`[records][aux][node]`) can be driven directly from the zone
 object's slot list — each slot names a monster id and its node vaddr — instead of being found
 by fingerprint. That is the obvious next round.
+
+---
+
+## Pickups (chests / corpses / herbs) — located; their CONTENTS are not (2026-08-30)
+
+With sub-file bounds in hand, the town sub-files turn out to carry the map's **named scene
+objects**: 32-byte, 16-aligned name fields with the object's romaji name. Three of those
+names are pickups, and the game says what they are:
+
+| Name | Kanji | What it is |
+|---|---|---|
+| `takara01`, `takara_huta` | 宝 / 宝蓋 | treasure chest (and its lid) |
+| `emono` | 獲物 | a lootable corpse |
+| `herb_a01` | — | a herb-picking spot |
+
+**Verified against the walkthrough, not assumed.** MORI's town data holds 3 × `herb_a01` and
+1 × `emono`; the GameFAQs walkthrough describes Kuput Forest as having herbs on the
+north-west path and exactly one corpse. That is the object vocabulary confirmed from outside
+the disc. `build_subfile_index.py` now counts them, so the Files view labels a town sub-file
+"area 0x0D · 6 rooms · 1 corpse · 3 herbs" — a per-map pickup census, per chapter variant.
+
+Disc-wide: chests in DKVI, FAKE, KTDO and YMMT; corpses in HAKA, ICEW, MORI, RVER and YMMT;
+herbs in AKMT, ICEW, LAST, MORI, RVER and YMMT.
+
+**What is NOT established: which bytes hold a pickup's contents.** The near miss is worth
+recording so it isn't re-run as a discovery. About 300 bytes past each `emono`/`herb` name
+sits a 0x30-stride record, identical in shape across all five MORI chapter variants:
+
+```
+04 00 | 02 00 | 0b 00 | fd ff | 78 d6 21 00 | 00 00 00 00 |
+63 01 | 0d 02 | 46 01 | 00 00 | 06 00 | 01 00 | 00 00 | ff ff | fe ff ...
+```
+
+`0x0146` is **Cyclone**, which the walkthrough names as the rare drop for Kuput Forest's
+corpse — a tempting hit. It is not one. **`0x0163` and `0x0146` appear in EVERY such record,
+the herb ones as well as the corpse one**, and a herb spot and a corpse do not share a drop
+table. They are script operands that happen to fall in item-id range. This is the same
+coincidence class that sank the 2026-08-17 "9D stream" round; the lesson holds — a value in
+item range is not an item.
+
+No pickup editor should ship until a field is proved. Ground truth is the obstacle: the
+walkthrough yields only **two** fixed-content pickups on the whole disc ("Old Book Vol. 1"
+and "Old Book Vol. 9", both at the Flame Champion Hideaway), because corpse loot is random by
+design. Two anchors cannot separate a real field from a coincidence. The realistic routes are
+(a) find the drop-roll code the way the encounter roll was found — the pickup handler must
+read the table, so disassembling it names the field outright, or (b) an emulator watch on the
+item the player receives.
+
+## Opcode streams — relocated, still unattributed (2026-08-30)
+
+The 2026-08-17 round enumerated 1,128 tagged records across 15 archives and failed to
+attribute any of them to an entity ("no identity anchor"). Two things have changed:
+
+- **They have bounds.** Those streams sit inside `town` and `data` sub-files, which FSECT now
+  delimits exactly. A record is no longer a hit at an offset in a 200 MB blob; it belongs to
+  one named sub-file of one area.
+- **They have neighbours.** In the town sub-files the streams run immediately after the
+  named scene objects, in 0x30-stride records punctuated by 0xFFFD / 0xFFFE / 0xFFFF
+  sentinels and carrying pack-local pointers (`0x0021xxxx`) — the same shape the earlier round
+  saw, now with a named object a few hundred bytes above it.
+
+What has **not** changed is the thing that mattered: nothing proves which record belongs to
+which object. The per-record index at `+0x02` counts globally (2, 3, 5 …) rather than per
+object, so proximity is the only link, and proximity is what produced the last round's false
+positives. Recording the shape and the sentinels here is the useful part; the attribution
+needs the same disassembly anchor the pickup contents do — find the consumer, and the
+operand layout follows.
