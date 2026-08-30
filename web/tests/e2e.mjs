@@ -336,6 +336,43 @@ head("Character pickers (item + skill) byte-exact");
   await page.context().close();
 }
 
+head("Rune + gear descriptions in the pickers (live, not from the bundled JSON)");
+{ const page = await newPage(); await loadIso(page);
+  // A rune's description is read straight out of the rune item table. Passive support runes
+  // (Balance, Fury, ...) have no spell-table entry at all, so this table is their only source —
+  // they used to render with no description line anywhere in the editor.
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.fill("#isoSearch", "1"); await page.waitForTimeout(60);
+  await openRec(page, "details.char"); await page.waitForTimeout(80);
+  const rec = +(await page.getAttribute("details.char[open]", "data-rec"));
+  const rowDesc = async (id) => page.evaluate((wanted) => {
+    const row = [...document.querySelectorAll(".picker-row")].find((b) => +b.dataset.id === wanted);
+    return row ? (row.querySelector(".pr-desc") || {}).textContent || "" : null;
+  }, id);
+  await page.click(`details.char[open] button.picker[data-off="${rec + 64}"]`);   // Head Rune slot
+  await page.waitForSelector(".picker-search");
+  await page.fill(".picker-search", mapping.balance.name); await page.waitForTimeout(60);
+  check("support rune shows its description (Balance)", (await rowDesc(mapping.balance.id)) === "Maintains balance.");
+  await page.fill(".picker-search", mapping.runes[0].name); await page.waitForTimeout(60);
+  check("magic rune shows its own text plus the spells it grants",
+    /^Rune slot 0 text\. — Grants Flaming Arrows/.test((await rowDesc(mapping.runes[0].id)) || ""));
+  await page.keyboard.press("Escape"); await page.waitForTimeout(60);
+
+  // ...and an edited description shows up in the picker without reloading the ISO. Rewrite the
+  // armor's description on the Gear tab, then read it back out of the all-items picker.
+  await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char"); await page.waitForTimeout(60);
+  await page.fill("input.ge-desc", "DEF(+99)"); await page.dispatchEvent("input.ge-desc", "change"); await page.waitForTimeout(60);
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.fill("#isoSearch", "1"); await page.waitForTimeout(60);
+  await openRec(page, "details.char"); await page.waitForTimeout(80);
+  await page.click(`details.char[open] button.picker[data-off="${rec + 112}"]`);   // all-items slot
+  await page.waitForSelector(".picker-search");
+  await page.fill(".picker-search", String(armor.id)); await page.waitForTimeout(60);
+  check("a description edited on the Gear tab is what the picker shows", (await rowDesc(armor.id)) === "DEF(+99)");
+  await page.keyboard.press("Escape");
+  await page.context().close();
+}
+
 head("Armor sets view — decode, edit, byte-exact save");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="sets"]');
