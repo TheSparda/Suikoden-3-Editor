@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "text-core.js", "vcdiff.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "health-core.js", "text-core.js", "vcdiff.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -51,11 +51,13 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
 (/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
 (/src=["']guide-core\.js["']/.test(html) ? ok : bad)("index.html loads guide-core.js before app.js");
+(/src=["']health-core\.js["']/.test(html) ? ok : bad)("index.html loads health-core.js before app.js");
 (/src=["']text-core\.js["']/.test(html) ? ok : bad)("index.html loads text-core.js before iso.js");
 (/data-mode="iso"/.test(html) && /data-mode="save"/.test(html) ? ok : bad)("both mode tabs present");
 { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
-  (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js"); }
+  (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js");
+  (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js"); }
 
 // 5) canonical recruit-team map: parses, teams valid, every name is in s3save.py ROSTER
 console.log("Recruit teams:");
@@ -88,6 +90,17 @@ console.log("QoL guards:");
   (/s3_skill_caps\.json/.test(app) && /s3_growth_ref\.json/.test(app) && /s3_rune_slots\.json/.test(app)
     ? ok : bad)("save-editor fetches the skill-cap / growth / rune-slot guides");
   (/GuideCore\./.test(app) ? ok : bad)("save-editor uses the pure GuideCore join (not an inline copy)");
+  // Health check: the panel must drive the pure audit, over the STAGED edits, and must never
+  // write on its own — a Fix only stages ops the normal Apply path then reviews.
+  (/HealthCore\.audit\(/.test(app) && /data-sub="health"/.test(app) && /function drawHealth/.test(app)
+    ? ok : bad)("save editor has the Health panel wired to HealthCore.audit");
+  (/edits: EDITS, inv: INV, party: PARTY, recruit: RECRUIT, gold: GOLD/.test(app)
+    ? ok : bad)("the audit runs over the pending edits, not just the file on disk");
+  (/function applyFixOps/.test(app) && !/py\.runPython[^\n]*applyFixOps/.test(app)
+    ? ok : bad)("a Health fix only stages edits (no direct write path)");
+  // the item-classification rules exist once, in health-core, not copied back into app.js
+  (/HealthCore\.itemStackable/.test(app) && !/ITEM_ONE_PER_SLOT_EXC = new Set/.test(app)
+    ? ok : bad)("app.js uses the shared item rules instead of a second copy");
   (/growthNoteSave\(c\.name, n\)/.test(app) && /runeSlotNoteSave\(c\.name, key\)/.test(app) && /capNote\(c\.name, sk\.id\)/.test(app)
     ? ok : bad)("save-editor renders guide notes on stats, rune slots and skill slots");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
