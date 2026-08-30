@@ -93,14 +93,22 @@ def parse_guide(path, by_norm):
 
 
 def parse_drops():
-    """item id -> [{enemy, archive, lv, weight}] from the decoded enemy index."""
+    """item id -> [{enemy, archives, lv, weight}] from the decoded enemy index.
+
+    Grouped by (enemy, level, weight), with the archives that host that pack collected into
+    a list. The same monster's pack is duplicated into every archive whose maps can spawn it,
+    so ungrouped this is 625 rows of which 437 differ only by archive name — the Fire Rune
+    alone produced fourteen. The fact is "this enemy at this level drops it at this weight";
+    which archives carry the pack is a detail of that fact, not fifteen separate findings.
+    Grouping here rather than in the renderers means the two Reference browsers that show
+    these rows can't drift from each other."""
     path = os.path.join(HERE, "s3_enemy_packs.json")
     try:
         with open(path) as fh:
             j = json.load(fh)
     except (OSError, ValueError):
         return {}
-    seen = collections.defaultdict(set)
+    seen = collections.defaultdict(lambda: collections.defaultdict(set))
     for p in j.get("packs", []):
         if p.get("war"):
             continue                     # war units pay no drops
@@ -108,9 +116,10 @@ def parse_drops():
             for v in e["variants"]:
                 for iid, w in v.get("drops", []):
                     if iid and w:
-                        seen[iid].add((e["name"], p["archive"], v["lv"], w))
-    return {i: [{"enemy": n, "archive": a, "lv": l, "weight": w}
-                for n, a, l, w in sorted(s)] for i, s in seen.items()}
+                        seen[iid][(e["name"], v["lv"], w)].add(p["archive"])
+    return {i: [{"enemy": n, "archives": sorted(arch), "lv": l, "weight": w}
+                for (n, l, w), arch in sorted(g.items())]
+            for i, g in seen.items()}
 
 
 def pickup_places():
@@ -204,8 +213,10 @@ def main():
         json.dump(out, fh, separators=(",", ":"))
     kinds = collections.Counter(k for v in guide.values() for k, _ in v)
     print(f"{len(items)} items with a known source -> {dst} ({os.path.getsize(dst):,} bytes)")
+    rows = sum(len(v) for v in drops.values())
+    spread = sum(len(r["archives"]) for v in drops.values() for r in v)
     print(f"  from the disc: {len(drops)} items have drop entries "
-          f"({sum(len(v) for v in drops.values())} enemy/area rows)")
+          f"({rows} distinct enemy/level/weight facts across {spread} archive placements)")
     print(f"  from the guide: {len(guide)} items, " +
           " ".join(f"{k}:{c}" for k, c in kinds.most_common()))
     print(f"  pickup census: {len(places)} archives with pickups "
