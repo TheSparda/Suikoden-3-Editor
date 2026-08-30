@@ -669,6 +669,73 @@ as mounts rather than fighters.
   `0x8000` in battle-record word `+0x30`.
 - Whether a mount dying forces the rider off, or vice versa.
 
+## 13. How stats combine when a unit mounts another
+
+There is **no blanket multiplier**. Instead the engine has a handful of hand-written,
+per-mechanic combining rules, and the base stats are not among them.
+
+### HP is pooled and re-split — the one exact formula
+
+Immediately after `Mount()` succeeds (`0x17df724`), and only when the battle mode
+(`0x17bb538`) is **2**, the code at `0x17df744` does this:
+
+```
+combinedCur = curHP(rider) + curHP(mount)          ; 0x181b760(slot, 3, 0)
+combinedMax = maxHP(rider) + maxHP(mount)          ; 0x181b7a0(slot, 3, 0)
+
+rider = min( combinedCur * maxHP(rider) / combinedMax + 1, maxHP(rider) )
+mount = min( combinedCur * maxHP(mount) / combinedMax + 1, maxHP(mount) )
+```
+
+Both are written back with **mode 2 = SET**. Verified instruction by instruction, including the
+R5900 second-pipeline ops that compute the two shares in parallel:
+
+| addr | encoding | meaning |
+|---|---|---|
+| `0x17df7c8` | `02113018` | `mult $a2,$s0,$s1` -> combinedCur x riderMax |
+| `0x17df7d0` | `72028018` | `mult1 $s0,$s0,$v0` -> combinedCur x mountMax (pipeline 1) |
+| `0x17df7e4/ec` | `div`/`mflo` | / combinedMax -> rider's share |
+| `0x17df7e8/f0` | `div1`/`mflo1` | / combinedMax -> mount's share |
+
+So **mounting equalises the pair's HP *percentage***. It is a redistribution, not a merge: if
+Hugo is at full and Fubar is nearly dead, mounting leaves both at the same fraction of their own
+maximum. Total HP is conserved, plus the `+1` rounding sweetener on each side.
+
+**This is directly editable today, and it is the lever that matters.** The split is weighted by
+each half's **max HP**, so changing a mount's HP growth curve in the **Growth** tab changes how
+much of the pair's pool that half carries -- and therefore how much damage the pair absorbs
+before either half drops.
+
+### Damage itself is not combined
+
+`0x16c8670` still takes a single `charaPtr` with no rider/mount indirection (see the section
+above), so an incoming hit reduces exactly one half's HP. The pooling happens *at mount time*,
+not per hit, and nothing re-balances the pair again once the fight is under way.
+
+### Other combining rules found
+
+| mechanic | rule | where |
+|---|---|---|
+| **Adrenaline Power** (skill `0x27`, "Death's Door") | `riderProc + mountProc` -- each half rolls independently and the results are **summed**, giving 0/1/2 | `0x181b470` |
+| unidentified property `0x9e` | **OR** across the pair -- true if either half has it | `0x181b4f0` |
+| three fields of the action block (`btlRec->0x628` `+0xa2`, `+0xa4`, `+0xa6`) | rider's values **plus** the mount's, with `+0xa2` **halved** on both sides | `0x1819a70` |
+| base stats (PWR/SKL/MAG/...) | **not combined** -- the stat path never redirects | previous section |
+
+The third row is the one I could not name. `+0xa4` is elsewhere set to `0x28` (40) and can be
+zeroed by a gate at `0x1815650`, and the routine ends up computing `s5 + s4` from the summed
+values. The shape -- a base value plus a halved second value, contributed by both halves --
+reads like a movement or reach budget (a horse carries you further), but **that is a guess and
+is not established**.
+
+### Summary
+
+- **HP**: pooled at mount time and re-split in proportion to each half's max HP. Editable via
+  the mount's HP growth.
+- **Damage**: lands on one half only.
+- **A few specific skills/params**: summed, one halved, one OR'd.
+- **Everything else**: each half uses its own numbers.
+
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
