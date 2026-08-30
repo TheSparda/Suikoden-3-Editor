@@ -1231,7 +1231,7 @@
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
-    ["files", "Files"], ["text", "Text"], ["ref", "Reference"]];
+    ["text", "Text"], ["ref", "Reference"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -1319,9 +1319,9 @@
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster. Your own units use the characters' save stats. Army skill list included as reference.",
-      ref: "Reference (read-only): searchable item and skill id lists with descriptions.",
+      ref: "Reference (read-only): searchable item and skill id lists, where each item comes from, and every packed sub-file on the disc.",
     };
-    q("#isoHint").textContent = hints[VIEW] || "";
+    q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
     const host = q("#isoView");
     // remember which records are expanded so a re-render (e.g. a per-field revert) keeps your place
     const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
@@ -1342,7 +1342,6 @@
     else if (VIEW === "encounter") drawEncounter(host);
     else if (VIEW === "enemies") drawEnemies(host);
     else if (VIEW === "war") drawWar(host);
-    else if (VIEW === "files") drawFiles(host);
     else if (VIEW === "ref") drawReference(host);
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
@@ -3193,17 +3192,22 @@
     map: "geometry / model data",
     data: "not yet identified",
   };
-  function drawFiles(host) {
+  function subfileIndex() {
     const idx = (typeof window !== "undefined" && window.S3_TEST_SUBFILES) || (REF && REF.subfiles);
-    if (!idx || !Array.isArray(idx.archives)) {
-      host.innerHTML = `<div class="muted">Needs <code>Editor/s3_subfiles.json</code>; it didn't load.</div>`;
+    return idx && Array.isArray(idx.archives) ? idx : null;
+  }
+  function drawFiles(host) {
+    const idx = subfileIndex();
+    if (!idx) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_subfiles.json</code>; it didn't load.</div>`;
+      wireRefTabs(host);
       return;
     }
     const kinds = idx.kinds || [];
     const total = idx.archives.reduce((a, x) => a + x.files.length, 0);
     const tally = {};
     idx.archives.forEach((a) => a.files.forEach((fl) => { const k = kinds[fl[2]]; tally[k] = (tally[k] || 0) + 1; }));
-    const parts = [`<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
+    const parts = [refTabs(), `<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
       <b>${total.toLocaleString()}</b> across ${idx.archives.length} archives — from the directory in
       <code>DATA/FSECT.BIN</code>. ${kinds.map((k) => `<b>${tally[k] || 0}</b> ${k}`).join(" · ")}.
       Read-only: the editable pieces inside these files have their own views. <b>Peek</b> reads the first
@@ -3224,6 +3228,7 @@
         <div class="char-body"><div class="muted">expanding…</div></div></details>`);
     });
     host.innerHTML = parts.join("");
+    wireRefTabs(host);
     qa("details.sfarch", host).forEach((det) => det.addEventListener("toggle", () => {
       if (!det.open || det._built) return;
       det._built = true;
@@ -3276,6 +3281,16 @@
 
   // ---- Reference (read-only item / skill browser) ----------------------------
   let REF_KIND = "items";
+  // Reference is the disc's read-only half, so everything that only *describes* the game
+  // lives under it — item and skill ids, where an item comes from, and the sub-file
+  // directory. Each sub-tab replaces the view hint, because "read-only lookup" is the only
+  // thing they share; what you're looking at differs a lot between them.
+  const REF_HINT = {
+    items: "Reference (read-only): every item id on the disc, with its category and description.",
+    skills: "Reference (read-only): every skill id, with its type and effect text.",
+    sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
+    files: "Reference (read-only): every packed sub-file on the disc — which archive holds it, where it starts, how big it is, and what it turned out to be.",
+  };
   // "Where does this item come from" — the read-only half of everything the enemy index and
   // the guides know. Two provenance kinds, deliberately kept apart in the UI as well as in
   // the JSON: `drops` were decoded off this disc and are stated as fact; `guide` rows are
@@ -3390,19 +3405,24 @@
 
   function refTabs() {
     const n = (REF.itemSources && REF.itemSources.items) ? Object.keys(REF.itemSources.items).length : 0;
+    const sf = subfileIndex();
+    const nf = sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0;
     const on = (k) => (REF_KIND === k ? " on" : "");
     return `<div class="subtabs" style="margin-bottom:10px">
         <button class="chip${on("items")}" data-ref="items">Items (${Object.keys(REF.items).length})</button>
         <button class="chip${on("skills")}" data-ref="skills">Skills (${Object.keys(REF.skills).length})</button>
         <button class="chip${on("sources")}" data-ref="sources">Item sources (${n})</button>
+        <button class="chip${on("files")}" data-ref="files">Files (${nf.toLocaleString()})</button>
         <button class="chip${on("places")}" data-ref="places">Pickups (${((REF.itemSources && REF.itemSources.places) || []).length})</button></div>`;
   }
   function wireRefTabs(host) {
-    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawReference(host); }));
+    // go through drawView so the per-sub-tab hint above the list follows the tab
+    qa("[data-ref]", host).forEach((b) => (b.onclick = () => { REF_KIND = b.dataset.ref; drawView(); }));
   }
 
   function drawReference(host) {
     if (REF_KIND === "sources") return drawSources(host);
+    if (REF_KIND === "files") return drawFiles(host);
     if (REF_KIND === "places") return drawPickups(host);
     const isItems = REF_KIND === "items";
     const list = isItems
