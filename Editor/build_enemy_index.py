@@ -265,6 +265,144 @@ def parse_zones(f, lo, hi, K, monster_ids):
     return zones
 
 
+# ---- FSECT copy recovery -----------------------------------------------------
+# The fingerprint pass above can only find a pack copy that contains an enemy whose
+# (level, HP) is in the Suikosource bestiary. That is most of them, but not all: the
+# disc turns out to hold 285 battle sub-files and the fingerprint reaches 172 of them.
+# The rest are extra streaming copies of areas we DO decode — and a copy we don't know
+# about is a copy an edit doesn't reach, which is the same bug as the potch overlay pair.
+#
+# DATA/FSECT.BIN closes that gap (see Suikoden3_ISO_offsets.md, "FSECT.BIN CRACKED"):
+# it gives every sub-file's bounds, a battle sub-file starts with its zone object, and
+# with the object's three pointers plus the sub-file's own length the file<->vaddr delta
+# K is over-determined — 49 of 61 sampled sub-files resolve to exactly ONE K and none to
+# more than one. (The 12 that don't are zones with no spawn slots, e.g. Budehuc's castle
+# maps, which have nothing to edit anyway.)
+import re as _re2
+
+_ZNAME_HEAD = _re2.compile(rb"^[a-z][a-z0-9_]{3,11}\x00")
+
+def battle_subfiles(f):
+    """[(archive, iso offset, byte length)] for every sub-file that starts with a zone object."""
+    try:
+        sys.path.insert(0, HERE)
+        import build_room_index as R
+    except Exception:
+        return []
+    out = []
+    for name, files in R.directories(R.fsect_words(f)).items():
+        base = R.FILES[name][0]
+        for sect, size in files:
+            off = base + sect * 2048
+            f.seek(off)
+            head = f.read(0x20)
+            if len(head) < 0x20:
+                continue
+            w = struct.unpack_from("<4I", head)
+            if w[3] == 0 and _ZNAME_HEAD.match(head[0x10:0x1C]) and \
+               all(0x00100000 <= x <= 0x02000000 for x in w[:3]):
+                out.append((name, off, size * 2048))
+    return out
+
+
+def solve_k(buf):
+    """The one K that makes a battle sub-file's zone object resolve inside itself, or None.
+
+    K is bounded on both sides — every pointer must land inside the sub-file — so the
+    search is a few thousand candidates, and the slot/formation counts plus the slot
+    monster ids reject all but the right one. Ambiguity has not been observed; if it ever
+    happens we return None rather than pick, per correct-or-absent."""
+    L = len(buf)
+    if L < 0x20:
+        return None
+    u32 = lambda o: struct.unpack_from("<I", buf, o)[0]
+    slv, pav, exv = u32(0), u32(4), u32(8)
+    if u32(12) != 0:
+        return None
+    found = []
+    for K in range(max(slv, pav, exv) - L + 8, min(slv, pav, exv) + 1, 4):
+        sf, pf = slv - K, pav - K
+        if not (0 <= sf <= L - 8 and 0 <= pf <= L - 8):
+            continue
+        scnt, sarr = u32(sf), u32(sf + 4)
+        pcnt, parr = u32(pf), u32(pf + 4)
+        if not (1 <= scnt <= 32 and 1 <= pcnt <= 64):
+            continue
+        sao, pao = sarr - K, parr - K
+        if not (0 <= sao and sao + scnt * 0x14 <= L and 0 <= pao and pao + pcnt * 0x1C <= L):
+            continue
+        ok = True
+        for i in range(scnt):
+            mid, var = u32(sao + i * 0x14), u32(sao + i * 0x14 + 4)
+            if not ((0x1F5 <= mid <= 0x257) or (1 <= mid <= 0xD7)) or var > 7:
+                ok = False
+                break
+        if ok:
+            found.append(K)
+            if len(found) > 1:
+                return None
+    return found[0] if found else None
+
+
+def fsect_zone_copies(f, monster_ids):
+    """Every zone FSECT can see, decoded from its own sub-file. -> {archive: [zone, ...]}"""
+    out = collections.defaultdict(list)
+    for arch, off, size in battle_subfiles(f):
+        f.seek(off)
+        buf = f.read(size)
+        K = solve_k(buf)
+        if K is None:
+            continue
+        # solve_k returns vaddr - offsetWithinSubfile; parse_zones wants fileAbs - vaddr.
+        for z in parse_zones(f, off, off + size, off - K, monster_ids):
+            out[arch].append(z)
+    return out
+
+
+def augment_copies(f, out_packs, extra):
+    """Add the copies the fingerprint pass never saw to each zone's write-through list.
+
+    A copy is only accepted if its slot AND formation spans are byte-identical to the
+    reference copy's — chapter variants of the same map legitimately differ, and writing
+    one area's edit into another's bytes would be worse than missing the copy."""
+    def span(o, n):
+        f.seek(o)
+        return f.read(n)
+    added = zones_touched = 0
+    for p in out_packs:
+        pool = extra.get(p["archive"], [])
+        if not pool:
+            continue
+        for z in p["zones"]:
+            ref_s = span(z["slots"][0]["off"][0], 0x14 * len(z["slots"]))
+            ref_p = span(z["parties"][0]["off"][0], 0x1C * len(z["parties"]))
+            known = set(z["slots"][0]["off"])
+            gained = 0
+            for cand in pool:
+                if cand["name"] != z["name"] or len(cand["slots"]) != len(z["slots"]) \
+                   or len(cand["parties"]) != len(z["parties"]):
+                    continue
+                s0 = cand["slots"][0]["off"]
+                if s0 in known:
+                    continue
+                if span(s0, len(ref_s)) != ref_s:
+                    continue
+                if span(cand["parties"][0]["off"], len(ref_p)) != ref_p:
+                    continue
+                d = s0 - z["slots"][0]["off"][0]
+                for i, sl in enumerate(z["slots"]):
+                    sl["off"].append(sl["off"][0] + d)
+                for i, pa in enumerate(z["parties"]):
+                    pa["off"].append(pa["off"][0] + d)
+                    pa["memOff"].append(pa["memOff"][0] + d)
+                known.add(s0)
+                gained += 1
+            if gained:
+                zones_touched += 1
+                added += gained
+    return added, zones_touched
+
+
 def main():
     iso_path = sys.argv[1] if len(sys.argv) > 1 else None
     if not iso_path or not os.path.isfile(iso_path):
@@ -392,6 +530,13 @@ def main():
         label = ", ".join(sorted({e["name"] for e in enemies})[:4])
         out_packs.append({"archive": base["archive"], "copies": len(copies),
                           "label": label, "enemies": enemies, "zones": zones})
+    # FSECT pass: hand every zone the streaming copies the fingerprint could not reach.
+    extra = fsect_zone_copies(f, monster_ids)
+    n_extra = sum(len(v) for v in extra.values())
+    added, touched = augment_copies(f, out_packs, extra)
+    print(f"FSECT battle sub-files decoded: {n_extra} zones; "
+          f"added {added} previously-missed copy(ies) across {touched} zone(s)")
+
     out_packs.sort(key=lambda p: (p["archive"], p["label"]))
     total_v = sum(len(e["variants"]) for p in out_packs for e in p["enemies"])
     total_z = sum(len(p["zones"]) for p in out_packs)

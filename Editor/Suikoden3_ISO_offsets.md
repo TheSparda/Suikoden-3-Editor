@@ -1847,3 +1847,37 @@ The disc's whole vocabulary of base rates is **0, 2, 3, 4, 5, 6, 9**.
 the pointer at +0x0C, the +0x28…+0x38 words) are located but not interpreted; nothing needs
 them yet. `mPartyRank` at +0x00 is very likely the enemy-difficulty tier the area uses per
 chapter — worth confirming against the enemy index's chapter variants before exposing it.
+
+
+---
+
+## Enemy index: FSECT copy recovery (2026-08-30)
+
+The fingerprint pass can only find a pack copy that contains an enemy whose (level, HP) is
+in the Suikosource bestiary. FSECT shows how much that misses: the disc holds **285 battle
+sub-files** and the fingerprint reaches **172** of them. A copy nobody knows about is a copy
+an edit does not reach — the same class of bug as the potch overlay pair.
+
+`build_enemy_index.py` now runs a second pass over FSECT. A battle sub-file *starts* with its
+zone object, so with the object's three pointers plus the sub-file's own length, K is
+over-determined: sampling 61 sub-files gave **49 unique K, 0 ambiguous** (the 12 with none are
+zones with no spawn slots — Budehuc's castle maps — which have nothing to edit anyway). The
+pass decodes **214 zones** that way and merges any copy whose slot AND formation spans are
+byte-identical to the one already indexed.
+
+Result: **2 zones (`haka_102`, `mori_103`) gained a second write target, +72 offsets.** Before
+this, editing either wrote one copy and left the other alone, so the change applied in one
+chapter and silently not in the other. Everything else in the index is byte-for-byte
+unchanged.
+
+Note the sign convention, which cost a debugging round: `solve_k` returns
+`vaddr - offsetWithinSubfile`, while `parse_zones` wants `fileAbs - vaddr`. They are not the
+same K and not even the same direction.
+
+**Still uncovered: 148 of the 214 FSECT zones have no entry in the index at all** — chapter
+variants whose monster packs the fingerprint never decoded (KTDO 18, MORI 16, AKMT 16, LAST
+15, KSKR 12, RVER 12 …). Their spawn slots and formations are real, editable data we do not
+expose. Closing that means decoding a pack without a bestiary anchor: with the sub-file bounds
+and K both known, the node walk (`[records][aux][node]`) can be driven directly from the zone
+object's slot list — each slot names a monster id and its node vaddr — instead of being found
+by fingerprint. That is the obvious next round.
