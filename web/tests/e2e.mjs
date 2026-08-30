@@ -14,7 +14,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, SPELL, UNITE, FOOD, ENEMY, GEAR, TABL
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
-  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B } from "./synth-iso.mjs";
+  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -837,6 +837,30 @@ head("Per-area encounter rates — presets scale from the disc and never compoun
   await preset(0);
   await page.click("[data-rrev]"); await page.waitForTimeout(120);
   check("Restore area clears it too", await nothingStaged(page));
+  await page.context().close();
+}
+
+head("Files view — sub-file browser is read-only and peeks real bytes");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_SUBFILES = ${JSON.stringify(SUBFILE_TEST_INDEX)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="files"]');
+  await page.waitForSelector("details.sfarch", { timeout: 3000 });
+  const sum = await page.textContent("details.sfarch summary");
+  check("the archive summarises its sub-files by kind", /4 sub-files/.test(sum) && /1 town/.test(sum) && /1 battle/.test(sum), sum);
+  await page.click("details.sfarch summary");
+  await page.waitForSelector("[data-peek]", { timeout: 3000 });
+  const rows = await page.$$eval("details.sfarch tbody tr:not(.howrow)", (rs) => rs.map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+  check("kinds and labels are listed", rows.some((r) => /town area 0x20 · 3 rooms/.test(r)) && rows.some((r) => /battle test_101/.test(r)), rows.join(" | "));
+  check("offsets are shown in hex", rows.some((r) => /0x[0-9A-F]+/.test(r)));
+  // Peek reads the real bytes off the open file — the room table's first record
+  await page.click(`[data-peek="${ROOM_TABLE_A}"]`);
+  await page.waitForFunction((o) => { const p = document.querySelector(`.sfpeek[data-at="${o}"]`); return p && !p.hidden; }, ROOM_TABLE_A, { timeout: 3000 });
+  const dump = await page.textContent(`.sfpeek[data-at="${ROOM_TABLE_A}"]`);
+  check("peek dumps hex + ascii from the right offset", dump.split("\n")[0].startsWith(ROOM_TABLE_A.toString(16).toUpperCase().padStart(9, "0")), dump.split("\n")[0]);
+  check("peek shows the planted room record (rank 3, grace 6, rate 4)", /03 00 06 00 04 00/.test(dump), dump.split("\n")[0]);
+  check("the view stages nothing", await nothingStaged(page));
+  check("there is no input in the Files view", (await page.locator("#isoView input").count()) === 0);
   await page.context().close();
 }
 
