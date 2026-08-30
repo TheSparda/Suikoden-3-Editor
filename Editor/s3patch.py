@@ -67,10 +67,14 @@ def _res_text(name, encoding="latin1"):
 # ELF @ file 0xA3800, PT_LOAD file 0xA4800 -> vaddr 0x165D000.
 #   file_off = (vaddr - 0x165D000) + 0xA4800
 # Record layout (offsets within the 0x20 struct), CONFIRMED where noted:
-#   +0x00  u16   index/link a   (into a deeper anim/effect table)
-#   +0x02  u16   index/link b
-#   +0x04  u16   flags/kind     (element+kind nibble region; NOT fully mapped)
-#   +0x06  u8    misc
+# NOTE: the first 8 bytes of a record are the TAIL of the PREVIOUS spell — the table is
+# written one record out of phase. Read/write them only through the *_OFF constants below,
+# which are relative to the owning spell's own base (i.e. base + stride + x):
+#   +0x00  u8    tail: flag byte of spell i-1
+#   +0x01  u8    tail: RADIUS of spell i-1        [CONFIRMED, see SPELL_RADIUS_OFF]
+#   +0x02  u16   tail: link/effect id of spell i-1
+#   +0x04  u16   tail: ELEMENT of spell i-1 (low byte)   [CONFIRMED, see SPELL_ELEM_OFF]
+#   +0x06  u16   tail: status CHANCE % of spell i-1      [CONFIRMED, see SPELL_CHANCE_OFF]
 #   +0x08  u32   -> name string (vaddr)         [CONFIRMED anchor]
 #   +0x0C  u32   -> description string (vaddr)  [CONFIRMED]
 #   +0x10  u32   base MOV / cast time           [CONFIRMED vs Suikosource]
@@ -87,6 +91,21 @@ SPELL_STRIDE     = 0x20
 # element code is 6 (a special multi/dark element, not one of the 5 basics). Read/write
 # element ONLY through SPELL_ELEM_OFF so the two stay in lockstep.
 SPELL_ELEM_OFF   = SPELL_STRIDE + 0x04   # +0x24 from a record's own base
+# Two more tail fields, pinned 2026-08-30 against the spell AND unite tables at once:
+#   radius — size of the area/line template. Nonzero for every AREA or LINE record and zero
+#     for every single/all-target one: 130/130 across 94 spells + 38 unites, no exception.
+#     Spells run 1..4 (Dancing Flames 2 -> Blazing Wall 3 -> Explosion 4); area unites are 3.
+#   chance — % chance the status lands. Nonzero for exactly the records with flags14 bit21
+#     set (130/130) and it matches the text: unite "Knight B" = 30 vs "30% chance of
+#     deathblow", Wind of Sleep 60, Funeral Wind 80, Open Gate 80, Ready!/Go! 100.
+# The old "misc" field read this chance byte from the record's own base, i.e. one record
+# early, so it reported every spell's value against the WRONG spell.
+SPELL_RADIUS_OFF = SPELL_STRIDE + 0x01   # +0x21, u8
+SPELL_CHANCE_OFF = SPELL_STRIDE + 0x06   # +0x26, u16 (percent)
+# A unite record is 8 bytes longer than a spell record (0x28 vs 0x20), so the same 8-byte
+# phase shift leaves a unite's tail INSIDE its own record at +0x20..+0x27 — not one ahead.
+UNITE_RADIUS_OFF = 0x21                  # u8,  relative to the unite record's own base
+UNITE_CHANCE_OFF = 0x24                  # u16 (percent), same
 
 # Unite (co-op) attack table — same field layout as spells, different array.
 # 38 records x 0x28 bytes at 0x3ECF90. Verified vs Suikosource unite guide
@@ -155,11 +174,14 @@ def read_enemy_names(iso):
 
 ELF_PL_FILE      = 0xA4800
 ELF_PL_VADDR     = 0x165D000
-SPELL_FIELDS = {  # name -> (offset, width)
-    "linkA": (0x00, 2), "linkB": (0x02, 2), "kind": (0x04, 2), "misc": (0x06, 1),
+SPELL_FIELDS = {  # name -> (offset, width); offsets are relative to the spell's OWN base
     "name_ptr": (0x08, 4), "desc_ptr": (0x0C, 4),
     "cast_mov": (0x10, 4), "flags14": (0x14, 4), "flags18": (0x18, 4), "power": (0x1C, 4),
+    # tail fields — stored one record ahead (see the layout note above)
+    "radius": (SPELL_STRIDE + 0x01, 1), "element": (SPELL_STRIDE + 0x04, 1),
+    "chance": (SPELL_STRIDE + 0x06, 2),
 }
+SPELL_TAIL_FIELDS = {"radius", "element", "chance"}   # need index+1 to exist
 
 def va2off(v): return (v - ELF_PL_VADDR) + ELF_PL_FILE
 def off2va(o): return (o - ELF_PL_FILE) + ELF_PL_VADDR
@@ -841,6 +863,18 @@ def _spell_name(iso, rec):
 ELEMENTS = {0:"None", 1:"Fire", 2:"Water", 3:"Wind", 4:"Earth", 5:"Lightning", 6:"Pale (Dark)"}
 AREA_BIT = 0x8000  # flags14 bit15: set = area-of-effect, clear = not-area
 
+def spell_radius(iso, index):
+    """Area/line template size of spell `index` (0 = single/all-target). Tail field."""
+    if index + 1 >= SPELL_COUNT: return 0
+    return iso.u8(SPELL_TABLE_FILE + index * SPELL_STRIDE + SPELL_RADIUS_OFF)
+
+
+def spell_chance(iso, index):
+    """% chance the spell's status lands (0 = not a chance-based effect). Tail field."""
+    if index + 1 >= SPELL_COUNT: return 0
+    return iso.u16(SPELL_TABLE_FILE + index * SPELL_STRIDE + SPELL_CHANCE_OFF)
+
+
 def spell_element_byte(iso, index):
     """Read spell `index`'s element (low byte of the u16 stored one record AHEAD).
     Returns the raw u16 'kind' word (call decode_element on it)."""
@@ -890,7 +924,7 @@ def decode_f18(v):
 def cmd_spells(a):
     """List the spell/rune-effect table with decoded key fields."""
     iso = Iso(a.iso); require_version(iso)
-    print(f"{'idx':>3} {'file':>8} {'name':18} {'elem':9} {'cast':>5} {'power':>6}  {'target':18} flags14")
+    print(f"{'idx':>3} {'file':>8} {'name':18} {'elem':9} {'cast':>5} {'power':>6}  {'target':18} {'rad':>3} {'chc':>4} flags14")
     for i in range(SPELL_COUNT):
         off = SPELL_TABLE_FILE + i*SPELL_STRIDE
         rec = iso.rd(off, SPELL_STRIDE)
@@ -898,8 +932,10 @@ def cmd_spells(a):
         cast = struct.unpack_from("<I", rec, 0x10)[0]
         f14  = struct.unpack_from("<I", rec, 0x14)[0]
         power= struct.unpack_from("<I", rec, 0x1C)[0]
+        rad  = spell_radius(iso, i)
+        chc  = spell_chance(iso, i)
         print(f"{i:>3} 0x{off:06X} {_spell_name(iso,rec)[:18]:18} {decode_element(kind):9} "
-              f"{cast:>5} {power:>6}  {decode_target(f14):18} 0x{f14:08X}")
+              f"{cast:>5} {power:>6}  {decode_target(f14):18} {rad:>3} {chc:>4} 0x{f14:08X}")
     iso.close()
 
 
@@ -935,6 +971,8 @@ def cmd_dump_spell(a):
     f18  = struct.unpack_from("<I", rec, 0x18)[0]
     print("  decoded:")
     print(f"    element   = {decode_element(kind)}")
+    print(f"    radius    = {spell_radius(iso, a.index)}   (0 = single/all-target, no area template)")
+    print(f"    chance    = {spell_chance(iso, a.index)}%  (status success rate; 0 = not chance-based)")
     print(f"    target    = {decode_target(f14)}   (AOE bit15 = {'ON' if f14 & AREA_BIT else 'off'})")
     print(f"    kind      = {KIND_LOW.get(f14 & 0xFF, '0x%02X' % (f14 & 0xFF))}")
     print(f"    status    = {decode_f18(f18)}")
@@ -948,6 +986,9 @@ def cmd_set_spell(a):
     if a.field not in SPELL_FIELDS:
         sys.exit(f"unknown field. choices: {', '.join(SPELL_FIELDS)}")
     fo, w = SPELL_FIELDS[a.field]
+    if a.field in SPELL_TAIL_FIELDS and a.index + 1 >= SPELL_COUNT:
+        sys.exit(f"'{a.field}' is stored one record ahead, so it does not exist for the last "
+                 f"spell (#{SPELL_COUNT - 1}).")
     if not a.no_backup:
         backup(a.iso)
     pos = SPELL_TABLE_FILE + a.index*SPELL_STRIDE + fo
