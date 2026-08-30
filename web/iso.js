@@ -28,8 +28,21 @@
   const LIST_COUNT = { list1: 80, list2: 80, list3: 35, list4: 28 };
   // Fixed shop/price tables: name -> [offset, count, width]
   const SHOP = { item3_a: [4105552, 10, 2], item3_b: [4054224, 16, 2], item2: [3970620, 15, 4], item1: [4136564, 3, 4] };
-  const SPELL = { off: 0x3EC2A0, count: 94, stride: 0x20, elem: 0x24 };   // elem = stride+0x04
-  const UNITE = { off: 0x3ECF90, count: 38, stride: 0x28 };
+  // Each record's LAST 8 bytes are stored one record AHEAD of the name/desc/power they belong
+  // to, so a spell reads every tail field at (own base + stride + x). Element was already known
+  // to sit there; two more tail fields are now pinned, each against both tables at once:
+  //   radius (+0x01 into the tail) — the size of the area/line template. Nonzero for every AREA
+  //     or LINE record and zero for every single/all-target one, 130/130 across the 94 spells
+  //     and 38 unites with no exception. Spells run 1..4 (Dancing Flames 2 -> Blazing Wall 3 ->
+  //     Explosion 4), every area unite is 3.
+  //   chance (+0x06 into the tail for spells, +0x04 for unites) — % chance the status lands.
+  //     Nonzero for exactly the records with flags14 bit21 set, again 130/130, and it reads
+  //     straight off the text: unite "Knight B" = 30 vs "30% chance of deathblow", Wind of
+  //     Sleep 60, Funeral Wind 80, Open Gate 80 (deathblow), Ready!/Go! 100.
+  // A unite record is 8 bytes longer than a spell record, so the same shift leaves its tail
+  // INSIDE its own record (+0x20..+0x27) — no next-record guard needed there.
+  const SPELL = { off: 0x3EC2A0, count: 94, stride: 0x20, elem: 0x24, radius: 0x21, chance: 0x26 };
+  const UNITE = { off: 0x3ECF90, count: 38, stride: 0x28, radius: 0x21, chance: 0x24 };
   // 60 recipe/dish records (0..59). Records 60-61 name-resolve to consumable ITEMS (Sacrificial
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
   const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
@@ -365,6 +378,7 @@
 
   // ---- block read/write (all offsets are ABSOLUTE ISO offsets) ---------------
   const inBlk = (off, n) => off >= ELF_BASE && off + n <= ELF_END;
+  const clampInt = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+v || 0)));
   function r8(o) { return BUF[o - ELF_BASE]; }
   function r16(o) { return DV.getUint16(o - ELF_BASE, true); }
   function r32(o) { return DV.getUint32(o - ELF_BASE, true); }
@@ -1765,6 +1779,12 @@
     if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((f.target & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
     if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
     if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
+    if (f.radius != null && idx + 1 < SPELL.count) {
+      const ro = off + SPELL.radius; writeW(ro, 1, clampInt(f.radius, 0, 255)); reg(ro, 1, "num", name, "Radius");
+    }
+    if (f.chance != null && idx + 1 < SPELL.count) {
+      const co = off + SPELL.chance; writeW(co, 2, clampInt(f.chance, 0, 100)); reg(co, 2, "num", name, "Status chance %");
+    }
     return descRes;
   }
   const targetOptsHTML = (cur) => {
@@ -1787,6 +1807,8 @@
         <label class="field"><span>Target</span><select id="rsTarget"><option value="">— no change —</option>${TARGET_OPTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
         <label class="field"><span>Area of effect</span><select id="rsAoe"><option value="">— no change —</option><option value="1">on</option><option value="0">off</option></select></label>
         <label class="field"><span>Status</span><select id="rsStatus">${statOptsBlank}</select></label>
+        <label class="field"><span>Radius</span><input type="number" id="rsRadius" min="0" max="255" placeholder="no change"></label>
+        <label class="field"><span>Status chance %</span><input type="number" id="rsChance" min="0" max="100" placeholder="no change"></label>
       </div>
       <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:4px">
         <span class="muted">Presets:</span>
@@ -1809,7 +1831,8 @@
       rows.push({ i, off, name });
     }
     const body = rows.map(({ i, off, name }) => {
-      const canElem = i + 1 < SPELL.count, elVal = canElem ? (r16(off + SPELL.elem) & 0xFF) : 0;
+      const canTail = i + 1 < SPELL.count, elVal = canTail ? (r16(off + SPELL.elem) & 0xFF) : 0;
+      const radVal = canTail ? r8(off + SPELL.radius) : 0, chVal = canTail ? r16(off + SPELL.chance) : 0;
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F, f18 = r32(off + 0x18);
       const statCur = f18 === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => f18 === (1 << b)) || [])[1] || "custom";
       const elemSel = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === elVal ? " selected" : ""}>${l}</option>`).join("");
@@ -1822,16 +1845,18 @@
         : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
-          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
+          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
         <div class="char-body">
           ${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="sp" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
-            <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canElem ? "" : "disabled"}>${elemSel}</select></label>
+            <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
             <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
             <label class="field"><span>Status</span><select class="sp" data-i="${i}" data-k="status">${statOpts}</select></label>
+            <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}></label>
+            <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
     host.innerHTML = reskin + updBox + body;
@@ -1847,7 +1872,7 @@
         case "instant": set("#rsCast", "0"); break;
         case "poison": set("#rsStatus", "poison"); break;
         case "nostatus": set("#rsStatus", "none"); break;   // clears the inflicted status (flags18)
-        case "clear": ["#rsPower", "#rsCast", "#rsElem", "#rsTarget", "#rsAoe", "#rsStatus"].forEach((s) => set(s, "")); break;
+        case "clear": ["#rsPower", "#rsCast", "#rsElem", "#rsTarget", "#rsAoe", "#rsStatus", "#rsRadius", "#rsChance"].forEach((s) => set(s, "")); break;
       }
       setStatus("Preset filled — pick a rune and click “Apply to rune”.", "ok");
     }));
@@ -1874,8 +1899,10 @@
     const d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
     const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
     const f18 = r32(off + 0x18);
-    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${f18 ? " · " + decodeF18(f18) : ""}`;
-    const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"] };
+    const rad = i + 1 < SPELL.count ? r8(off + SPELL.radius) : 0;
+    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${rad ? " r" + rad : ""}${f18 ? " · " + decodeF18(f18) : ""}`;
+    const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"],
+      radius: [SPELL.radius, 1, "num"], chance: [SPELL.chance, 2, "num"] };
     qa(".sp", d).forEach((el) => {
       const [o, w, kind] = MAP[el.dataset.k];
       if (kind === "flags14") markFlagsField(el, off + o, el.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
@@ -1900,6 +1927,8 @@
     if (num("#rsTarget") !== "") f.target = +num("#rsTarget");
     if (num("#rsAoe") !== "") f.aoe = num("#rsAoe") === "1";
     if (num("#rsStatus") !== "") f.status = num("#rsStatus");
+    if (num("#rsRadius") !== "") f.radius = +num("#rsRadius");
+    if (num("#rsChance") !== "") f.chance = +num("#rsChance");
     if (!Object.keys(f).length) return setStatus("Set at least one field to apply.", "warn");
     targets.forEach((i) => applySpell(i, f, spDescOn));
     drawView();
@@ -1918,6 +1947,7 @@
       + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
     host.innerHTML = updBox + (rows.map(({ i, off, name, who }) => {
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
+      const radVal = r8(off + UNITE.radius), chVal = r16(off + UNITE.chance);
       const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
       const descField = dmax > 0
         ? `<label class="field" style="margin:0 0 10px"><span>Description <span class="muted">(max ${dmax} chars)</span></span>
@@ -1934,19 +1964,23 @@
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
           <span class="muted un-who" style="flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc2(who || "")}">${esc2(who || "—")}</span>
-          <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}</span></summary>
+          <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}</span></summary>
         <div class="char-body">${whoField}${descField}
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
             <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
+            <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}"></label>
+            <label class="field"><span>Status chance %</span><input type="number" class="un" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}"></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`);
-    const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"] };
+    const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"],
+      radius: [UNITE.radius, 1, "num"], chance: [UNITE.chance, 2, "num"] };
     const markUnite = (i) => {
       const off = UNITE.off + i * UNITE.stride, d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
-      d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}`;
+      const rad = r8(off + UNITE.radius);
+      d.querySelector(".un-sum").textContent = `pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${rad ? " r" + rad : ""}`;
       qa(".un", d).forEach((c) => {
         const [o, w, kind] = UMAP[c.dataset.k];
         if (kind === "flags14") markFlagsField(c, off + o, c.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
@@ -1966,6 +2000,8 @@
       else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
       else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
       else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
+      else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); }
+      else if (k === "chance") { writeW(off + UNITE.chance, 2, clampInt(el.value, 0, 100)); reg(off + UNITE.chance, 2, "num", name, "Status chance %"); }
       markUnite(i);
     }));
     qa(".undesc", host).forEach((el) => (el.onchange = () => {
