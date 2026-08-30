@@ -187,8 +187,18 @@ values. Two real examples from S3 (github issue #2):
    from the guide so the mapping can't silently drift again. Where CI can't hold the real ROM,
    guard the *constant* (`SKILLMAX_START === 16`) and keep the correctness proof in a doc.
 
-**Corollary — keep web and desktop in lockstep.** Both editors embed the same offsets; a fix in
-one must land in both. Add a validate check that asserts the two files agree.
+**Corollary — keep web and desktop in lockstep, or retire one.** Both editors embed the same
+offsets; a fix in one must land in both, so add a validate check asserting the two files agree.
+
+> **Postscript (Suikoden III, 2026-08-30).** That lockstep check was later removed along with
+> the desktop editor. Reviewing the history showed the guard never caught a real bug: every
+> `s3patch.py` commit after the web editor shipped landed in the *same commit* as `iso.js`, and
+> both real offset bugs (issue #2's growth offsets, the Head/Left rune swap) were found by
+> re-reading the exe and fixed in both files at once. A parity assertion between two copies you
+> always edit together only catches "you forgot the second copy" — a failure mode that exists
+> solely because the second copy does. Prefer pinning the constant against ground truth (step 7
+> above) over asserting two implementations agree, and once one implementation is the only one
+> users run, delete the other rather than mirroring edits into it.
 
 ## B13. Reference-data enrichment (the biggest quality lever)
 

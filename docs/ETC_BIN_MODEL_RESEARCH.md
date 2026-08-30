@@ -69,7 +69,7 @@ A working model swap now requires the full chain:
    earlier spike identified as a monotonic u32 array of EE-RAM addresses / relocation pointers).
 
 That is an original archive-rebuild + compression-RE project, **not** an editor feature. Decision:
-**do not add a Model Swap section to `s3editor.py` / `s3patch.py`.**
+**do not add a Model Swap section to the editor.**
 
 ### If ever resumed — cheapest next probes (in order)
 1. **Locate the offset table**: since loading is index-based, find where the ELF maps a character
@@ -85,8 +85,9 @@ That is an original archive-rebuild + compression-RE project, **not** an editor 
 
 ## Phase 0 — decode (retained for reference)
 
-Reverse-engineering notes for a future **model-swap** feature in the *offline* editor
-(`Editor/s3editor.py` / `Editor/s3patch.py`). **No swap has been tested in-game yet** — this
+Reverse-engineering notes for a future **model-swap** feature. (Written when the offline
+Python editor still existed; it has since been retired in favour of `web/`.) **No swap has
+been tested in-game yet** — this
 document is the decode/mapping groundwork only. Nothing here should be wired into a write path
 until Phase 1 (a single in-emulator proof) confirms the mechanism.
 
@@ -217,6 +218,6 @@ has no table linking these 4-char codes to character indices. Below is split by 
 4. **Payload format**: are the blobs compressed? (Determines whether we can ever build *new*
    models vs only swap existing ones.)
 
-Only after #1–#3 are known should a "Model Swap" section be added to the offline editor, scoped
+Only after #1–#3 are known should a "Model Swap" section be added to the editor, scoped
 to exactly what the proof supports (most likely: same-size, per-bundle swaps between two
 already-co-present characters).
