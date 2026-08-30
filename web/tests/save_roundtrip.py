@@ -135,17 +135,24 @@ def main():
           hugo["idExpected"] == s3save.ROSTER_IDS[0] and not hugo["idMismatch"])
     shifted = bytearray(open(path, "rb").read())
     shifted[s3save.CHAR_BASE + s3save.OFF_ID] = 99          # wrong character in slot 0
-    warn_shift = s3save.decode_save(bytes(shifted))["warnings"]
+    warn_shift = s3save.decode_save(bytes(shifted))["problems"]
     check("a roster/id shift is reported, not swallowed",
           any("id mismatch" in w for w in warn_shift), str(warn_shift))
     swapped = bytearray(open(path, "rb").read())
     struct.pack_into("<H", swapped, s3save.CHAR_BASE + s3save.OFF_CURHP, 9999)
     check("current HP above max HP is reported",
-          any("current HP" in w for w in s3save.decode_save(bytes(swapped))["warnings"]))
+          any("current HP" in w for w in s3save.decode_save(bytes(swapped))["problems"]))
     # The save title states the chapter protagonist's level, so a save carries its own
     # answer for the field this issue got wrong.
+    stale = s3save.decode_save(open(path, "rb").read(), {"level": 77})
     check("a level that contradicts the save title is reported",
-          any("level offset is wrong" in w
+          any("level offset is wrong" in w for w in stale["warnings"]))
+    check("...and it is a NOTE, not a layout problem — the title goes stale whenever this "
+          "editor changes that level, so it must not read as corruption",
+          len(stale["notes"]) == 1 and not stale["problems"])
+    check("...and the message names the benign cause (an edit made here) first, so editing "
+          "a protagonist's level does not read as corruption",
+          any("Expected if you changed that level here" in w
               for w in s3save.decode_save(open(path, "rb").read(), {"level": 77})["warnings"]))
     check("a level that matches the save title is accepted",
           not s3save.decode_save(open(path, "rb").read(), {"level": 10})["warnings"],
@@ -166,6 +173,30 @@ def main():
           s3save.item_stackable(0x001) and s3save.item_stackable(0x1F1) and
           not s3save.item_stackable(0x1CC) and not s3save.item_stackable(0x0D3) and
           not s3save.item_stackable(0x211))
+    # Nine real ids contradict a pure band test; a regression here silently reintroduces the
+    # "count on a one-per-slot item" bug for stat stones instead of runes.
+    check("the stat stones are one-per-slot despite the consumable band",
+          all(not s3save.item_stackable(i) for i in range(0x0B, 0x12)))
+    check("Sacrificial Jizo / Dragon Incense are one-per-slot",
+          not s3save.item_stackable(0x9E) and not s3save.item_stackable(0x9F))
+    check("Grape carries a count despite being a key item", s3save.item_stackable(0x202))
+    # The save's own entries refine the guess for the ~58% of ids the corpus never covered,
+    # but only ever toward one-per-slot — a save damaged by an older build must not teach it
+    # that a rune carries a count.
+    probe = bytearray(open(path, "rb").read())
+    struct.pack_into("<HH", probe, s3save.INV_BASE + 20 * s3save.INV_ENTRY, 0x1CC, 1)
+    check("a bogus count on a rune (older build's damage) does NOT promote it to stackable",
+          not s3save.item_stackable_for(bytes(probe), 0x1CC))
+    # Demotion needs EVERY entry for that id to read 0 — one stray zero alongside a real
+    # count must not demote an item the save also holds properly.
+    struct.pack_into("<HH", probe, s3save.INV_BASE + 21 * s3save.INV_ENTRY, 0x006, 0)
+    check("the save's own count-0 entries demote a band-stackable item",
+          not s3save.item_stackable_for(bytes(probe), 0x006))
+    struct.pack_into("<HH", probe, s3save.INV_BASE + 22 * s3save.INV_ENTRY, 0x006, 4)
+    check("a stray count-0 entry alongside a real count does not demote",
+          s3save.item_stackable_for(bytes(probe), 0x006))
+    check("an item the save says nothing about falls back to the band rule",
+          s3save.item_stackable_for(bytes(probe), 0x004) is s3save.item_stackable(0x004))
     bags = {b2["region"]: b2 for b2 in s["inventory"]}
     hugo_bag = bags["Hugo"]
     check("pre-merge layout names the four team bags and their storage",

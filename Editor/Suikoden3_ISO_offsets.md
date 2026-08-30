@@ -1555,7 +1555,7 @@ read from plausible-looking but wrong bytes, and nothing in the editor could tel
 **Method.** Re-derived the layout from a 28-save corpus (every distinct S3 save in
 `Saves/`: 20 sequential `.xps` saves from one playthrough, four memory cards, a PS3 `.psv`,
 the multi-team test card, and the extracted raw payloads) — 2100 non-empty character
-records and 2337 inventory entries. The key lever: **the PS2 browser title of an S3 save
+records and 2327 inventory entries. The key lever: **the PS2 browser title of an S3 save
 states the chapter protagonist's level** (`Suikoden3〔07〕Cpt.4 L54/ 61:15`), so each save
 carries its own ground truth for the field that was wrong.
 
@@ -1612,10 +1612,25 @@ never exposed block 7 at all (30 slots invisible).
   `iid > ITEM_ID_MAX` test treated these as EMPTY slots, which both hid a real item and
   offered its slot to "+ Add item". On a real chapter-2 save in the corpus, `freeSlots[0]`
   for Chris's bag was the slot holding a displayed Graffiti — adding an item destroyed it.
-- **The count is only meaningful for stackable items.** Over 2337 real entries:
+- **The count is only meaningful for stackable items.** Over 2327 real entries:
   consumables/food (< 0xA0) count 0..6; equipment and runes (0xA0-0x1EF) count **0 in
   986/986**; trade goods (0x1F0-0x1FF) count 1..9; key items/valuables (0x200+) count 0 in
   443/444. Domain 0..9, matching the herrvillain doc's "item qty 0-9".
+  The bands are the default but not the whole rule — nine observed ids contradict a pure
+  band test and are embedded as exceptions: the **stat stones** (0x0B-0x11; six of the seven
+  observed, all count 0, 0x0F by interpolation within the contiguous category block) plus
+  **Sacrificial Jizo 0x9E** and **Dragon Incense 0x9F** are one-per-slot despite sitting in
+  the consumable band, and **Grape 0x202** carries a count despite being a key item. With
+  those exceptions the classification agrees with the game's own count on **2327/2327** real
+  entries — zero disagreements.
+  Coverage caveat: only **213 of the 508** item ids appear in the corpus at all, so for the
+  remaining 58% the band rule is a reasoned guess. `item_stackable_for()` therefore refines
+  it using the save being edited — if the player already holds the item, their own entries
+  settle it. That override is **one-directional** (it may only demote an item to
+  one-per-slot, never promote it): a save written by an older build can contain runes
+  carrying a bogus count of 1, and promoting on that evidence would keep writing the broken
+  shape for exactly the players who hit the bug. Demotion also requires every entry for
+  that id to read 0, so one stray zero cannot demote an item the save holds properly.
   The game holds N copies of a one-per-slot item as **N separate slots, each with count 0**
   — never as one slot with count N (Escape Scroll ×6, New Chain Mail ×6, Graffiti ×6,
   Power Gloves ×5 all appear that way). The editor used to default a new item's count to 1,
