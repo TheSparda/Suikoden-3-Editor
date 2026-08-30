@@ -113,6 +113,65 @@ def parse_drops():
                 for n, a, l, w in sorted(s)] for i, s in seen.items()}
 
 
+def pickup_places():
+    """Per archive: the pickups its maps hold, counted off the disc.
+
+    build_subfile_index.py already counts them into each town sub-file's label ("area 0x0D ·
+    6 rooms · 1 corpse · 3 herbs") by looking for the game's own object names — `takara` (宝)
+    a chest, `emono` (獲物) a lootable corpse, `herb_*` a herb spot. An archive ships several
+    chapter variants of the same maps, so the honest per-archive figure is the MAXIMUM any one
+    variant carries, not the sum, which would count the same chest once per chapter.
+    """
+    try:
+        with open(os.path.join(HERE, "s3_subfiles.json")) as fh:
+            sub = json.load(fh)
+        with open(os.path.join(HERE, "s3_rooms.json")) as fh:
+            rooms = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    kinds = sub.get("kinds", [])
+    zones = {a["archive"]: a.get("zones", []) for a in rooms.get("areas", [])}
+    area_of = {a["archive"]: a["area"] for a in rooms.get("areas", [])}
+    out = []
+    for arch in sub.get("archives", []):
+        best = {}
+        variants = 0
+        for _sect, _size, k, label in arch["files"]:
+            if kinds[k] != "town":
+                continue
+            variants += 1
+            for n, what in re.findall(r"(\d+) (chest|corpse|herbs)", label):
+                best[what] = max(best.get(what, 0), int(n))
+        if not best:
+            continue
+        out.append({"archive": arch["archive"], "area": area_of.get(arch["archive"]),
+                    "zones": zones.get(arch["archive"], []), "variants": variants,
+                    "chest": best.get("chest", 0), "corpse": best.get("corpse", 0),
+                    "herbs": best.get("herbs", 0)})
+    out.sort(key=lambda x: (x["area"] if x["area"] is not None else 999, x["archive"]))
+    return out
+
+
+def guide_chests(guide):
+    """The guide's named chests: place -> the rare items it lists for that place.
+
+    Deliberately NOT joined to the archives above. The disc carries no place names at all —
+    only tags like YMMT and map ids like ymmt_101 — so any mapping from "Mountain Path" to an
+    archive would be my guess dressed up as data. The two tables sit side by side and the UI
+    says why.
+    """
+    by_place = collections.defaultdict(list)
+    for iid, rows in guide.items():
+        for kind, text in rows:
+            if kind != "chest":
+                continue
+            place, _, guard = text.partition(" - Guardian:")
+            by_place[place.strip().rstrip(".")].append(
+                {"item": iid, "guardian": guard.strip() or None})
+    return [{"place": p, "items": sorted(v, key=lambda x: x["item"])}
+            for p, v in sorted(by_place.items(), key=lambda x: -len(x[1]))]
+
+
 def main():
     guide_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_GUIDE
     ids, by_norm = item_table()
@@ -132,7 +191,10 @@ def main():
             rec["drops"] = drops[iid]
         items[str(iid)] = rec
 
-    out = {"format": "s3itemsources", "schema": 1,
+    places = pickup_places()
+    chests = guide_chests(guide)
+    out = {"places": places, "chests": chests,
+           "format": "s3itemsources", "schema": 1,
            "note": "Where an item comes from. `drops` is decoded from the disc (enemy, "
                    "archive, level, weight out of 1000); `guide` is text from the "
                    "Suikosource Rare Armor guide and is attributed as such.",
@@ -146,6 +208,12 @@ def main():
           f"({sum(len(v) for v in drops.values())} enemy/area rows)")
     print(f"  from the guide: {len(guide)} items, " +
           " ".join(f"{k}:{c}" for k, c in kinds.most_common()))
+    print(f"  pickup census: {len(places)} archives with pickups "
+          f"({sum(p['chest'] for p in places)} chests, {sum(p['corpse'] for p in places)} corpses, "
+          f"{sum(p['herbs'] for p in places)} herb spots, counted per archive as the max over "
+          f"its chapter variants)")
+    print(f"  guide chests: {len(chests)} named places, "
+          + ", ".join(f"{c['place']} ({len(c['items'])})" for c in chests))
     if unmatched:
         print(f"  guide names that don't resolve to an item id ({len(unmatched)}): "
               + ", ".join(sorted(set(unmatched))))

@@ -953,6 +953,29 @@ head("Reference — item sources, disc vs guide provenance, read-only");
   await page.context().close();
 }
 
+head("Reference — pickup locations, disc census vs guide chests");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="places"]', { timeout: 3000 });
+  await page.click('[data-ref="places"]');
+  await page.waitForSelector(".pkct", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("both tables are present", /pickups per area/i.test(txt) && /treasure-boss chests/i.test(txt));
+  check("it says the two tables aren't linked", /aren't linked/.test(txt));
+  check("it says nothing here is editable", /rolled at run time/.test(txt));
+  check("MORI's census matches the walkthrough", /1 corpse/.test(txt) && /3 herb spots/.test(txt), "");
+  check("a guide chest lists its guardian", /guarded by/.test(txt));
+  // filtering reaches map ids and chest contents alike
+  await page.fill("#isoSearch", "mori_101"); await page.waitForTimeout(150);
+  check("filter matches a map id", /MORI/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", "horned helm"); await page.waitForTimeout(150);
+  check("filter matches a chest's contents", /Mt\. Senai/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the pickups browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
 head("Gear description overflow is rejected");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
