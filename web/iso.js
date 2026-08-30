@@ -3354,9 +3354,15 @@
     const src = REF.itemSources && REF.itemSources.items && REF.itemSources.items[String(id)];
     if (!src) return [];
     const out = [];
-    (src.drops || []).forEach((d) => out.push({ disc: true,
-      what: `${d.enemy} · ${d.archive}`,
-      detail: `Lv ${d.lv} · drop weight ${d.weight}/1000 (${(d.weight / 10).toFixed(1)}%)` }));
+    // One row per (enemy, level, weight) — the archives hosting that pack are a detail of
+    // the same fact, not separate findings. Ungrouped this was 625 rows for 188 facts.
+    (src.drops || []).forEach((d) => {
+      const a = d.archives || (d.archive ? [d.archive] : []);
+      const where = a.length <= 4 ? a.join(", ") : `${a.slice(0, 4).join(", ")} +${a.length - 4} more`;
+      out.push({ disc: true, what: d.enemy,
+        detail: `Lv ${d.lv} · drop weight ${d.weight}/1000 (${(d.weight / 10).toFixed(1)}%)`
+          + (where ? ` · ${where}` : "") });
+    });
     (src.guide || []).forEach((g) => out.push({ disc: false,
       what: SRC_LABEL[g.kind] || g.kind, detail: g.text }));
     return out;
