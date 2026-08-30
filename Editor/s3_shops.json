@@ -1,0 +1,213 @@
+{
+ "format": "Suikoden III shop counters (SLUS-20387)",
+ "schema": 1,
+ "note": "Three parallel shop tables (item / armour / rune), each 14 locations x 4 story stages of a 0x7C record: 30 zero-terminated u16 stock slots at +0x00 and four 16-byte rarity ('rare find') entries at +0x3C. Layout is decoded from the disc's own accessors (0x170DDF8, 0x170DFB0, 0x176C948); the town names are attributed to the Suikosource Rare Armor guide and the GameFAQs walkthrough, matched on rarity items unique to each town.",
+ "geometry": {
+  "stride": 124,
+  "variantStride": 496,
+  "stockSlots": 30,
+  "rarityOff": 60,
+  "rarityStride": 16,
+  "rarityCount": 4,
+  "locations": 14,
+  "stages": 4,
+  "rarityFields": {
+   "item": [
+    0,
+    2
+   ],
+   "u2": [
+    2,
+    2
+   ],
+   "u4": [
+    4,
+    2
+   ],
+   "u6": [
+    6,
+    2
+   ],
+   "u8": [
+    8,
+    2
+   ],
+   "chance": [
+    10,
+    1
+   ],
+   "quantity": [
+    11,
+    1
+   ],
+   "spread": [
+    12,
+    1
+   ]
+  }
+ },
+ "counters": [
+  {
+   "kind": 1,
+   "name": "Item Shop",
+   "base": 4105552,
+   "va": 26881360,
+   "stocked": [
+    {
+     "loc": 0,
+     "stages": 4
+    },
+    {
+     "loc": 1,
+     "stages": 1
+    },
+    {
+     "loc": 2,
+     "stages": 4
+    },
+    {
+     "loc": 3,
+     "stages": 3
+    },
+    {
+     "loc": 4,
+     "stages": 2
+    },
+    {
+     "loc": 5,
+     "stages": 2
+    },
+    {
+     "loc": 6,
+     "stages": 3
+    },
+    {
+     "loc": 7,
+     "stages": 3
+    },
+    {
+     "loc": 8,
+     "stages": 3
+    },
+    {
+     "loc": 9,
+     "stages": 4
+    },
+    {
+     "loc": 10,
+     "stages": 1
+    }
+   ]
+  },
+  {
+   "kind": 2,
+   "name": "Armor Shop",
+   "base": 4054224,
+   "va": 26830032,
+   "stocked": [
+    {
+     "loc": 0,
+     "stages": 4
+    },
+    {
+     "loc": 1,
+     "stages": 1
+    },
+    {
+     "loc": 3,
+     "stages": 3
+    },
+    {
+     "loc": 4,
+     "stages": 2
+    },
+    {
+     "loc": 7,
+     "stages": 3
+    },
+    {
+     "loc": 8,
+     "stages": 3
+    },
+    {
+     "loc": 9,
+     "stages": 4
+    }
+   ]
+  },
+  {
+   "kind": 3,
+   "name": "Rune Shop",
+   "base": 4123464,
+   "va": 26899272,
+   "stocked": [
+    {
+     "loc": 0,
+     "stages": 4
+    },
+    {
+     "loc": 2,
+     "stages": 4
+    },
+    {
+     "loc": 5,
+     "stages": 2
+    },
+    {
+     "loc": 7,
+     "stages": 3
+    },
+    {
+     "loc": 8,
+     "stages": 3
+    },
+    {
+     "loc": 9,
+     "stages": 4
+    }
+   ]
+  }
+ ],
+ "locationNames": {
+  "0": {
+   "name": "Vinay del Zexay",
+   "evidence": "Yellow Scarf is a rarity here at stage 3 and regular stock at stage 4 — the guide says it becomes a regular item at VdZ in chapter 5; Custom Armor and Custom Leather are VdZ armour rarities."
+  },
+  "1": {
+   "name": "Karaya Village",
+   "evidence": "Its item counter stocks the Sacrificial Jizo the walkthrough sends you to the Karaya Village item hut for, and its armour counter sells Karaya clan bandanas and feather bands. One stage only, matching the village burning in chapter 2."
+  },
+  "2": {
+   "name": "Duck Village",
+   "evidence": "Hazy Rune rarity (guide lists it at Duck Village / Alma Kinan) and the only rune counter stocking the Skunk Rune, which the walkthrough places at the Duck Village rune shop."
+  },
+  "3": {
+   "name": "Great Hollow",
+   "evidence": "DragonTail Ornament rarity (guide: 'found at Great Hollow') and the Crown of Destiny armour rarity."
+  },
+  "4": {
+   "name": "Chisha Village",
+   "evidence": "LionGod Ring and Prosperity Ring item rarities plus the Prosperity Hat armour rarity — the guide names all three at Chisha."
+  },
+  "5": {
+   "name": "Alma Kinan",
+   "evidence": "The Killer Rune is a rarity at stage 1 and regular stock at stage 2, exactly as the guide describes Alma Kinan; Hazy Rune rarity as well."
+  },
+  "6": {
+   "name": "Iksay Village",
+   "evidence": "Rose Brooch rarity — the guide lists it only at the Iksay Village item shop."
+  },
+  "7": {
+   "name": "Le Buque",
+   "evidence": "Custom Tunic armour rarity (guide: Armor Shop in Le Buque, chapter 5)."
+  },
+  "8": {
+   "name": "Caleria",
+   "evidence": "WhiteRose Brooch item rarity and Guardian Chain Mail armour rarity, both guide-listed at Caleria."
+  },
+  "9": {
+   "name": "Brass Castle",
+   "evidence": "Custom Casque and Gold Emblem armour rarities, guide-listed at Brass Castle."
+  }
+ }
+}
