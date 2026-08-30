@@ -2353,6 +2353,32 @@
   // roll (see the ENC block up top). 100% rewrites the stock words byte-for-byte, so
   // returning to it leaves nothing staged rather than merely re-encoding the default.
   const ENC_PRESETS = [["None", 0], ["Quarter", 25], ["Half", 50], ["Stock", 100], ["Double", 200], ["Triple", 300]];
+  // ---- Archive → in-game place names -------------------------------------------
+  // The disc names its zone archives with romaji abbreviations (KRVI = KaRaya VIllage,
+  // ZKTR = Zexen toride/fortress = Brass Castle, HNKT = honkyochi/HQ = Budehuc, MSVI =
+  // Muse, Le Buque's Japanese name, YMMT = yamamichi = Mountain Path…). Every encounter
+  // archive is anchored by matching its monster packs (enemy name + level + HP) against
+  // the Suikosource bestiary's per-area tables: KSKR carries the Ancient Highway table
+  // verbatim, HNKT the Budehuc-basement one, ICEW the Cyndar Ruins rows exactly (Malifaux
+  // 50/600, Siren 50/350, TrollDragon 50/1900, CopperSun 55/5400), LAST the Ceremonial
+  // Site trio, HAKA the hideaway's unique Mordolo/Nariqua, FAKE Mt. Senai's unique
+  // Mirage, AKMT the full Kuput Forest list, RVER Mt. Hei-Tou's (the one field left).
+  // HGB1/HGB2 are both Yaza Plain fields (HGB1 has Thomas ch.1's lv2-3 starter bugs =
+  // the map at Budehuc's gate); SOGE (sougen = grassland) spans Amur + North Amur.
+  // CVIS / SKBN / GDOP / LKOE hold no encounter or room data and stay unidentified.
+  const ARCH_NAMES = {
+    VDZK: "Vinay del Zexay", KRVI: "Karaya Village", LZVI: "Great Hollow",
+    DKVI: "Duck Village", TSVI: "Chisha Village", IKVI: "Iksay Village",
+    MSVI: "Le Buque", ZKTR: "Brass Castle", AKVI: "Alma Kinan Village",
+    CRRA: "Caleria", HNKT: "Budehuc Castle", HGB1: "Yaza Plain (Budehuc gate)",
+    HGB2: "Yaza Plain (second field)", SOGE: "Amur Plains / North Amur Plains",
+    MORI: "Zexen Forest", KTDO: "North Cavern", YMMT: "Mountain Path",
+    KSKR: "Ancient Highway", AKMT: "Kuput Forest", HAKA: "Flame Champion's Hideaway",
+    FAKE: "Mt. Senai", ICEW: "Cyndar Ruins", RVER: "Mt. Hei-Tou",
+    LAST: "Ceremonial Site", ETC: "shared (all areas)",
+  };
+  const archName = (a) => ARCH_NAMES[a] || "";
+
   function drawEncounter(host) {
     const cur = decodeEnc(ENC.sites.map((o) => readW(o, 4)));
     const orig = decodeEnc(ENC.sites.map((o) => origW(o, 4)));
@@ -2466,8 +2492,8 @@
         the percentage above multiplies <b>these</b>. <b>0</b> means no random battles on that map, which is how
         the game marks towns and interiors; the disc's field and dungeon maps sit between <b>2 and 9</b>.
         <b>Grace</b> is how far you must travel after a battle before another can trigger. A rate at or above 100
-        makes every roll a battle. Areas carry the disc's own archive tag and, where the enemy index knows them,
-        the game's map ids.</div>`,
+        makes every roll a battle. Areas carry the disc's own archive tag with its in-game location and, where
+        the enemy index knows them, the game's map ids.</div>`,
       `<div class="warnbox" style="margin:0 0 10px">Lowering a rate is always safe. <b>Raising one from 0 is not</b> —
         a map the game never fights on has no monster party loaded for it, so forcing an encounter there is not a
         state the game builds. Rows sitting at the disc's 0 are tagged <span class="opt-tag">no battles</span>, and
@@ -2475,11 +2501,12 @@
     const q2 = SEARCH;
     ROOMS.forEach((a, ai) => {
       const zones = (a.zones || []).join(", ");
-      if (q2 && !(a.archive + " " + zones).toLowerCase().includes(q2)) return;
+      const nm = archName(a.archive);
+      if (q2 && !(a.archive + " " + nm + " " + zones).toLowerCase().includes(q2)) return;
       const rows = roomRows(a);
       const live = rows.filter((r) => r.rate > 0).length;
       parts.push(`<details class="char rarea" data-ra="${ai}" data-i="ra${ai}"><summary><span class="chev">▸</span>
-          <span class="nm">${esc2(a.archive)}</span>
+          <span class="nm">${esc2(a.archive)}${nm ? ` — ${esc2(nm)}` : ""}</span>
           <span class="muted">${esc2(zones || "no battle zones indexed")}</span>
           <span class="lv">${rows.length} map row(s) · ${a.tables.length} chapter table(s) · ${live} with encounters</span></summary>
         <div class="char-body"><div class="muted">expanding…</div></div></details>`);
@@ -2572,7 +2599,7 @@
     return EPACKS.filter((p) => {
       if (p.war) return false;   // war units have their own view; bulk multipliers never touch them
       if (scope !== "filtered" || !q2) return true;
-      return (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase().includes(q2);
+      return (p.archive + " " + archName(p.archive) + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase().includes(q2);
     });
   }
   function applyEnemyBulk() {
@@ -2621,7 +2648,8 @@
         (${ZPACKS.length} pack${ZPACKS.length === 1 ? "" : "s"}${EPACKS_SKIPPED ? `, ${EPACKS_SKIPPED} unavailable on this disc` : ""}).
         Each pack exists as several streaming copies — edits write <b>every copy</b> at once. Stat order is the
         character convention (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK); drop weights are out of 1000 (128 ≈ 12.8%).
-        Filter matches enemy or archive names.</div>`);
+        Each pack is titled with its archive tag and the in-game area those battles belong to.
+        Filter matches enemy names, archive tags or area names.</div>`);
       const mfld = (id, label) =>
         `<label class="field"><span>${label} ×</span><input type="number" id="${id}" class="eb-mul" min="0" max="100" step="0.05" value="${ENBULK[id.slice(2).toLowerCase()]}"></label>`;
       parts.push(`<div class="card" style="margin:0 0 12px">
@@ -2646,11 +2674,12 @@
       for (let pi = 0; pi < EPACKS.length; pi++) {
         const p = EPACKS[pi];
         if (p.war) continue;
-        const hay = (p.archive + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
+        const nm = archName(p.archive);
+        const hay = (p.archive + " " + nm + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase();
         if (q2 && !hay.includes(q2)) continue;
         const nvar = p.enemies.reduce((a, e) => a + e.variants.length, 0);
         parts.push(`<details class="char epack" data-ep="${pi}" data-i="ep${pi}"><summary><span class="chev">▸</span>
-            <span class="nm">${esc2(p.archive)} · ${esc2(p.label)}</span>
+            <span class="nm">${esc2(p.archive)}${nm ? ` — ${esc2(nm)}` : ""} · ${esc2(p.label)}</span>
             <span class="lv">${p.enemies.length} enemies · ${nvar} variants · ×${p.copies} on disc</span></summary>
           <div class="char-body"><div class="muted">expanding…</div></div></details>`);
       }
@@ -3044,17 +3073,18 @@
       <b>${total.toLocaleString()}</b> across ${idx.archives.length} archives — from the directory in
       <code>DATA/FSECT.BIN</code>. ${kinds.map((k) => `<b>${tally[k] || 0}</b> ${k}`).join(" · ")}.
       Read-only: the editable pieces inside these files have their own views. <b>Peek</b> reads the first
-      256 bytes off your disc so you can see what a blob actually is. Filter matches archive, kind or map id.</div>`];
+      256 bytes off your disc so you can see what a blob actually is. Filter matches archive, area name, kind or map id.</div>`];
     if (!isoFile) parts.push(`<div class="warnbox">Peek needs the open ISO.</div>`);
     const q2 = SEARCH;
     idx.archives.forEach((a, ai) => {
+      const nm = archName(a.archive);
       const rows = a.files.map((fl, i) => [i, fl]).filter(([, fl]) =>
-        !q2 || (a.archive + " " + kinds[fl[2]] + " " + (fl[3] || "")).toLowerCase().includes(q2));
+        !q2 || (a.archive + " " + nm + " " + kinds[fl[2]] + " " + (fl[3] || "")).toLowerCase().includes(q2));
       if (!rows.length) return;
       const c = {};
       a.files.forEach((fl) => { const k = kinds[fl[2]]; c[k] = (c[k] || 0) + 1; });
       parts.push(`<details class="char sfarch" data-sa="${ai}" data-i="sf${ai}"><summary><span class="chev">▸</span>
-          <span class="nm">${esc2(a.archive)}.BIN</span>
+          <span class="nm">${esc2(a.archive)}.BIN${nm ? ` — ${esc2(nm)}` : ""}</span>
           <span class="muted">${fmtSize(a.size)}</span>
           <span class="lv">${a.files.length} sub-files · ${kinds.filter((k) => c[k]).map((k) => `${c[k]} ${k}`).join(" · ")}</span></summary>
         <div class="char-body"><div class="muted">expanding…</div></div></details>`);
@@ -3070,7 +3100,7 @@
   function buildArchiveBody(det, idx, ai, kinds) {
     const a = idx.archives[ai], q2 = SEARCH;
     const rows = a.files.map((fl, i) => [i, fl]).filter(([, fl]) =>
-      !q2 || (a.archive + " " + kinds[fl[2]] + " " + (fl[3] || "")).toLowerCase().includes(q2));
+      !q2 || (a.archive + " " + archName(a.archive) + " " + kinds[fl[2]] + " " + (fl[3] || "")).toLowerCase().includes(q2));
     det.querySelector(".char-body").innerHTML = `
       <table class="invtbl"><thead><tr><th style="width:8%">#</th><th style="width:14%">Kind</th>
         <th style="width:26%">What it is</th><th style="width:20%">ISO offset</th>
