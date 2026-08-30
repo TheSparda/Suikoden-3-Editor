@@ -1,7 +1,40 @@
 # Web editor tests
 
-Ten suites, all runnable with plain Node (v18+). `npm test` runs the nine browser-free
-ones; `npm run test:e2e` runs the Playwright suite:
+Eleven suites, all runnable with plain Node (v18+). `npm test` runs the nine browser-free
+ones; `npm run test:e2e` runs the Playwright suite; `version-drift.mjs` is a pre-push check
+run on its own (see below):
+
+## `version-drift.mjs` — pre-push, catches the collision git can't
+
+Not part of `npm test` (it compares against your last-fetched `origin/main`, so it is a
+pre-push check, not a CI one). Run `git fetch` first, then:
+
+```bash
+node web/tests/version-drift.mjs
+```
+
+It checks **`HEAD` — the commit you would push — not the working tree**, and in this repo that
+distinction is load-bearing. Several sessions share one checkout and commit from an explicit
+file list, so the tree is *not* what gets pushed. Reading the checkout would both count a peer's
+in-flight edits as yours and miss a stale version line that is genuinely committed. When there
+are uncommitted `web/` files it says so, rather than quietly ignoring them. `--branch <ref>`
+checks another ref; `--worktree` checks the checkout, which is the right mode in an ordinary
+single-user repo.
+
+**Why it exists.** Two branches that both bump `web/index.html` and `web/sw.js` to the *same*
+number rebase with **no conflict at all** — git sees identical content on both sides, so there
+is nothing to flag. The loser's branch ends up byte-identical to main on both lines, its feature
+merges, and the only symptom is that everyone still holding the old service-worker cache never
+receives it. "Rebased clean" is the signal you would normally trust, which is exactly what makes
+this failure mode nasty: the usual alarm cannot fire, and it silently hurts the users least
+likely to complain.
+
+So the assertion is **inverted** from the usual — an *identical* version line is the failure,
+and only when `web/` has otherwise changed. It also rejects a half-bump (app version moved but
+sw cache didn't, or vice versa). Self-skips when there is no git or no `origin/main`.
+
+Real incident, 2026-08-30: two sessions both took v1.45.0 / `s3editor-v65`. The rebase reported
+success and zero conflicts.
 
 ## `validate.mjs` — fast, no browser (runs in CI + on session start)
 Checks the client JS parses, every ISO table offset stays inside the read block, the

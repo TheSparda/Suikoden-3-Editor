@@ -11,6 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -420,6 +421,103 @@ head("Armor sets view — decode, edit, byte-exact save");
   check("counter site B = slti 50", r.u32(SETS.counterSites[1]) === 0x28420032);
   check("heal bias = addiu +1", r.u32(SETS.healBias) === 0x26220001);
   check("heal shift = sra 1", r.u32(SETS.healShift) === 0x00021043);
+  await page.context().close();
+}
+
+head("Mounts view — rewrite the battle rider/mount pairs");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
+  check("all 3 pair cards render", (await page.$$("#mountCards details.char")).length === 3);
+  // the feature ships flagged: the beta banner must survive refactors
+  { const txt = await page.textContent("#isoView");
+    check("tab is flagged BETA / testing only", /BETA/.test(txt) && /not yet confirmed in-game/i.test(txt)); }
+  // stock decode: Hugo(1)+Fubar(8), Futch(31)+Bright(32), Franz(41)+Ruby(42)
+  check("pair 1 rider decodes to Hugo", (await page.inputValue('select.mnt-rider[data-i="0"]')) === "1");
+  check("pair 1 mount decodes to Fubar", (await page.inputValue('select.mnt-mount[data-i="0"]')) === "8");
+  check("pair 2 rider decodes to Futch", (await page.inputValue('select.mnt-rider[data-i="1"]')) === "31");
+  check("pair 3 mount decodes to Ruby", (await page.inputValue('select.mnt-mount[data-i="2"]')) === "42");
+  // Geddoe must not be offered — his model has no 3xx mounted animation bank
+  check("Geddoe is not a rider option", (await page.textContent("#mountCards")).includes("Geddoe") === false);
+  // repair: Chris rides Bright, and give Hugo a second mount via pair 3
+  await page.selectOption('select.mnt-rider[data-i="0"]', "2");     // Chris
+  await page.selectOption('select.mnt-mount[data-i="0"]', "32");    // Bright
+  await page.selectOption('select.mnt-rider[data-i="2"]', "1");     // Hugo
+  await page.selectOption('select.mnt-mount[data-i="2"]', "42");    // Ruby (unchanged)
+  const r = await save(page);
+  check("pair 1 rider = addiu 2 (Chris)", r.u32(MOUNT_PAIRS[0].riderSites[0]) === mountWord(2));
+  check("pair 1 mount = addiu 32 (Bright)", r.u32(MOUNT_PAIRS[0].mountSite) === mountWord(32));
+  // the delay-slot duplicate is the whole point: BOTH rider sites must move together
+  check("pair 3 rider site A = addiu 1 (Hugo)", r.u32(MOUNT_PAIRS[2].riderSites[0]) === mountWord(1));
+  check("pair 3 rider delay-slot copy also = addiu 1", r.u32(MOUNT_PAIRS[2].riderSites[1]) === mountWord(1));
+  check("untouched pair 2 keeps both rider sites at 31",
+    r.u32(MOUNT_PAIRS[1].riderSites[0]) === mountWord(31) && r.u32(MOUNT_PAIRS[1].riderSites[1]) === mountWord(31));
+  await page.context().close();
+}
+
+head("Mounted-pair mechanics — HP pooling and the Adrenaline pair-sum");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("select.mnt-mech", { timeout: 3000 });
+  const mech = (off) => `select.mnt-mech[data-off="${off}"]`;
+  const round = (off) => `input.mnt-round[data-off="${off}"]`;
+  check("HP pooling decodes to stock", (await page.inputValue(mech(MECH.pool.off))) === String(MECH.pool.stock));
+  check("Adrenaline pair-sum decodes to stock", (await page.inputValue(mech(MECH.adren.off))) === String(MECH.adren.stock));
+  check("rider rounding decodes to 1", (await page.inputValue(round(MECH.roundRider.off))) === "1");
+  // the tab must say the weighting itself lives in the Growth tab, since it isn't a constant
+  check("it points at Growth for the weighting", /Growth/.test(await page.textContent("#isoView")));
+  await page.selectOption(mech(MECH.pool.off), String(MECH.pool.alt));
+  await page.selectOption(mech(MECH.adren.off), String(MECH.adren.alt));
+  await page.fill(round(MECH.roundRider.off), "0"); await page.dispatchEvent(round(MECH.roundRider.off), "change");
+  const r = await save(page);
+  check("pooling gate became an unconditional branch", (r.u32(MECH.pool.off) >>> 0) === MECH.pool.alt);
+  check("...and kept its branch offset", (r.u32(MECH.pool.off) & 0xFFFF) === (MECH.pool.stock & 0xFFFF));
+  check("Adrenaline pair-sum became a nop", (r.u32(MECH.adren.off) >>> 0) === 0);
+  check("rider rounding is now 0", (r.u32(MECH.roundRider.off) & 0xFFFF) === 0);
+  check("...with the opcode half untouched",
+    (r.u32(MECH.roundRider.off) >>> 0 & 0xFFFF0000) === (MECH.roundRider.stock & 0xFFFF0000));
+  check("untouched mount rounding still 1", (r.u32(MECH.roundMount.off) & 0xFFFF) === 1);
+  await page.context().close();
+}
+
+head("Reference — Mounts browser, read-only");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.click('[data-ref="mountref"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("Geddoe is listed as field-yes / battle-no", /Geddoe[\s\S]{0,120}970/.test(txt));
+  check("the passive horses are described", /b_N_damage/.test(txt));
+  check("it lists what can't be exposed", /can't be exposed as fields/.test(txt));
+  check("it states residency isn't proof", /asset\s*\n?\s*residency/.test(txt.replace(/\s+/g, " ")) || /residency/.test(txt));
+  check("it says nothing is emulator-confirmed", /confirmed in an emulator/.test(txt));
+  check("the browser stages nothing", (await page.$$("#isoView input, #isoView select")).length === 0);
+  await page.context().close();
+}
+
+head("Assigned horse — the per-character list2 field, field + battle");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("select.mnt-horse", { timeout: 3000 });
+  const sel = (roster) => `select.mnt-horse[data-off="${horseAddr(roster)}"]`;
+  // stock decode: Chris on her own horse, Borus on the knight horse, Hugo on nothing
+  check("Chris decodes to her own horse (309)", (await page.inputValue(sel(2))) === "309");
+  check("Borus decodes to the Zexen-knight horse (308)", (await page.inputValue(sel(20))) === "308");
+  check("Hugo decodes to none", (await page.inputValue(sel(1))) === "0");
+  // Geddoe must be offered HERE even though the pair table above excludes him — he has the
+  // field bank but no battle one, which is exactly the distinction this section exists to make
+  check("Geddoe is offered an assigned horse", (await page.$(sel(3))) !== null);
+  check("Geddoe is labelled field-only", /Geddoe[\s\S]{0,80}field/.test(await page.textContent("#isoView")));
+  // only 308/309 are honoured by the game, so only those may be offered
+  const optVals = await page.$$eval(sel(1), (els) => Array.from(els[0].options).map((o) => o.value));
+  check("only none/308/309 are offered", JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]),
+    optVals.join(","));
+  await page.selectOption(sel(1), "308");     // give Hugo a knight horse
+  await page.selectOption(sel(2), "0");       // take Chris's away
+  const r = await save(page);
+  check("Hugo's record now names the knight horse", r.u16(horseAddr(1)) === 308);
+  check("Chris's record is cleared", r.u16(horseAddr(2)) === 0);
+  check("untouched Borus still 308", r.u16(horseAddr(20)) === HORSE_STOCK[20]);
   await page.context().close();
 }
 
