@@ -299,6 +299,25 @@ console.log("Guide overlays + xdelta:");
       "war spot-check: shared ETC pack has the 12-tier ZxnInf table");
     (/s3_war_units\.json/.test(iso) && /S3_TEST_WAR_UNITS/.test(iso) && /function drawWar/.test(iso) &&
       /\["war", "War"\]/.test(iso) ? ok : bad)("iso.js loads war units and renders the War tab");
+    // Room index (per-area encounter rates). Same rules as the enemy index: every offset
+    // must be on-disc and OUT of the ELF block, or the editor's in-block buffer would
+    // double-edit it. Offsets must also be unique — two rows writing one byte desync.
+    const rm = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_rooms.json"), "utf8"));
+    const rooms = rm.areas.flatMap((a) => a.tables.flatMap((t) => t.rooms));
+    (rm.format === "s3rooms" && rm.areas.length >= 20 && rooms.length >= 1500 ? ok : bad)(
+      `s3_rooms.json parses (${rm.areas.length} areas, ${rooms.length} rooms)`);
+    { const offs = rooms.flatMap((r) => [r.rateOff, r.graceOff]);
+      const outOfBlock = offs.every((o) => o >= ELF_HI && o + 2 <= ISO_MAX);
+      (outOfBlock && new Set(offs).size === offs.length ? ok : bad)(
+        `all ${offs.length} room offsets out-of-block, on-disc and unique`);
+      const areas = rm.areas.map((a) => a.area);
+      (new Set(areas).size === areas.length ? ok : bad)("every archive has a distinct area id");
+      const mori = rm.areas.find((a) => a.archive === "MORI");
+      (mori && mori.area === 0x0d && mori.tables[0].rooms.length === 6 &&
+        mori.tables[0].rooms.every((r) => r.rate === 4) ? ok : bad)(
+        "room spot-check: MORI = area 0x0D, 6 rooms, all rate 4");
+      const rates = [...new Set(rooms.map((r) => r.rate))].sort((a, b) => a - b);
+      (rates.every((r) => r >= 0 && r <= 9) ? ok : bad)(`room rates stay in 0..9 (${rates})`); }
     const wr = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_war_ref.json"), "utf8"));
     (wr.army && wr.support && wr.skills && Object.keys(wr.army).length >= 40 ? ok : bad)(
       `s3_war_ref.json parses (${Object.keys(wr.army).length} army units, ${Object.keys(wr.support).length} support)`);

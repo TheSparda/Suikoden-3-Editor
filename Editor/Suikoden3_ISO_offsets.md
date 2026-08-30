@@ -1666,7 +1666,11 @@ when the corresponding offset is broken.
 
 ---
 
-## Per-area encounter rates — room record fully decoded, table NOT located (2026-08-29)
+## Per-area encounter rates — room record decoded (2026-08-29)
+
+> **RESOLVED the same day — see the section that follows.** The table WAS located, via
+> FSECT.BIN rather than a savestate. This section is kept because its decode of the record
+> is what made the find possible, and because the two scans it records still do not work.
 
 Spike against the standing gap in the Encounter tab: the rate is a global multiplier
 because each zone's own `area_rate` lives in a "room record" in the map archives, not in
@@ -1767,3 +1771,79 @@ fingerprint here: a rate is a small number with no redundant partner to check it
 disassembling the walker that consumes it (callers of 0x171F500/0x171F520 and the vtables
 at 0x197AE28…0x197AE58), then use the directory to enumerate and extract sub-files by
 sector/size and look for the town-data one directly. Larger, but fully autonomous.
+
+
+---
+
+## FSECT.BIN CRACKED → per-area encounter rates FOUND (2026-08-29)
+
+The section above concluded that finding the room table needed a PCSX2 savestate. It did
+not. The way in was the file the 2026-08-09 note had written off as a relocation table.
+
+**1. FSECT.BIN is the archive directory.** Its entries decode exactly as the ELF accessors
+say (`sect = w & 0xFFFFF`, `size = w >> 20`, both in 2048-byte sectors) — the catch is that
+**the sectors are relative to the containing archive**, which is why they looked like EE
+addresses: `0x0157xxxx` read as a pointer is really sector `0x73518` with size `0x15`. The
+test that settles it is that a directory's entries **tile its archive exactly**: 23.8% of
+all consecutive pairs in the file satisfy `sect[i] + size[i] == sect[i+1]`, and those pairs
+form runs that each end precisely on one archive's own sector count.
+
+| Run | Entries | Ends at sector | Archive |
+|---|---|---|---|
+| word 19983 | 1001 | 316,822 | HNKT.BIN (648,851,456 B) |
+| word 19289 | 475 | 151,234 | ZKTR.BIN |
+| word 17944 | 315 | 99,220 | VDZK.BIN |
+| … | … | … | … |
+
+**28 of the 29 archives resolve, with no unmatched runs at all** (ETC.BIN is absent, as
+expected — it carries its own count+12-byte-entry TOC). So the whole disc's sub-file layout
+is now enumerable: every archive's sub-files, by offset and size.
+
+**2. The room table is the head of an archive's town-data sub-file.** With sub-file
+boundaries in hand the search space collapses from 3.5 GB to ~100 candidates per archive,
+and the table falls straight out: a short header (8, 0x10, 0x18, 0x44 or 0x224 bytes,
+depending on the archive) followed by N × 0x3C room records. `MORI` sub-file 0 is the
+canonical example — six records, then float soup:
+
+```
+ idx  rank grace RATE  BgData
+ [ 0]    5     6    4   0x010D      BgData = (room number << 8) | area id
+ [ 1]    5     6    4   0x020D      so this is area 0x0D, rooms 1..6
+ [ 2]    5     6    4   0x030D
+ ...
+ [ 5]    5     6    4   0x060D
+ [ 6]  junk — 0x43xxxxxx floats, the next structure
+```
+
+The area id is the discriminator that makes this safe: a run is accepted only while the low
+byte of `+0x08` stays constant and the high byte counts up by one, and the whole archive
+must then agree on one area id.
+
+**Cross-checks, all independent of each other:**
+
+- Every archive gets a **distinct** area id, and they run 0x01…0x19 with gaps exactly where
+  an archive has no table.
+- The zone ids the *enemy* index found land in the matching archive every time — `mori_*` in
+  the MORI table's archive, `icew_*` in ICEW's, `last_*` in LAST's, and so on.
+- The rates are per-room and behave like the game does: town and interior rooms read **0**,
+  field and dungeon rooms read 2–9. KSKR rooms 1 and 6 are 0 while 2–5 are 9; ICEW's 14
+  rooms alternate 0 and 4 exactly where you would expect a town-then-field layout.
+- Every one of the 3,224 emitted offsets is on-disc, **outside** the ELF block (so the ISO
+  editor's in-block buffer cannot double-edit it), unique, and re-reads the value the index
+  stores for it.
+- Unlike the enemy packs there are **no streaming duplicates**: a table's byte signature
+  occurs exactly once in its archive, so a write has one target, not three.
+
+**Index:** `Editor/build_room_index.py <pristine ISO>` → `Editor/s3_rooms.json` —
+**23 areas, 133 tables, 1,612 room records**. The 133 tables are chapter variants (they
+differ in `mPartyRank`, and sometimes in the rates too: KSKR's later variants zero every
+room, ICEW's second variant deactivates half of them), so an editor should treat a variant
+as its own row rather than assume they agree. Five small archives (CVIS, GDOP, HGB2, LKOE,
+SKBN) have no table and are reported as such rather than guessed at.
+
+The disc's whole vocabulary of base rates is **0, 2, 3, 4, 5, 6, 9**.
+
+**Still open:** the other 15 fields of the room record (the three floats at +0x10/+0x14/+0x18,
+the pointer at +0x0C, the +0x28…+0x38 words) are located but not interpreted; nothing needs
+them yet. `mPartyRank` at +0x00 is very likely the enemy-difficulty tier the area uses per
+chapter — worth confirming against the enemy index's chapter variants before exposing it.
