@@ -58,6 +58,14 @@ export const ENC_STOCK = [0x0220A82D, 0x10000012, 0x24020096, 0x24020078];
 // Wind its "damage foes, heal allies" behaviour. Spell ids here are 1-based (row + 1).
 export const SPLIT = { route: 0x25A8A4, amtSel: 0xE1C9C, amt: 0xE1C90 };
 export const SPLIT_STOCK = [0x24020011, 0x3AC30011, 0x2412012C];   // spell 17, spell 17, 300 HP
+// IsValidRidePair's three (rider, mount) comparisons — each an `addiu $v0,$zero,imm`.
+// Riders #2 and #3 are duplicated into a branch delay slot, hence two sites each.
+export const MOUNT_PAIRS = [
+  { riderSites: [0x130384], mountSite: 0x130390, rider: 1, mount: 8 },    // Hugo  + Fubar
+  { riderSites: [0x13038C, 0x130398], mountSite: 0x1303A4, rider: 31, mount: 32 },  // Futch + Bright
+  { riderSites: [0x1303A0, 0x1303AC], mountSite: 0x1303B4, rider: 41, mount: 42 },  // Franz + Ruby
+];
+export const mountWord = (imm) => (0x24020000 | (imm & 0xFFFF)) >>> 0;   // addiu $v0,$zero,imm
 export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
 export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
 export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
@@ -218,6 +226,10 @@ export function buildSynthIso() {
   SETS.counterOwnerSites.forEach((o) => w32(o, STOCK_OWNER_COUNTER));
   w32(SETS.healOwnerSite, STOCK_OWNER_HEAL); w32(SETS.squeakOwnerSite, STOCK_OWNER_SQUEAK);
   w32(SETS.halveMaskSite, STOCK_HALVE_MASK); w32(SETS.healDivRepair, STOCK_HEAL_DIV_SLOT);
+  MOUNT_PAIRS.forEach((p) => {
+    p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
+    w32(p.mountSite, mountWord(p.mount));
+  });
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
