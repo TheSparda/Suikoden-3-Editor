@@ -2013,3 +2013,27 @@ The box object is the anchor and it is one step away: `0x17B4FF0` is called only
 signature, and every chest becomes addressable by construction rather than by fingerprint.
 That is the next session's first move, and it is a bounded one — a single call chain, with the
 layout already proved so the result is immediately checkable.
+
+**Follow-up: the box-object signature does NOT enumerate chests either (2026-08-30).**
+`0x17B4FF0`'s only caller is the dispatcher `0x17B4AA8`, which switches on `*(u8)(box+1)`
+(type 0/1/2 → `0x17B4C70` / `0x17B4D08` / `0x17B4FF0`), and the outer frame rolls
+`*(u16)(box+6)` against `rand(100)`. So the object is at least
+`{u8 index<0x28, u8 type<3, .., u16 chance<=100 @+6, u32 entries @+8}` — four constrained
+fields plus a pointer that must land on a valid entry run. That was tried as a scan and it
+still does not separate chests from anything else: it fires in archives with **no `takara`
+object at all** (HNKT, VDZK, ZKTR produce dozens), it returns adjacent 4-byte-apart duplicates
+pointing at the same target, and its best-looking hits include 40-entry runs in item-id order
+that are plainly the item table or a shop list, not a chest.
+
+The reason is structural: box objects are **not in a flat array**. They are reached through
+the scene graph the script builds, so there is no self-validating on-disc signature to anchor
+on — which is exactly the property that made the enemy records (redundant hp==maxhp plus a
+bestiary level) and the room table (area id plus a counting room number) findable. A chest's
+entry has no redundant field; every constraint is independently satisfiable by ordinary data.
+
+So: **the layout is proved and reading works, but enumeration from the disc alone has now
+failed twice on the same rock.** The remaining route is the one artifact that converts the
+search into a lookup — a PCSX2 savestate taken with a chest open. EE RAM then holds the live
+248×12 item-point table at 0x196C420 and the box object itself, and its bytes can be searched
+straight back into the town sub-file. Until someone produces that, no chest editor should
+ship; reading contents by hand through the Files view's Peek is what is honestly available.
