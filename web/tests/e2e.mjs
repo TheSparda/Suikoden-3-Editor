@@ -989,6 +989,70 @@ head("Reference — pickup locations, disc census vs guide chests");
   await page.context().close();
 }
 
+head("Reference — rune lookup: families, granted spells, who has it");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="runes"]', { timeout: 3000 });
+  await page.click('[data-ref="runes"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  const all = +(await page.textContent('[data-rgrp=""]')).replace(/\D+/g, "");
+  check("every rune in the game is listed", all === 72, `All (${all})`);
+  const groups = await page.$$eval("[data-rgrp]", (es) => es.map((e) => e.textContent.trim()));
+  check("the three rune families each have a chip", /Magic \(22\)/.test(groups.join(" "))
+    && /Special attack \(27\)/.test(groups.join(" ")) && /Support \(23\)/.test(groups.join(" ")), groups.join(" | "));
+  // a magic rune names the spells it grants; the browser is where you look that up
+  await page.fill("#isoSearch", "true fire"); await page.waitForTimeout(150);
+  const tf = await page.textContent("#isoView");
+  check("a magic rune lists the spells it grants", /Hellfire/.test(tf) && /Blazing Wall/.test(tf), tf.slice(0, 200));
+  // the filter reaches past the name into owners, spells and drop sources
+  await page.fill("#isoSearch", "sasarai"); await page.waitForTimeout(150);
+  check("filtering finds a rune by who carries it", /True Earth/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", "hellfire"); await page.waitForTimeout(150);
+  check("filtering finds a rune by a spell it grants", /True Fire/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  // the family chips actually narrow the table, and the support runes are reachable in one click
+  await page.click('[data-rgrp="support"]'); await page.waitForTimeout(150);
+  const sup = await page.textContent("#isoView");
+  check("the Support family shows the passive runes", /Fortune/.test(sup) && /Fury/.test(sup));
+  check("the Support family excludes the magic runes", !/>True Fire</.test(await page.innerHTML("#isoView")));
+  await page.click('[data-rgrp=""]'); await page.waitForTimeout(150);
+  const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
+  check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the rune browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
+head("Reference — skill lookup: types, per-rank effects, who can learn it");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="skills"]', { timeout: 3000 });
+  await page.click('[data-ref="skills"]');
+  await page.waitForSelector("details.char", { timeout: 3000 });
+  const types = (await page.$$eval("[data-styp]", (es) => es.map((e) => e.textContent.trim()))).join(" | ");
+  check("the support skills have their own chip", /Utility \(support\) \(11\)/.test(types), types);
+  // the whole point of the card: what a rank is worth, and who can reach it
+  await page.click('details[data-i="sk1"] summary'); await page.waitForTimeout(120);
+  const swing = await page.textContent('details[data-i="sk1"]');
+  check("a skill card shows its per-rank effect table", /Freeze Time/.test(swing) && /-100/.test(swing), swing.slice(0, 200));
+  check("a skill card names who can learn it and how far", /Who can learn it/.test(swing) && /characters, best/.test(swing));
+  // Utility skills have no per-character cap, and the card says so rather than showing a hole
+  await page.click('[data-styp="Utility"]'); await page.waitForTimeout(150);
+  const util = await page.textContent("#isoView");
+  check("the Utility chip narrows to the support skills", /Cook/.test(util) && /Appraisal/.test(util) && !/Sharpshoot/.test(util));
+  await page.click('details[data-i="sk31"] summary'); await page.waitForTimeout(120);
+  check("a support skill explains why it has no cap",
+    /aren't capped per character/.test(await page.textContent('details[data-i="sk31"]')));
+  await page.click('[data-styp=""]'); await page.waitForTimeout(150);
+  // filtering reaches the description, not just the name
+  await page.fill("#isoSearch", "counter attack"); await page.waitForTimeout(200);
+  check("filtering opens the matching card", /Parry\/Shield Counter/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the skill browser", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
 head("Gear description overflow is rejected");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
