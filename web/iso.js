@@ -26,8 +26,19 @@
 
   const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
   const LIST_COUNT = { list1: 80, list2: 80, list3: 35, list4: 28 };
-  // Fixed shop/price tables: name -> [offset, count, width]
-  const SHOP = { item3_a: [4105552, 10, 2], item3_b: [4054224, 16, 2], item2: [3970620, 15, 4], item1: [4136564, 3, 4] };
+  // Shop counters. What earlier versions exposed as two unlabelled slot lists ("item3_a",
+  // "item3_b") turned out to be record 0 of two of these arrays — Vinay del Zexay's item and
+  // armour counters at their first story stage. Geometry is proved from the disc's accessors;
+  // see the drawShops comment and Editor/build_shop_index.py.
+  const SHOPS = {
+    stride: 0x7C, varStride: 0x1F0, stock: 30, rarOff: 0x3C, rarStride: 0x10, rarCount: 4,
+    locs: 14, stages: 4,
+    kinds: [{ k: 1, name: "Item Shop", base: 0x3EA550 },
+            { k: 2, name: "Armor Shop", base: 0x3DDCD0 },
+            { k: 3, name: "Rune Shop", base: 0x3EEB48 }],
+  };
+  const PRICE_LADDER = [3970620, 15, 4];    // 15 x u32 potch — a shared price scale
+  const ITEM1 = [4136564, 3, 4];            // 3 x u32, meaning not identified
   // Each record's LAST 8 bytes are stored one record AHEAD of the name/desc/power they belong
   // to, so a spell reads every tail field at (own base + stride + x). Element was already known
   // to sit there; two more tail fields are now pinned, each against both tables at once:
@@ -360,7 +371,7 @@
   const EREG = {};    // enemy-field review registry: key -> {group,label,offs,w,fmt}
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
   let ORIG = null, ODV = null;              // pristine snapshot for diffing/undo
-  let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...} }
+  let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...}, shops:{...} }
   let VIEW = "chars", SEARCH = "";
   let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
   let gearCache = null;                     // {itemId: absStatsOffset}
@@ -500,6 +511,7 @@
     const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
     const uniteChars = await grabOpt("../Editor/s3_unite_chars.json");  // who is in each unite
     const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
+    const shops = await grabOpt("../Editor/s3_shops.json");        // shop counter map + town names
     const runeFood = await grabOpt("../Editor/s3_rune_food_desc.json");    // rune/food menu text + spell lists
     const runeOwner = await grabOpt("../Editor/s3_rune_owner.json");       // whose rune each signature rune is
     const items = {}, cats = {};
@@ -515,7 +527,8 @@
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
-            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources, runeFood, runeOwner };
+            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources,
+            runeFood, runeOwner, shops };
     return REF;
   }
 
@@ -1332,7 +1345,7 @@
       growth: "Per-character stat-growth rates, rune levels, fixed skills, and starting level (list 2).",
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
-      shops: "Shop item slots (pick an item), the price ladder, and the item1 group. Prices are potch.",
+      shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
@@ -1716,43 +1729,176 @@
   }
 
   // ---- shops -----------------------------------------------------------------
+  // Three parallel counters (item / armour / rune), each 14 locations x 4 story stages of a
+  // 0x7C record. Address arithmetic straight out of the disc's own accessor at VA 0x170DDF8:
+  //     rec(kind, loc, stage) = base[kind] + loc*0x1F0 + stage*0x7C      (0x1F0 == 4 * 0x7C)
+  // A record is 30 zero-terminated u16 stock slots at +0x00 (the enumerator at 0x176C948 caps
+  // its scan at 30, which is exactly the 60 bytes before the rarity block), then four 16-byte
+  // "rarity" / rare-find entries at +0x3C (accessor 0x170DFB0: `if (n >= 4) return 0;
+  // return rec + (n << 4) + 0x3C`). Town names come from Editor/s3_shops.json — see
+  // Editor/build_shop_index.py for how each one is pinned to a guide-attested rarity item.
+  //
+  // The rarity roll itself is decoded from 0x170E63C, which is what makes three of the entry's
+  // fields editable here rather than raw bytes:
+  //     if (item == 0) return 0;                                  // empty slot
+  //     qty = max(0, base + (int)(spread * (rand(100) - 50) / 100));
+  //     return chance < rand(100) ? 0 : qty;                      // <- appearance test
+  // with chance = u8 @+0x0A, base = u8 @+0x0B, spread = u8 @+0x0C. The u16s at +0x02..+0x08
+  // feed a separate price computation and are left alone.
+  let SHOP_LOC = 0, SHOP_STAGE = 0, SHOP_EMPTY = false;
+
+  function shopRec(kind, loc, stage) {
+    const k = SHOPS.kinds.find((x) => x.k === kind);
+    return k.base + loc * SHOPS.varStride + stage * SHOPS.stride;
+  }
+  // Which stages of a counter carry anything (a stock head or a rarity item).
+  function shopStages(kind, loc) {
+    let n = 0;
+    for (let v = 0; v < SHOPS.stages; v++) {
+      const rec = shopRec(kind, loc, v);
+      if (readW(rec, 2) || readW(rec + SHOPS.rarOff, 2)) n = v + 1;
+    }
+    return n;
+  }
+  const shopLocName = (loc) => {
+    const m = (REF.shops && REF.shops.locationNames && REF.shops.locationNames[loc]) || null;
+    return m ? m.name : `Location ${loc} (unidentified)`;
+  };
+  // Buy price, when the item has a gear record. Consumables have none, so they show "—".
+  function shopPrice(id) {
+    const g = id && scanGear()[id];
+    return g ? readW(g + GEAR.price, 4) : null;
+  }
+
   function drawShops(host) {
-    const itemBlk = (title, key) => {
-      const [off, cnt, w] = SHOP[key];
-      let rows = "";
-      for (let i = 0; i < cnt; i++) {
-        const o = off + i * w, v = readW(o, w), dirty = isDirty(o, w) ? " dirty" : "";
-        rows += `<tr><td class="sl">${i}</td><td>
-          <button type="button" class="picker shopitem${dirty}" data-off="${o}" data-w="${w}">${esc2(itemLabel(v))}</button></td></tr>`;
+    // locations with at least one stocked counter, so the picker never offers a dead entry
+    const locs = [];
+    for (let l = 0; l < SHOPS.locs; l++) {
+      const kinds = SHOPS.kinds.filter((k) => shopStages(k.k, l) > 0);
+      if (kinds.length) locs.push({ loc: l, kinds });
+    }
+    if (!locs.some((x) => x.loc === SHOP_LOC)) SHOP_LOC = locs.length ? locs[0].loc : 0;
+    const here = locs.find((x) => x.loc === SHOP_LOC) || { loc: SHOP_LOC, kinds: [] };
+    const maxStage = Math.max(1, ...here.kinds.map((k) => shopStages(k.k, SHOP_LOC)));
+    if (SHOP_STAGE >= maxStage) SHOP_STAGE = 0;
+
+    const meta = (REF.shops && REF.shops.locationNames && REF.shops.locationNames[SHOP_LOC]) || null;
+    const locOpts = locs.map((x) => `<option value="${x.loc}"${x.loc === SHOP_LOC ? " selected" : ""}>${esc2(shopLocName(x.loc))} — ${x.kinds.map((k) => k.name.replace(" Shop", "")).join("/")}</option>`).join("");
+    const stageOpts = Array.from({ length: maxStage }, (_, i) =>
+      `<option value="${i}"${i === SHOP_STAGE ? " selected" : ""}>Stage ${i + 1} of ${maxStage}</option>`).join("");
+
+    let h = `<div class="card" style="margin-bottom:10px">
+      <div style="display:grid;gap:8px;justify-items:start">
+        <label style="display:block;width:100%;max-width:26em">Location
+          <select id="shopLoc" style="display:block;width:100%">${locOpts}</select></label>
+        <label style="display:block;width:100%;max-width:26em">Story stage
+          <select id="shopStage" style="display:block;width:100%">${stageOpts}</select></label>
+        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="shopEmpty"${SHOP_EMPTY ? " checked" : ""}> <span>show empty slots</span></label>
+      </div>
+      <div class="muted" style="margin-top:6px">Each counter keeps four inventories and the game
+        swaps between them as the story advances, so stage 1 is the earliest stock and the last
+        stage the richest. The stock list ends at the first empty slot — anything after a gap is
+        invisible in-game.</div>
+      ${meta ? `<div class="muted" style="margin-top:4px"><b>${esc2(meta.name)}</b> — ${esc2(meta.evidence)}</div>`
+             : `<div class="muted" style="margin-top:4px">This counter's rarities are all generic
+                consumables, so no town could be pinned to it. It is left unnamed rather than guessed.</div>`}
+    </div>`;
+
+    for (const k of here.kinds) {
+      const stages = shopStages(k.k, SHOP_LOC);
+      if (SHOP_STAGE >= stages) {
+        h += `<div class="bag"><div class="bag-h">${k.name} — ${esc2(shopLocName(SHOP_LOC))}
+          <span class="u">not open at this stage (only ${stages} of ${SHOPS.stages})</span></div></div>`;
+        continue;
       }
-      return `<div class="bag"><div class="bag-h">${title}</div>
-        <table class="invtbl"><thead><tr><th>Slot</th><th>Item</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    };
-    const numBlk = (title, key, note) => {
-      const [off, cnt, w] = SHOP[key];
+      const rec = shopRec(k.k, SHOP_LOC, SHOP_STAGE);
+      // find the last used slot so we can hide the empty tail unless asked
+      let last = -1, gap = false;
+      for (let i = 0; i < SHOPS.stock; i++) if (readW(rec + i * 2, 2)) last = i;
+      for (let i = 0; i < last; i++) if (!readW(rec + i * 2, 2)) gap = true;
+      const show = SHOP_EMPTY ? SHOPS.stock : Math.min(SHOPS.stock, last + 2);
+
+      let rows = "";
+      for (let i = 0; i < show; i++) {
+        const o = rec + i * 2, v = readW(o, 2), pr = shopPrice(v);
+        const cut = !v && i <= last ? ` <span class="shop-gap">gap — hides the rest</span>` : "";
+        rows += `<tr><td class="sl">${i + 1}</td><td>
+          <button type="button" class="picker shopitem" data-off="${o}" data-kind="${k.k}"${v && itemDesc(v) ? ` title="${esc2(itemDesc(v))}"` : ""}>${esc2(itemLabel(v))}</button>${cut}</td>
+          <td class="num">${pr == null ? "—" : pr.toLocaleString() + " potch"}</td></tr>`;
+      }
+      let rar = "";
+      for (let n = 0; n < SHOPS.rarCount; n++) {
+        const ro = rec + SHOPS.rarOff + n * SHOPS.rarStride, v = readW(ro, 2);
+        const num = (o, cls, max, tip) =>
+          `<input type="number" class="${cls}" min="0" max="${max}" title="${esc2(tip)}" data-off="${o}" value="${readW(o, 1)}">`;
+        rar += `<tr><td class="sl">${n + 1}</td><td>
+          <button type="button" class="picker shoprare" data-off="${ro}" data-kind="${k.k}"${v && itemDesc(v) ? ` title="${esc2(itemDesc(v))}"` : ""}>${esc2(itemLabel(v))}</button></td>
+          <td class="num rar"><div class="rar-n">${num(ro + 0x0A, "shopchance", 100, "Appearance chance out of 100 — the item is absent this visit when the roll beats it")}
+            ${num(ro + 0x0B, "shopqty", 255, "How many are in stock when it does appear")}
+            ${num(ro + 0x0C, "shopspread", 255, "Random swing on that quantity: base ± spread/2")}</div></td></tr>`;
+      }
+      h += `<div class="bag"><div class="bag-h">${k.name} — ${esc2(shopLocName(SHOP_LOC))}
+          <span class="u">stage ${SHOP_STAGE + 1} of ${stages} · record @0x${hex(rec, 6)}</span></div>
+        ${gap ? `<div class="muted" style="color:var(--warn);margin:4px 0">This list has an empty slot before its last item — the game stops reading there, so the items past the gap never appear.</div>` : ""}
+        <table class="invtbl fixed"><thead><tr><th>Slot</th><th>Item on sale</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="bag-h" style="margin-top:8px">Rarity <span class="u">rare finds — each is rolled on entry: it appears if a 1-in-100 draw comes in under its %, then stocks qty ± spread/2</span></div>
+        <table class="invtbl fixed"><thead><tr><th>#</th><th>Item</th><th class="num rar">% · qty · ±</th></tr></thead><tbody>${rar}</tbody></table>
+      </div>`;
+    }
+
+    const numBlk = (title, spec, note) => {
+      const [off, cnt, w] = spec;
       let rows = "";
       for (let i = 0; i < cnt; i++) {
-        const o = off + i * w, v = readW(o, w), dirty = isDirty(o, w) ? " dirty" : "";
+        const o = off + i * w, v = readW(o, w);
         rows += `<tr><td class="sl">${i}</td><td>
-          <input type="number" class="shopnum${dirty}" min="0" max="4294967295" style="width:140px" data-off="${o}" data-w="${w}" value="${v}"></td></tr>`;
+          <input type="number" class="shopnum" min="0" max="4294967295" style="width:140px" data-off="${o}" data-w="${w}" value="${v}"></td></tr>`;
       }
       return `<div class="bag"><div class="bag-h">${title} <span class="u">${note}</span></div>
         <table class="invtbl"><thead><tr><th>#</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     };
-    host.innerHTML = itemBlk("Shop items — slots 1–10 (item3_a)", "item3_a") +
-      itemBlk("Shop items — slots 21–36 (item3_b)", "item3_b") +
-      numBlk("Price ladder (item2)", "item2", "potch, u32") +
-      numBlk("item1 group", "item1", "u32");
-    qa("button.shopitem", host).forEach((btn) => {
-      const off = +btn.dataset.off, w = +btn.dataset.w;
+    // Neither of these belongs to a town — they are single global tables that would otherwise
+    // dominate the page under every counter, so they fold away.
+    h += `<details class="shop-extra"><summary>Shared tables — price ladder and the item1 group</summary>
+        ${numBlk("Price ladder", PRICE_LADDER, "15 potch steps, u32 — a shared price scale, not item ids")}
+        ${numBlk("item1 group", ITEM1, "3 x u32, meaning not yet identified")}</details>`;
+    host.innerHTML = h;
+
+    q("#shopLoc", host).onchange = (e) => { SHOP_LOC = +e.target.value; SHOP_STAGE = 0; drawView(); };
+    q("#shopStage", host).onchange = (e) => { SHOP_STAGE = +e.target.value; drawView(); };
+    q("#shopEmpty", host).onchange = (e) => { SHOP_EMPTY = e.target.checked; drawView(); };
+
+    const wireItem = (sel, what) => qa(sel, host).forEach((btn) => {
+      const off = +btn.dataset.off, kind = +btn.dataset.kind;
+      const group = `${shopLocName(SHOP_LOC)} ${SHOPS.kinds.find((x) => x.k === kind).name}`;
+      const label = `Stage ${SHOP_STAGE + 1} ${what}`;
       btn.onclick = () => {
-        openPicker("Choose item", itemOpts(""), readW(off, w), (id) => {
-          writeW(off, w, id); reg(off, w, "item", "Shops", `slot @0x${hex(off, 6)}`);
-          btn.textContent = itemLabel(id); markField(btn, off, w, "item");
-        });
+        const cur = readW(off, 2);
+        const opts = itemOpts(kind === 3 ? "Runes" : "");
+        if (cur && !opts.some((o) => o.id === cur)) opts.splice(1, 0, { id: cur, name: itemName(cur), desc: itemDesc(cur) });
+        openPicker(`${group} — ${label}`, opts, cur, (id) => {
+          writeW(off, 2, id); reg(off, 2, "item", group, label);
+          drawView();                                  // price / gap warning move with the pick
+        }, (id) => hex(id, 3));
       };
-      markField(btn, off, w, "item");
+      markField(btn, off, 2, "item");
     });
+    wireItem("button.shopitem", "stock slot");
+    wireItem("button.shoprare", "rarity");
+
+    for (const [sel, what, cap] of [["input.shopchance", "rarity chance %", 100],
+                                    ["input.shopqty", "rarity quantity", 255],
+                                    ["input.shopspread", "rarity spread", 255]]) {
+      qa(sel, host).forEach((inp) => {
+        const off = +inp.dataset.off, group = `${shopLocName(SHOP_LOC)} shops`;
+        inp.onchange = () => {
+          const v = Math.min(cap, Math.max(0, +inp.value || 0));
+          inp.value = v; writeW(off, 1, v);
+          reg(off, 1, "num", group, `Stage ${SHOP_STAGE + 1} ${what}`); markField(inp, off, 1, "num");
+        };
+        markField(inp, off, 1, "num");
+      });
+    }
     qa("input.shopnum", host).forEach((inp) => {
       const off = +inp.dataset.off, w = +inp.dataset.w;
       inp.onchange = () => { writeW(off, w, Math.max(0, +inp.value || 0)); reg(off, w, "num", "Shops", `value @0x${hex(off, 6)}`); markField(inp, off, w, "num"); };
