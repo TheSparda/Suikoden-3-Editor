@@ -933,6 +933,7 @@
     gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
+    autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
     renderEditor(file.size);
     q("#isoRoot").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -947,17 +948,52 @@
 
   // ---- remember last opened ISO (persist the file HANDLE; the 4 GB bytes are never stored) --
   function rememberIso(name, handle) { idbSet("lastIso", { name, handle, at: Date.now() }).catch(() => {}); }
+  // Auto-reopen fires at most once per page load, and never after an ISO has already been
+  // opened here — otherwise "Close" would bounce straight back into the disc you just closed.
+  let autoReopenDone = false;
+  const AUTO_KEY = "s3isoAutoReopen";
+  function autoReopenOn() { try { return localStorage.getItem(AUTO_KEY) !== "off"; } catch (e) { return true; } }
   async function showLastIso() {
     const el = q("#isoRecent"); if (!el) return;
     let rec; try { rec = await idbGet("lastIso"); } catch (e) { return; }
     if (!rec || !rec.handle) { el.innerHTML = ""; return; }
     el.innerHTML = `<div class="recent">Last opened:
         <button class="chip" id="isoReopen">↻ ${esc2(rec.name)}</button>
-        <button class="chip mini" id="isoForget" title="forget" aria-label="forget last ISO">✕</button></div>`;
+        <button class="chip mini" id="isoForget" title="forget" aria-label="forget last ISO">✕</button>
+        <label class="autochk" title="Reopen this ISO by itself whenever the ISO Editor opens">
+          <input type="checkbox" id="isoAuto"${autoReopenOn() ? " checked" : ""}> auto-reopen</label></div>`;
     q("#isoReopen", el).onclick = () => reopenLastIso(rec);
     q("#isoForget", el).onclick = async () => { await idbDel("lastIso").catch(() => {}); el.innerHTML = ""; };
+    q("#isoAuto", el).onchange = (e) => {
+      try { localStorage.setItem(AUTO_KEY, e.target.checked ? "on" : "off"); } catch (err) {}
+      if (e.target.checked && !autoReopenDone) autoReopen(rec);
+    };
+    if (autoReopenOn()) autoReopen(rec);
+  }
+  // Reopen the last disc with no click at all. The browser only lets us do that silently when
+  // it already holds readwrite permission for the handle (Chrome's "allow on every visit", or
+  // an installed PWA); otherwise a permission prompt needs user activation, which we still
+  // have if the user just clicked into the ISO Editor tab. Anything else falls back to the
+  // one-tap chip — never a dead end.
+  async function autoReopen(rec) {
+    if (autoReopenDone || BUF) return;
+    autoReopenDone = true;
+    let st;
+    try { st = await rec.handle.queryPermission({ mode: "readwrite" }); } catch (e) { return; }
+    if (st === "denied") return;
+    if (st !== "granted") {
+      const act = typeof navigator !== "undefined" && navigator.userActivation;
+      if (act && !act.isActive) return setStatus(`Tap ↻ ${rec.name} to reopen — this browser wants a click before it re-grants access to the file.`, "");
+      try { if ((await rec.handle.requestPermission({ mode: "readwrite" })) !== "granted") return; }
+      catch (e) { return; }
+    }
+    if (BUF) return;                       // a manual pick beat us to it
+    setStatus(`Reopening ${rec.name}…`, "");
+    try { await loadFromHandle(rec.handle); }
+    catch (e) { setStatus("Could not reopen the last ISO — it may have moved. Pick it again.", "warn"); }
   }
   async function reopenLastIso(rec) {
+    autoReopenDone = true;
     try {
       if (!(await ensureWritable(rec.handle))) return setStatus("Reopen cancelled — write permission denied.", "warn");
       await loadFromHandle(rec.handle);

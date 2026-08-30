@@ -253,6 +253,8 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .cf-g { font-family:var(--titlefont); color:var(--acc2); font-size:13px; margin-bottom:4px; }
 .cf-row { font-size:13px; color:var(--ink); padding:2px 0 2px 10px; border-left:2px solid var(--line); margin-bottom:2px; }
 .recent { margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--mut); font-size:13px; }
+.recent .autochk { display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none; }
+.recent .autochk input { margin:0; accent-color:var(--acc); }
 
 /* ===== small-screen / Android tuning (≤480px: most target devices) ===== */
 @media (max-width:480px) {
