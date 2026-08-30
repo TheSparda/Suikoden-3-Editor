@@ -2118,6 +2118,10 @@ after an ISO reload.
 
 ## The pickup ROLL, decoded — and why there is still nothing to edit (2026-08-30)
 
+> Tracked as **[issue #9](https://github.com/TheSparda/Suikoden-3-Editor/issues/9)**, which
+> carries the self-contained summary: every decoded structure, the six searches that don't
+> work, and the savestate procedure that would unblock it.
+
 Chased the "find what fills `box+8`" plan. The roll itself is now fully decompiled.
 
 **Box type dispatch** — `0x17B4AA8(box)` switches on `*(u8)(box+1)`:
