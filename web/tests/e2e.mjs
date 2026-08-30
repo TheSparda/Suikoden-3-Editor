@@ -146,6 +146,13 @@ async function openRec(page, detailsSel) {
   if ((await loc.getAttribute("open")) === null) await loc.locator("summary").click();
   await page.waitForTimeout(50);
 }
+// Same, for the Spells tab's collapsible tool cards (they ship collapsed).
+async function openFold(page, sel) {
+  await page.waitForSelector(sel);
+  const loc = page.locator(sel);
+  if ((await loc.getAttribute("open")) === null) await loc.locator("summary").click();
+  await page.waitForTimeout(50);
+}
 // ---- .xdelta helpers (patch-apply tests) --------------------------------------------------
 // Patches are built by REAL xdelta3 so the decoder is exercised against genuine output, not
 // against our own encoder. `-S none` because xdelta3 defaults to LZMA secondary compression,
@@ -636,6 +643,7 @@ head("War editor — decode, edit, write-through both copies, no reward fields")
 head("Rune reskin + description rewrite");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
+  await openFold(page, "#spReskinBox");
   await page.selectOption("#rsRune", "fire"); await page.fill("#rsPower", "300"); await page.click("#rsApply"); await page.waitForTimeout(150);
   const r = await save(page);
   check("reskin: spell0 power = 300", r.u32(SPELL.off + 0x1C) === 300);
@@ -1574,7 +1582,9 @@ head("Undo/redo + skill-cap & rune presets");
   check("after redo: undo enabled again", !(await page.locator("#isoUndoBtn").isDisabled()));
   const r = await save(page); check("redo restored the edit to disk", r.u8(l4b) === nv);
   // rune reskin presets fill the reskin fields
-  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#rsPower");
+  await page.click('#isoTabs [data-v="spells"]');
+  check("the rune reskin card starts collapsed", !(await page.locator("#rsPower").isVisible()));
+  await openFold(page, "#spReskinBox");
   await page.click('[data-rspreset="max"]'); await page.waitForTimeout(20);
   check("rune preset 'Power 9999' fills the reskin field", (await page.locator("#rsPower").inputValue()) === "9999");
   await page.click('[data-rspreset="nostatus"]'); await page.waitForTimeout(20);
@@ -1589,7 +1599,9 @@ head("Undo/redo + skill-cap & rune presets");
 }
 head("Damage+heal slot — move Shining Wind's split effect to another spell");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitSpell");
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitBox");
+  check("the damage+heal card starts collapsed", !(await page.locator("#spSplitSpell").isVisible()));
+  await openFold(page, "#spSplitBox");
   // the fixture ships the stock wiring: spell id 17 (row 16) + a 300 HP heal
   check("the slot decodes the disc's own wiring", /heals 300 HP/.test(await page.textContent("#spSplitInfo")),
     await page.textContent("#spSplitInfo"));
@@ -1598,6 +1610,8 @@ head("Damage+heal slot — move Shining Wind's split effect to another spell");
   await page.click("#spSplitApply"); await page.waitForTimeout(60);
   check("the note names the spell that now splits", /Blazing Wall/.test(await page.textContent("#spSplitInfo")),
     await page.textContent("#spSplitInfo"));
+  // Apply re-renders the whole tab — the card has to survive that, or the user loses their place
+  check("the card stays open across Apply's re-render", await page.locator("#spSplitSpell").isVisible());
   const { r, review } = await saveAndReview(page);
   check("the review labels the patched instructions and reads the ids as spells",
     /Damage\+heal/.test(review) && /heal HP: 300 . 450/.test(review) && /Blazing Wall \(#2\)/.test(review),
@@ -1612,7 +1626,7 @@ head("Damage+heal slot — move Shining Wind's split effect to another spell");
 }
 head("Damage+heal slot — restore puts the original bytes back");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitSpell");
+  await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spSplitBox");
   await page.selectOption("#spSplitSpell", "1");
   await page.click("#spSplitApply"); await page.waitForTimeout(60);
   await page.click("#spSplitReset"); await page.waitForTimeout(60);
