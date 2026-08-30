@@ -10,13 +10,11 @@
 const SAVE_PATH = "/save.bin";
 const RANK_TIERS = [[0, "— (none)"], [1, "E"], [2, "D"], [3, "C"], [4, "B"],
                     [5, "B+"], [6, "A"], [7, "A+"], [8, "S"]];
-// equipment slots (order + keys match s3save.EQUIP_SLOTS) and the item categories that fit
-const EQ = [["headRune", "Head Rune"], ["rightRune", "Right Rune"], ["leftRune", "Left Rune"],
-            ["helm", "Helm"], ["armor", "Armor"], ["shield", "Shield"],
-            ["boots", "Boots"], ["gloves", "Gloves"], ["accessory", "Accessory"]];
-const EQ_CATS = { headRune: ["Runes"], rightRune: ["Runes"], leftRune: ["Runes"],
-  helm: ["Headgear"], armor: ["Armor"], shield: ["Shields"], boots: ["Footwear"],
-  gloves: ["Gloves"], accessory: ["Rings", "Misc Gear"] };
+// equipment slots (order + keys match s3save.EQUIP_SLOTS) and the item categories that fit.
+// Both tables live in health-core.js so the pickers and the health audit can't disagree
+// about what belongs in a slot.
+const EQ = Object.entries(HealthCore.SLOT_LABEL);
+const EQ_CATS = HealthCore.SLOT_CATS;
 const RECRUITERS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 
 let pyReady = null, PY = null;   // PY = resolved pyodide (sync access keeps share() in-gesture)
@@ -407,6 +405,7 @@ function drawSlot() {
         <button class="chip" data-sub="stars">108 Stars</button>
         <button class="chip" data-sub="party">Party</button>
         <button class="chip" data-sub="items">Inventory (${invCount})</button>
+        <button class="chip" data-sub="health" id="healthTab">Health</button>
       </div>
       <input class="search" id="sq" placeholder="filter…">
       <div class="muted" id="subhint" style="margin:2px 0 10px"></div>
@@ -448,6 +447,7 @@ function drawSlot() {
   $("#suffixChk").onchange = (e) => { ADD_SUFFIX = e.target.checked; try { localStorage.setItem("s3suffix", ADD_SUFFIX ? "on" : "off"); } catch (err) {} };
   $("#resetBtn").onclick = drawSlot;
   showSub();
+  refreshHealthBadge();
 }
 
 function showSub() {
@@ -472,12 +472,19 @@ function showSub() {
   } else if (SUB === "party") {
     $("#subhint").innerHTML = `Active battle party (up to 6). Leaving story-required leaders in place avoids soft-locks.`;
     drawParty();
+  } else if (SUB === "health") {
+    $("#subhint").innerHTML = `A read-through of this save — <b>including your pending edits</b> — for the states ` +
+      `the game never writes itself: a party member who isn't recruited, a rune carrying a stack count, ` +
+      `a value the engine will clamp on write. Findings with a <b>Fix</b> stage the change like any other ` +
+      `edit, so it still goes through <b>Review changes</b> before anything is written.`;
+    drawHealth();
   } else {
     $("#subhint").innerHTML = `Party + storage items. Use <b>+ Add item</b> to append to a bag, ✕ to remove. ` +
       `Only consumables, food and trade goods carry a quantity (max 9); runes, armour and key items are ` +
       `<b>one per slot</b> — click <b>+ Add item</b> once per copy.`;
     drawItems();
   }
+  refreshHealthBadge();     // pending edits move the count; refresh whenever the view changes
 }
 
 // ---- guide reference overlays ----------------------------------------------
@@ -544,8 +551,8 @@ function drawChars() {
 
 // Caps match s3save.CHAR_FIELDS — the engine clamps to the same values, so the input can't
 // offer a number the game would reject. Weapon (sharpen) level tops out at 16 and EXP is
-// progress inside the current level (level-up fires at 1000).
-const CHAR_CAP = { level: 99, weaponLv: 16, curHP: 9999, maxHP: 9999, expToNext: 999 };
+// progress inside the current level (level-up fires at 1000). Shared with the health audit.
+const CHAR_CAP = HealthCore.CAPS;
 function charCard(c) {
   const num = (k, val, stat) => {
     const max = stat ? 999 : (CHAR_CAP[k] ?? 999999);
@@ -796,6 +803,134 @@ function drawStars() {
   }));
 }
 
+// ---- Health check -----------------------------------------------------------
+// A lint over the save. The rules live in health-core.js (pure, unit-tested); this half is
+// the panel, the "Fix" wiring and the tab badge.
+//
+// Two properties matter. It audits the EFFECTIVE save — what's on disk with the pending
+// edits applied on top — so it catches both damage already in the file and damage you are
+// about to write; and a Fix only *stages* its change into the same EDITS/INV/PARTY/RECRUIT
+// maps every other control uses, so it is reviewable, resettable, and goes through the
+// normal confirm-then-write path rather than touching bytes on its own.
+let HEALTH_FILTER = "all";           // all | error | warn | info
+const SEV_LABEL = { error: "Problem", warn: "Warning", info: "Note" };
+
+// Lookups the audit needs but can't derive. Each is optional in health-core — a missing one
+// disables its checks rather than guessing, which is why the guide-backed rules simply don't
+// fire until the guide JSON has loaded.
+function healthOpts() {
+  return {
+    item: (id) => (ITEM_BY_ID[id] ? { name: ITEM_BY_ID[id].name, cat: ITEM_BY_ID[id].cat } : null),
+    skillName: (id) => (SKILL_BY_ID[id] && SKILL_BY_ID[id].name) || "#" + id,
+    charName: (id) => REF.charById[id] || "id " + id,
+    skillCap: (nm, sid) => (GUIDE ? GuideCore.skillCap(GUIDE, nm, sid) : null),
+    runeSlot: (nm, key) => (GUIDE ? GuideCore.runeSlot(GUIDE, nm, key) : null),
+  };
+}
+function runHealth() {
+  const s = saves[curSlot];
+  if (!s) return [];
+  return HealthCore.audit(s, { edits: EDITS, inv: INV, party: PARTY, recruit: RECRUIT, gold: GOLD },
+    healthOpts());
+}
+// Tab badge: errors + warnings only. Notes are worth reading but shouldn't make the tab shout.
+function refreshHealthBadge() {
+  const btn = $("#healthTab"); if (!btn) return;
+  const c = HealthCore.counts(runHealth());
+  const n = c.error + c.warn;
+  btn.textContent = n ? `Health (${n})` : "Health ✓";
+  btn.classList.toggle("hz-bad", c.error > 0);
+  btn.classList.toggle("hz-warn", c.error === 0 && c.warn > 0);
+}
+
+let HEALTH_ROWS = [];
+function drawHealth() {
+  if (GUIDE === null) loadGuideRefs().then(() => { if (SUB === "health") drawHealth(); });   // guide rules join once loaded
+  const all = runHealth();
+  const c = HealthCore.counts(all);
+  HEALTH_ROWS = all.filter((f) => {
+    if (HEALTH_FILTER !== "all" && f.sev !== HEALTH_FILTER) return false;
+    if (SEARCH && !(f.title + " " + f.detail + " " + f.group).toLowerCase().includes(SEARCH)) return false;
+    return true;
+  });
+  const fixable = HEALTH_ROWS.filter((f) => f.fix);
+
+  const verdict = !all.length
+    ? `<div class="hz-ok">✓ Nothing to flag — this save and your pending edits look consistent.</div>`
+    : `<div class="hz-nums">
+         <span class="hz-c error">${c.error}</span> problem${c.error === 1 ? "" : "s"} ·
+         <span class="hz-c warn">${c.warn}</span> warning${c.warn === 1 ? "" : "s"} ·
+         <span class="hz-c info">${c.info}</span> note${c.info === 1 ? "" : "s"}</div>`;
+
+  const fbtn = (v, l) => `<button class="chip${HEALTH_FILTER === v ? " on" : ""}" data-hf="${v}">${l}</button>`;
+
+  const rows = HEALTH_ROWS.map((f, i) => `
+    <div class="hz-item sev-${f.sev}">
+      <div class="hz-sev">${SEV_LABEL[f.sev]}</div>
+      <div class="hz-body">
+        <div class="hz-t">${esc(f.title)}</div>
+        <div class="hz-d">${esc(f.detail || "")}</div>
+        <div class="hz-g">${esc(f.group)}</div>
+      </div>
+      <div class="hz-act">
+        ${f.fix ? `<button class="chip mini" data-hfix="${i}">✓ ${esc(f.fix.label)}</button>` : ""}
+        ${f.where ? `<button class="chip mini" data-hgo="${i}">Show</button>` : ""}
+      </div>
+    </div>`).join("") ||
+    `<div class="muted" style="padding:8px 2px">${all.length ? "no findings match this filter" : "nothing to show"}</div>`;
+
+  $("#subview").innerHTML = `
+    <div class="hz-head">${verdict}</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0 10px">
+      ${fbtn("all", `All (${all.length})`)}${fbtn("error", `Problems (${c.error})`)}${fbtn("warn", `Warnings (${c.warn})`)}${fbtn("info", `Notes (${c.info})`)}
+      ${fixable.length > 1 ? `<button class="chip" id="hzFixAll" style="margin-left:auto">✓ Fix all shown (${fixable.length})</button>` : ""}
+    </div>
+    <div class="hz-list">${rows}</div>`;
+
+  $$("[data-hf]").forEach((b) => (b.onclick = () => { HEALTH_FILTER = b.dataset.hf; drawHealth(); }));
+  $$("[data-hfix]").forEach((b) => (b.onclick = () => {
+    applyFixOps(HEALTH_ROWS[+b.dataset.hfix].fix.ops);
+    drawHealth(); refreshHealthBadge();
+    setStatus("Fix staged — review it with Apply when you're done.", "");
+  }));
+  $$("[data-hgo]").forEach((b) => (b.onclick = () => {
+    const w = HEALTH_ROWS[+b.dataset.hgo].where;
+    SUB = w.sub; SEARCH = (w.search || "").toLowerCase();
+    const sq = $("#sq"); if (sq) sq.value = w.search || "";
+    showSub();
+  }));
+  const fa = $("#hzFixAll");
+  if (fa) fa.onclick = () => {
+    const n = fixable.length;
+    fixable.forEach((f) => applyFixOps(f.fix.ops));
+    drawHealth(); refreshHealthBadge();
+    setStatus(`${n} fix${n === 1 ? "" : "es"} staged — review them with Apply.`, "");
+  };
+}
+
+// Stage a fix into the same pending-edit maps the rest of the editor writes to. Nothing here
+// touches the save; Apply still shows the old → new list first.
+function applyFixOps(ops) {
+  (ops || []).forEach((op) => {
+    const ent = (ri) => (EDITS[ri] = EDITS[ri] || {});
+    if (op.kind === "charField") ent(op.ri)[op.field] = op.value;
+    else if (op.kind === "charStat") { const e = ent(op.ri); (e.stats = e.stats || {})[op.stat] = op.value; }
+    else if (op.kind === "charEquip") { const e = ent(op.ri); (e.equip = e.equip || {})[op.slot] = op.value; }
+    else if (op.kind === "charSkill") {
+      const e = ent(op.ri); e.skills = e.skills || {};
+      const sk = (e.skills[op.slot] = e.skills[op.slot] || {});
+      if ("id" in op) sk.id = op.id;
+      if ("rank" in op) sk.rank = op.rank;
+    } else if (op.kind === "party") PARTY[op.slot] = op.value;
+    else if (op.kind === "recruit") setRecruit(charByRoster(op.ri), op.recruited, undefined);
+    else if (op.kind === "inv") {
+      const e = (INV[op.slot] = INV[op.slot] || {});
+      if ("id" in op) e.id = op.id;
+      if ("qty" in op) e.qty = op.qty;
+    } else if (op.kind === "gold") GOLD = op.value;
+  });
+}
+
 // ---- Party -----------------------------------------------------------------
 function drawParty() {
   const s = saves[curSlot];
@@ -911,24 +1046,15 @@ function drawItems() {
   }));
 }
 
-// Mirrors s3save.item_stackable — the count field is real only for consumables/food and the
-// 0x1F0-0x1FF trade goods; everything else is one item per slot with the count left at 0.
-// The exceptions match s3save's: the stat stones and the two battle items just below 0x0A0
-// carry no count despite being in the consumable band, and Grape does despite being a key
-// item. This is only for display — the engine decides what actually gets stored, and it
-// also consults how the save already holds that item.
-const ITEM_ONE_PER_SLOT_EXC = new Set([0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x9e, 0x9f]);
-const ITEM_STACKABLE_EXC = new Set([0x202]);
-function itemStackable(id) {
-  if (!(id > 0)) return false;
-  if (ITEM_ONE_PER_SLOT_EXC.has(id)) return false;
-  if (ITEM_STACKABLE_EXC.has(id)) return true;
-  return id < 0xa0 || (id >= 0x1f0 && id < 0x200);
-}
-const ITEM_QTY_MAX = 9;              // s3save.ITEM_QTY_MAX — the game's count domain is 0-9
-
-// Mirrors s3save.item_category.
-function itemCategory(id) { return id >= 0x200 ? "key" : id >= 0xa0 ? "equipment" : "consumable"; }
+// The count field is real only for consumables/food and the 0x1F0-0x1FF trade goods;
+// everything else is one item per slot with the count left at 0. The rules (and the nine
+// ids that contradict the bands) mirror s3save.item_stackable / item_category and live in
+// health-core.js, so the inventory UI and the health audit share one copy. This is only for
+// display — the engine decides what actually gets stored, and it also consults how the save
+// already holds that item.
+const itemStackable = HealthCore.itemStackable;
+const itemCategory = HealthCore.itemCategory;
+const ITEM_QTY_MAX = HealthCore.ITEM_QTY_MAX;   // s3save.ITEM_QTY_MAX — count domain is 0-9
 
 // Picking a different item can flip a row between "has a count" and "one per slot", so the
 // Qty cell is rebuilt in place (a full redraw would drop the other rows' staged edits).
@@ -1006,7 +1132,9 @@ function buildDiff() {
     // are forced to 0 and stackables to at least 1.
     const nq = !nid ? 0 : !itemStackable(nid) ? 0
       : Math.max(1, Math.min(ITEM_QTY_MAX, "qty" in ent ? ent.qty : old.qty));
-    const amt = (id, q) => (id && itemStackable(id) ? ` ×${q}` : "");
+    // Show any non-zero count, not just a stackable's: clearing the bogus count an old build
+    // left on a one-per-slot item is a real change, and "Fury Rune → Fury Rune" would hide it.
+    const amt = (id, q) => (id && q ? ` ×${q}` : "");
     if (nid !== old.id || nq !== old.qty)
       rows.push({ g: "Inventory", t: `Slot ${slot}: ${itemLabel(old.id)}${amt(old.id, old.qty)} → ${itemLabel(nid)}${amt(nid, nq)}` });
   });

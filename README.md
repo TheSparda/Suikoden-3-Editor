@@ -91,6 +91,17 @@ Editable per save:
   slots, not one slot with a count of 3), so only stackables show a quantity, and new
   items are appended after a bag's last entry rather than dropped into a gap.
 
+- **Health** — a lint over the save. It reads the file **plus your pending edits** and reports
+  the states the game never writes itself, split into *problems* (an unrecruited character
+  sitting in the active party; current HP above max HP), *warnings* (a rune carrying a stack
+  count — the shape that used to make spare copies vanish; a value the engine will clamp on
+  write, quoting what will actually land; the same skill in two slots; gear in a slot that
+  doesn't take it; items sitting after a gap in a bag) and *notes* (a party leader who isn't
+  in the party, a skill above the guide's cap for that character). Most findings carry a
+  one-click **Fix** — and a Fix only *stages* its change like any other edit, so it still
+  goes through **Review changes** before a byte is written. The tab badges the problem count,
+  and the decode-time layout checks are folded in so it's the one place to look.
+
 Item and skill pickers throughout the save editor show **guide details** — rune effects and
 food heals (which lack an in-game description record), plus per-rank skill effects. The
 guide data has no entry for the support characters (they don't fight) or for a handful of
