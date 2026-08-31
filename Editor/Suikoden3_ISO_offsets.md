@@ -2573,3 +2573,185 @@ gate.
   per-area model residency for characters who are not normally party members, which is the
   open risk in `docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md`. Bright and Koroku are ordinary
   roster members with field models everywhere — they are not evidence about bosses.
+
+## Item-record dispatcher — all five item tables, from the game's own accessor (2026-08-31)
+
+`itemRecord(id)` at **VA `0x16DBCD8`** is the disc's own id → record mapping, and it settles the
+geometry of every item table at once. It masks `id & 0x7FFF` (bit 15 is a flag, same convention as
+the save file's item entries) and bands the id space:
+
+| ids | base VA | base file | stride | what |
+|---|---|---|---|---|
+| 1–160 | `0x19A14BC` | `0x3E8CBC` | `0x24` | consumables, scrolls, herbs |
+| 161–316 | `0x1990E84` | `0x3D8684` | `0x44` | weapons / armour / shields / accessories |
+| 317–462 | `0x19A3778` | `0x3EAF78` | `0x20` | runes — the same table as `RUNE_TBL` |
+| 463–514 | `0x19A734C` | `0x3EEB4C` | `0x14` | statues, fruit |
+| 515–612 | `0x199EE80` | `0x3E6680` | `0x10` | hammers, quest items |
+
+Every band uses **name pointer at `+0`, description pointer at `+4`**, indexed by the *raw* id (not
+`id - lo`). Verified 15/15 by reading names back against `Suikoden3_item_ids.txt` — ids 1, 2, 160,
+161, 162, 316, 317, 318, 462, 463, 464, 514, 515, 516, 612 all resolve to the expected item.
+
+`getName(id)` is at VA `0x16DBE00`-ish and `getDesc(id)` at **VA `0x16DBE48`**: both call
+`itemRecord`, and `getDesc` returns `*(u32*)(rec + 4)` unless bit 15 of the id is set, in which case
+ids `0x1CF..0x1D6` and `0x1D7..0x1DD` come from two small alternate string arrays instead.
+
+The last two bands have **no view in the editor** — that is a gap, not a decode problem.
+
+## Rune descriptions are stored TWICE — issue #11 (2026-08-31)
+
+**Symptom.** An edited Kite rune description never appeared in game.
+
+**Cause.** 27 descriptions exist at *two* addresses on the disc, each reached from a different
+table, and until v1.58.0 the editor could only write the copy the game does not read.
+
+Census on a pristine SLUS-20387, built from the pointer tables (not by matching text):
+
+- **27 groups, exactly 2 copies each**, and every pair has the same slot length.
+- **20** are the attack runes (ids 339–365): `RUNE_TBL[id].desc` **and** the spell record of the
+  attack the rune grants. Kite (365) is `0x424F20` (rune) and `0x4232E8` (spell #77).
+- **7** are the magic scrolls (item ids 18–26): the item's own desc **and** the spell it casts.
+- The 22 magic runes (317–338) and 23 support runes (440–462) have a single copy — which is why
+  this never showed up before.
+
+**Which copy the game reads.** `getDesc` (VA `0x16DBE48`) → `itemRecord` (VA `0x16DBCD8`) maps
+317–462 to `RUNE_TBL` and reads `+4`. So the rune menu shows **`RUNE_TBL`'s copy**.
+
+**Why the Text tab could not reach it.** `TextCore.looksLikeText` rejects every one of the 27:
+`DMGx0.4` trips its `[A-Za-z]\d` reject. Confirmed by running the real filter over them. So the only
+editable copy was the spell record's — the wrong one, 100% of the time, for anyone who tried.
+
+**Fix (v1.58.0).** The Runes browser now owns the rune's menu text (in place, slot-capped), and
+every description write mirrors all copies. The alias index is built from the desc pointers of the
+five item bands + `SPELL` + `UNITE` + `FOOD`, and two copies are only linked when reached from
+**different** tables — within one table, repeated text is just repeated text. On a pristine disc the
+cross-table rule finds all 27 real groups and **zero** false ones.
+
+## Status effect STRENGTH — code constants, and they are editable (2026-08-31)
+
+Supersedes the v12 note "Status effects are NOT a tunable data table". That conclusion is right
+about *data* and wrong about *reachable*: the magnitudes are `addiu $rt, $zero, imm` immediates in
+the battle code, the same class of patch as the encounter rate, the potch multiplier, the mount
+pairs and the damage+heal slot. All shipped in v1.58.0.
+
+**The flags18 bit is only a selector.** The translator at **VA `0x1816400`** is a pure bit remap:
+
+```c
+out[0] = flags18 & 0x0007BFFF;                 // low bits copied verbatim
+if (flags18 & 0x00080000) out[4]  = 0x40;      // bit19 mgc-immune-once
+if (flags18 & 0x00200000) out[4] |= 0x80;      // bit21 buff PDF/MDF
+if (flags18 & 0x02000000) out[4] |= 0x01;      // bit25 resist-fire
+if (flags18 & 0x04000000) out[4] |= 0x04;      // bit26 resist-lightning
+if (flags18 & 0x08000000) out[4] |= 0x02;      // bit27 resist-wind
+if (flags18 & 0x01C00000) out[4] |= 0x10000000;// bits 22|23|24 -> ONE "enchanted" flag
+```
+
+Note the last line: the three sword-enhance bits **collapse into a single flag and lose even the
+element**. So there is no per-bit strength field anywhere to expose.
+
+**Where the element comes back, and the percentages.** VA `0x16BFC50` re-reads the mask and turns it
+into a percentage, adds the chanter's Sword of Magic (skill `0x29`) rank, then `base * pct / 100`:
+
+| tunable | stock | file site(s) | VA |
+|---|---|---|---|
+| sword-fire added | 20 | `0x107470` | `0x16BFC70` |
+| sword-lightning added | 20 | `0x107480` | `0x16BFC80` |
+| sword-wind / fall-through | 15 | `0x107478` | `0x16BFC78` |
+| any enchanted weapon, extra | 30 | `0x102488` | `0x16BAC88` |
+| resist: weak | 120 | `0x0E3868`, `0x24765C` | `0x169C068`, `0x17FFE5C` |
+| resist: neutral | 100 | `0x0E3870` | `0x169C070` |
+| resist: tier 1 | 80 | `0x0E3878`, `0x247664` | `0x169C078`, `0x17FFE64` |
+| resist: tier 2 | 60 | `0x0E3880`, `0x247668` | `0x169C080`, `0x17FFE68` |
+| resist: tier 3 | 40 | `0x0E3884`, `0x24768C` | `0x169C084`, `0x17FFE8C` |
+| PDF/MDF buff | 85 | `0x104810`, `0x1053DC` | `0x16BD010`, `0x16BDBDC` |
+| mask-0x4000 status | 150 | `0x10540C`, `0x105420`, `0x1054B8`, `0x1054CC` | `0x16BDC0C/20`, `0x16BDCB8/CC` |
+
+**Nineteen sites for eleven tunables — the duplication is the trap.** The resistance ladder exists
+**twice**: a 5-entry jump table at VA `0x169C040` (table of targets at VA `0x19B8830`, file
+`0x400030`) and a branch chain at VA `0x17FFE3C`. The 150 sits at **four** sites: two functions,
+each testing both sides of the field with the value duplicated into a branch delay slot. A partial
+write does not error — the game just behaves differently depending on which path runs, so each
+tunable must write all of its sites. The editor registers each site separately and numbers it
+("site 3 of 4") precisely so the unsaved-field count and the review list make a partial write
+visible before saving.
+
+**Duration is still out of reach, and here is exactly why.** `setStatus(side, mask, level)` at
+**VA `0x16BE920`** does take a strength: the poison handler at VA `0x16BEA98` stores
+`(level & 7) << 2` into a per-side status word at VA `0x196B150` — a real 3-bit level, and the
+RPGClassics status page independently says poison damage "depend[s] on the type of poison". But
+every one of the 42 live call sites computes that level at runtime. The one routine that reads
+per-status levels out of a **record** — VA `0x16BF1E0`, whose argument carries a byte array of them
+at `+0x00..+0x22` — has **no references anywhere in the ELF**: no `jal`, no `j`, no `lui/addiu`
+materialisation, no data pointer. It is dead code.
+
+**Guide cross-check.** The Suikosource Rare Armor guide says resistance reduces damage by
+20 / 30 / 40 percent at levels 1/2/3. The decoded ladder gives reductions of 20 / 40 / 60. Level 1
+agrees exactly; 2 and 3 do not, and no arithmetic on the decoded values produces 30/40. The jump
+table is read straight off the disc, so the **values** stand; what is an inference is the
+tier → "level N" naming, and that is the likely site of the disagreement. Flagged in the UI.
+
+**Still open, with the numbers to look for.** The RPGClassics status page says Alert doubles
+offensive magic with a 20% chance to backfire, Berserk raises strength 50%, and Boost lasts three
+turns. A 150 (= +50%) exists but is gated on mask `0x4000`, which this repo labels *mgc-boost*
+rather than berserk — so it is deliberately **not** presented as the berserk figure.
+
+## Spell target and element bytes — the complete sets (2026-08-31)
+
+`TARGET_OPTS` and `ELEMENTS` both stopped short of the data, so 15 of the 94 spells rendered as
+`custom 0xNN` and 17 as a bare `undefined`.
+
+**Target byte** = `(flags14 >> 8) & 0x7F`. The complete set in use is nine bytes: `0x01 0x02 0x03
+0x05 0x06 0x09 0x0A 0x12 0x41`. The three that were missing decode straight from the bit meanings
+and are confirmed by every description that carries them:
+
+| byte | bits | meaning | n | evidence |
+|---|---|---|---|---|
+| `0x05` | `0x04\|0x01` | the **chanter alone** | 7 | "Enhances chanter's…", "Raises chanter's…" (×6) + Wrath, a self-heal |
+| `0x09` | `0x08\|0x01` | **one ally** | 2 | Healing Wind "of 1 ally", Mother Ocean "1 ally's HP" |
+| `0x12` | `0x10\|0x02` | a **line** of foes through the target | 6 | "target+foes in front" / "in line" / "LOS foes beyond", and each carries a non-zero radius, which no `0x0A` single-target spell does |
+
+**Element byte** (`SPELL.elem`, the tail field) is really a magic **family**. 1–5 are proven outright
+— all 32 of those spells open with the matching `"<X> MGC."` prefix (Fire 8/8, Water 6/6, Wind 6/6,
+Earth 6/6, Lightning 6/6). 6 is the Pale Gate rune. **7–10 are not elemental at all**; each is
+exactly one rune's spell set: 7 = the six Sword-of-\* / \*-Amulet spells, 8 = the four Jongleur
+songs, 9 = the Shield rune, 10 = Ready!/Set!/Go! (Blinking).
+
+## Unit class / role — DERIVED from skills, there is no class byte (2026-08-31, issue #13)
+
+The class the game shows per unit (Hugo a Slasher, Lulu a Knight, Fubar a Slasher) is **not stored
+anywhere**. It is recomputed from the character's own skill list every time it is drawn. Chain:
+
+| what | address |
+|---|---|
+| display routine | VA `0x169B5F8` |
+| skill id of slot *i* | VA `0x16C7758` → `*(u8)(rec + 0x10 + i*2)` |
+| skill rank of slot *i* | VA `0x16C7878` → `*(u8)(rec + 0x11 + i*2)` |
+| live 140-byte character record | VA `0x16C6D08` |
+| class table, 43 rows × 47 pairs | VA `0x19605C0`, file **`0x3A7DC0`** |
+| word pool, 78 string pointers | VA `0x1960480`, file **`0x3A7C80`** (index 0 blank) |
+
+The routine keeps the skill slots with rank > 0, selection-sorts them by rank descending (stable),
+takes the top two, and reads `table[(skillA-1)*94 + (skillB-1)*2]` → `(type word, modifier word)`,
+both indices into the pool.
+
+**The table's column index is the skill id, all 43 of them** — `0x0C` Shield Protect → "Shield
+Knight", `0x0D` Armor Protect → "Armored Knight", `0x0E` Fire Magic → "Fire Cmdr.", `0x1F` Cook →
+"Cook Fighter", `0x28` Pale Gate Magic → "Gate Cmdr.". Pool indices 1–21 are the class words
+(Slasher, Knight, Cmdr., LeRsnt, Guard, Mage, Herculn, Magicn, Priest, Rider, Shield, Armored, Fire,
+Ice, Storm, Earth, Thunder, Gate, Magic, Healer, Fighter); 22–77 are the modifier words.
+
+**Verified against the three known units.** Re-running the derivation over `list1` gives Hugo
+(Heavy Damage r2 + Counter Attack r1) → Slasher, Fubar (Damage r2 + Accuracy r1) → Slasher, Lulu
+(Swing r2 + Repel r2) → Knight. All 79 rows produce plausible types (Fred → Shield Knight, Leo →
+Armored Knight, Nicolas → Guard, Luc → Storm Magicn).
+
+**What this rules out.** The candidates the issue proposed are all wrong: there is no role enum at
+list2 `+12`, list1 `+0`, list2 `+13/14/15`, or in list 4. The way to change a unit's class is to
+change its **skills**.
+
+Shipped read-only as **Reference → Classes** in v1.58.0, recomputed live so editing skills moves the
+class with them.
+
+**Side finding:** the character skill array is **7 slots**, not 6 — the game reads `i < 7`, and
+Guillaume and Rody both use the 7th pair (list1 `+24/+25`). `LIST1_FIELDS` and `skillHoldersLive()`
+still stop at 6, so that slot is neither shown nor counted.
