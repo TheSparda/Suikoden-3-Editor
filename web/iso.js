@@ -5349,18 +5349,20 @@
   // corrected an earlier reading of Geddoe as never rigged to ride).
   const MOUNTREF = {
     riders: [
-      ["Hugo", "syu1", "yes (both 07x and 97x banks)", "yes", "the only unit with the full ground set beside a Karaya horse"],
-      ["Chris", "syu2", "yes (070–075)", "yes", "carries her own horse in her record"],
+      ["Hugo", "syu1", "yes — the only model with both (07x + 97x)", "yes · 311 family", "the only unit with the full ground set beside a Karaya horse; the field RideOn handler strips 7 Fubar-rigged clips before seating him on a horse"],
+      ["Chris", "syu2", "yes (070–075)", "yes · 321/322 family", "carries her own horse in her record; confirmed in-game riding Bright, a pair-table flyer"],
       ["Geddoe", "syu3", "yes (970–975)", "no", "rides on the map, never in battle"],
       ["Thomas", "thms", "yes (970–975)", "no", "rides on the map, never in battle"],
-      ["Roland", "loll", "yes (071–075)", "yes", ""], ["Leo", "leoo", "yes (071–075)", "yes", ""],
-      ["Percival", "psvl", "yes (071–075)", "yes", ""], ["Borus", "bols", "yes (071–075)", "yes", ""],
-      ["Salome", "sarm", "yes (97x, bundled per area)", "no", ""],
-      ["Futch", "futi", "yes (071/073/074)", "yes", "also has the 080 flying bank"],
-      ["Franz", "mstk", "yes (071/073/074)", "yes", "also has the 080 flying bank"],
-      ["Sharon", "mria", "no", "partial (301 only)", ""],
+      ["Roland", "loll", "yes (071–075)", "yes · 321/322 family", "carries 341 for the mounted attack where every other rider carries 340"],
+      ["Leo", "leoo", "yes (071–075)", "yes · 321/322 family", ""],
+      ["Percival", "psvl", "yes (071–075)", "yes · 321/322 family", ""],
+      ["Borus", "bols", "yes (071–075)", "yes · 321/322 family", ""],
+      ["Salome", "sarm", "yes (97x, bundled per area)", "no", "no 3xx bank at all"],
+      ["Futch", "futi", "yes (071/073/074)", "yes · 311 family", "also has the 080 flying bank"],
+      ["Franz", "mstk", "yes (071/073/074)", "yes · 311 family", "also has the 080 flying bank; 311 family even though Ruby is a horse, so the split is not flyer-vs-horse"],
+      ["Sharon", "mria", "no", "partial · 300/301/310/311", ""],
       ["Juan", "jyan", "partial (074 only)", "no", ""],
-      ["Zexen knight NPC", "zkk1", "yes (071–075)", "yes", "ships ride-ready nearly everywhere a mount does"],
+      ["Zexen knight NPC", "zkk1", "yes (071–075)", "yes · 321/322 family", "ships ride-ready nearly everywhere a mount does"],
       ["Le Buque villagers", "msk1/msk2", "yes (070/071/073/074)", "no", ""],
     ],
     mounts: [
@@ -5402,6 +5404,11 @@
         residency</b>, not proof a scene mounts anyone. Only the battle pair table has been confirmed in an
         emulator (the three stock pairs plus Hugo+Bright and Chris+Bright); everything else on this page is
         static analysis.</div>
+      <div class="muted" style="margin:0 0 10px">The <b>311 / 321-322 family</b> in the rider table is which
+        mount system authored that rider's mounted-battle clips: <b>311</b> = the three-pair table (Hugo,
+        Futch, Franz, Sharon), <b>321/322</b> = the assigned horse (Chris and the Zexen knights). No model
+        carries both. It is a structural split, not flyer-vs-horse — Franz is 311 and Ruby is a horse — and
+        it did not stop Chris (321/322) riding Bright. What the clips animate is unread.</div>
       <div class="bag-h">Riders — who is rigged to be mounted</div>
       ${tbl(["Character", "Model", "Field ride", "Mounted battle", "Notes"],
         MOUNTREF.riders.filter((r) => hit(...r)).map((r) =>
