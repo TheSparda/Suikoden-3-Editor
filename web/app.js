@@ -210,28 +210,28 @@ function charList(curId) {
   return list;
 }
 
-// Field-avatar picker. The engine only ever REQUESTS the model of the eight ids in
-// s3save.FIELD_AVATAR_IDS (the comparison chain at vaddr 0x17B7560 — see
-// docs/FIELD_CHARACTER_RESEARCH.md); for anything else the request is simply never made,
-// so you keep whatever model the area already has resident. That is not a crash, but it
-// is not a swap either, so the two groups are labelled rather than one being hidden.
+// Field-avatar picker. Deliberately offers ONLY the ids the engine will load by itself —
+// s3save.FIELD_AVATAR_IDS, the comparison chain at vaddr 0x17B7560. Widening that chain is
+// possible (ISO Editor -> Test -> Field character) but it is experimental and hangs scenes,
+// so the save editor stays on the set the game actually ships. Anything already in the save
+// that isn't offerable is kept rather than dropped, or Apply would silently rewrite it.
 function avatarList(curId) {
-  const wl = REF.fieldAvatars || [];
-  const wlSet = new Set(wl);
   const named = (id) => REF.charById[id] || "id " + id + " (guest/NPC)";
-  // Map coverage is the second thing that decides whether a pick works, so it rides on the
-  // same row as the whitelist status rather than being a separate lookup the user has to do.
+  // Map coverage is the other thing that decides whether a pick works, so it rides on the
+  // row rather than being a separate lookup the user has to do.
   const cover = (id) => { const a = avatarAreaInfo(id);
     return a ? ` · field model ships in ${a.areas.length}/${a.total} maps${a.areas.length ? ": " + a.areas.join(", ") : ""}` : ""; };
-  const list = wl.map((id) => ({ id, name: named(id), cat: "engine default",
-    desc: "the game loads this one itself — shipped and played" + cover(id) }));
-  CHAR_LIST.filter((c) => !wlSet.has(c.id)).forEach((c) => list.push({
-    id: c.id, name: c.name, cat: "needs ISO patch",
-    desc: "not in the engine's whitelist — widen it on the ISO Editor's Field character section first" + cover(c.id) }));
+  const list = (REF.fieldAvatars || []).map((id) => ({ id, name: named(id),
+    cat: STORY_SAFE.has(id) ? "protagonist" : "roaming only",
+    desc: (STORY_SAFE.has(id) ? "a protagonist — scenes are written for them"
+            : "the game ships this one, but scenes can hang; switch back before story") + cover(id) }));
   if (curId && !list.some((c) => c.id === curId))
     list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
   return list;
 }
+// The four the story is authored around. Everything else — even ids the engine ships, like
+// Koroku — has been seen to hang a scripted scene.
+const STORY_SAFE = new Set([1, 2, 3, 29]);
 
 // Open the shared picker modal. list=[{id,name,cat?,desc?}]; onPick(id) fires on choose.
 // idFmt formats the id prefix per domain (3-hex items, 2-hex skills, decimal chars).
@@ -465,13 +465,17 @@ function drawSlot() {
                 data-def="${s.global.partyLeader}">${esc(charLabel(s.global.partyLeader))}</button></label>
       <div class="muted" style="font-size:12px;margin:6px 0 0">
         This is the party-leader byte at <b>0x12</b>, and the engine loads the field model it
-        names. Only ${(REF.fieldAvatars || []).length} ids are in the loader's whitelist —
-        ${(REF.fieldAvatars || []).map((id) => esc(REF.charById[id] || "id " + id)).join(", ")} —
-        which is exactly the set the game hands you itself. Anyone else needs the ISO Editor's
-        <b>Field character</b> section; without it the model request is never made and you keep
-        whatever the area already has. Story scripts set this byte at chapter transitions, so a
-        change here holds until the next scene that sets it.
+        names. The picker offers the ${(REF.fieldAvatars || []).length} the game hands you
+        itself — ${(REF.fieldAvatars || []).map((id) => esc(REF.charById[id] || "id " + id)).join(", ")}.
+        Story scripts set this byte at chapter transitions, so a change here holds until the next
+        scene that sets it.
         <div id="leadercover" style="margin:4px 0 0"></div></div>
+      <div class="warnbox" style="margin:8px 0 0">
+        <b>Only Hugo, Chris, Geddoe and Thomas are safe for story.</b> The others are roaming
+        picks: scripted scenes are written for a specific protagonist, and that data sits in
+        packed event files no editor can reach. Confirmed in play — Koroku hangs a scene even
+        though the engine ships him as an avatar. Switch back to a protagonist before triggering
+        story, and keep a backup save.</div>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"

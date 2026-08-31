@@ -146,7 +146,8 @@ re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *C
 every combination carries its own confidence marker: *confirmed / expected / untested / rough /
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
-**Field character** (who you run around the map as — see below),
+**Test** (experimental patches that are not known to work — currently the **Field character**
+whitelist; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
@@ -169,11 +170,20 @@ below).
 **Field character — who you run around the map as.** The on-field avatar is the **party-leader
 byte** in your save, and that byte names a *model*. The engine only ever loads the model of
 **eight hardcoded ids** — Hugo, Chris, Geddoe, Thomas, **Koroku**, **Luc**, and the two
-specials *Masked Luc* and *Grasslands Chris* — which is exactly the set the game hands you
-itself. So six of those seven need **no ISO patch at all**: pick them straight from **Save
-Editor → Overview → Field character**. The ISO tab exists for everyone else: it rewrites the
-whitelist's comparison chain (one button widens it to all 75 battle characters), and shows
-the resulting loadable set read back from the patched bytes rather than from a claim.
+specials *Masked Luc* and *Grasslands Chris*. Pick any of them from **Save Editor → Overview →
+Field character**; the picker offers exactly that set and nothing else.
+
+> **Only Hugo, Chris, Geddoe and Thomas are safe for story.** Scripted scenes are written for a
+> specific protagonist, and that event data lives in packed files no editor can reach — so a
+> scene can simply hang. Confirmed in play with **Koroku, Yuber and Lucia**; being one of the
+> eight the engine ships is *not* a safeguard, since Koroku is one of them and hangs. Treat the
+> rest as roaming picks, switch back before triggering story, and keep a backup save.
+
+Widening that whitelist to the other 67 battle characters is possible and lives in the ISO
+Editor under **Test → Field character**, flagged experimental. It rewrites the comparison chain
+(one button opens it to all 75) and shows the resulting loadable set read back from the patched
+bytes rather than from a claim — but the patch working is not the same as the game coping, which
+is why it is behind a Test tab rather than offered in the save editor.
 
 **Which maps carry which character.** A field model has to be in the area you're standing in,
 and the per-area sets are small — a median of **4 of the 28** area archives. So the picker
@@ -206,8 +216,9 @@ of that, both plain toggles:
 - **The second run range → animal run cycle.** **Koroku and Fubar are the only two playable
   models with no `run_start_L/R` clips** (76 of 78 have them) — their run cycle sits at slots
   `0x11A–0x11F` in the animal block, outside every band, so running as them never triggered a
-  battle. Confirmed in play, and this fixes it. The trade is named in the tab: that range
-  currently holds the mounted fast-move slots, so you lose encounters while galloping.
+  battle. **Both halves are confirmed in play**: stock, Koroku rolls encounters when walking and
+  never when running; with this set, running triggers them too. The trade is named in the tab:
+  that range currently holds the mounted fast-move slots, so you lose encounters while galloping.
 
 **Random encounter rate — the Encounter tab.** One number controls how often random battles
 trigger across the whole game, as a percentage of the stock rate:

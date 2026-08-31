@@ -287,6 +287,10 @@ doesn't, so he is an ordinary kind and his run falls back to the animal block.
 | `0x13B0BC` | `addiu $v0,$a1,-0x45` | `addiu $v0,$a1,-0x11A` |
 | `0x13B0C0` | `sltiu $v0,$v0,2` | `sltiu $v0,$v0,6` |
 
+**Confirmed in play (2026-08-31): with this set, running as Koroku triggers random encounters.**
+Both directions of the diagnosis are therefore played, not inferred — stock builds roll on his
+walk and never on his run, and the repointed range fixes exactly that.
+
 The human bands are untouched, so nothing that works today changes. The price is that mounted
 fast-movement stops counting as running — no encounters while galloping, in the four areas
 that have a mount. Mounted *walking* still rolls, through `IsWalking`'s own `[0x42,0x44]` range.
@@ -299,7 +303,74 @@ still does — walk anywhere in peace, run when you want to grind. Zeroing the r
 the inverse. Both are exposed as plain toggles rather than as a rate of 0, because they are a
 different thing: *when* encounters happen, not *how often*.
 
-## 9. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
+## 9. Cutscene softlocks — the real limit of the feature
+
+**Observed, three separate characters (2026-08-31):**
+
+| avatar | whitelisted? | result |
+|---|---|---|
+| **Koroku** (54) | yes, stock | scene hangs — he walks in, then the game waits forever |
+| **Yuber** (65) | no, ISO-patched in | softlock loading the scene |
+| **Lucia** (4) | no, ISO-patched in | softlock loading the scene |
+
+**Setting Koroku to Hugo's story content did not help**, which rules out the §7 team-index
+path as the cause.
+
+### A hypothesis that the data killed
+
+The clip scan found something striking: of the 23 models that ship event animations, **22 have
+`evneutral`** — the idle pose an actor holds during a cutscene — and **Koroku is the only one
+that does not**, despite owning all five `evwalk_*`. That looked like the mechanism: the scene
+walks him in, parks him in an idle pose whose clip does not exist, and waits on a `SetMotion`
+(@ `0x16EF4F0`, which does return success/failure) that can never succeed.
+
+**Yuber falsifies it as the general cause.** He *has* `evneutral` and hangs anyway. The clip
+gap is a real fact about Koroku's model and may still be why *his* hang looks the way it does,
+but it is not the explanation for the feature as a whole. Recorded here as a dead end so it is
+not re-derived.
+
+### What the evidence actually supports
+
+Scene scripts address **specific actors**, and they are authored per protagonist. §7 already
+showed the engine carries a per-team content index and that a town simply has no row for some
+leaders. The three observations are consistent with the simpler and larger claim: **a scripted
+scene can only be relied on to work for the protagonist it was written for.** That data lives
+in the packed event files outside the boot ELF — the region neither editor can reach — so there
+is no flag, table or constant that makes a script accept a substitute actor.
+
+Note that being on the engine's own whitelist is *not* a safety guarantee: Koroku is one of the
+stock eight and still hangs. The safe set for story purposes is the four protagonists.
+
+### The practical rule, and what the editor now does about it
+
+Non-stock avatars are a **roaming** feature. Switch the leader back to a protagonist before
+triggering story — one field in the save editor, and the game sets it back itself at chapter
+transitions anyway.
+
+As of v1.64.0 the editor is shaped around that rather than just warning about it:
+
+- The **save editor's picker offers only the eight ids the engine ships**, and marks the four
+  protagonists apart from the rest as *roaming only*. Widening it to all 75 is no longer
+  reachable from the save side at all.
+- The **whitelist widening moved to an ISO Editor `Test` tab**, behind a banner that says
+  plainly these patches are not known to work and names the three characters that hang.
+
+The patch doing what it says and the game coping with it are different claims, and the second
+one is false often enough that the UI should not imply otherwise.
+
+### The one patchable idea, unexplored
+
+Make a motion-wait give up when `SetMotion` reports failure instead of waiting forever, leaving
+the actor in their normal pose so the scene continues. `SetMotion` already returns the flag and
+the caller ignores it. It would only address hangs of that specific shape — Yuber's may not be
+one — and it is a shared path touched by every scripted motion in the game, so it is a
+materially bigger blast radius than anything shipped here. Research before it is a feature.
+
+Clip data caveat: measured where records sit in the **uncompressed** area archives. Presence of
+a clip is solid evidence; absence is weaker, because `ETC.BIN` payloads are compressed and
+opaque.
+
+## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other
 one is two words.
