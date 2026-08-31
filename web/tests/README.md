@@ -1,6 +1,6 @@
 # Web editor tests
 
-Eleven suites, all runnable with plain Node (v18+). `npm test` runs the nine browser-free
+Twelve suites, all runnable with plain Node (v18+). `npm test` runs the ten browser-free
 ones; `npm run test:e2e` runs the Playwright suite; `version-drift.mjs` is a pre-push check
 run on its own (see below):
 
@@ -161,6 +161,30 @@ fixture can't drift from the engine. The `.mjs` wrapper lets it ride in `npm tes
 
 ```bash
 node web/tests/save-roundtrip.mjs        # or: python3 web/tests/save_roundtrip.py
+```
+
+## `field-avatar.mjs` — the field-character gate, no browser
+The ISO tab's **Field character** section patches a hardcoded comparison chain in the boot ELF
+(`FieldAvatarModelRequest` @ vaddr `0x17B7560` — see
+[`docs/FIELD_CHARACTER_RESEARCH.md`](../../docs/FIELD_CHARACTER_RESEARCH.md)). Two things there
+can go wrong silently, and both are checked here.
+
+`web/iso.js` has no save engine to ask, so it **restates** `s3save.PARTY_IDS` and
+`FIELD_AVATAR_IDS`. If the Python ever changes, the tab keeps rendering — with every chip
+labelled as the wrong character. Both tables are parsed back out of `Editor/s3save.py` and
+compared. Second, the tab's "currently loadable" readout is the *only* feedback a user gets
+that a patch worked, and it works by re-running the game's own chain over the bytes just
+written; that simulation is driven against the stock immediates (must reproduce the eight
+whitelisted ids exactly, and reject Sarah) and against the widened ones (must admit all 75
+battle ids, keep the two specials, and still refuse id 0).
+
+When an `ISO/` folder is present in the checkout — following the `.git` pointer file, so it
+also finds the disc from a worktree — the five patch sites and the three read-only bounds are
+byte-checked against the pristine disc, which is what makes the constants *this disc's* rather
+than merely self-consistent. That half self-skips in CI.
+
+```bash
+node web/tests/field-avatar.mjs
 ```
 
 ## `e2e.mjs` — full end-to-end in headless Chromium (runs in CI)
