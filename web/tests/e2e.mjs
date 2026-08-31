@@ -15,7 +15,8 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
-  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK } from "./synth-iso.mjs";
+  ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
+  AVATAR_SITES, avatarWord } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -522,6 +523,57 @@ head("Mounted-pair mechanics — HP pooling and the Adrenaline pair-sum");
   check("...with the opcode half untouched",
     (r.u32(MECH.roundRider.off) >>> 0 & 0xFFFF0000) === (MECH.roundRider.stock & 0xFFFF0000));
   check("untouched mount rounding still 1", (r.u32(MECH.roundMount.off) & 0xFFFF) === 1);
+  await page.context().close();
+}
+
+head("Field character — the whitelist that decides who you can walk around as");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="avatar"]');
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  // The readout is the only feedback there is that a patch took, so it is the thing under
+  // test: it re-runs the game's chain over the bytes on screen. Stock must be the eight the
+  // retail engine ships, by id — names come from list1, which the fixture does not populate.
+  const chips = async () => (await page.$$eval("#isoView .tag", (els) =>
+    els.map((e) => (e.textContent.match(/#(\d+)/) || [])[1]).filter(Boolean).map(Number)));
+  check("stock reads back as the eight shipped avatars",
+    JSON.stringify(await chips()) === JSON.stringify([1, 2, 3, 29, 54, 63, 202, 203]),
+    JSON.stringify(await chips()));
+  check("the low-branch bound decodes to 4", (await page.inputValue('input.av-gate[data-i="1"]')) === "4");
+  check("slot 1 decodes to Koroku (54)", (await page.inputValue('select.av-slot[data-i="0"]')) === "54");
+  check("slot 3 decodes to Thomas (29)", (await page.inputValue('select.av-slot[data-i="2"]')) === "29");
+  // The tab has to say the two things that are true and unwelcome, or it oversells the patch.
+  { const txt = await page.textContent("#isoView");
+    check("it warns everyone beyond the stock eight is untested", /untested/i.test(txt));
+    check("it warns story scripts rewrite the leader byte", /chapter transitions/i.test(txt));
+    check("it points at the save editor for the actual pick", /Save Editor/.test(txt)); }
+
+  // Swapping one id: Luc's slot re-pointed at Sarah (66), the one character asked for that
+  // the retail chain has no room for.
+  await page.selectOption('select.av-slot[data-i="1"]', "66");
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  check("Sarah joins the loadable set", (await chips()).includes(66));
+  check("...and Luc leaves it", !(await chips()).includes(63));
+  { const r = await save(page);
+    check("only the Luc slot's immediate moved", r.u32(0x1FED78) === avatarWord(66, "eq"));
+    check("...with the opcode half untouched", (r.u32(0x1FED78) >>> 16) === (avatarWord(0x3F, "eq") >>> 16));
+    check("the other four sites are still stock",
+      [0, 1, 3, 4].every((i) => r.u32(AVATAR_SITES[i][0]) === avatarWord(AVATAR_SITES[i][1], AVATAR_SITES[i][2]))); }
+
+  // The one-button widening: both bounds to 0x53, which is what admits all 75 battle ids.
+  await page.click("#avStock");
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  await page.click("#avWide");
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  { const c = await chips();
+    check("widening admits every battle character", c.includes(66) && c.includes(82) && c.includes(1));
+    check("...and keeps the two specials", c.includes(202) && c.includes(203));
+    check("...and never admits id 0", !c.includes(0)); }
+  { const r = await save(page);
+    check("both range bounds became sltiu 0x53",
+      r.u32(0x1FED70) === avatarWord(0x53, "lt") && r.u32(0x1FED80) === avatarWord(0x53, "lt"));
+    check("the read-only second-half bounds were left alone",
+      r.u32(0x1FEDA0) === avatarWord(0x3F, "lt") && r.u32(0x1FEDAC) === avatarWord(0xCC, "lt")
+      && r.u32(0x1FEDB4) === avatarWord(0xCA, "lt")); }
   await page.context().close();
 }
 

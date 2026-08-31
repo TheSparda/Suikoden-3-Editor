@@ -33,6 +33,11 @@ jobs:
         run: node web/tests/text-core.mjs
       - name: Save round-trip (synthetic gamedata)
         run: node web/tests/save-roundtrip.mjs
+      # Guards the two restated tables in the ISO tab's field-character section against the
+      # Python they were copied from, and re-runs the game's own whitelist chain over both
+      # the stock and the widened immediates. The on-disc byte check self-skips here.
+      - name: Field-character gate (whitelist chain + restated-table drift)
+        run: node web/tests/field-avatar.mjs
       # The decoder's real coverage is against genuine xdelta3 output; without the binary those
       # checks self-skip and the patch-apply path would ride into a release untested.
       - name: Install xdelta3 (real-patch decode coverage)
