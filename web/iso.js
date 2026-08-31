@@ -166,10 +166,15 @@
     STOCK: [[1, 8], [31, 32], [41, 42]],      // Hugo+Fubar, Futch+Bright, Franz+Ruby
 
     // Combinations played through an emulator and seen to mount, animate and fight correctly.
-    // The first three are the retail pairs; Hugo+Bright is the first confirmed *re*-pairing
-    // (issue #14, 2026-08-31) and the evidence that a rider's bank drives a mount it was never
-    // authored for. Everything else on the grid is a prediction — see TIERS below.
-    CONFIRMED: [[1, 8], [31, 32], [41, 42], [1, 32]],
+    // The first three are the retail pairs. The two after them are re-pairings (issue #14,
+    // 2026-08-31): Hugo+Bright showed a rider's bank drives a mount it was never authored for,
+    // and Chris+Bright showed it survives crossing rig CLASSES — a horse-rigged rider on a
+    // flyer. Everything else on the grid is inferred from these; see DIRS and TIERS below.
+    //
+    // Observed with Chris+Bright and not yet explained: the formation/party menu does not show
+    // the pairing, but battle mounting happens anyway. `IsValidRidePair` has menu call sites, so
+    // the menu's mounted indicator evidently reads something else. Not traced.
+    CONFIRMED: [[1, 8], [31, 32], [41, 42], [1, 32], [2, 32]],
 
     // What the tab claims per combination. Ordered most to least confident; `cls` picks the
     // badge colour. `why` is the tooltip, and the legend text, so it has to stand alone.
@@ -177,9 +182,9 @@
       confirmed: { cls: "ok", mark: "✓", label: "confirmed",
         why: "played through an emulator: the pair mounts, animates and fights correctly." },
       expected: { cls: "exp", mark: "•", label: "expected",
-        why: "this rider's mounted clips were authored around this class of mount, so the rig should fit. Not yet played." },
+        why: "a rider with this rig class has been played on this class of mount — either it matches (horse rig on Ruby) or the crossing itself is confirmed (a horse-rigged rider on a flyer, via Chris+Bright). This exact pair has not been played." },
       untested: { cls: "unt", mark: "?", label: "untested",
-        why: "the pairing is accepted, but these clips were authored around the other class of mount — a horse-rigged rider on a flyer, or the reverse. Seat height, angle and scale are unknown." },
+        why: "the pairing is accepted, but nothing with this rider's rig class has been played on this class of mount — currently only flyer-rigged riders on Ruby. Seat height, angle and scale are unknown." },
       rough: { cls: "rough", mark: "≈", label: "rough",
         why: "this rider carries only part of the mounted-battle bank, so expect missing or wrong clips whichever mount you pick." },
       nobank: { cls: "bad", mark: "✗", label: "won't animate",
@@ -1811,7 +1816,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
-      mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game (Hugo+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger.",
+      mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -2823,7 +2828,18 @@
     const mountName = (id) => (MOUNTS.mounts.find((m) => m[0] === id) || [])[1] || null;
     // Per-combination confidence. The byte patch is the same edit for every pair; what differs
     // is whether the rider's mounted rig suits that class of mount, which static analysis can't
-    // answer. So: confirmed = played, expected = rig class matches, untested = it doesn't.
+    // answer — so the grid is derived from what has actually been played rather than asserted.
+    //
+    // A pair is "expected" when some CONFIRMED pair shares its *direction* — the rider's rig
+    // class paired against the mount's class. Stock covers flyer→flyer and horse→horse; adding
+    // Chris+Bright covers horse→flyer, which is why the horse-rigged riders read expected on the
+    // flyers now. That leaves flyer→horse (a flyer-rigged rider on Ruby) as the only direction
+    // with no precedent, and it stays untested. Add a played pair to CONFIRMED and the whole grid
+    // follows — no tier needs hand-editing.
+    const DIRS = new Set(MOUNTS.CONFIRMED.map(([a, b]) => {
+      const r = riderRow(a), m = MOUNTS.mounts.find((x) => x[0] === b);
+      return r && m ? `${r[2]}>${m[2]}` : null;
+    }).filter(Boolean));
     const tierOf = (rId, mId) => {
       if (!rId || !mId) return "off";
       const r = riderRow(rId), m = MOUNTS.mounts.find((x) => x[0] === mId);
@@ -2831,7 +2847,7 @@
       if (MOUNTS.CONFIRMED.some(([a, b]) => a === rId && b === mId)) return "confirmed";
       if (r[3] === "none") return "nobank";
       if (r[3] === "partial") return "rough";
-      return r[2] === m[2] ? "expected" : "untested";
+      return DIRS.has(`${r[2]}>${m[2]}`) ? "expected" : "untested";
     };
     // Three shapes of the same fact, sized to where it goes. The grid's rider column is pinned
     // and never wraps, so it takes the shortest form — anything longer (Sharon's clip list) sets
@@ -2947,12 +2963,17 @@
           <i>is this rider allowed on this mount?</i> — and answers it from three hard-coded comparisons.
           These dropdowns rewrite those three, so <b>any rider below can be put on Fubar, Bright or Ruby</b>.
           There is no fourth slot to add.</div>
-        <div class="muted" style="margin:0 0 8px"><b>Re-pairing works.</b> <b>Hugo + Bright</b> has been
-          played through an emulator: it mounts and fights correctly, even though Hugo's mounted clips were
-          authored for a griffon and Bright is a dragon. So the patch itself is settled, and the only thing
-          that still varies by combination is the <i>animation rig</i> — whether a rider authored around one
-          class of mount sits correctly on the other. Every combination below carries its own marker.
-          Keep a backup ISO for anything not marked <span class="mcf ok">✓ confirmed</span>.</div>
+        <div class="muted" style="margin:0 0 8px"><b>Re-pairing works, including across mount types.</b>
+          Two re-pairings have been played through an emulator. <b>Hugo + Bright</b> mounts and fights
+          correctly even though Hugo's mounted clips were authored for a griffon and Bright is a dragon.
+          <b>Chris + Bright</b> then settled the harder case — a rider whose clips were authored around a
+          <i>horse</i> driving a <i>flyer</i> — so the patch is settled and so is the direction that looked
+          riskiest. What has no precedent yet is the reverse: a flyer-rigged rider (Hugo, Futch) on Ruby.
+          Every combination below carries its own marker; keep a backup ISO for anything not marked
+          <span class="mcf ok">✓ confirmed</span>.</div>
+        <div class="muted" style="margin:0 0 8px"><b>The menu won't tell you it worked.</b> Observed with
+          Chris + Bright: the formation menu shows no sign of the pairing, and the pair mounts in battle
+          anyway. Judge a re-pairing by what happens when the battle starts, not by the menu.</div>
         <div class="warnbox" style="margin:0 0 8px"><b>Both halves must be in your party.</b> The candidate
           mount is drawn from party membership, so e.g. Chris on Bright still needs Futch recruited (that's
           how Bright joins) and both Chris and Bright deployed.</div>
@@ -4711,7 +4732,7 @@
     ],
     mounts: [
       ["Fubar", "guli", "8", "flyer", "full battle set — b_neutral, b_att, b_magic, b_hinsi; ridden by Hugo (stock)"],
-      ["Bright", "brit", "32", "flyer", "full battle set; ridden by Futch (stock) and by Hugo re-paired (confirmed in-game)"],
+      ["Bright", "brit", "32", "flyer", "full battle set; ridden by Futch (stock) and, re-paired, by Hugo and by Chris — both confirmed in-game"],
       ["Ruby", "mskr", "42", "horse", "full battle set; Franz's horse, a Star of Destiny"],
       ["Chris's horse", "s2um", "309", "ground", "battle clips: b_N_damage + b_down_start only (passive)"],
       ["Zexen-knight horse", "zkum", "308", "ground", "same two passive battle clips"],
@@ -4746,7 +4767,8 @@
       `<div class="muted" style="margin:0 0 10px">Decoded off this disc. Capability is read from <b>clip
         containment</b> — a clip belongs to the record whose payload holds it. Bundling is <b>asset
         residency</b>, not proof a scene mounts anyone. Only the battle pair table has been confirmed in an
-        emulator (the three stock pairs plus Hugo+Bright); everything else on this page is static analysis.</div>
+        emulator (the three stock pairs plus Hugo+Bright and Chris+Bright); everything else on this page is
+        static analysis.</div>
       <div class="bag-h">Riders — who is rigged to be mounted</div>
       ${tbl(["Character", "Model", "Field ride", "Mounted battle", "Notes"],
         MOUNTREF.riders.filter((r) => hit(...r)).map((r) =>
