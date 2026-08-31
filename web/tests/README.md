@@ -211,3 +211,25 @@ half (`boot-verify`: boot the disc, snapshot EE RAM, compare the tables byte-for
 against the disc), and its own logic is covered offline by
 `python3 tools/pcsx2/selftest.py`, which runs in CI. Running `boot-verify` still needs a
 disc and a PS2 BIOS, which CI does not have.
+
+## `stream-save.mjs` — the phone save path, byte for byte
+
+`e2e.mjs` saves through a **stubbed** `FileSystemWritable`, which only exists on desktop
+Chromium. Every phone takes the other path: no `showSaveFilePicker`, so the editor re-streams
+the whole disc with the edited region spliced in, hands the stream to the real service worker,
+and downloads it. That loop — chunked reads, the splice, the disc-wide rename, the service
+worker hand-off — had no coverage, and its failure modes (a chunk boundary landing mid-region,
+a splice off by one, a rename that lands in only one chunk) are all invisible to the in-place
+path.
+
+This test runs it for real: no FS Access API, a real registered service worker, a real
+download, then the downloaded image is compared to the source byte for byte. Everything
+outside the editable block must be identical *except* a "Hugo" planted at 0x1000 — outside
+the block on purpose, since reaching it is the entire reason the streaming save exists.
+
+```bash
+node web/tests/stream-save.mjs      # or: npm --prefix web/tests run test:stream
+```
+
+Skips cleanly (exit 0) without playwright-core/Chromium, and if the service worker never
+takes control.
