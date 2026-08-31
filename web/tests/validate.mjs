@@ -173,6 +173,17 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
   (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js");
   (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js"); }
+// Boot gate: the save editor is inert until Pyodide is up, so a full-screen block covers it.
+// Two things about it are load-bearing and easy to break later, so assert them statically:
+// it must be in the MARKUP (built from script it would flash the dead UI first), and it must
+// keep the ISO-editor escape hatch, because that tab needs no Python and the gate covers the
+// mode tabs. Also that app.js can actually take it down on both outcomes.
+{ const js = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
+  (/id="bootOv"/.test(html) ? ok : bad)("boot gate is in index.html (up on first paint)");
+  (/id="bootIso"/.test(html) ? ok : bad)("boot gate offers the ISO-editor escape hatch");
+  (/id="bootFill"/.test(html) && /id="bootMsg"/.test(html) ? ok : bad)("boot gate has a progress bar + message");
+  (/bootGate\.close\(\)/.test(js) ? ok : bad)("app.js closes the boot gate");
+  (/bootGate\.fail\(/.test(js) ? ok : bad)("app.js puts the boot gate in an error state when the engine fails"); }
 
 // 5) canonical recruit-team map: parses, teams valid, every name is in s3save.py ROSTER
 console.log("Recruit teams:");

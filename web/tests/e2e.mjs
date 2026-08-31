@@ -64,7 +64,14 @@ async function newPage(viewport) {
   await page.addInitScript(fakeHandle());
   return page;
 }
-async function gotoIsoTab(page) { await page.goto(base, { waitUntil: "domcontentloaded" }); await page.click('.mtab[data-mode="iso"]'); }
+// The full-screen boot gate covers the mode tabs until Pyodide is up, and these tests abort
+// the Pyodide CDN on purpose — so take the gate down first. That button exists for real users
+// too: the ISO editor needs no Python. web/tests/boot-gate.mjs is what tests the gate itself.
+async function dismissBoot(page) {
+  const b = await page.$("#bootHide");
+  if (b) await b.click().catch(() => {});   // may have self-closed already (stubbed engine)
+}
+async function gotoIsoTab(page) { await page.goto(base, { waitUntil: "domcontentloaded" }); await dismissBoot(page); await page.click('.mtab[data-mode="iso"]'); }
 async function loadIso(page) { await gotoIsoTab(page); await page.click("#isoPick"); await page.waitForSelector("#isoTabs", { timeout: 8000 }); }
 
 // Reconstruct the final on-disk byte at an offset = the captured write if present, else the
@@ -1944,6 +1951,7 @@ head("Last opened ISO (persist handle + reopen)");
   // ...and on the NEXT visit it comes back by itself: same context (IndexedDB + the OPFS
   // handle survive a reload), so opening the ISO Editor tab reopens the disc with no click.
   await page.reload({ waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   await page.click('.mtab[data-mode="iso"]');
   check("prior ISO reopens automatically on the next visit", await until(page, () => !!document.querySelector("#isoTabs"), undefined, 8000));
   // Closing it must STAY closed — no bounce straight back into the disc just closed.
@@ -1953,6 +1961,7 @@ head("Last opened ISO (persist handle + reopen)");
   // Opting out sticks across a reload: the chip is offered, nothing loads on its own.
   await page.uncheck("#isoAuto");
   await page.reload({ waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   await page.click('.mtab[data-mode="iso"]');
   await page.waitForSelector("#isoRecent .recent", { timeout: 3000 });
   await page.waitForTimeout(300);
@@ -1991,6 +2000,7 @@ head("Recruit section (save editor, Pyodide stubbed)");
     });
   `);
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector('[data-sub="recruit"]', { timeout: 5000 });
@@ -2047,6 +2057,7 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
     });
   `);
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector('[data-sub="stars"]', { timeout: 5000 });
@@ -2096,6 +2107,7 @@ head("Save <-> JSON round-trip (save editor, Pyodide stubbed)");
     });
   `);
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector("#exportJson");
@@ -2182,6 +2194,7 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
     });
   `);
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
   await page.waitForSelector("#carryover", { timeout: 5000 });
@@ -2364,6 +2377,7 @@ head("Close returns to loader");
 head("Save editor tab still boots (structural)");
 { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   check("save loader present", !!(await page.$("#drop")));
   check("both mode tabs", (await page.locator(".mtab").count()) === 2);
   await page.click('.mtab[data-mode="iso"]'); await page.waitForTimeout(80);
@@ -2379,6 +2393,7 @@ head("Save editor tab still boots (structural)");
 head("Save editor — guide overlays on character cards");
 { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   const built = await page.evaluate(async () => {
     const mk = (rosterIndex, name) => ({
       rosterIndex, name, addr: 0, id: 0, level: 30, curHP: 200, maxHP: 200, expToNext: 500,
@@ -2426,6 +2441,7 @@ head("Save editor — guide overlays on character cards");
 head("Save editor — health check panel");
 { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
   const r = await page.evaluate(async () => {
     const mk = (rosterIndex, name, over) => Object.assign({
       rosterIndex, name, id: rosterIndex + 1, idExpected: rosterIndex + 1,

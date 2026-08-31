@@ -59,9 +59,9 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 // ---- Pyodide bootstrap -----------------------------------------------------
 async function bootPyodide() {
-  bootProgress(10, "Downloading Python runtime…");
+  bootProgress(10, "Downloading Python runtime…", "rt");
   const py = await loadPyodide();
-  bootProgress(55, "Loading save module…");
+  bootProgress(55, "Loading save module…", "mod");
   const grab = async (url) => {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`fetch ${url} (${r.status})`);
@@ -78,7 +78,7 @@ async function bootPyodide() {
   const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : "{}"; } catch (e) { return "{}"; } };
   py.FS.writeFile("itemdescextra.json", await grabOpt("../Editor/s3_rune_food_desc.json"));
   py.FS.writeFile("skillref.json", await grabOpt("../Editor/s3_skill_ref.json"));
-  bootProgress(80, "Parsing reference tables…");
+  bootProgress(80, "Parsing reference tables…", "ref");
 
   py.runPython(`
 import json, re, s3save
@@ -176,7 +176,7 @@ def carryover_bonus(payload_json):
   CHAR_LIST = REF.charChoices.map((id) => ({ id, name: REF.charById[id] }));
   OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
   PY = py;
-  bootProgress(100, "Ready");
+  bootProgress(100, "Ready", "done");
   return py;
 }
 
@@ -1541,11 +1541,71 @@ function STAT_NAMES() {
 }
 function setStatus(msg, kind) { const el = $("#status"); if (el) { el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); } }
 function setDropMsg(msg, isErr) { $("#engineStatus").innerHTML = (isErr ? "⚠ " : "") + msg; }
-function bootProgress(pct, msg) {
+function bootProgress(pct, msg, step) {
+  bootGate.step(pct, msg, step);
   const el = $("#engineStatus"); if (!el) return;
   el.innerHTML = `<div class="bootmsg">${pct < 100 ? '<span class="spinner"></span>' : ""}${esc(msg)}</div>` +
     `<div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>`;
 }
+
+// ---- boot gate (the full-screen block in index.html) ------------------------
+// Two surfaces, one progress source: this drives the gate and the inline #engineStatus line,
+// because the gate is dismissible (the ISO editor needs no Python and must stay reachable) and
+// whoever dismisses it still deserves to see the engine come up underneath.
+const bootGate = (() => {
+  const STEPS = ["rt", "mod", "ref"];
+  let closed = false;
+  const ov = () => document.getElementById("bootOv");
+  return {
+    // pct/msg mirror bootProgress; step is the STEPS key now running ("done" = all finished).
+    step(pct, msg, step) {
+      const o = ov(); if (!o || closed) return;
+      const fill = o.querySelector("#bootFill"), m = o.querySelector("#bootMsg");
+      if (fill) fill.style.width = Math.max(2, Math.min(100, pct)) + "%";
+      if (m) { m.className = "boot-msg"; m.innerHTML = `<span class="spinner"></span>${esc(msg)}`; }
+      if (!step) return;
+      const at = STEPS.indexOf(step);   // -1 for "done" → everything ticks
+      STEPS.forEach((k, i) => {
+        const li = o.querySelector(`.boot-steps li[data-step="${k}"]`); if (!li) return;
+        li.classList.toggle("on", i === at);
+        li.classList.toggle("done", at < 0 || i < at);
+      });
+    },
+    // Engine failed: keep the gate up (there is nothing behind it that works) but swap the
+    // spinner for the reason and the two things that actually help — a retry and a cache nuke,
+    // since a half-written service-worker cache is the usual culprit.
+    fail(msg) {
+      const o = ov(); if (!o || closed) return;
+      const m = o.querySelector("#bootMsg"), bar = o.querySelector(".bar"), acts = o.querySelector("#bootActs");
+      const t = o.querySelector("#bootTitle");
+      if (t) t.textContent = "The Python engine didn’t start";
+      if (m) { m.className = "boot-msg err"; m.textContent = "⚠ " + msg; }
+      if (bar) bar.querySelector(".bar-fill").classList.add("err");
+      // The step that was mid-flight is the one that failed — a spinning glyph next to
+      // "didn't start" reads as still-working, which is the opposite of the truth.
+      const at = o.querySelector(".boot-steps li.on");
+      if (at) { at.classList.remove("on"); at.classList.add("bad"); }
+      o.querySelector("#bootMsg")?.setAttribute("aria-busy", "false");
+      if (acts && !document.getElementById("bootRetry")) {
+        acts.insertAdjacentHTML("afterbegin",
+          '<button type="button" class="chip" id="bootRetry">↻ Retry</button>' +
+          '<button type="button" class="chip" id="bootNuke">Clear cache &amp; reload</button>');
+        document.getElementById("bootRetry").onclick = () => location.reload();
+        document.getElementById("bootNuke").onclick = forceUpdate;
+      }
+      const hide = document.getElementById("bootHide");
+      if (hide) hide.textContent = "Dismiss anyway";
+    },
+    close() {
+      const o = ov(); if (!o || closed) return;
+      closed = true;
+      o.classList.add("gone");
+      // Remove it rather than leaving an invisible fixed layer over the app.
+      setTimeout(() => o.remove(), 260);
+    },
+    get closed() { return closed; },
+  };
+})();
 function dirtyNow() { try { return typeof EDITS !== "undefined" && hasChanges(); } catch (e) { return false; } }
 
 // ---- wire up ---------------------------------------------------------------
@@ -1623,11 +1683,28 @@ window.addEventListener("DOMContentLoaded", () => {
     if (dirtyNow()) { e.preventDefault(); e.returnValue = ""; }
   });
 
+  // Boot gate: the ISO button hands off to the tab that needs no engine (iso.js owns the tab
+  // switch, so click its button rather than reach into its closure); Dismiss/Escape let anyone
+  // out — a modal you cannot leave is worse than a slow one, and the picker stays disabled
+  // until the engine is actually up regardless.
+  const bootIso = $("#bootIso"), bootHide = $("#bootHide"), bootCard = $("#bootCard");
+  if (bootIso) bootIso.onclick = () => {
+    bootGate.close();
+    const tab = document.querySelector('.mtab[data-mode="iso"]'); if (tab) tab.click();
+  };
+  if (bootHide) bootHide.onclick = () => bootGate.close();
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !bootGate.closed) bootGate.close(); });
+  if (bootCard) { try { bootCard.focus(); } catch (e) {} }
+
   pyReady = bootPyodide();
   pyReady.then(() => {
     setDropMsg("Python engine ready — load a save file.", false);
     pickBtn.disabled = false;
-  }).catch((e) => { setDropMsg("Engine failed to start: " + e.message, true); });
+    bootGate.close();
+  }).catch((e) => {
+    setDropMsg("Engine failed to start: " + e.message, true);
+    bootGate.fail(e.message);
+  });
   // After the engine is up: a save shared into the PWA wins; otherwise offer the last one.
   pyReady.then(async () => {
     const shared = await pickupSharedFile();
