@@ -392,16 +392,43 @@ PLAYTIME_OFF = 0x28
 # Exposed as editable-but-flagged; a wrong value is low-risk and easily fixed in-game.
 GOLD_OFF = 0x3210
 
-# Editable name fields (herrvillain map). Fixed 16-char ASCII, 0-terminated, 17-byte
-# slots — safe in-place edits. Cross-verified against real saves (Flame Champion name,
-# castle name, and the imported Suikoden I/II hero + country names).
+# Editable name fields. Eight 17-byte, null-terminated slots at 0xC9E0 + n*0x11, but the
+# game addresses them through SetName(index, mode, src) @ 0x16D49E8, whose jump table puts
+# them in a DIFFERENT order — so "index" below is the game's, and it is the order the
+# Suikoden II importer writes them in. Defaults are installed on a new game from the
+# pointer table at 0x0199F1D0. See docs/S1_S2_CARRYOVER_TRACKER.md.
+#
+#   idx 0 0xCA13 McDohl       S1 hero      <- S2 save +0x1896
+#   idx 1 0xCA24 Toran        S1 country   <- S2 save +0x18A8
+#   idx 2 0xCA35 Genkaku Jr.  S2 hero      <- S2 save +0x1812
+#   idx 3 0xCA46 Dunan        S2 name #2   <- S2 save +0x18B1
+#   idx 4 0xCA57 Dunan        S2 name #3   <- S2 save +0x189F
+#   idx 5 0xC9E0 Hideo        Flame Champion (player-entered)
+#   idx 6 0xCA02 Dunan        S2 country/state — never written by the importer
+#   idx 7 0xC9F1 Budehuc      Castle (player-entered)
 NAME_FIELDS = [
     ("flameChampion", 0xC9E0, 16, "Flame Champion name"),
     ("castle",        0xC9F1, 16, "Castle name"),
-    ("s1Hero",        0xCA13, 16, "Suikoden I hero name"),
-    ("s1Country",     0xCA24, 16, "Suikoden I country/castle"),
-    ("s2Hero",        0xCA35, 16, "Suikoden II hero name"),
+    ("s1Hero",        0xCA13, 16, "Suikoden I hero"),
+    ("s1Country",     0xCA24, 16, "Suikoden I country"),
+    ("s2Hero",        0xCA35, 16, "Suikoden II hero"),
+    ("s2Name2",       0xCA46, 16, "Suikoden II name 2"),
+    ("s2Name3",       0xCA57, 16, "Suikoden II name 3"),
+    ("s2Country",     0xCA02, 16, "Suikoden II country"),
 ]
+# What a new game puts in each slot. A field still holding its default is the strongest
+# hint (short of the flags below) that nothing was imported into it.
+NAME_DEFAULTS = {
+    "flameChampion": "Hideo",       "castle":    "Budehuc",
+    "s1Hero":        "McDohl",      "s1Country": "Toran",
+    "s2Hero":        "Genkaku Jr.", "s2Name2":   "Dunan",
+    "s2Name3":       "Dunan",       "s2Country": "Dunan",
+}
+NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
+
+# The name slots the Suikoden II importer actually writes, per game.
+CARRYOVER_NAME_KEYS = {"s1": ["s1Hero", "s1Country"],
+                       "s2": ["s2Hero", "s2Name2", "s2Name3"]}
 
 def _read_str(data, off, n):
     raw = data[off:off+n].split(b"\x00")[0]
@@ -421,28 +448,156 @@ def _to_fullwidth(s):
     return "".join("　" if c == " " else chr(ord(c) + 0xFEE0) if 0x21 <= ord(c) <= 0x7E else c
                    for c in s)
 
-# Suikoden III seeds these carryover name fields with canonical DEFAULTS unless a real
-# Suikoden I / II memory-card save is loaded (which overwrites them with that save's
-# hero/country). So a value differing from the default is our signal that S1/S2 data was
-# actually carried over. (There's no separate boolean load-flag byte in this region.)
-S12_DEFAULTS = {"s1Hero": "McDohl", "s1Country": "Toran",
-                "s2Hero": "Genkaku Jr.", "s2Country": "Dunan"}
+# ---------------------------------------------------------------------------
+# The game flag array, and the two Suikoden I/II carryover flags.
+#
+# GameFlag(index, bit, op) @ 0x16D3930 is the engine's whole boolean store: a 0x200-byte
+# array whose base, EE 0x0196B410, is save offset 0x30 (the save block is mapped at EE
+# 0x0196B3F0 with a 0x10-byte file header, so file = ee - 0x0196B3F0 + 0x10). op 6 sets a
+# bit, op 7 clears it, anything else just reads. The recruit table at 0x232 starts
+# immediately after the array.
+#
+# The Suikoden II importer (overlay function 0x121CBA0 inside DATA/ETC.BIN) sets exactly
+# two of those bits, and the script-condition evaluator @ 0x17B54C8 reads them back as
+# condition ids 0x248 (S2) and 0x249 (S1) — which is how dialogue and the substituted
+# hero/country names key off "did you load previous-game data".
+FLAG_BASE  = 0x30
+FLAG_COUNT = 0x200
+CARRYOVER_FLAGS = {"s2": (1, 3), "s1": (1, 4)}     # game -> (flag index, bit)
+
+
+def game_flag(gamedata, index, bit):
+    """Read one bit of the game flag array. Out-of-range reads as 0, like the engine."""
+    if not (0 <= index < FLAG_COUNT and 0 <= bit < 8):
+        return False
+    off = FLAG_BASE + index
+    return off < len(gamedata) and bool(gamedata[off] >> bit & 1)
+
+
+def set_game_flag(buf, index, bit, on):
+    """Set/clear one bit of the game flag array in a bytearray. True if it changed."""
+    if not (0 <= index < FLAG_COUNT and 0 <= bit < 8):
+        return False
+    off = FLAG_BASE + index
+    if off >= len(buf):
+        return False
+    before = buf[off]
+    buf[off] = (before | (1 << bit)) if on else (before & ~(1 << bit))
+    return buf[off] != before
+
+
+# ---------------------------------------------------------------------------
+# The rest of the Suikoden II bonus — the part the two flags do NOT cover.
+#
+# Past the names, the importer walks a 3-entry table of Suikoden II character records and
+# upgrades the matching Suikoden III character. Everything here is read out of that
+# function; see docs/S1_S2_CARRYOVER_TRACKER.md for the disassembly it came from.
+#
+# The importer names the three in the PARTY_IDS space (the battle-character ids 1..0xD8 that
+# 0x16C6D08 bounds-checks), NOT roster order: 7, 0x1F and 0x34. Through PARTY_ROSTER those
+# are roster slots 6, 29 and 45 — Viki, Futch and Belle, all three Suikoden II characters,
+# which is the cross-check that the id space is being read right (as roster indices or as
+# list1 ids the same numbers name an unrelated trio). Resolved through PARTY_ROSTER rather
+# than hardcoded so it cannot drift from that table.
+CARRYOVER_BATTLE_IDS = [7, 0x1F, 0x34]
+
+# S2 rune id -> S3 rune item id, from the 38-entry table at overlay 0x012139B0 (indexed by
+# s2RuneId - 1). Only the elemental runes plus Blinking and Pale Gate carry over; every
+# other S2 rune maps to 0 (nothing).
+CARRYOVER_RUNE_MAP = {1: 0x13D, 2: 0x13D, 3: 0x149, 4: 0x149, 5: 0x145, 6: 0x145,
+                      7: 0x14C, 8: 0x14C, 9: 0x141, 10: 0x141, 15: 0x14F, 17: 0x151}
+# The distinct S3 runes reachable that way: Fire, Lightning, Wind, Water, Earth, Blinking,
+# Pale Gate. The UI offers exactly these, since no other rune can arrive by carryover.
+CARRYOVER_RUNES = [0x13D, 0x141, 0x145, 0x149, 0x14C, 0x14F, 0x151]
+# The three rune slots the import fills, in the order it reads them out of the S2 record
+# (S2 record +0x15, +0x16, +0x17).
+CARRYOVER_RUNE_SLOTS = ["headRune", "rightRune", "leftRune"]
+
+
+def carryover_level(cur_level, s2_level):
+    """Level a carryover character ends up at, by the importer's own formula:
+    target = cur + cur*max(0, s2Level-50)/100, capped at 99, and a level-99 Suikoden II
+    character is worth a further +5. Levelling is one-way — the import only ever levels
+    a character up, so a target below the current level is a no-op."""
+    cur, s2 = int(cur_level), int(s2_level)
+    target = cur + cur * max(0, s2 - 50) // 100
+    if target >= 100:
+        target = LEVEL_MAX
+    if s2 >= 99:                       # the second pass, for a maxed S2 character
+        target = min(LEVEL_MAX, target + 5)
+    return max(cur, min(LEVEL_MAX, target))
+
+
+def carryover_weapon_level(cur_weapon_lv, s2_weapon_lv):
+    """Weapon level after the import: cur + max(0, s2WeaponLv-10)/2, capped at 16."""
+    cur, s2 = int(cur_weapon_lv), int(s2_weapon_lv)
+    return max(cur, min(WEAPONLV_MAX, cur + max(0, s2 - 10) // 2))
+
+
+def carryover_reference():
+    """Everything the UI needs to render the carryover panel: the flag addresses, the three
+    affected characters (party id, roster index, name) and the runes that can arrive."""
+    chars = [{"battleId": bid, "rosterIndex": PARTY_ROSTER[bid], "name": party_name(bid)}
+             for bid in CARRYOVER_BATTLE_IDS if bid in PARTY_ROSTER]
+    return {"flags": {g: {"index": i, "bit": b, "offset": FLAG_BASE + i, "mask": 1 << b}
+                      for g, (i, b) in CARRYOVER_FLAGS.items()},
+            "chars": chars, "runes": list(CARRYOVER_RUNES),
+            "runeSlots": list(CARRYOVER_RUNE_SLOTS),
+            "levelMax": LEVEL_MAX, "weaponLvMax": WEAPONLV_MAX}
+
+
+def carryover_bonus_edits(requests):
+    """Turn "this is what they were in my Suikoden II save" into character edits.
+
+    requests: {rosterIndex: {"level": curLv, "weaponLv": curWpn, "s2Level": n,
+                             "s2WeaponLv": n, "runes": [itemId, itemId, itemId]}}
+    Returns the same shape apply_edits_to_gamedata() takes for `edits`, so the caller can
+    merge it straight into the pending-edit set and let the user review it before applying."""
+    out = {}
+    for ridx, r in (requests or {}).items():
+        ridx = int(ridx)
+        fields = {}
+        lv = carryover_level(r.get("level") or 1, r.get("s2Level") or 0)
+        if lv != int(r.get("level") or 1):
+            fields["level"] = lv
+        wl = carryover_weapon_level(r.get("weaponLv") or 1, r.get("s2WeaponLv") or 0)
+        if wl != int(r.get("weaponLv") or 1):
+            fields["weaponLv"] = wl
+        equip = {slot: int(rid) for slot, rid in zip(CARRYOVER_RUNE_SLOTS, r.get("runes") or [])
+                 if rid}
+        if equip:
+            fields["equip"] = equip
+        if fields:
+            out[ridx] = fields
+    return out
+
 
 def detect_carryover(gamedata):
-    """Report whether Suikoden I / II save data appears to have been loaded, based on
-    whether the carryover name fields differ from S3's built-in defaults."""
-    s1h = _read_str(gamedata, 0xCA13, 16)
-    s1c = _read_str(gamedata, 0xCA24, 16)
-    s2h = _read_str(gamedata, 0xCA35, 16)
-    s2c = _read_str(gamedata, 0xCA02, 16)   # "SII army/country" per the map
-    s1_loaded = (s1h != S12_DEFAULTS["s1Hero"] or s1c != S12_DEFAULTS["s1Country"])
-    s2_loaded = (s2h != S12_DEFAULTS["s2Hero"] or s2c != S12_DEFAULTS["s2Country"])
-    return {
-        "s1": {"loaded": s1_loaded, "hero": s1h, "country": s1c,
-               "note": "custom S1 data" if s1_loaded else "default (no S1 save detected)"},
-        "s2": {"loaded": s2_loaded, "hero": s2h, "country": s2c,
-               "note": "custom S2 data" if s2_loaded else "default (no S2 save detected)"},
-    }
+    """Whether Suikoden I / II data was loaded into this save.
+
+    The answer is the flag, not a guess: the importer sets GameFlag(1,3) for Suikoden II
+    and GameFlag(1,4) for Suikoden I, and those are what the game's own scripts test. The
+    name comparison is kept alongside as a secondary hint, because a save whose flag is set
+    but whose names are all still defaults is worth mentioning (S3 seeds the Suikoden I
+    names with McDohl/Toran on the import path itself — see the tracker doc)."""
+    out = {}
+    for game in ("s1", "s2"):
+        idx, bit = CARRYOVER_FLAGS[game]
+        loaded = game_flag(gamedata, idx, bit)
+        names = {k: _read_str(gamedata, NAME_OFF[k][0], NAME_OFF[k][1])
+                 for k in CARRYOVER_NAME_KEYS[game]}
+        custom = any(v != NAME_DEFAULTS[k] for k, v in names.items())
+        keys = CARRYOVER_NAME_KEYS[game]
+        out[game] = {
+            "loaded": loaded, "flagIndex": idx, "flagBit": bit,
+            "flagOffset": FLAG_BASE + idx, "flagMask": 1 << bit,
+            "names": names, "customNames": custom,
+            "hero": names[keys[0]], "country": names[keys[1]],
+            "note": ("loaded" if loaded else "not loaded")
+                    + (" · names customised" if custom else " · names are the defaults"),
+        }
+    return out
+
 
 # --- Inventory ------------------------------------------------------------------
 # Entries are 8 bytes: item id (u16) + count (u16) + 4 bytes of per-item state.
@@ -951,15 +1106,16 @@ def _clamp(v, width, cap=None):
         hi = min(hi, cap)
     return max(0, min(hi, int(v)))
 
-NAME_OFF = {key: (off, n) for key, off, n, _ in NAME_FIELDS}
 
 def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
-                            party_edits=None, recruit_edits=None, gold=None):
+                            party_edits=None, recruit_edits=None, gold=None,
+                            carryover=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
                              "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
     party_edits: {partySlot(0..5): charId} for the active-party composition.
+    carryover: {"s1": bool, "s2": bool} — the Suikoden I / II "data was loaded" flags.
     recruit_edits: {rosterIndex: value}, where value is a bool (recruit/un-recruit) OR a
         dict {"recruited": bool, "recruiter": "Hugo"|"Chris"|"Geddoe"|"Thomas"|""} to also
         set which protagonist recruited them (pre-merge party ownership).
@@ -1085,6 +1241,13 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         _rebuild_formation(b, old_party)
     if gold is not None:
         struct.pack_into("<I", b, GOLD_OFF, _clamp(gold, 4)); changed += 1
+    # Carryover flags. Counted as changed only when the bit actually moves, so ticking a box
+    # that is already ticked does not make an otherwise-empty Apply write the file.
+    for game, on in (carryover or {}).items():
+        if game in CARRYOVER_FLAGS:
+            idx, bit = CARRYOVER_FLAGS[game]
+            if set_game_flag(b, idx, bit, bool(on)):
+                changed += 1
     return fix_gamedata_checksum(bytes(b)), changed
 
 def _backup_once(path, make_backup):
@@ -1095,17 +1258,17 @@ def _backup_once(path, make_backup):
 
 
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
-                     party_edits=None, recruit_edits=None, gold=None):
+                     party_edits=None, recruit_edits=None, gold=None, carryover=None):
     """Apply edits to one save's gamedata, in place, for any supported container
     (memory card, .psu export, or raw gamedata). Fixes the save checksum (and, for
     memory cards, per-page ECC). Backs up the file first by default."""
     fmt = _sniff_format(path)
     if fmt in ("psu", "gamedata"):
         return _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
-                                      party_edits, recruit_edits, gold)
+                                      party_edits, recruit_edits, gold, carryover)
     if fmt in ("cbs", "sharkport", "psv"):
         return _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
-                                      party_edits, recruit_edits, gold)
+                                      party_edits, recruit_edits, gold, carryover)
     card = load_card(path)
     # locate the folder + its gamedata
     target = None
@@ -1118,7 +1281,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     if gd is None:
         return {"error": "gamedata not found in save folder"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits,
-                                              recruit_edits, gold)
+                                              recruit_edits, gold, carryover)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
@@ -1133,7 +1296,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
 
 
 def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
-                           party_edits, recruit_edits, gold):
+                           party_edits, recruit_edits, gold, carryover=None):
     """Edit the S3 gamedata inside a .cbs / .sps / .xps file. SharkPort stores files
     uncompressed, so its gamedata is patched in place at its absolute offset.
     CodeBreaker is decompressed (RC4+zlib), patched, and re-encoded. The S3 checksum is
@@ -1149,7 +1312,8 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         off, _ = tgt
         gd = b[off:off + GAMEDATA_SIZE]
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
-                                                  party_edits, recruit_edits, gold)
+                                                  party_edits, recruit_edits, gold,
+                                                  carryover)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1169,7 +1333,8 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
             return {"error": "gamedata payload not found in SharkPort save"}
         off, gd = tgt
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
-                                                  party_edits, recruit_edits, gold)
+                                                  party_edits, recruit_edits, gold,
+                                                  carryover)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1192,7 +1357,8 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
     if off is None:
         return {"error": "gamedata payload not found in CodeBreaker save"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
-                                              party_edits, recruit_edits, gold)
+                                              party_edits, recruit_edits, gold,
+                                              carryover)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     body[off:off + len(new_gd)] = new_gd
@@ -1507,7 +1673,7 @@ def _read_individual_save(path, fmt):
 
 
 def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
-                           party_edits, recruit_edits, gold):
+                           party_edits, recruit_edits, gold, carryover=None):
     """Write edits into a .psu export or a raw gamedata file. No ECC (neither format
     has it); the gamedata's own checksum is recomputed by apply_edits_to_gamedata.
     Same-length in-place write, so the container layout is untouched."""
@@ -1515,7 +1681,8 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
         with open(path, "rb") as f:
             gd = f.read()
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
-                                                  party_edits, recruit_edits, gold)
+                                                  party_edits, recruit_edits, gold,
+                                                  carryover)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1530,7 +1697,8 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
     if gd is None:
         return {"error": "gamedata not found in .psu"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
-                                              party_edits, recruit_edits, gold)
+                                              party_edits, recruit_edits, gold,
+                                              carryover)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if not psu.write_file("gamedata", new_gd):

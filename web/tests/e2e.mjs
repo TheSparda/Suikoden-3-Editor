@@ -1534,7 +1534,8 @@ head("Recruit section (save editor, Pyodide stubbed)");
     window.loadPyodide = async () => ({
       FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
       runPython(code) {
-        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {} });
+        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {},
+          charRoster: { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 }, charChoices: [1, 2, 3, 4, 5, 6] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
         if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
         return undefined;
@@ -1589,7 +1590,8 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
     window.loadPyodide = async () => ({
       FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
       runPython(code) {
-        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {} });
+        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {},
+          charRoster: { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 }, charChoices: [1, 2, 3, 4, 5, 6] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
         if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
         return undefined;
@@ -1637,7 +1639,8 @@ head("Save <-> JSON round-trip (save editor, Pyodide stubbed)");
     window.loadPyodide = async () => ({
       FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
       runPython(code) {
-        if (code.includes('load_reference()')) return JSON.stringify({ items: [{id:5,name:'Fire Rune',cat:'Runes'},{id:9,name:'Rage Rune',cat:'Runes'}], skills: [{id:6,name:'Attack'}], charById: {1:'Hugo',2:'Chris',3:'Geddoe'} });
+        if (code.includes('load_reference()')) return JSON.stringify({ items: [{id:5,name:'Fire Rune',cat:'Runes'},{id:9,name:'Rage Rune',cat:'Runes'}], skills: [{id:6,name:'Attack'}], charById: {1:'Hugo',2:'Chris',3:'Geddoe'},
+          charRoster: { 1: 0, 2: 1, 3: 2 }, charChoices: [1, 2, 3] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
         if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
         return undefined;
@@ -1680,6 +1683,110 @@ head("Save <-> JSON round-trip (save editor, Pyodide stubbed)");
   await page.context().close();
 }
 
+head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
+{ const page = await newPage();
+  // The carryover flags are whole-save state, so the stub carries a decoded `carryover`
+  // block shaped exactly like s3save.detect_carryover() and a REF.carryover reference block.
+  // The formulas themselves are covered by save_roundtrip.py; what this proves is the
+  // wiring: the checkbox reaches the write payload, and the bonus modal stages edits.
+  await page.addInitScript(`
+    const CHARS = [
+      ['Hugo',true], ['Viki',true], ['Futch',true]
+    ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: '', recruited: x[1],
+      level: 30, weaponLv: 5, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
+      stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 },
+      equip: { headRune: 0 }, skills: [] }));
+    const CO = {
+      s1: { loaded: false, flagIndex: 1, flagBit: 4, flagOffset: 0x31, flagMask: 0x10,
+            names: { s1Hero: 'McDohl', s1Country: 'Toran' }, customNames: false,
+            hero: 'McDohl', country: 'Toran', note: 'not loaded' },
+      s2: { loaded: false, flagIndex: 1, flagBit: 3, flagOffset: 0x31, flagMask: 0x08,
+            names: { s2Hero: 'Genkaku Jr.' }, customNames: false,
+            hero: 'Genkaku Jr.', country: 'Dunan', note: 'not loaded' },
+    };
+    const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
+      global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
+      carryover: CO, names: [], characters: CHARS, party: [0,0,0,0,0,0], inventory: [] }];
+    window.__payloads = [];
+    window.loadPyodide = async () => ({
+      FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
+      runPython(code) {
+        if (code.includes('load_reference()')) return JSON.stringify({
+          items: [{ id: 317, name: 'Fire', cat: 'Runes' }, { id: 337, name: 'Pale Gate', cat: 'Runes' }],
+          skills: [], charById: { 1: 'Hugo', 7: 'Viki', 31: 'Futch' },
+          charRoster: { 1: 0, 7: 1, 31: 2 }, charChoices: [1, 7, 31],
+          carryover: { flags: { s1: { index: 1, bit: 4 }, s2: { index: 1, bit: 3 } },
+                       chars: [{ battleId: 7, rosterIndex: 1, name: 'Viki' },
+                               { battleId: 31, rosterIndex: 2, name: 'Futch' }],
+                       runes: [317, 337], runeSlots: ['headRune', 'rightRune', 'leftRune'],
+                       levelMax: 99, weaponLvMax: 16 } });
+        if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
+        if (code.startsWith('carryover_bonus(')) {
+          window.__bonusReq = code.slice(code.indexOf('(') + 1, code.lastIndexOf(')'));
+          return JSON.stringify({ 1: { level: 44, weaponLv: 8, equip: { headRune: 317 } } });
+        }
+        if (code.startsWith('apply_edits(')) {
+          window.__payloads.push(code.slice(code.indexOf('(') + 1, code.lastIndexOf(')')));
+          return JSON.stringify({ changed: 1 });
+        }
+        return undefined;
+      },
+    });
+  `);
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
+  await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
+  await page.waitForSelector("#carryover", { timeout: 5000 });
+
+  const coText = await page.textContent("#carryover");
+  check("both carryover rows render", (await page.locator("#carryover input[data-carry]").count()) === 2);
+  check("the row names the flag byte and bit, not a heuristic",
+    /0x31 bit 3/.test(coText) && /0x31 bit 4/.test(coText), coText.replace(/\s+/g, " ").slice(0, 160));
+  check("an unset flag reads as unticked", !(await page.isChecked('input[data-carry="s2"]')));
+  check("the current name-slot values are shown", /Genkaku Jr\./.test(coText) && /McDohl/.test(coText));
+
+  // Ticking the box is a staged change like any other: it lands in the review list...
+  await page.check('input[data-carry="s2"]'); await page.waitForTimeout(50);
+  check("ticking marks the checkbox dirty", await page.locator('input[data-carry="s2"]').evaluate((e) => e.classList.contains("dirty")));
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  check("the review list names the carryover change",
+    /Suikoden II data loaded: no → yes/.test(await page.textContent(".cf-list")));
+  await page.click("#cfOk");
+  await until(page, () => (window.__payloads || []).length > 0);
+  const sent = JSON.parse(JSON.parse(await page.evaluate(() => window.__payloads[0].split(", ").slice(2).join(", "))));
+  check("the write payload carries the flag", sent.carryover && sent.carryover.s2 === true, JSON.stringify(sent.carryover));
+
+  // ...and unticking it again is a no-op, not a second staged change.
+  await page.uncheck('input[data-carry="s2"]'); await page.waitForTimeout(50);
+  check("returning a flag to its saved value clears the staging",
+    await page.evaluate(() => !("s2" in CARRY)) && !(await page.locator('input[data-carry="s2"]').evaluate((e) => e.classList.contains("dirty"))));
+
+  // The Suikoden II bonus modal: enter the S2 numbers, stage the character upgrade.
+  await page.click("#coBonus"); await page.waitForSelector("#cbOk", { timeout: 3000 });
+  const bonusText = await page.textContent(".cf-list");
+  check("the bonus modal lists the characters the import upgrades",
+    /Viki/.test(bonusText) && /Futch/.test(bonusText));
+  check("only carryover-reachable runes are offered",
+    (await page.locator('.modal-ov select[data-rune] option').count()) === 2 * 3 * 3,
+    String(await page.locator('.modal-ov select[data-rune] option').count()));
+  await page.fill('[data-ri="1"] [data-s2lv]', "99");
+  await page.fill('[data-ri="1"] [data-s2wl]', "16");
+  await page.click("#cbOk"); await page.waitForTimeout(80);
+  const req = JSON.parse(JSON.parse(await page.evaluate(() => window.__bonusReq)));
+  check("the bonus request sends the save's current values plus the S2 ones",
+    req["1"].level === 30 && req["1"].weaponLv === 5 && req["1"].s2Level === 99 && req["1"].s2WeaponLv === 16,
+    JSON.stringify(req["1"]));
+  check("the returned upgrade is staged as ordinary character edits",
+    await page.evaluate(() => EDITS[1] && EDITS[1].level === 44 && EDITS[1].weaponLv === 8 && EDITS[1].equip.headRune === 317));
+  check("staging the bonus also ticks the Suikoden II flag",
+    await page.isChecked('input[data-carry="s2"]'));
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const review2 = await page.textContent(".cf-list");
+  check("the review list shows the levelled character and the flag together",
+    /Viki/.test(review2) && /Level: 30 → 44/.test(review2) && /Suikoden II data loaded/.test(review2), review2.replace(/\s+/g, " ").slice(0, 200));
+  await page.click("#cfCancel");
+  await page.context().close();
+}
 head("Undo/redo + skill-cap & rune presets");
 { const page = await newPage(); await loadIso(page);
   const [l4b] = TABLES.list4;
@@ -1820,7 +1927,7 @@ head("Save editor — guide overlays on character cards");
       skills: [{ slot: 0, id: 10, rank: 4 }, { slot: 1, id: 40, rank: 0 }],
       recruited: true, recruitWord: 1, recruiter: "", recruiters: [], hasData: true,
     });
-    REF = { items: [], skills: [], charById: {} };
+    REF = { items: [], skills: [], charById: {}, charRoster: {}, charChoices: [] };
     OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
     saves = [{
       label: "slot", folder: "BASLUS-20387", checksumWord: 0, meta: {}, names: [], inventory: [],
@@ -1869,7 +1976,8 @@ head("Save editor — health check panel");
       recruited: true, recruitWord: 0x1d, recruiter: "", recruiters: [], hasData: true,
     }, over || {});
     const rune = { id: 0xa0, name: "Fury Rune", cat: "Runes", desc: "" };
-    REF = { items: [rune], skills: [], charById: { 1: "Hugo", 2: "Chris" } };
+    REF = { items: [rune], skills: [], charById: { 1: "Hugo", 2: "Chris" },
+            charRoster: { 1: 0, 2: 1 }, charChoices: [1, 2] };
     ITEM_BY_ID = { 0xa0: rune };
     OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
     GUIDE = { caps: {}, growth: {}, slots: {} };   // skip the guide fetch/redraw
