@@ -134,7 +134,8 @@ def load_reference():
     charById = {str(k): v for k, v in ref["names"].items()}
     charRoster = {str(k): v for k, v in ref["roster"].items()}
     return json.dumps({"items": items, "skills": skills, "charById": charById,
-                       "charRoster": charRoster, "charChoices": ref["choices"]})
+                       "charRoster": charRoster, "charChoices": ref["choices"],
+                       "carryover": s3save.carryover_reference()})
 
 def load_saves(path):
     charById = s3save.party_reference()["names"]
@@ -156,8 +157,15 @@ def apply_edits(path, folder, payload_json):
     res = s3save.write_save_edits(
         path, folder, edits, make_backup=False,
         inv_edits=inv or None, name_edits=(p.get("nameEdits") or None),
-        party_edits=party or None, recruit_edits=rec or None, gold=p.get("gold"))
+        party_edits=party or None, recruit_edits=rec or None, gold=p.get("gold"),
+        carryover=(p.get("carryover") or None))
     return json.dumps(res)
+
+def carryover_bonus(payload_json):
+    """"They were level N with these runes in my Suikoden II save" -> character edits,
+    using the importer's own formulas (see s3save.carryover_*)."""
+    req = {int(k): v for k, v in json.loads(payload_json).items()}
+    return json.dumps(s3save.carryover_bonus_edits(req))
 `);
   REF = JSON.parse(py.runPython("load_reference()"));
   REF.items.forEach((i) => (ITEM_BY_ID[i.id] = i));
@@ -340,6 +348,9 @@ async function pickupSharedFile() {
 // ---- top-level editor render ----------------------------------------------
 // Per-slot pending edits (reset when switching slots), mirroring the desktop editor.
 let EDITS, INV, NAMES, PARTY, RECRUIT, GOLD, SUB, RECRUITED_ONLY, INVCAT, ADDED, SEARCH;
+// Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
+// flags are whole-save state, not a character field.
+let CARRY;
 
 function renderEditor() {
   const ed = $("#editor");
@@ -355,7 +366,7 @@ function renderEditor() {
 
 function drawSlot() {
   const s = saves[curSlot];
-  EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; RECRUIT = {}; GOLD = null;
+  EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; RECRUIT = {}; GOLD = null; CARRY = {};
   SUB = "chars"; RECRUITED_ONLY = true; INVCAT = "regular"; ADDED = {}; SEARCH = "";
 
   const meta = s.meta || {};
@@ -368,7 +379,19 @@ function drawSlot() {
   ].filter(Boolean).join(" · ");
 
   const co = s.carryover || {};
-  const coPill = (g, label) => g ? `<span class="pill${g.loaded ? " on" : ""}" title="${esc(g.hero || "")}">${label}: ${g.loaded ? "loaded (" + esc(g.hero) + ")" : "not detected"}</span>` : "";
+  const CR = REF.carryover || { chars: [], runes: [], flags: {} };
+  // One row per game: the real flag bit, plus what its name slots currently hold. The
+  // offset/mask is shown because it is the whole answer — anyone poking the save by hand
+  // wants byte 0x31, not a heuristic.
+  const coRow = (g, label) => {
+    const f = co[g]; if (!f) return "";
+    const on = CARRY[g] !== undefined ? CARRY[g] : f.loaded;
+    const where = `0x${hx(f.flagOffset, 2)} bit ${f.flagBit} (mask 0x${hx(f.flagMask, 2)})`;
+    return `<label class="row" style="gap:8px;cursor:pointer;align-items:baseline">
+      <input type="checkbox" data-carry="${g}"${on ? " checked" : ""}${on !== f.loaded ? ' class="dirty"' : ""}>
+      <b>${label} data loaded</b>
+      <span class="muted" style="font-size:12px">${where} · ${esc(Object.values(f.names || {}).join(" / "))}${f.customNames ? "" : " (defaults)"}</span></label>`;
+  };
 
   const names = (s.names || []).map((n) =>
     `<label class="field"><span>${esc(n.label)}</span>
@@ -398,8 +421,18 @@ function drawSlot() {
     ${warns}
     <div class="card">
       <div class="muted" style="margin:-2px 0 8px">${metaBits}</div>
-      <div class="row" style="margin-bottom:10px"><span class="muted">Carryover:</span>
-        ${coPill(co.s1, "Suikoden I")}${coPill(co.s2, "Suikoden II")}</div>
+      <h3 class="sec">Suikoden I / II carryover</h3>
+      <div class="grid" id="carryover" style="gap:6px">
+        ${coRow("s2", "Suikoden II")}${coRow("s1", "Suikoden I")}
+      </div>
+      <div class="muted" style="font-size:12px;margin:6px 0 0">
+        Suikoden III only ever reads a <b>Suikoden II</b> memory-card save; the Suikoden I
+        hero and country come out of that save too, which is why both flags live together.
+        Ticking a box sets the bit the game's own scripts test — the carryover names below
+        are what it makes them say.
+        ${CR.chars.length ? `The import also upgrades ${CR.chars.map((c) => esc(c.name)).join(", ")}:` : ""}
+        <button id="coBonus" style="margin-left:4px">Suikoden II bonus…</button>
+      </div>
       <h3 class="sec">Names</h3>
       <div class="grid" id="names">${names}</div>
       <h3 class="sec">Gold</h3>
@@ -447,6 +480,12 @@ function drawSlot() {
     inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
     NAMES[inp.dataset.name] = inp.value;
   }));
+  $$("input[data-carry]").forEach((cb) => (cb.onchange = () => {
+    const g = cb.dataset.carry, was = (s.carryover?.[g] || {}).loaded;
+    if (cb.checked === was) delete CARRY[g]; else CARRY[g] = cb.checked;
+    cb.classList.toggle("dirty", cb.checked !== was);
+  }));
+  const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
   $("#goldfld").oninput = (e) => {
     e.target.classList.toggle("dirty", e.target.value !== e.target.dataset.def);
     GOLD = +e.target.value;
@@ -1100,7 +1139,8 @@ function syncQtyCell(btn, slot, id) {
 // ---- Write & download ------------------------------------------------------
 function hasChanges() {
   return Object.keys(EDITS).length || Object.keys(INV).length || Object.keys(NAMES).length ||
-    Object.keys(PARTY).length || Object.keys(RECRUIT).length || GOLD !== null;
+    Object.keys(PARTY).length || Object.keys(RECRUIT).length || GOLD !== null ||
+    Object.keys(CARRY).length;
 }
 
 const RANK_LABEL = (v) => (RANK_TIERS.find((t) => t[0] === v) || [v, "?"])[1];
@@ -1115,6 +1155,11 @@ function buildDiff() {
                         expToNext: "EXP in level" };
 
   if (GOLD !== null && GOLD !== s.global.gold) rows.push({ g: "Gold", t: `${s.global.gold} → ${GOLD}` });
+  Object.entries(CARRY).forEach(([g, on]) => {
+    const f = s.carryover?.[g] || {};
+    if (!!on !== !!f.loaded)
+      rows.push({ g: "Carryover", t: `${g === "s1" ? "Suikoden I" : "Suikoden II"} data loaded: ${f.loaded ? "yes" : "no"} → ${on ? "yes" : "no"}` });
+  });
   Object.entries(NAMES).forEach(([k, v]) => {
     const n = (s.names || []).find((x) => x.key === k);
     if (n && v !== n.value) rows.push({ g: "Names", t: `${n.label}: "${n.value}" → "${v}"` });
@@ -1184,6 +1229,90 @@ function openConfirm(rows, onConfirm, okLabel) {
   $("#cfOk", ov).onclick = () => { close(); onConfirm(); };
 }
 
+// ---- Suikoden II bonus ------------------------------------------------------
+// The two carryover flags are only half of what loading a Suikoden II save does. The
+// importer also upgrades three characters who were in Suikoden II — Viki, Futch and Belle —
+// from THEIR Suikoden II record: level, weapon level and three runes. There is no way to
+// derive those from a Suikoden III save, so this asks for the Suikoden II numbers and runs
+// the game's own formulas over them (s3save.carryover_level / carryover_weapon_level), then
+// stages the result as ordinary character edits for the normal review-and-apply path.
+function openCarryoverBonus() {
+  const py = PY; if (!py) return setStatus("Engine not ready.", "err");
+  const s = saves[curSlot];
+  const CR = REF.carryover || { chars: [], runes: [], runeSlots: [] };
+  const byRi = {}; s.characters.forEach((c) => (byRi[c.rosterIndex] = c));
+  const targets = CR.chars.filter((c) => byRi[c.rosterIndex]);
+  if (!targets.length) return setStatus("None of the carryover characters exist in this save.", "warn");
+
+  const runeOpts = (sel) => [`<option value="0">— none —</option>`].concat(
+    (CR.runes || []).map((id) => `<option value="${id}"${id === sel ? " selected" : ""}>${esc(itemLabel(id))}</option>`)).join("");
+  const rows = targets.map((t) => {
+    const c = byRi[t.rosterIndex];
+    return `<div class="cf-group" data-ri="${t.rosterIndex}">
+      <div class="cf-g">${esc(c.name)} <span class="muted" style="font-weight:400">— now Lv ${c.level}, weapon Lv ${c.weaponLv}</span></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin:4px 0">
+        <label class="field" style="max-width:150px"><span>Suikoden II level</span>
+          <input type="number" min="0" max="99" value="0" data-s2lv></label>
+        <label class="field" style="max-width:150px"><span>S2 weapon level</span>
+          <input type="number" min="0" max="16" value="0" data-s2wl></label>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        ${(CR.runeSlots || []).map((slot) => `<label class="field" style="max-width:170px">
+            <span>${esc(slot)}</span><select data-rune>${runeOpts(c.equip?.[slot] || 0)}</select></label>`).join("")}
+      </div></div>`;
+  }).join("");
+
+  const ov = document.createElement("div");
+  ov.className = "modal-ov";
+  ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Suikoden II bonus">
+      <div class="modal-h"><b>Suikoden II bonus</b><button class="modal-x" aria-label="close">✕</button></div>
+      <div class="cf-list">
+        <div class="muted" style="padding:0 0 8px">Enter what each character was in your Suikoden II
+          save. The level applied is the game's own: <code>cur + cur×max(0, S2level−50)/100</code>,
+          capped at 99, +5 more if they were level 99 — so it can only ever level them up.
+          Weapon level gains <code>max(0, S2weaponLv−10)/2</code>. Leave a value at 0 to skip it.
+          Only these seven runes can arrive by carryover.</div>
+        ${rows}</div>
+      <div class="modal-f"><button id="cbCancel">Cancel</button>
+        <button class="primary" id="cbOk">Stage bonus</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = modalA11y(ov, () => ov.remove(), $("#cbOk", ov));
+  $(".modal-x", ov).onclick = () => close(); $("#cbCancel", ov).onclick = () => close();
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+
+  $("#cbOk", ov).onclick = () => {
+    const req = {};
+    $$("[data-ri]", ov).forEach((g) => {
+      const ri = +g.dataset.ri, c = byRi[ri];
+      req[ri] = { level: c.level, weaponLv: c.weaponLv,
+                  s2Level: +$("[data-s2lv]", g).value || 0,
+                  s2WeaponLv: +$("[data-s2wl]", g).value || 0,
+                  runes: $$("[data-rune]", g).map((sel) => +sel.value || 0) };
+    });
+    let out;
+    try { out = JSON.parse(py.runPython(`carryover_bonus(${JSON.stringify(JSON.stringify(req))})`)); }
+    catch (e) { close(); return setStatus("Bonus failed: " + e.message, "err"); }
+    let n = 0;
+    Object.entries(out).forEach(([ri, fields]) => {
+      const e = (EDITS[ri] = EDITS[ri] || {});
+      Object.entries(fields).forEach(([k, v]) => {
+        if (k === "equip") { e.equip = Object.assign(e.equip || {}, v); n += Object.keys(v).length; }
+        else { e[k] = v; n++; }
+      });
+    });
+    // The bonus only makes sense on a save the game would consider "Suikoden II loaded",
+    // so tick the flag alongside it rather than leaving the two half-applied.
+    if (n && !(s.carryover?.s2 || {}).loaded) CARRY.s2 = true;
+    close();
+    if (!n) return setStatus("Suikoden II bonus: those numbers change nothing (the import only levels up).", "warn");
+    // NOT drawSlot() — that is the Reset button, and it would throw the staging away.
+    const cb = $('input[data-carry="s2"]');
+    if (cb && CARRY.s2 !== undefined) { cb.checked = CARRY.s2; cb.classList.add("dirty"); }
+    showSub(); refreshHealthBadge();
+    setStatus(`Staged ${n} change(s) from the Suikoden II bonus — review before applying.`, "ok");
+  };
+}
+
 // ---- Save <-> JSON round-trip ----------------------------------------------
 // Export a human-readable snapshot of the loaded save; re-import stages the diffs
 // through the normal Apply pipeline (review modal + checksum + backup). Numeric ids
@@ -1211,7 +1340,8 @@ function exportSaveJSON() {
   const out = { _format: SAVE_JSON_FORMAT, _schema: 1,
     _note: "Human-readable snapshot. Edit numeric ids/values, then re-import to stage them for Apply. Keys starting with _ and every *name field are read-only labels, ignored on import.",
     _folder: s.folder, _label: s.label, _playtime: s.global.playtime, _storyPhase: s.global.storyPhase,
-    gold: s.global.gold, names, party, characters: chars, inventory };
+    gold: s.global.gold, carryover: { s1: !!s.carryover?.s1?.loaded, s2: !!s.carryover?.s2?.loaded },
+    names, party, characters: chars, inventory };
   const json = JSON.stringify(out, null, 2);
   const base = (origName || "save").replace(/\.[^.]+$/, "");
   downloadBytes(new TextEncoder().encode(json), `${base}.${s.folder || "slot"}.json`);
@@ -1234,6 +1364,8 @@ async function importSaveJSON(file) {
   let staged = 0;
 
   if (typeof data.gold === "number") { GOLD = data.gold; staged++; }
+  if (data.carryover && typeof data.carryover === "object")
+    ["s1", "s2"].forEach((g) => { if (typeof data.carryover[g] === "boolean") { CARRY[g] = data.carryover[g]; staged++; } });
   if (data.names && typeof data.names === "object") Object.entries(data.names).forEach(([k, v]) => {
     if (typeof v === "string" && (s.names || []).some((n) => n.key === k)) { NAMES[k] = v; staged++; }
   });
@@ -1285,7 +1417,8 @@ function applyEdits(mode) {   // mode: "download" | "file" | "share"
 async function doApply(mode) {
   const py = PY; if (!py) return setStatus("Engine not ready.", "err");
   const s = saves[curSlot];
-  const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY, recruitEdits: RECRUIT, gold: GOLD };
+  const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY,
+                    recruitEdits: RECRUIT, gold: GOLD, carryover: CARRY };
   setStatus("Applying…", "");
   let res;
   try {
