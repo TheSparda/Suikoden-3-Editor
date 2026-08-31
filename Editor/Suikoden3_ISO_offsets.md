@@ -62,6 +62,13 @@ The name lists in the UI are just `NNN Label` lines; the editor parses the first
   Salome = 308 (`zkum`, the Zexen-knight horse); every other record is 0. The consumer at
   `0x16c76e4` tests `(value - 308) < 2` unsigned, so **only 308 and 309 are honoured** — any
   other mount id is read and silently discarded. See `docs/MOUNT_SYSTEM_RESEARCH.md` §11.
+- **`+120` (0x78) u8 — MOVEMENT CLASS.** Picks the character's row in the field walk/run speed
+  table at **ISO `0x3B0BE0`** (14 records of `{u32 modelId, f32 walk, f32 run, f32 timeScale}`).
+  `GetModelClass` @ `0x16c7310` reads it; `0x16f3e20` copies the row's floats into the field
+  object at `+0x248` / `+0x24C` / `+0x2C` when it is built. Stock, **walk is 2.0 for every
+  record** and run is 6.0 (classes 0, 3, 5–8), 5.0 (classes 1, 4) or 4.5 (class 2) — Hugo is
+  class 3, Geddoe class 1, Chris class 2, which is why running as Chris is visibly slower.
+  Classes 9–13 have no member. See `docs/MOVEMENT_SPEED_RESEARCH.md`.
 - `+12` u8 (unknown; values like 5/9/17/18/34/81/98). `+80..+96` 17×u8 (list2_60…76, fixed-skills
   block); `+100..+101` 2×u8 (list2_80,81, starting level + relative flag).
 
@@ -1290,7 +1297,7 @@ debug printfs sit at 0x19BC388-0x19BC3C0 (`enable Num %d`, `partyInfo %d prob %d
 **The roll — ELF va 0x17023A8** (single caller, 0x1774014):
 
 ```
-rate = area_rate * MULT / 100          MULT = 150 running / 120 walking / 100 riding
+rate = area_rate * MULT / 100          MULT = 100 walking / 120 running / 150 running mounted
 if (rate <= 0) return NO_BATTLE        <- 0 disables encounters outright
 accum += distance_moved
 if (accum <= 0.5) return NO_BATTLE     <- one sample per 0.5 units travelled
@@ -1305,41 +1312,52 @@ if (rand(100) < rate) -> pick monster party (0x1702290), start battle
 Note `mult` here is the R5900 3-operand form (`mult $v0,$s1,$v0` writes LO to rd), which
 is why the following `div $zero,$v0,$v1` divides the *product*.
 
-**Which movement mode is which.** `$s4` = dash flag (`0x16E7B48(obj, 0x80000)`). The mode
-split comes from two disjoint id classifiers on (obj+2, obj+0xE): 0x16F3860 matches
-id 2 / [2,13] / [0x42,0x44] and takes the RAW path (`move $s5,$s1`, an implicit x1.00,
-plus `$s7=1` which swaps the cluster threshold for a gp-relative float); 0x16F38A8 matches
-id 2 / [0x0E,0x13] / [0x45,0x46] and takes the 120/150 path. If neither matches, `$s5`
+**Which movement mode is which** (corrected 2026-08-31 — this section previously had the
+walking and riding paths swapped). `$s4` = the **ride** flag `0x16E7B48(obj, 0x80000)`, the
+same "is half of a ride pair" bit `docs/MOUNT_SYSTEM_RESEARCH.md` §1 documents. The mode split
+comes from two disjoint id classifiers on (obj+2, obj+0xE): **IsWalking** 0x16F3860 matches
+id 2 / [2,13] / [0x42,0x44] and takes the RAW path (`move $s5,$s1`, an implicit x1.00, plus
+`$s7=1` which swaps the cluster threshold for a gp-relative float); **IsRunning** 0x16F38A8
+matches id 2 / [0x0E,0x13] / [0x45,0x46] and takes the 120/150 path, where `$s4` picks **150
+if mounted, 120 on foot**. Its `[0x42,0x44]` range is `rdwalk_*`, so **mounted walking takes
+the walk path** and the 150 is specifically a gallop. If neither classifier matches, `$s5`
 stays 0 and no encounter can fire.
 
 **Editable constants (raw ISO offsets, all byte-verified against a pristine dump):**
 
 | ISO offset | Stock word | Instruction | Meaning |
 |---|---|---|---|
-| 0x149C3C | 0x0220A82D | `move $s5,$s1` | ride path, implicit x1.00 |
-| 0x149C40 | 0x10000012 | `b 0x170248C` | ride path skips the scale block |
-| 0x149C5C | 0x24020096 | `addiu $v0,$zero,150` | running multiplier |
-| 0x149C60 | 0x24020078 | `addiu $v0,$zero,120` | walking multiplier |
+| 0x149C3C | 0x0220A82D | `move $s5,$s1` | **walk** path, implicit x1.00 |
+| 0x149C40 | 0x10000012 | `b 0x170248C` | walk path skips the scale block |
+| 0x149C5C | 0x24020096 | `addiu $v0,$zero,150` | **running mounted** multiplier |
+| 0x149C60 | 0x24020078 | `addiu $v0,$zero,120` | **running** multiplier |
 | 0x149E44 | 0x24020082 | `addiu $v0,$zero,130` | loiter-in-one-spot bonus |
 | 0x149E84 | 0x24040064 | `addiu $a0,$zero,100` | `rand()` modulus |
 
 **How the editor's single percentage works.** Scaling only 0x149C5C/0x149C60 would leave
-the ride path at 100%, so the patch gives ride its own multiplier and branches it into the
+walking at 100%, so the patch gives walking its own multiplier and branches it into the
 shared `MULT/100` block:
 
 ```
-0x149C3C:  addiu $v0,$zero,MULT_ride     (was `move $s5,$s1`)
+0x149C3C:  addiu $v0,$zero,MULT_walk     (was `move $s5,$s1`)
 0x149C40:  b 0x1702464                   (was `b 0x170248C`)  -> $v1=100; $v0=$s1*$v0; /100
 ```
 
 This is behaviour-preserving: at 100% it computes `s1*100/100 == s1`, exactly stock. The
-three multipliers are then `round(base * pct / 100)` for base 100/150/120, and **pct=100
-writes the stock words back byte-for-byte**, so "restore" leaves zero staged bytes rather
+three multipliers are then `round(base * pct / 100)` for base 100 walk / 150 mounted-run /
+120 run, and **pct=100 writes the stock words back byte-for-byte**, so "restore" leaves zero
+staged bytes rather
 than merely emulating the default. pct=0 zeroes all three, and `rate <= 0` bails out of
 the roll — that's the "no random encounters" case. Cap is 1000% (`addiu`'s immediate is
 sign-extended, so the real ceiling is ~21800; 1000 is far past where `rand(100) < rate`
 saturates anyway). Encoder/decoder: `s3patch.encounter_words` / `decode_encounter_words`,
 mirrored in `web/iso.js` as `encWords` / `decodeEnc` (parity-tested 0..1000 both ways).
+
+**The three multipliers, exposed individually (v1.64.0).** The web editor also offers them as
+plain numbers — walking / running / running-mounted — so the *shape* of the risk can change and
+not just its size, and a `0` in one mode means that mode never starts a battle. Walking keeps
+its stock `move` + `b` whenever its multiplier is x1.00, so editing only the run or mounted
+value stages two words instead of four; `encMultWords` / `decodeEncMults` in `web/iso.js`.
 
 Exposed as its own **Encounter** tab in both UIs — the web editor's `drawEncounter`
 and the s3editor server's `renderEncounter` (`GET/POST /api/encounter`) — with None /

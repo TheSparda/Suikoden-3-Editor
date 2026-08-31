@@ -146,15 +146,17 @@ re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *C
 every combination carries its own confidence marker: *confirmed / expected / untested / rough /
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
-**Test** (experimental patches that are not known to work — currently the **Field character**
-whitelist; see below),
+**Movement** (the walk/run **speed table** — how fast each character moves on the field; see
+below), **Test** (experimental patches that are not known to work — currently the **Field
+character** whitelist; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Balance** (idempotent hard-mode multiplier presets), **Encounter**
-(a global **random-encounter rate** as a plain percentage — see below), **Enemies** (the full
+(a global **random-encounter rate** as a plain percentage, plus the three per-movement
+multipliers it is made of — see below), **Enemies** (the full
 per-area enemy editor — stats, rewards, drops, bulk multipliers, and each zone's spawns &
 formations; see below), **War** (every war/major-battle unit on the disc; see below) and
 **Reference** — the read-only half, with sub-tabs for item and skill id → name lists, **Item
@@ -205,6 +207,38 @@ turns "nobody will talk to me as Luc" into "everyone treats me as Hugo".
 > and the byte-verified patch sites are written up in
 > [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md).
 
+**Movement speed — the Movement tab.** Its own tab, and *not* a code patch: field
+movement speed is a **table**. Every field object is handed a walk speed and a run speed from
+one of 14 rows, and which row it reads is a **movement class** stored on the character. Stock,
+**walking is 2.0 for the entire cast** and running is **6.0**, **5.0** or **4.5** by class:
+
+| Run | Class | Who |
+|---|---|---|
+| **6.0** | 3 | Hugo, Lulu, Melville, Edge, Rody |
+| **6.0** | 0 | Fubar, Bright, Ruby, Koroku, Gadget Z |
+| **6.0** | 5–8 | Augustine · Gau · Dupa/Shiba/Bazba · Sgt. Joe/Wilder/Rhett |
+| **5.0** | 1 | Geddoe, Fred, Percival, Borus, Thomas, Luc, Yuber, … (34) |
+| **5.0** | 4 | Rico, Aila, Cecile, Belle, Viki (Young), Emily, … (10) |
+| **4.5** | 2 | Chris, Lucia, Lilly, Ayame, Sarah, Nei, Estella, … (13) |
+
+That is the mechanism behind a complaint as old as the game: **running around as Chris covers a
+third less ground than as Hugo**. It was never an animation illusion — it is `4.5` against
+`6.0`, in the data. Mounts are ordinary field objects with their own class, so a mount's row
+*is* the mounted speed.
+
+Two levers, both plain data writes:
+
+- **Edit a class row** — walk, run and the object's time scale — to retune everyone in it at once.
+  *Everyone runs at 6.0* levels all three run values in one click.
+- **Change a character's class** to give them someone else's speed without touching anyone else.
+  Chris from class 2 to class 3 makes her run as fast as Hugo.
+
+The members of each class are read live off the disc, so a reassignment shows up in the table
+immediately. **Time scale** is the object's whole clock, animation and movement together —
+raising *run* alone makes a character skate, so nudging it up alongside keeps the stride in
+sync. Untested in play; the table itself, the disassembly and the byte offsets are in
+[`docs/MOVEMENT_SPEED_RESEARCH.md`](docs/MOVEMENT_SPEED_RESEARCH.md).
+
 **Movement rules — the Encounter tab.** Before the rate below is used at all, the game checks
 which **animation** you're playing: walking and running are separate range tests over the
 player's motion slot, and if neither matches, the roll is skipped entirely. Two things fall out
@@ -240,6 +274,22 @@ without fighting. Like every other edit it's *staged*: undoable, revertible, and
 a `.s3mod` recipe or `.xdelta` patch. Setting it back to **100** restores the original bytes
 exactly, so a round trip leaves nothing pending rather than re-writing a "default".
 
+**Walking, running and galloping — separately.** Under the slider sit the three multipliers it
+is made of, as plain numbers:
+
+| Mode | Stock | What it covers |
+|---|---|---|
+| **Walking** | **100** | also *mounted* walking |
+| **Running** | **120** | on foot |
+| **Running mounted** | **150** | galloping only |
+
+Pull them apart to change the *shape* of the risk rather than its size — make running safe and
+galloping lethal, or the reverse — and a **0** in any one mode means that mode never starts a
+battle. That is a different mechanism from the movement toggle above: this leaves the roll
+happening and sets its rate to zero, so an area's own base rate still decides everything else.
+The readout states the result in relative terms (*running 1.20× · galloping 1.50×*), and
+restoring **100 / 120 / 150** writes the disc's original four words back byte-for-byte.
+
 <details>
 <summary>How it works, and what it can't do</summary>
 
@@ -249,10 +299,12 @@ executable — roughly *rate = area\_rate × multiplier ÷ 100*, sampled as you 
 data (four instruction words; see `Editor/Suikoden3_ISO_offsets.md` for the full
 reverse-engineering write-up).
 
-There are three separate multipliers, one per movement mode — walking, running, and riding —
-and the riding path originally had no multiplier at all, taking an implicit ×1.00. It gets one
-grafted in and pointed at the shared divide, which is why 100% still behaves exactly like the
-unmodified game: it computes ×100÷100.
+There are three separate multipliers, one per movement mode. Stock, **walking is ×1.00,
+running ×1.20 and galloping ×1.50** — and walking has no multiplier of its own at all, taking
+the ×1.00 by skipping the multiply entirely. To make walking configurable it gets one grafted
+in and pointed at the shared divide, which is why 100% still behaves exactly like the
+unmodified game: it computes ×100÷100. All three are editable **independently** (see below);
+the percentage above is just the three of them scaled together.
 
 **Per-area base rates — editable too.** Under the global slider the tab lists **every area on
 the disc** with its own per-map rate: **23 areas, 133 chapter-variant tables, 1,612 map
@@ -451,6 +503,8 @@ is the primary record. Longer investigations get their own doc:
 | | |
 |---|---|
 | [`MOUNT_SYSTEM_RESEARCH.md`](docs/MOUNT_SYSTEM_RESEARCH.md) | both mount systems, the pair HP-pooling mechanics |
+| [`MOVEMENT_SPEED_RESEARCH.md`](docs/MOVEMENT_SPEED_RESEARCH.md) | the walk/run speed table and the per-character movement class |
+| [`FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md) | the field-avatar whitelist, per-map coverage, the story-content switch |
 | [`ENEMIES_IN_PLAYER_PARTY_RESEARCH.md`](docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md) | why enemies can't join the party; the three disjoint id spaces |
 | [`ETC_BIN_MODEL_RESEARCH.md`](docs/ETC_BIN_MODEL_RESEARCH.md) | character model swapping — decoded, and why it stays infeasible |
 | [`RECRUITMENT_RANDOMIZER_RESEARCH.md`](docs/RECRUITMENT_RANDOMIZER_RESEARCH.md) | recruitment-randomizer groundwork |

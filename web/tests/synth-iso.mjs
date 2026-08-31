@@ -114,6 +114,22 @@ export const avatarWord = (imm, kind) =>
   ((kind === "eq" ? 0x24020000 : 0x2C820000) | (imm & 0xFFFF)) >>> 0;   // addiu / sltiu
 // The per-character assigned horse: u16 at list2 record +0x66. Stock has Chris on her own
 // horse (309) and the other five Zexen Knights on the knight horse (308).
+// Movement speed (iso.js MOVESPD): 14 records of {u32 modelId, f32 walk, f32 run, f32 rate}
+// keyed by the movement-class byte in each list2 record at +0x78. Real disc values.
+export const MOVESPD = { tbl: 0x3B0BE0, rows: 14, stride: 16, walk: 0x04, run: 0x08, rate: 0x0C, classOff: 0x78 };
+export const MOVESPD_RUN = [6, 5, 4.5, 6, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6];
+export const MOVESPD_WALK = 2, MOVESPD_RATE = 1;
+// The class byte per list2 record, as the disc ships it (record -> class).
+export const MOVESPD_CLASS = {
+  0: 3, 1: 3, 2: 2, 3: 1, 4: 2, 5: 1, 6: 4, 7: 2, 8: 0, 9: 8, 10: 3, 11: 4, 12: 1, 13: 2, 14: 1,
+  15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 21: 2, 22: 1, 23: 1, 24: 1, 25: 6, 26: 2, 27: 1, 28: 1,
+  29: 4, 30: 1, 31: 0, 32: 7, 33: 7, 34: 7, 35: 1, 36: 1, 37: 0, 38: 2, 39: 1, 40: 1, 41: 3, 42: 4,
+  43: 8, 44: 8, 45: 1, 46: 4, 47: 4, 48: 0, 49: 1, 50: 1, 51: 1, 52: 1, 53: 2, 54: 2, 55: 1, 56: 0,
+  57: 1, 58: 1, 59: 2, 60: 2, 61: 1, 62: 4, 63: 1, 64: 1, 65: 1, 66: 5, 67: 1, 68: 2, 69: 4, 70: 4,
+  71: 3, 72: 1, 73: 2, 74: 3, 75: 4, 76: 0, 77: 0, 78: 0, 79: 0,
+};
+export const spdAddr = (cls, col) => MOVESPD.tbl + cls * MOVESPD.stride + col;
+export const spdClassAddr = (rec) => TABLES.list2[0] + rec * TABLES.list2[1] + MOVESPD.classOff;
 export const HORSE_OFF = 0x66;
 export const HORSE_STOCK = { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 };
 export const horseAddr = (roster) => TABLES.list2[0] + roster * TABLES.list2[1] + HORSE_OFF;
@@ -271,6 +287,7 @@ export function buildSynthIso() {
   let sc = 0x400000;
   const put = (s) => { const o = sc; bytes.set(enc(s), o); bytes[o + s.length] = 0; sc += s.length + 1; return o - ELF_BASE + ELF_VADDR; };
   const w32 = (o, v) => dv.setUint32(o, v >>> 0, true), w16 = (o, v) => dv.setUint16(o, v & 0xffff, true);
+  const wf32 = (o, v) => dv.setFloat32(o, v, true);
 
   ["Flaming Arrows", "Dancing Flames", "Blazing Wall", "Explosion"].forEach((nm, i) => {
     const o = SPELL.off + i * SPELL.stride;
@@ -313,6 +330,14 @@ export function buildSynthIso() {
   SETS.counterOwnerSites.forEach((o) => w32(o, STOCK_OWNER_COUNTER));
   w32(SETS.healOwnerSite, STOCK_OWNER_HEAL); w32(SETS.squeakOwnerSite, STOCK_OWNER_SQUEAK);
   w32(SETS.halveMaskSite, STOCK_HALVE_MASK); w32(SETS.healDivRepair, STOCK_HEAL_DIV_SLOT);
+  // movement-speed table + the per-character class byte
+  MOVESPD_RUN.forEach((run, cls) => {
+    w32(spdAddr(cls, 0x00), 0);
+    wf32(spdAddr(cls, MOVESPD.walk), MOVESPD_WALK);
+    wf32(spdAddr(cls, MOVESPD.run), run);
+    wf32(spdAddr(cls, MOVESPD.rate), MOVESPD_RATE);
+  });
+  for (const [rec, cls] of Object.entries(MOVESPD_CLASS)) bytes[spdClassAddr(+rec)] = cls;
   for (const [roster, v] of Object.entries(HORSE_STOCK)) w16(horseAddr(+roster), v);
   for (const d of Object.values(MECH)) w32(d.off, d.stock);
   MOUNT_PAIRS.forEach((p) => {

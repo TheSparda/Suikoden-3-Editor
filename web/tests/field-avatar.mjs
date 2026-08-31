@@ -20,6 +20,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+import { MOVESPD_RUN as SPD_RUN, MOVESPD_CLASS as SPD_CLASS } from "./synth-iso.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..", "..");
 
@@ -248,6 +250,73 @@ console.log("Movement rules:");
   check("running covers its own ranges plus the second-range length",
     ENCMOVE.run.length + 1 === 3); }
 
+// ---- movement speed: the walk/run table and the per-character class ----------
+// This one is pure data, so the risk is different from the patch sites above: nothing here
+// would throw or look wrong in the browser if an offset drifted — it would quietly edit
+// whatever else lives at 0x3B0BE0. The stride/offsets are pinned here, and the disc check
+// below reads the actual floats back and compares them to what the fixture plants, so the
+// editor, the test ISO and the real disc can never disagree without failing.
+const spdStart = isoSrc.indexOf("const MOVESPD = {");
+if (spdStart < 0) { console.error("FAIL: no `const MOVESPD = {` in web/iso.js"); process.exit(1); }
+const spdEnd = isoSrc.indexOf("\n  };", spdStart);
+const MOVESPD = eval("(" + isoSrc.slice(spdStart + "const MOVESPD = ".length, spdEnd + "\n  }".length) + ")");
+
+console.log("Movement speed:");
+{ check("14 records of 16 bytes", MOVESPD.rows === 14 && MOVESPD.stride === 16);
+  check("three float columns at +4/+8/+0x0C, leaving the id field at +0 alone",
+    eq(MOVESPD.cols.map((c) => c.off), [4, 8, 12]));
+  // The id field is the per-model override list's key; writing one would switch that scan on.
+  check("no column touches the record's id field", MOVESPD.cols.every((c) => c.off >= 4));
+  check("the class byte sits inside a list2 record", MOVESPD.classOff > 0 && MOVESPD.classOff < 132);
+  check("the assigned-horse field is not the class byte", MOVESPD.classOff !== 0x66);
+  check("the last selectable class is the last row", MOVESPD.MAXCLASS === MOVESPD.rows - 1);
+  check("stock walk/run/rate are recorded", eq(MOVESPD.cols.map((c) => c.stock), [2, 6, 1]));
+  check("the level-everyone target is the fastest stock run speed", MOVESPD.LEVEL === 6);
+  check("the sanity clamp leaves room above the fastest stock speed", MOVESPD.MAX > 6); }
+
+// ---- encounter rate: the three per-movement multipliers ----------------------
+// The walking multiplier does not exist on disc — walking skips the multiply entirely — so
+// making it configurable means rewriting two words, and a wrong branch target would send the
+// roll into the middle of the block. The stock triple must round-trip to the stock words
+// byte for byte, or "restore" would leave a rewritten-but-equivalent encounter routine staged.
+const encRateStart = isoSrc.indexOf("const ENC = {");
+if (encRateStart < 0) { console.error("FAIL: no `const ENC = {` in web/iso.js"); process.exit(1); }
+const encRateEnd = isoSrc.indexOf("\n  };", encRateStart);
+const ENC = eval("(" + isoSrc.slice(encRateStart + "const ENC = ".length, encRateEnd + "\n  }".length) + ")");
+
+console.log("Encounter multipliers:");
+{ check("four words, four labels", ENC.sites.length === 4 && ENC.labels.length === 4);
+  check("offsets are distinct and ascending", ENC.sites.every((o, i) => i === 0 || o > ENC.sites[i - 1]));
+  check("stock is x1.00 walking, x1.20 running, x1.50 galloping",
+    eq(ENC.STOCK_MULT, { walk: 100, run: 120, ride: 150 }));
+  // Words 2 and 3 are `addiu $v0,$zero,imm` and their immediates ARE the stock multipliers.
+  check("the mounted word carries 150", (ENC.stock[2] & 0xFFFF) === ENC.STOCK_MULT.ride
+    && ((ENC.stock[2] & 0xFFFF0000) >>> 0) === ENC.addiuV0);
+  check("the running word carries 120", (ENC.stock[3] & 0xFFFF) === ENC.STOCK_MULT.run
+    && ((ENC.stock[3] & 0xFFFF0000) >>> 0) === ENC.addiuV0);
+  // `move $s5,$s1` + `b`: walking has no multiplier of its own until the editor gives it one.
+  check("walking ships as a move + branch, not an immediate",
+    ENC.stock[0] === 0x0220A82D && ENC.stock[1] === 0x10000012);
+  // b past the block vs b into it: the two targets must differ by exactly the skipped words.
+  check("the editor's branch lands earlier than the stock one",
+    (ENC.brJoin & 0xFFFF) < (ENC.stock[1] & 0xFFFF));
+  const mult = (m) => {
+    const c = (v) => Math.max(0, Math.min(ENC.max, Math.round(+v || 0)));
+    const w = c(m.walk), r = c(m.run), d = c(m.ride), s = ENC.STOCK_MULT;
+    const head = w === s.walk ? [ENC.stock[0], ENC.stock[1]] : [(ENC.addiuV0 | w) >>> 0, ENC.brJoin];
+    return head.concat([(ENC.addiuV0 | d) >>> 0, (ENC.addiuV0 | r) >>> 0]);
+  };
+  check("the stock triple re-encodes to the stock words byte for byte",
+    eq(mult(ENC.STOCK_MULT), ENC.stock));
+  check("a custom triple lands its values in the right three words",
+    eq(mult({ walk: 10, run: 20, ride: 30 }),
+       [(ENC.addiuV0 | 10) >>> 0, ENC.brJoin, (ENC.addiuV0 | 30) >>> 0, (ENC.addiuV0 | 20) >>> 0]));
+  // Only walking needs the two-word rewrite, so leaving it at x1.00 must not stage it.
+  check("a stock walking multiplier keeps the original move + branch",
+    eq(mult({ walk: 100, run: 20, ride: 30 }).slice(0, 2), ENC.stock.slice(0, 2)));
+  check("multipliers clamp instead of wrapping into the opcode",
+    (mult({ walk: 99999, run: 0, ride: 0 })[0] & 0xFFFF) === ENC.max); }
+
 // ---- against a real disc, when one is here ----------------------------------
 // ISO/ sits inside the checkout and is gitignored. In a git worktree it is only in the
 // MAIN checkout, so the .git pointer file is followed to find it — otherwise this check
@@ -304,6 +373,41 @@ if (!iso) {
       bb.readUInt16LE(2) === ENCMOVE.runAlt.base.opc && ((-bb.readInt16LE(0)) & 0xFFFF) === sm.base
         && lb.readUInt16LE(2) === ENCMOVE.runAlt.len.opc && lb.readUInt16LE(0) === sm.len,
       bb.toString("hex") + " " + lb.toString("hex")); }
+  // The movement-speed table, read as floats straight off the disc. MOVESPD_RUN /
+  // MOVESPD_CLASS in the test fixture are what the browser test asserts against, so if the
+  // disc ever disagrees with them the fixture is lying and every UI check built on it is too.
+  { const f32 = (off) => { const b = Buffer.alloc(4); fs.readSync(fd, b, 0, 4, off); return b.readFloatLE(0); };
+    const u32 = (off) => { const b = Buffer.alloc(4); fs.readSync(fd, b, 0, 4, off); return b.readUInt32LE(0); };
+    const runs = [], ids = [];
+    let walkOk = true, rateOk = true;
+    for (let c = 0; c < MOVESPD.rows; c++) {
+      const rec = MOVESPD.tbl + c * MOVESPD.stride;
+      ids.push(u32(rec));
+      if (f32(rec + 4) !== 2) walkOk = false;
+      if (f32(rec + 12) !== 1) rateOk = false;
+      runs.push(f32(rec + 8));
+    }
+    check("every speed record's id field is zero (the override list stays terminated)",
+      ids.every((v) => v === 0));
+    check("walking is 2.0 for every class on disc", walkOk);
+    check("the time scale is 1.0 for every class on disc", rateOk);
+    check("run speeds match the fixture", eq(runs, SPD_RUN), runs.join(", "));
+    // Hugo's class outruns Chris's by exactly the amount players notice.
+    const cls = (rec) => { const b = Buffer.alloc(1);
+      fs.readSync(fd, b, 0, 1, 4068152 + rec * 132 + MOVESPD.classOff); return b[0]; };
+    const got = {};
+    for (let rec = 0; rec < 80; rec++) got[rec] = cls(rec);
+    check("the movement class of all 80 list2 records matches the fixture", eq(got, SPD_CLASS));
+    check("Hugo (rec 1) runs faster than Chris (rec 2)", runs[got[1]] > runs[got[2]],
+      `${runs[got[1]]} vs ${runs[got[2]]}`);
+    check("Geddoe (rec 3) sits between them",
+      runs[got[3]] < runs[got[1]] && runs[got[3]] > runs[got[2]]);
+    check("the mounts share one class", got[8] === got[31] && got[31] === got[37]); }
+  // The encounter-rate words the multipliers ride on.
+  ENC.sites.forEach((off, i) => {
+    check(`encounter word 0x${off.toString(16).toUpperCase()} is stock (${ENC.labels[i]})`,
+      word(off).readUInt32LE(0) === ENC.stock[i], word(off).toString("hex"));
+  });
   for (const [off, want] of [[AVATAR.lo, 0x3F], [AVATAR.hiTop, 0xCC], [AVATAR.hiBot, 0xCA]]) {
     const b = word(off);
     check(`0x${off.toString(16).toUpperCase()} is sltiu with immediate ${want} (read-only half)`,
