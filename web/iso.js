@@ -380,6 +380,40 @@
     },
   };
 
+  // ---- how fast you walk and run (boot ELF, pure data) ------------------------
+  // Field movement speed is a table, not code. Every field object is handed a walk speed
+  // and a run speed when it is built (0x16F3E20, ISO 0x13B620) out of 14 records at ISO
+  // 0x3B0BE0:
+  //
+  //     struct { u32 modelId; float walk; float run; float animRate; }   // 16 bytes
+  //
+  // and the record it reads is picked by a one-byte MOVEMENT CLASS in the character's own
+  // list2 record at +0x78 (GetModelClass @ 0x16C7310 reads it; the model id -> list2 index
+  // byte table at ISO 0x3B0FA8 is the same indirection GetCharaRecord uses, so the geometry
+  // is the one MOUNT_SYSTEM_RESEARCH.md §11 already proved for the assigned horse at +0x66).
+  //
+  // Stock: walk is 2.0 for the ENTIRE cast; run is 6.0, 5.0 or 4.5 by class. That is the
+  // mechanism behind "Chris is slow" — Hugo's class runs 6.0, Geddoe's 5.0, Chris's 4.5.
+  // Mounts are ordinary field objects (Fubar, Bright, Ruby and Koroku are all class 0), so
+  // mounted speed is the mount's own row rather than a separate system.
+  //
+  // The record's first field only matters in the per-model override list that
+  // GetMoveSpeedRecord scans first — which points at this table's own last row, whose id is
+  // 0, so it always terminates immediately and no override ships. We never touch the id
+  // fields, so that stays true. See docs/MOVEMENT_SPEED_RESEARCH.md.
+  const MOVESPD = {
+    tbl: 0x3B0BE0, rows: 14, stride: 16,
+    cols: [
+      { key: "walk", off: 0x04, label: "Walk", stock: 2 },
+      { key: "run", off: 0x08, label: "Run", stock: 6 },
+      { key: "rate", off: 0x0C, label: "Time scale", stock: 1 },
+    ],
+    classOff: 0x78,          // u8, in the list2 record
+    MAXCLASS: 13,            // the last row; classes 9-13 have no stock member
+    MAX: 200,                // editor-side sanity clamp on a speed
+    LEVEL: 6,                // "everyone runs at" target: the fastest stock run speed
+  };
+
   const SETS = {
     table: 0x3DDAB8, count: 5, stride: 8,
     slots: ["Head", "Body", "Shield", "Accessory"],
@@ -419,25 +453,58 @@
   // ---- global random-encounter rate (boot ELF) --------------------------------
   // Every field encounter is one roll at ELF va 0x17023A8:
   //   rate = area_rate * MULT / 100 ; ... ; if (rand(100) < rate) -> battle
-  // Three movement modes reach that multiply. Walk and run each load their own MULT
-  // immediate; the third ("ride") skips the block with `move $s5,$s1` = an implicit
-  // x1.00. To scale all three from one percentage we give ride its own multiplier and
-  // branch it into the shared MULT/100 block — behaviour-preserving, since at 100% it
-  // computes s1*100/100 == s1. 100% restores the stock words byte-for-byte.
+  // MULT is chosen by how you are moving, and the disc ships three values:
+  //
+  //   walking            x1.00   — no multiply at all: `move $s5,$s1` then `b` past the block
+  //   running            x1.20   — addiu $v0,$zero,0x78   (0x149C60)
+  //   running mounted    x1.50   — addiu $v0,$zero,0x96   (0x149C5C), chosen by the ride flag
+  //
+  // Mounted *walking* takes the walk path, so the 1.5 is specifically a gallop. Anything
+  // that is neither walking nor running (see ENCMOVE) skips the roll entirely.
+  //
+  // Walking has no immediate of its own to edit, so to make it configurable we hand it
+  // one: site 0 becomes `addiu $v0,$zero,N` and site 1 becomes a branch into the shared
+  // MULT/100 block instead of past it. That is behaviour-preserving — at N=100 the block
+  // computes s1*100/100 == s1 — and the stock triple (100/120/150) writes the original
+  // four words back byte-for-byte, so returning to it stages nothing.
   const ENC = {
-    sites: [0x149C3C, 0x149C40, 0x149C5C, 0x149C60],  // ride mult, ride branch, run mult, walk mult
+    // walk multiplier / walk branch / mounted-run multiplier / run multiplier
+    sites: [0x149C3C, 0x149C40, 0x149C5C, 0x149C60],
+    labels: ["walking multiplier", "walking branch", "mounted running multiplier", "running multiplier"],
     stock: [0x0220A82D, 0x10000012, 0x24020096, 0x24020078],
-    brJoin: 0x10000008,          // b 0x1702464 — ride path joins the scale block
+    STOCK_MULT: { walk: 100, run: 120, ride: 150 },
+    brJoin: 0x10000008,          // b 0x1702464 — the walk path joins the scale block
     addiuV0: 0x24020000,         // addiu $v0,$zero,imm
     max: 1000,
   };
+  const encClampMult = (v) => Math.max(0, Math.min(ENC.max, Math.round(+v || 0)));
+  // The four words for an arbitrary {walk, run, ride} triple. Walking keeps its stock
+  // move + branch whenever its multiplier is x1.00, so changing only the run or mounted
+  // number stages two words instead of four — and the stock triple always writes the
+  // original four back byte-for-byte.
+  const encMultWords = (m) => {
+    const walk = encClampMult(m.walk), run = encClampMult(m.run), ride = encClampMult(m.ride);
+    const s = ENC.STOCK_MULT;
+    const head = walk === s.walk ? [ENC.stock[0], ENC.stock[1]]
+      : [(ENC.addiuV0 | walk) >>> 0, ENC.brJoin];
+    return head.concat([(ENC.addiuV0 | ride) >>> 0, (ENC.addiuV0 | run) >>> 0]);
+  };
+  // The triple currently in the buffer, or null if these aren't words this editor writes.
+  const decodeEncMults = (w) => {
+    const isImm = (x) => ((x & 0xFFFF0000) >>> 0) === ENC.addiuV0;
+    if (!isImm(w[2]) || !isImm(w[3])) return null;
+    const stockWalk = w[0] === ENC.stock[0] && w[1] === ENC.stock[1];
+    if (!stockWalk && !(w[1] === ENC.brJoin && isImm(w[0]))) return null;
+    return { walk: stockWalk ? ENC.STOCK_MULT.walk : w[0] & 0xFFFF, ride: w[2] & 0xFFFF, run: w[3] & 0xFFFF };
+  };
+  // The one-percentage view: scale all three from their stock values at once.
   const encWords = (pct) => {
     const p = Math.round(pct);
     if (!(p >= 0 && p <= ENC.max)) return null;
     if (p === 100) return ENC.stock.slice();
     const sc = (b) => Math.floor((b * p + 50) / 100);
-    return [(ENC.addiuV0 | sc(100)) >>> 0, ENC.brJoin,
-            (ENC.addiuV0 | sc(150)) >>> 0, (ENC.addiuV0 | sc(120)) >>> 0];
+    const s = ENC.STOCK_MULT;
+    return encMultWords({ walk: sc(s.walk), run: sc(s.run), ride: sc(s.ride) });
   };
   const decodeEnc = (w) => {
     if (ENC.stock.every((x, i) => x === w[i])) return 100;
@@ -768,6 +835,13 @@
   function o32(o) { return ODV.getUint32(o - ELF_BASE, true); }
   function readW(o, w) { return w === 1 ? r8(o) : w === 2 ? r16(o) : r32(o); }
   function origW(o, w) { return w === 1 ? o8(o) : w === 2 ? o16(o) : o32(o); }
+  // IEEE-754 floats (movement speeds). Writes go through writeW so undo, dirty state and
+  // the review list all keep working without a second code path.
+  const F32 = new DataView(new ArrayBuffer(4));
+  function rF32(o) { return DV.getFloat32(o - ELF_BASE, true); }
+  function oF32(o) { return ODV.getFloat32(o - ELF_BASE, true); }
+  function writeF32(o, v) { F32.setFloat32(0, v, true); writeW(o, 4, F32.getUint32(0, true)); }
+  const f32Of = (u32) => { F32.setUint32(0, u32 >>> 0, true); return F32.getFloat32(0, true); };
   function writeW(o, w, v) {
     if (!inBlk(o, w)) return;
     const rel = o - ELF_BASE;
@@ -1091,6 +1165,7 @@
     if (kind === "flags14") return decodeTarget(v);
     if (kind === "status") return decodeF18(v);
     if (kind === "imm16") return String(v & 0xFFFF);   // a patched MIPS word: only the immediate moved
+    if (kind === "f32") { const f = f32Of(v); return Number.isFinite(f) ? String(+f.toFixed(3)) : "?"; }
     if (kind === "spellid") {                          // ...and that immediate is a 1-based spell number
       const i = (v & 0xFFFF) - 1;
       const nm = i >= 0 && i < SPELL.count ? strAt(r32(SPELL.off + i * SPELL.stride + 0x08)) : "";
@@ -2005,7 +2080,7 @@
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
-    ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
+    ["balance", "Balance"], ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"]];
 
   function renderEditor(size) {
@@ -2087,6 +2162,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
+      movement: "How fast every character walks and runs on the field. Unlike most of this editor's field work it is not a code patch \u2014 speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, which is why running as Hugo covers a third more ground than as Chris. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. Untested in play.",
       test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
@@ -2112,6 +2188,7 @@
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "mounts") drawMounts(host);
+    else if (VIEW === "movement") drawMoveSpeed(host);
     else if (VIEW === "test") drawTest(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "sets") drawSets(host);
@@ -3888,6 +3965,165 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     };
   }
 
+  // ---- Movement speed --------------------------------------------------------
+  const spdAddr = (cls, col) => MOVESPD.tbl + cls * MOVESPD.stride + col.off;
+  const spdClassAddr = (rec) => TABLES.list2[0] + rec * TABLES.list2[1] + MOVESPD.classOff;
+  const spdFmt = (v) => Number.isFinite(v) ? String(+v.toFixed(3)) : "?";
+
+  // Structural check against the PRISTINE bytes: 14 records whose id field is zero and whose
+  // three floats are finite and positive. A disc that fails this is not one we understand,
+  // so nothing is offered rather than something being written blind.
+  function moveSpdOk() {
+    if (!inBlk(MOVESPD.tbl, MOVESPD.rows * MOVESPD.stride)) return false;
+    for (let c = 0; c < MOVESPD.rows; c++) {
+      if (o32(MOVESPD.tbl + c * MOVESPD.stride) !== 0) return false;
+      for (const col of MOVESPD.cols) {
+        const v = oF32(spdAddr(c, col));
+        if (!Number.isFinite(v) || v <= 0 || v > MOVESPD.MAX) return false;
+      }
+    }
+    return true;
+  }
+
+  // class -> [{rec, name}], read live off the disc so a reassignment shows up immediately.
+  function spdMembers() {
+    const out = {}, names = (REF && REF.names && REF.names.list2) || {};
+    for (let rec = 0; rec < LIST_COUNT.list2; rec++) {
+      const off = spdClassAddr(rec);
+      if (!inBlk(off, 1)) continue;
+      const cls = r8(off);
+      (out[cls] = out[cls] || []).push({ rec, name: names[String(rec)] || `record ${rec}` });
+    }
+    return out;
+  }
+
+  function drawMoveSpeed(host) {
+    if (!host) return;
+    if (!moveSpdOk()) {
+      host.innerHTML = `<div class="warnbox">The movement-speed table isn't where this build expects
+        it — no speed edits offered.</div>`;
+      return;
+    }
+    const mem = spdMembers();
+    const names = (REF && REF.names && REF.names.list2) || {};
+    const memberOf = (cls) => (mem[cls] || []).filter((m) => names[String(m.rec)]);
+
+    const classRow = (cls) => {
+      const who = memberOf(cls);
+      const cells = MOVESPD.cols.map((col) => {
+        const off = spdAddr(cls, col);
+        return `<td><input type="number" class="spd-f" data-cls="${cls}" data-col="${col.key}"
+          min="0" max="${MOVESPD.MAX}" step="0.1" value="${spdFmt(rF32(off))}"></td>`;
+      }).join("");
+      return `<tr><td><b>${cls}</b></td>${cells}
+        <td class="dim">${who.length ? esc2(who.map((m) => m.name).join(", ")) : "— no one —"}</td></tr>`;
+    };
+    const used = [], unused = [];
+    for (let c = 0; c < MOVESPD.rows; c++) (memberOf(c).length ? used : unused).push(c);
+
+    const head = `<thead><tr><th>Class</th>${MOVESPD.cols.map((c) =>
+      `<th>${c.label}</th>`).join("")}<th>Characters in this class</th></tr></thead>`;
+
+    // Per-character class picker: one row per named list2 record.
+    const charRows = [];
+    for (let rec = 0; rec < LIST_COUNT.list2; rec++) {
+      const nm = names[String(rec)]; if (!nm) continue;
+      const off = spdClassAddr(rec); if (!inBlk(off, 1)) continue;
+      const cur = r8(off);
+      const opts = [];
+      for (let c = 0; c <= MOVESPD.MAXCLASS; c++) {
+        const run = spdFmt(rF32(spdAddr(c, MOVESPD.cols[1])));
+        opts.push(`<option value="${c}"${c === cur ? " selected" : ""}>class ${c} · run ${run}</option>`);
+      }
+      if (cur > MOVESPD.MAXCLASS) opts.push(`<option value="${cur}" selected>class ${cur} — past the table</option>`);
+      charRows.push(`<label class="field"><span>${esc2(nm)} <span class="dim">#${rec}</span></span>
+        <select class="spd-cls" data-rec="${rec}" data-nm="${esc2(nm)}">${opts.join("")}</select></label>`);
+    }
+
+    host.innerHTML = `
+      <div class="bag">
+        <div class="bag-h">Movement speed <span class="u">plain data · no code patched · untested in play</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          How fast a character walks and runs on the field is a <b>table</b>, not code. Every field
+          object gets a walk speed and a run speed from one of 14 rows, and which row it reads is a
+          <b>movement class</b> stored on the character. Stock, <b>walking is 2.0 for the whole cast</b>
+          and running is <b>6.0</b>, <b>5.0</b> or <b>4.5</b> depending on the class — which is why
+          running around as Hugo (6.0) covers a third more ground than as Chris (4.5). Mounts are
+          ordinary field objects with their own class, so a mount's row is the mounted speed.
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
+          <button id="spdLevel" class="chip">Everyone runs at ${MOVESPD.LEVEL}.0</button>
+          <button id="spdStock" class="chip">Restore as loaded</button>
+          <span class="muted" style="font-size:12px">The first sets every run speed to the fastest
+            stock value and leaves walk and time scale alone. The second restores the speeds
+            <i>and</i> the class assignments to the bytes this ISO was opened with.</span>
+        </div>
+        <table class="invtbl">${head}<tbody>${used.map(classRow).join("")}</tbody></table>
+        <div class="muted" style="font-size:12px;margin:8px 0 0">
+          <b>Time scale</b> is the object's whole clock — animation and movement together. Raising
+          <i>run</i> on its own makes a character skate: more ground per stride, legs unchanged.
+          Nudging time scale up with it keeps the stride in sync, at the cost of speeding up that
+          character's idle animations too.
+        </div>
+        <details class="note" style="margin:10px 0 0"><summary>Rows nobody uses (classes ${unused.join(", ")})</summary>
+          <table class="invtbl">${head}<tbody>${unused.map(classRow).join("")}</tbody></table>
+          <div class="muted" style="font-size:12px">No character ships in these. They only matter if you
+          move someone into one below.</div>
+        </details>
+        <div class="bag-h" style="margin:16px 0 8px">Which class each character is in
+          <span class="u">one byte per character · list2 record +0x78</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          Change a character's class to give them someone else's speed without touching anyone
+          else — Chris from class 2 to class 3 makes her run as fast as Hugo. Editing a row above
+          instead retunes everyone in that class at once.
+        </div>
+        <details class="note" id="spdChars"><summary>Show all ${charRows.length} characters</summary>
+          <div class="grid" style="margin-top:8px">${charRows.join("")}</div></details>
+      </div>`;
+
+    qa("input.spd-f", host).forEach((el) => {
+      const cls = +el.dataset.cls, col = MOVESPD.cols.find((c) => c.key === el.dataset.col);
+      const off = spdAddr(cls, col);
+      el.onchange = () => {
+        const v = Math.max(0, Math.min(MOVESPD.MAX, +el.value || 0));
+        writeF32(off, v);
+        reg(off, 4, "f32", "Movement speed", `class ${cls} ${col.label.toLowerCase()}`);
+        drawView();
+      };
+      markField(el, off, 4, "f32");
+    });
+    qa("select.spd-cls", host).forEach((sel) => {
+      const rec = +sel.dataset.rec, off = spdClassAddr(rec);
+      sel.onchange = () => {
+        writeW(off, 1, clampInt(sel.value, 0, 0xFF));
+        reg(off, 1, "num", "Speed class", sel.dataset.nm);
+        drawView();
+      };
+      markField(sel, off, 1, "num");
+    });
+    q("#spdLevel", host).onclick = () => {
+      const col = MOVESPD.cols[1];
+      for (let c = 0; c < MOVESPD.rows; c++) {
+        const off = spdAddr(c, col);
+        writeF32(off, MOVESPD.LEVEL);
+        reg(off, 4, "f32", "Movement speed", `class ${c} ${col.label.toLowerCase()}`);
+      }
+      drawView();
+    };
+    q("#spdStock", host).onclick = () => {
+      // "as loaded" is the whole section, class assignments included — otherwise the
+      // button half-reverts and the members column disagrees with the speeds beside it.
+      // Like every ↺ in this editor it restores the bytes this ISO was opened with, which
+      // after a save is what was saved — not the factory disc.
+      for (let c = 0; c < MOVESPD.rows; c++) MOVESPD.cols.forEach((col) => revertRange(spdAddr(c, col), 4));
+      for (let rec = 0; rec < LIST_COUNT.list2; rec++) {
+        const off = spdClassAddr(rec);
+        if (inBlk(off, 1)) revertRange(off, 1);
+      }
+      drawView();
+    };
+  }
+
   function drawGear(host) {
     const g = scanGear();
     const ids = Object.keys(g).map(Number).sort((a, b) => a - b);
@@ -4349,10 +4585,22 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   };
   const archName = (a) => ARCH_NAMES[a] || "";
 
+  // The three per-mode multipliers, as {key, label, hint} in the order they're shown.
+  const ENC_MODES = [
+    { key: "walk", label: "Walking", hint: "also mounted walking" },
+    { key: "run", label: "Running", hint: "on foot" },
+    { key: "ride", label: "Running mounted", hint: "galloping only" },
+  ];
+
   function drawEncounter(host) {
     const cur = decodeEnc(ENC.sites.map((o) => readW(o, 4)));
     const orig = decodeEnc(ENC.sites.map((o) => origW(o, 4)));
-    const unknown = cur === null;
+    const mults = decodeEncMults(ENC.sites.map((o) => readW(o, 4) >>> 0));
+    const unknown = mults === null;
+    const multRows = ENC_MODES.map((m) => `<label class="field" style="max-width:190px">
+        <span>${m.label} <span class="dim">${esc2(m.hint)}</span></span>
+        <input type="number" class="enc-mult" data-k="${m.key}" min="0" max="${ENC.max}" step="5"
+          value="${mults ? mults[m.key] : ENC.STOCK_MULT[m.key]}"></label>`).join("");
     host.innerHTML = `
       <div class="muted" style="margin:0 0 10px">Scales how often random battles trigger across the whole
         game. <b>100</b> = unchanged &middot; <b>50</b> = half as often &middot; <b>200</b> = twice as often
@@ -4370,6 +4618,18 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <button class="chip" id="encReset">Restore 100%</button>
         <span class="muted" id="encOut"></span>
       </div>
+      <div class="bag" style="margin:0 0 4px">
+        <div class="bag-h">Per-movement multipliers <span class="u">what the slider above is made of</span></div>
+        <div class="muted" style="margin:0 0 10px">The roll is <code>area rate &times; multiplier / 100</code>,
+          and the game picks the multiplier from how you are moving. Stock is
+          <b>100</b> walking, <b>120</b> running, <b>150</b> galloping — running is riskier than walking,
+          and a mount is riskier still. Set them apart to change that shape rather than just its size:
+          <b>0</b> in one mode means that mode never starts a battle. Mounted <i>walking</i> uses the
+          walking number, so the third value is specifically a gallop.</div>
+        <div class="row" style="align-items:flex-end;flex-wrap:wrap">${multRows}
+          <button class="chip" id="encMultStock">Restore 100 / 120 / 150</button></div>
+        <div class="muted" style="font-size:12px;margin:8px 0 0" id="encMultOut"></div>
+      </div>
       <div id="encMove"></div>
       <div id="encRooms"></div>`;
     const pctEl = q("#encPct", host), rngEl = q("#encRange", host), outEl = q("#encOut", host);
@@ -4382,21 +4642,66 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       outEl.textContent = note(v) + (dirty() ? ` \u00b7 staged (was ${orig === null ? "?" : orig + "%"})` : "");
       qa("[data-enc]", host).forEach((b) => b.classList.toggle("on", +b.dataset.enc === v));
     };
+    const writeWords = (w) => ENC.sites.forEach((o, i) => {
+      writeW(o, 4, w[i]);
+      reg(o, 4, "imm16", "Encounters", ENC.labels[i]);
+    });
+    // ---- the three per-mode multipliers ----
+    // The slider and these boxes write the same four words, so both paths re-sync both
+    // readouts rather than only their own.
+    const multEls = qa("input.enc-mult", host), outM = q("#encMultOut", host);
+    const MULT_WORD = { walk: 0, ride: 2, run: 3 };       // which site each box owns
+    const syncMults = () => {
+      const m = decodeEncMults(ENC.sites.map((o) => readW(o, 4) >>> 0));
+      multEls.forEach((el) => {
+        const k = el.dataset.k;
+        el.value = m ? m[k] : ENC.STOCK_MULT[k];
+        // "walking" owns two words (its immediate and the branch that reaches the block).
+        el.classList.toggle("dirty", isDirty(ENC.sites[MULT_WORD[k]], 4)
+          || (k === "walk" && isDirty(ENC.sites[1], 4)));
+      });
+      const zero = m ? ENC_MODES.filter((x) => m[x.key] === 0).map((x) => x.label.toLowerCase()) : [];
+      outM.textContent = !m
+        ? "Unrecognised instructions — the boxes show the stock values, not what is on the disc."
+        : zero.length ? `No random battles while ${zero.join(" or ")}.`
+        : m.walk === 0 ? "Walking never starts a battle, so the other two are what remain."
+        : `Relative risk: walking 1.00× · running ${(m.run / m.walk).toFixed(2)}× · galloping ${(m.ride / m.walk).toFixed(2)}×.`;
+    };
     const apply = (v) => {
       v = Math.max(0, Math.min(ENC.max, Math.round(+v || 0)));
       const w = encWords(v); if (!w) return;
-      ENC.sites.forEach((o, i) => {
-        writeW(o, 4, w[i]);
-        reg(o, 4, "num", "Encounters", ["ride multiplier", "ride branch", "running multiplier", "walking multiplier"][i]);
-      });
-      sync(v); updateDirtyBadge();
+      writeWords(w);
+      sync(v); syncMults(); updateDirtyBadge();
     };
-    sync(unknown ? 100 : cur);
+    // A custom triple has no single percentage; say so rather than implying 100%.
+    if (cur === null) {
+      pctEl.value = 100; rngEl.value = 100;
+      outEl.textContent = unknown ? "unrecognised instructions"
+        : "custom per-movement multipliers · the rate above no longer describes them";
+    } else sync(cur);
     rngEl.oninput = () => { pctEl.value = rngEl.value; outEl.textContent = note(+rngEl.value); };
     rngEl.onchange = () => apply(rngEl.value);
     pctEl.onchange = () => apply(pctEl.value);
     qa("[data-enc]", host).forEach((b) => (b.onclick = () => apply(+b.dataset.enc)));
-    q("#encReset", host).onclick = () => { ENC.sites.forEach((o) => revertRange(o, 4)); sync(orig === null ? 100 : orig); updateDirtyBadge(); };
+    q("#encReset", host).onclick = () => {
+      ENC.sites.forEach((o) => revertRange(o, 4));
+      sync(orig === null ? 100 : orig); syncMults(); updateDirtyBadge();
+    };
+    const applyMults = () => {
+      const m = {};
+      multEls.forEach((el) => (m[el.dataset.k] = encClampMult(el.value)));
+      writeWords(encMultWords(m));
+      const p = decodeEnc(ENC.sites.map((o) => readW(o, 4)));
+      if (p === null) outEl.textContent = "custom per-movement multipliers · the rate above no longer describes them";
+      else sync(p);
+      syncMults(); updateDirtyBadge();
+    };
+    multEls.forEach((el) => (el.onchange = applyMults));
+    q("#encMultStock", host).onclick = () => {
+      writeWords(encMultWords(ENC.STOCK_MULT));
+      sync(100); syncMults(); updateDirtyBadge();
+    };
+    syncMults();
     drawEncMove(q("#encMove", host));
     const rhost = q("#encRooms", host);
     if (needTables(rhost)) drawRoomRates(rhost);

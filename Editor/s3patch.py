@@ -382,17 +382,20 @@ def set_counter_word(pct):
 # x1.00. To scale ALL THREE from one percentage we give the ride path its own
 # multiplier immediate and branch it into the shared `MULT/100` block, which is a
 # behaviour-preserving rewrite: at 100% it computes s1*100/100 == s1, exactly stock.
-ENC_RIDE_MULT_OFF = 0x149C3C   # `move $s5,$s1`   -> `addiu $v0,$zero,MULT_ride`
-ENC_RIDE_BR_OFF   = 0x149C40   # `b 0x170248C`    -> `b 0x1702464` (join scale block)
-ENC_RUN_MULT_OFF  = 0x149C5C   # `addiu $v0,$zero,150`  running
-ENC_WALK_MULT_OFF = 0x149C60   # `addiu $v0,$zero,120`  walking
-ENC_SITES = (ENC_RIDE_MULT_OFF, ENC_RIDE_BR_OFF, ENC_RUN_MULT_OFF, ENC_WALK_MULT_OFF)
+# Names corrected 2026-08-31: it is WALKING that ships without a multiplier (it skips the
+# multiply with `move $s5,$s1`), and the 150 is running while MOUNTED. The values were always
+# right; only the labels were swapped. Mounted *walking* takes the walk path.
+ENC_WALK_MULT_OFF = 0x149C3C   # `move $s5,$s1`   -> `addiu $v0,$zero,MULT_walk`
+ENC_WALK_BR_OFF   = 0x149C40   # `b 0x170248C`    -> `b 0x1702464` (join scale block)
+ENC_RIDE_MULT_OFF = 0x149C5C   # `addiu $v0,$zero,150`  running while mounted
+ENC_RUN_MULT_OFF  = 0x149C60   # `addiu $v0,$zero,120`  running on foot
+ENC_SITES = (ENC_WALK_MULT_OFF, ENC_WALK_BR_OFF, ENC_RIDE_MULT_OFF, ENC_RUN_MULT_OFF)
 
 # Byte-exact stock words, so 100% restores the ISO instead of merely emulating it.
 ENC_STOCK_WORDS = (0x0220A82D, 0x10000012, 0x24020096, 0x24020078)
 ENC_BR_JOIN     = 0x10000008   # b 0x1702464
 ENC_ADDIU_V0    = 0x24020000   # addiu $v0,$zero,imm
-ENC_RUN_BASE, ENC_WALK_BASE, ENC_RIDE_BASE = 150, 120, 100
+ENC_WALK_BASE, ENC_RUN_BASE, ENC_RIDE_BASE = 100, 120, 150
 ENC_MAX_PCT = 1000             # 150*1000/100 = 1500, well inside addiu's signed imm
 
 def encounter_words(pct):
@@ -405,10 +408,10 @@ def encounter_words(pct):
     if p == 100:
         return ENC_STOCK_WORDS
     scale = lambda base: (base * p + 50) // 100        # round half up
-    return (ENC_ADDIU_V0 | scale(ENC_RIDE_BASE),
+    return (ENC_ADDIU_V0 | scale(ENC_WALK_BASE),
             ENC_BR_JOIN,
-            ENC_ADDIU_V0 | scale(ENC_RUN_BASE),
-            ENC_ADDIU_V0 | scale(ENC_WALK_BASE))
+            ENC_ADDIU_V0 | scale(ENC_RIDE_BASE),
+            ENC_ADDIU_V0 | scale(ENC_RUN_BASE))
 
 def decode_encounter_words(words):
     """Reverse of encounter_words. Returns the percentage, or None if the words
@@ -416,10 +419,10 @@ def decode_encounter_words(words):
     w = tuple(words)
     if w == ENC_STOCK_WORDS:
         return 100
-    ride, br = w[0], w[1]
-    if br != ENC_BR_JOIN or (ride & 0xFFFF0000) != ENC_ADDIU_V0:
+    walk, br = w[0], w[1]
+    if br != ENC_BR_JOIN or (walk & 0xFFFF0000) != ENC_ADDIU_V0:
         return None
-    p = ride & 0xFFFF
+    p = walk & 0xFFFF
     return p if 0 <= p <= ENC_MAX_PCT and encounter_words(p) == w else None
 
 
