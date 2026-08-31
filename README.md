@@ -175,12 +175,24 @@ Editor → Overview → Field character**. The ISO tab exists for everyone else:
 whitelist's comparison chain (one button widens it to all 75 battle characters), and shows
 the resulting loadable set read back from the patched bytes rather than from a claim.
 
-> Two caveats, both stated in the tab. The added characters are **untested** — their model
-> still has to be resident in the area you're standing in, and an id the area doesn't carry
-> gets you a missing avatar rather than a swap (it's not a crash: the load request is simply
-> never made). And **story scripts set the leader byte at chapter transitions**, so a pick
-> holds until the next scene that sets it. The mechanism, the disassembled chain and the
-> byte-verified patch sites are written up in
+**Which maps carry which character.** A field model has to be in the area you're standing in,
+and the per-area sets are small — a median of **4 of the 28** area archives. So the picker
+tells you up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, …"*. Thomas is in
+5, Koroku in 6. This is measured from the disc (archives store asset names as plain text), and
+it's phrased as *ships in* rather than *works in*, because `ETC.BIN` carries every model too
+and a resident one isn't evicted when you change area.
+
+**Whose story you get — the Story content control.** The leader byte is also *which team's
+events and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and
+Masked Luc each have their own — so in a town that ships no content for their index you get
+**empty dialogue boxes**. Hugo is index 0, and 0 is also what an unrecognised leader falls to,
+so the ISO tab can hand any of them Hugo's events by retiring one instruction immediate. That
+turns "nobody will talk to me as Luc" into "everyone treats me as Hugo".
+
+> Remaining caveats, both stated in the tab. Characters beyond the stock eight are **untested**
+> in play, and **story scripts set the leader byte at chapter transitions**, so a pick holds
+> until the next scene that sets it. The mechanism, the disassembled chains, the per-map scan
+> and the byte-verified patch sites are written up in
 > [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md).
 
 **Random encounter rate — the Encounter tab.** One number controls how often random battles
