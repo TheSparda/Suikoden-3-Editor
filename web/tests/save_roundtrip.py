@@ -65,7 +65,15 @@ def build_synth():
     nm = "TESTHERO".encode("latin1")
     off, n = s3save.NAME_OFF["flameChampion"]
     b[off:off + len(nm)] = nm
-    # a carryover name stored full-width Shift-JIS, like a real save's imported S1 hero
+    # The carryover name slots, seeded with what a new game installs, so "this slot is still
+    # the default" is testable. Real saves hold these half-width, like the player-entered
+    # ones ("Genkaku Jr." is 11 ASCII bytes in every sample save).
+    for key in ("s1Hero", "s1Country", "s2Hero", "s2Name2", "s2Name3", "s2Country"):
+        o2, ln = s3save.NAME_OFF[key]
+        dv = s3save.NAME_DEFAULTS[key].encode("latin1")[:ln]
+        b[o2:o2 + len(dv)] = dv
+    # ...and one of them re-written full-width Shift-JIS, the form the decoder also has to
+    # handle (and the form the write path has to preserve).
     fw = s3save._to_fullwidth("McDohl").encode("shift_jis")
     o2, _ = s3save.NAME_OFF["s1Hero"]
     b[o2:o2 + len(fw)] = fw
@@ -427,6 +435,96 @@ def main():
           sum_words(open(path, "rb").read()) == 0)
 
     # --- memory-card ECC helper (used when writing .ps2 cards) ---
+    # --- Suikoden I / II carryover -------------------------------------------------------
+    # The flags are the whole feature: docs/S1_S2_CARRYOVER_TRACKER.md pins them to save byte
+    # 0x31 bits 3 (Suikoden II) and 4 (Suikoden I), via the engine's GameFlag array at 0x30.
+    # These guard the address, the round trip, and the importer's level/weapon formulas.
+    print("Suikoden I / II carryover:")
+    check("the flag array sits where the game puts it (EE 0x0196B410 -> file 0x30)",
+          s3save.FLAG_BASE == 0x30 and s3save.FLAG_COUNT == 0x200)
+    check("the flag array ends exactly where the recruit table begins",
+          s3save.FLAG_BASE + s3save.FLAG_COUNT <= s3save.RECRUIT_OFF)
+    check("carryover flags are byte 0x31 bit 3 (S2) and bit 4 (S1)",
+          s3save.CARRYOVER_FLAGS["s2"] == (1, 3) and s3save.CARRYOVER_FLAGS["s1"] == (1, 4))
+    fresh = s3save.read_all_s3_saves(path)[0]
+    check("a save with the bits clear reports 'not loaded'",
+          not fresh["carryover"]["s1"]["loaded"] and not fresh["carryover"]["s2"]["loaded"])
+
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+                            carryover={"s1": True, "s2": True},
+                            name_edits={"s2Hero": "Riou", "s2Name3": "New State"})
+    raw = open(path, "rb").read()
+    check("both flags set exactly bits 3 and 4 of byte 0x31 and nothing else",
+          raw[0x31] == 0x18, "0x%02X" % raw[0x31])
+    co = s3save.read_all_s3_saves(path)[0]["carryover"]
+    check("both games read back as loaded", co["s1"]["loaded"] and co["s2"]["loaded"])
+    check("the imported Suikoden II names round-trip",
+          co["s2"]["names"]["s2Hero"] == "Riou" and co["s2"]["names"]["s2Name3"] == "New State")
+    check("...and are recognised as customised, not defaults", co["s2"]["customNames"])
+    check("a name slot nothing wrote to still reads its new-game default",
+          co["s1"]["names"]["s1Country"] == s3save.NAME_DEFAULTS["s1Country"],
+          repr(co["s1"]["names"]["s1Country"]))
+    # The earlier name-write test renamed the Suikoden I hero to "Tir", so the S1 side must
+    # report customised names — the flag and the names are independent, which is exactly the
+    # confusion the old name-only heuristic caused.
+    check("customNames follows the names, not the flag",
+          co["s1"]["customNames"] and co["s1"]["names"]["s1Hero"] == "Tir",
+          str(co["s1"]["names"]))
+    check("checksum invariant holds after a carryover write", sum_words(raw) == 0)
+
+    # Clearing has to actually clear — a "loaded" flag that cannot be undone would strand
+    # anyone who ticked it to try it out.
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+                            carryover={"s1": False, "s2": False})
+    check("clearing both flags returns byte 0x31 to 0", open(path, "rb").read()[0x31] == 0)
+    noop = s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+                                   carryover={"s1": False, "s2": False})
+    check("re-clearing an already-clear flag is not counted as a change",
+          noop.get("changed") == 0, str(noop))
+
+    # All eight name slots must be distinct 17-byte windows: the old map had only five and
+    # read one the importer never writes, which is what made the pre-flag heuristic wrong.
+    offs = sorted(off for _, off, _, _ in s3save.NAME_FIELDS)
+    check("eight name slots, 17 bytes apart, none overlapping",
+          len(s3save.NAME_FIELDS) == 8 and len(set(offs)) == 8 and
+          all(offs[i + 1] - offs[i] >= 17 for i in range(len(offs) - 1)), str([hex(o) for o in offs]))
+    check("every name slot has a documented new-game default",
+          set(s3save.NAME_DEFAULTS) == {k for k, _, _, _ in s3save.NAME_FIELDS})
+
+    # The importer's own arithmetic (overlay 0x121CBA0): level = cur + cur*max(0,S2-50)/100,
+    # capped 99, +5 for a level-99 S2 character; weapon = cur + max(0,S2wl-10)/2, capped 16.
+    check("level formula: a sub-50 Suikoden II level grants nothing",
+          s3save.carryover_level(20, 40) == 20 and s3save.carryover_level(20, 50) == 20)
+    check("level formula: level 60 + a level-80 S2 record", s3save.carryover_level(60, 80) == 78)
+    check("level formula: a level-99 S2 record adds a further +5",
+          s3save.carryover_level(20, 99) == 34)
+    check("level formula: capped at %d" % s3save.LEVEL_MAX,
+          s3save.carryover_level(99, 99) == 99 and s3save.carryover_level(90, 99) == 99)
+    check("levelling is one-way — it never demotes", s3save.carryover_level(70, 0) == 70)
+    check("weapon-level formula, capped at %d" % s3save.WEAPONLV_MAX,
+          s3save.carryover_weapon_level(1, 16) == 4 and
+          s3save.carryover_weapon_level(15, 16) == 16 and
+          s3save.carryover_weapon_level(8, 10) == 8)
+    check("only the seven runes the S2 rune map can produce are offered",
+          sorted(set(s3save.CARRYOVER_RUNE_MAP.values())) == sorted(s3save.CARRYOVER_RUNES))
+    ref = s3save.carryover_reference()
+    check("the three carryover characters are Viki, Futch and Belle",
+          [c["name"] for c in ref["chars"]] == ["Viki", "Futch", "Belle"],
+          str([c["name"] for c in ref["chars"]]))
+    check("...and they address real roster slots",
+          all(0 <= c["rosterIndex"] < len(s3save.ROSTER) for c in ref["chars"]))
+    check("the rune slots it fills are real equipment slots",
+          all(sl in dict(s3save.EQUIP_SLOTS) for sl in ref["runeSlots"]))
+    bonus = s3save.carryover_bonus_edits(
+        {6: {"level": 30, "weaponLv": 5, "s2Level": 99, "s2WeaponLv": 16,
+             "runes": [0x13D, 0, 0x151]}})
+    check("bonus edits come out in the shape apply_edits_to_gamedata takes",
+          bonus[6]["level"] == 49 and bonus[6]["weaponLv"] == 8 and
+          bonus[6]["equip"] == {"headRune": 0x13D, "leftRune": 0x151}, str(bonus))
+    check("a bonus that changes nothing stages nothing",
+          s3save.carryover_bonus_edits({6: {"level": 30, "weaponLv": 5, "s2Level": 0,
+                                            "s2WeaponLv": 0, "runes": [0, 0, 0]}}) == {})
+
     print("Memory-card ECC helper:")
     zero = s3save.ecc_page(bytes(512))
     check("ecc_page returns 16 bytes", len(zero) == 16)

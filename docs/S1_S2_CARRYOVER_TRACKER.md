@@ -17,13 +17,13 @@ All work was read-only; no bytes were written to the disc.
 | 2 | Find the flag primitive and where its array lives in the save | **done** — `GameFlag()` @ `0x16D3930`, array at file `0x30` |
 | 3 | Find the "S2 data loaded" / "S1 data loaded" bits | **done** — file `0x31` bit 3 and bit 4 |
 | 4 | Map the 8 carryover/player name slots to file offsets | **done** — see §4 |
-| 5 | Find everything else the import writes | **done for the ELF path** — 3 characters get level + runes (§5) |
+| 5 | Find everything else the import writes | **done** — level, weapon level and 3 runes for 3 characters (§5) |
 | 6 | Work out what the flags actually unlock in-game | **partial** — script condition ids `0x248`/`0x249`; per-map EDS scripts not enumerated |
 | 7 | Confirm bit meaning of the S2-save byte that gates the S1 half | **open** — see §7 |
-| 8 | Confirm the three carryover characters by name in-game | **open** — ids resolve to 7 / 31 / 52 (§5) |
-| 9 | Fix the editor's current name-field labels + carryover heuristic | **not started** — see §8 |
-| 10 | Add a real Carryover editor (flags + names + per-character import) | **not started** — see §8 |
-| 11 | Verify a hand-flagged save in PCSX2 | **not started** — see §9 |
+| 8 | Confirm the three carryover characters | **done** — Viki, Futch, Belle (§5) |
+| 9 | Fix the editor's name-field map + carryover heuristic | **done** — 8 slots + flag-based `detect_carryover()` |
+| 10 | Add a real Carryover editor (flags + names + per-character import) | **done** — see §8 |
+| 11 | Verify a hand-flagged save in PCSX2 | **open** — see §9 |
 
 ---
 
@@ -120,30 +120,46 @@ The importer is `0x121CBA0` in the ETC.BIN overlay (ISO `0x419F9990`, second cop
 strings — `ISO = vaddr + 0x407DCE40`). Its argument is the loaded Suikoden II save buffer.
 
 After the names, it walks a 3-entry table at `0x012139A8` of **Suikoden II character record
-indices** — `4`, `9`, `0x29` — maps each to a Suikoden III character id via `0x121CB08`:
+indices** — `4`, `9`, `0x29` — and maps each to a Suikoden III character via `0x121CB08`.
+The output is a **battle-character id** (the 1..0xD8 space that `0x16C6D08` bounds-checks
+and that the "Party Modifier digits" cheat reference lists), *not* a roster index:
 
-| S2 record index | → S3 character id | S3 name per `Editor/s3_names.json` `list1` |
-|---|---|---|
-| 4 | 7 | Viki (Old) |
-| 9 | 0x1F (31) | Bright |
-| 0x29 (41) | 0x34 (52) | Mua |
+| S2 record index | → S3 battle id | roster slot | Character |
+|---|---|---|---|
+| 4 | 7 | 6 | **Viki** |
+| 9 | 0x1F (31) | 29 | **Futch** |
+| 0x29 (41) | 0x34 (52) | 45 | **Belle** |
 
-For each, it reads the S2 character record at `S2save + 0x840 + index*0x34`:
+All three are Suikoden II characters, which is the cross-check that the id space is being
+read right (reading the same numbers as roster indices or as `s3_names.json` `list1` ids
+produces a nonsense trio).
 
-- `+0x00` — level, fed through `min(0x34*lvl + lvl/100, 99)` and applied by repeated
-  level-up calls (`0x16C8CC0` / `0x16C8FC0`);
-- `+0x13`, `+0x15`, `+0x16`, `+0x17` — four equipment/rune ids, remapped through the u16
-  table at `0x012139B0` (`0x13D`, `0x149`, `0x145`, `0x14C`, `0x141`, …) and equipped via
-  `0x16DD2F8`.
+For each, the S2 character record at `S2save + 0x840 + index*0x34` supplies:
 
-**This is the part a flag flip alone will not reproduce.** Setting `0x31 |= 0x18` by hand
-gives you the dialogue/name half of carryover; the character levels and runes are ordinary
-save state the editor already edits, so the editor can offer them as a separate "apply the
-import's effects" action rather than pretending the flag does it.
+- `+0x00` **level** → the S3 character is levelled up (`0x16C8CC0` in a loop) to
+  `cur + cur*max(0, s2Level-50)/100`, capped at 99, and a level-99 Suikoden II character is
+  worth a further **+5**. It is one-way: the import only ever levels a character *up*.
+- `+0x13` **weapon level** → `cur + max(0, s2WeaponLv-10)/2`, capped at 16 (`0x16C9430`).
+- `+0x15`, `+0x16`, `+0x17` **three runes** → remapped and equipped into the character's
+  three rune slots (`0x16D62B0`, or `0x16DD2F8` slot-by-slot on the other branch).
 
-The third id (52 → "Mua") is the one to double-check in-game: Viki and Bright are both
-plausible Suikoden II returnees, the third is not obviously so, and `list1` in
-`Editor/s3_names.json` only covers 79 of the ~109 roster slots.
+The rune remap is the 38-entry u16 table at `0x012139B0`, indexed by `s2RuneId - 1`. Only
+seven Suikoden III runes are reachable:
+
+| S2 rune id | → S3 item |
+|---|---|
+| 1, 2 | `0x13D` Fire |
+| 3, 4 | `0x149` Water |
+| 5, 6 | `0x145` Wind |
+| 7, 8 | `0x14C` Earth |
+| 9, 10 | `0x141` Lightning |
+| 15 | `0x14F` Blinking |
+| 17 | `0x151` Pale Gate |
+
+Every other S2 rune maps to 0 — nothing carries over.
+
+**This is the part a flag flip alone will not reproduce**, which is why the editor asks for
+the Suikoden II numbers and runs these formulas rather than pretending the bit does it.
 
 ## 6. Where the names come from inside the Suikoden II save
 
@@ -188,33 +204,43 @@ Nothing else on the disc writes slots 0/1 from an S2 save, so one of the two is 
 Resolving it needs a real Suikoden II memory-card save (task 7) — it does not block the
 editor work, because either way the editor's job is to let the user type the names.
 
-## 8. Editor work
+## 8. Editor work — done
 
-**Fix what is already there** (`Editor/s3save.py`, `web/app.js`):
+`Editor/s3save.py` (the engine the web editor runs under Pyodide):
 
-- [ ] `detect_carryover()` reads `0xCA02` as "SII army/country". That slot (index 6) is
-      **never written by the importer**; the imported S2 secondary names are `0xCA46` and
-      `0xCA57`. The heuristic should read those.
-- [ ] The heuristic itself can go: `0x31 & 0x08` / `0x31 & 0x10` is the real answer.
-      Keep the name comparison only as a "names differ from defaults" hint.
-- [ ] `NAME_FIELDS` is missing three slots (`0xCA46`, `0xCA57`, and `0xCA02` is mislabelled),
-      and the two player names' defaults are `Hideo` / `Budehuc`, not blank.
-- [ ] Names are stored full-width Shift-JIS for the imported slots — already handled by
-      `_read_str` / `_to_fullwidth`; the new slots need the same treatment.
+- `FLAG_BASE`/`FLAG_COUNT` + `game_flag()` / `set_game_flag()` — the engine's whole boolean
+  store, now addressable. Useful well beyond this feature.
+- `CARRYOVER_FLAGS` and a rewritten `detect_carryover()`: the answer is the flag, with the
+  name comparison kept only as a secondary "these are still the defaults" hint. The old
+  heuristic also read `0xCA02`, a slot the importer never writes.
+- `NAME_FIELDS` grew from five slots to all eight, with `NAME_DEFAULTS` for each.
+- `carryover_level()` / `carryover_weapon_level()` / `carryover_bonus_edits()` — the
+  importer's own arithmetic, returning edits in the shape `apply_edits_to_gamedata()` takes.
+- `apply_edits_to_gamedata(..., carryover={"s1": bool, "s2": bool})`, threaded through
+  `write_save_edits()` and every container writer. Setting a bit that is already set is not
+  counted as a change, so ticking a box back and forth doesn't force a write.
 
-**Add** (web editor is the only editor — `web/`):
+`web/app.js`:
 
-- [ ] A "Carryover" card: two checkboxes bound to `0x31` bit 3 / bit 4, plus the five
-      carryover name fields, plus the two player name fields.
-- [ ] An "apply Suikoden II bonus" button that additionally sets the three characters'
-      levels and equipped runes (§5), since the flags alone do not.
-- [ ] Recompute the save checksum on write (existing path already does).
-- [ ] Version + `sw.js` cache bump, claimed from `origin/main` immediately before writing.
+- A **Suikoden I / II carryover** card at the top of the save editor: one checkbox per game,
+  each labelled with the actual byte/bit (`0x31 bit 3`, `0x31 bit 4`) and the current
+  contents of that game's name slots. Ticking one stages like any other edit — it appears in
+  the review modal and goes out in the write payload.
+- All eight name fields are now editable in the Names grid.
+- A **Suikoden II bonus** modal: enter what Viki, Futch and Belle were in your Suikoden II
+  save (level, weapon level, up to three runes from the seven that can carry over) and it
+  stages the resulting character edits, ticking the Suikoden II flag alongside them.
+- Carryover state round-trips through the save JSON export/import.
+
+Tests: `web/tests/save_roundtrip.py` gains a carryover section (flag address, round trip,
+clear, the formulas, the name-slot layout) and `web/tests/e2e.mjs` gains a headless UI
+section (rows render with the byte/bit, staging reaches the payload, the bonus modal stages
+character edits). `npm test` and `node e2e.mjs` both pass.
 
 ## 9. Verification plan
 
-1. Clone a sample save, set `0x31 |= 0x18`, fix the checksum, write the five carryover
-   names to non-default values.
+1. In the web editor, tick both carryover boxes on a clone of a real save and set the five
+   carryover names to non-default values. (By hand: `0x31 |= 0x18`, then fix the checksum.)
 2. Boot the clone under the PCSX2 harness (`docs/PCSX2_AUTOMATION.md`) and read the names
    back where the game prints them (Budehuc library text / NPC dialogue that substitutes
    the S1 and S2 hero names).
