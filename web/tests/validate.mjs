@@ -33,7 +33,39 @@ const TABLES = {
   // rune item table is indexed by ITEM id; only ids 317..462 are runes, so bound that window
   runes: [0x3EAF78 + 317 * 0x20, 0x20, 462 - 317 + 1],
   versionword: [4136544, 4, 1],
+  // Classes reference: the war-battle class word pool (78 string pointers) and the 43x47 table
+  // that maps a character's top two skill ids to a class label. No per-character class byte
+  // exists — the label is derived — so these two are the whole of it.
+  classPool: [0x3A7C80, 4, 78], classTbl: [0x3A7DC0, 94, 43],
+  // the item-record bands the disc's own dispatcher (VA 0x16DBCD8) defines, name @+0 desc @+4.
+  // Two of them have no editor view yet; bounding them here keeps the desc-alias index honest.
+  itemBand: [0x3E8CBC + 1 * 0x24, 0x24, 160], gearBand: [0x3D8684 + 161 * 0x44, 0x44, 316 - 161 + 1],
+  band4: [0x3EEB4C + 463 * 0x14, 0x14, 514 - 463 + 1], band5: [0x3E6680 + 515 * 0x10, 0x10, 612 - 515 + 1],
 };
+// Status effect strength (Spells tab): eleven `addiu $rt,$zero,imm` code sites whose immediates
+// are the percentages a status is worth. Bound-checked one by one like the mount pair sites, and
+// their stock words are asserted below so a drifted address can't be silently written.
+const STATUSFX_SITES = [
+  [0x107470, 0x24100014],
+  [0x107480, 0x24030014],
+  [0x107478, 0x2410000F],
+  [0x102488, 0x2402001E],
+  [0xE3868, 0x24040078],
+  [0x24765C, 0x24020078],
+  [0xE3870, 0x24040064],
+  [0xE3878, 0x24040050],
+  [0x247664, 0x24020050],
+  [0xE3880, 0x2404003C],
+  [0x247668, 0x2402003C],
+  [0xE3884, 0x24040028],
+  [0x24768C, 0x24040028],
+  [0x104810, 0x24020055],
+  [0x1053DC, 0x24020055],
+  [0x10540C, 0x24020096],
+  [0x105420, 0x24020096],
+  [0x1054B8, 0x24020096],
+  [0x1054CC, 0x24020096],
+]
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -41,6 +73,46 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   const end = base + stride * count;
   if (base >= ELF_BASE && end <= ELF_END) ok(`${name} [${base}..${end})`);
   else bad(`${name} out of block: [${base}..${end}) vs [${ELF_BASE}..${ELF_END})`);
+}
+// Spell targeting/element enums must name every value a pristine disc actually uses. Fifteen of
+// the 94 spells used to read "custom 0xNN" in the Target dropdown (0x05 the chanter-only
+// Sword/Amulet runes, 0x09 the one-ally heals, 0x12 the line attacks) and 17 rendered a bare
+// "undefined" for their element, because the two lists stopped short of the data.
+{
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const used = (iso.match(/TARGET_BYTES_IN_USE = \[([^\]]*)\]/) || [])[1];
+  const opts = (iso.match(/const TARGET_OPTS = \[([\s\S]*?)\];/) || [])[1];
+  if (!used || !opts) bad("could not read TARGET_BYTES_IN_USE / TARGET_OPTS out of iso.js");
+  else {
+    const need = used.split(",").map((s) => parseInt(s.trim(), 16));
+    const have = new Set([...opts.matchAll(/\[\s*(0x[0-9A-Fa-f]+)\s*,/g)].map((m) => parseInt(m[1], 16)));
+    const missing = need.filter((b) => !have.has(b));
+    (missing.length ? bad : ok)(missing.length
+      ? `TARGET_OPTS is missing ${missing.map((b) => "0x" + b.toString(16).toUpperCase().padStart(2, "0")).join(", ")} — those spells show as "custom"`
+      : `every target byte the disc uses is a named option (${need.length})`);
+  }
+  const el = (iso.match(/const ELEMENTS = \{([\s\S]*?)\};/) || [])[1] || "";
+  const keys = new Set([...el.matchAll(/(\d+):/g)].map((m) => +m[1]));
+  const missEl = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter((k) => !keys.has(k));
+  (missEl.length ? bad : ok)(missEl.length
+    ? `ELEMENTS is missing ${missEl.join(", ")} — those spells render "undefined"`
+    : "every element/family byte the disc uses is named (0..10)");
+  (/const elemName = /.test(iso) ? ok : bad)("iso.js has an element fallback (no bare undefined in the UI)");
+  (/elemName\(elVal\)/.test(iso) ? ok : bad)("the spell summary line uses the fallback");
+}
+{
+  const oob = STATUSFX_SITES.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
+  if (oob.length) bad(`status-fx sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
+  else ok(`status effect strength sites (${STATUSFX_SITES.length} code sites in block)`);
+  // every site the table names must also appear in iso.js with the same stock word
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const bad2 = STATUSFX_SITES.filter(([o, w]) => {
+    const re = new RegExp(`\\[0x${o.toString(16).toUpperCase()},\\s*0x${w.toString(16).toUpperCase()}\\]`, "i");
+    return !re.test(iso);
+  });
+  (bad2.length ? bad : ok)(bad2.length
+    ? `iso.js STATUSFX is missing//drifted for ${bad2.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "iso.js STATUSFX lists every site with its stock instruction word");
 }
 {
   const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);
