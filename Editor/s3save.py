@@ -305,6 +305,28 @@ PARTY_EXTRA_NAMES = {
 }
 
 
+# The field avatar — the character you walk around the map as — is this leader byte, and
+# the engine loads its model through exactly one gate: FieldAvatarModelRequest @ vaddr
+# 0x17B7560, the only caller of the only routine that issues the request (0x16E0FF8).
+# That gate is a hardcoded comparison chain, and these eight ids are its whole content:
+#
+#     if (id == 0x36) LOAD                       ; Koroku
+#     if (id <u 0x37) { if (!id) return; if (id <u 4) LOAD ; 1,2,3 Hugo/Chris/Geddoe
+#                       if (id == 0x1D) LOAD ; Thomas
+#                       return }
+#     if (id == 0x3F) LOAD                       ; Luc
+#     ... 0xCA / 0xCB fall through               ; Masked Luc / Grasslands Chris
+#
+# Anything else is not an error — the request is simply never made, so you keep whatever
+# model is already resident. Every leader in the 5-blob corpus is one of these (1 Hugo,
+# 63 Luc, 203 Grasslands Chris), which is the same list from the other direction.
+#
+# The party id space IS the engine's model id space (PARTY_IDS and the roster
+# cross-reference in docs/s3_model_ids.json are the same 75 numbers with the same gaps),
+# so these ids name models directly. See docs/FIELD_CHARACTER_RESEARCH.md.
+FIELD_AVATAR_IDS = (1, 2, 3, 29, 54, 63, 0xCA, 0xCB)
+
+
 def party_id_of(roster_index):
     """Party id for a roster slot, or None for the support-only 108 Stars."""
     if 0 <= roster_index < len(PARTY_IDS):
@@ -335,7 +357,8 @@ def party_reference():
     names.update(PARTY_EXTRA_NAMES)
     return {"names": names,
             "roster": dict(PARTY_ROSTER),
-            "choices": list(PARTY_IDS)}
+            "choices": list(PARTY_IDS),
+            "fieldAvatars": list(FIELD_AVATAR_IDS)}
 
 # Recruitment table (herrvillain "Recruit Modifiers" region): one u16 per roster slot at
 # 0x232 + rosterIndex*2. Nonzero = recruited; 0 = not recruited. Verified by diffing 4
@@ -391,6 +414,12 @@ PLAYTIME_OFF = 0x28
 # monotonic proof (gold is spent) and no save with a known on-screen potch to confirm.
 # Exposed as editable-but-flagged; a wrong value is low-risk and easily fixed in-game.
 GOLD_OFF = 0x3210
+
+# Party leader / field avatar. GLOBAL_FIELDS reads this as one byte because every legal id
+# fits in one, but the engine reads it as a HALFWORD (`lh`/`lhu -0x4c0e($v0)` at all 24 of
+# its references), so the write is 16-bit — that clears 0x13 instead of trusting it to be
+# zero. See FIELD_AVATAR_IDS above.
+LEADER_OFF = 0x12
 
 # Editable name fields. Eight 17-byte, null-terminated slots at 0xC9E0 + n*0x11, but the
 # game addresses them through SetName(index, mode, src) @ 0x16D49E8, whose jump table puts
@@ -1109,12 +1138,13 @@ def _clamp(v, width, cap=None):
 
 def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
                             party_edits=None, recruit_edits=None, gold=None,
-                            carryover=None):
+                            carryover=None, leader=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
                              "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
     party_edits: {partySlot(0..5): charId} for the active-party composition.
+    leader: party id for the leader / field avatar at 0x12 (see FIELD_AVATAR_IDS).
     carryover: {"s1": bool, "s2": bool} — the Suikoden I / II "data was loaded" flags.
     recruit_edits: {rosterIndex: value}, where value is a bool (recruit/un-recruit) OR a
         dict {"recruited": bool, "recruiter": "Hugo"|"Chris"|"Geddoe"|"Thomas"|""} to also
@@ -1241,6 +1271,8 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         _rebuild_formation(b, old_party)
     if gold is not None:
         struct.pack_into("<I", b, GOLD_OFF, _clamp(gold, 4)); changed += 1
+    if leader is not None:
+        struct.pack_into("<H", b, LEADER_OFF, _clamp(leader, 2)); changed += 1
     # Carryover flags. Counted as changed only when the bit actually moves, so ticking a box
     # that is already ticked does not make an otherwise-empty Apply write the file.
     for game, on in (carryover or {}).items():
@@ -1258,17 +1290,18 @@ def _backup_once(path, make_backup):
 
 
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
-                     party_edits=None, recruit_edits=None, gold=None, carryover=None):
+                     party_edits=None, recruit_edits=None, gold=None, carryover=None,
+                     leader=None):
     """Apply edits to one save's gamedata, in place, for any supported container
     (memory card, .psu export, or raw gamedata). Fixes the save checksum (and, for
     memory cards, per-page ECC). Backs up the file first by default."""
     fmt = _sniff_format(path)
     if fmt in ("psu", "gamedata"):
         return _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
-                                      party_edits, recruit_edits, gold, carryover)
+                                      party_edits, recruit_edits, gold, carryover, leader)
     if fmt in ("cbs", "sharkport", "psv"):
         return _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
-                                      party_edits, recruit_edits, gold, carryover)
+                                      party_edits, recruit_edits, gold, carryover, leader)
     card = load_card(path)
     # locate the folder + its gamedata
     target = None
@@ -1281,7 +1314,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     if gd is None:
         return {"error": "gamedata not found in save folder"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits,
-                                              recruit_edits, gold, carryover)
+                                              recruit_edits, gold, carryover, leader)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
@@ -1296,7 +1329,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
 
 
 def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
-                           party_edits, recruit_edits, gold, carryover=None):
+                           party_edits, recruit_edits, gold, carryover=None, leader=None):
     """Edit the S3 gamedata inside a .cbs / .sps / .xps file. SharkPort stores files
     uncompressed, so its gamedata is patched in place at its absolute offset.
     CodeBreaker is decompressed (RC4+zlib), patched, and re-encoded. The S3 checksum is
@@ -1313,7 +1346,7 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         gd = b[off:off + GAMEDATA_SIZE]
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
-                                                  carryover)
+                                                  carryover, leader)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1334,7 +1367,7 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         off, gd = tgt
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
-                                                  carryover)
+                                                  carryover, leader)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1358,7 +1391,7 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         return {"error": "gamedata payload not found in CodeBreaker save"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                               party_edits, recruit_edits, gold,
-                                              carryover)
+                                              carryover, leader)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     body[off:off + len(new_gd)] = new_gd
@@ -1673,7 +1706,7 @@ def _read_individual_save(path, fmt):
 
 
 def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
-                           party_edits, recruit_edits, gold, carryover=None):
+                           party_edits, recruit_edits, gold, carryover=None, leader=None):
     """Write edits into a .psu export or a raw gamedata file. No ECC (neither format
     has it); the gamedata's own checksum is recomputed by apply_edits_to_gamedata.
     Same-length in-place write, so the container layout is untouched."""
@@ -1682,7 +1715,7 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
             gd = f.read()
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
-                                                  carryover)
+                                                  carryover, leader)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1698,7 +1731,7 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
         return {"error": "gamedata not found in .psu"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                               party_edits, recruit_edits, gold,
-                                              carryover)
+                                              carryover, leader)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if not psu.write_file("gamedata", new_gd):

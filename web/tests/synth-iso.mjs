@@ -70,6 +70,20 @@ export const MOUNT_PAIRS = [
   { riderSites: [0x1303A0, 0x1303AC], mountSite: 0x1303B4, rider: 41, mount: 42 },  // Franz + Ruby
 ];
 export const mountWord = (imm) => (0x24020000 | (imm & 0xFFFF)) >>> 0;   // addiu $v0,$zero,imm
+// FieldAvatarModelRequest's whitelist chain (vaddr 0x17B7560) — the gate that decides whose
+// field model the engine will load, i.e. who you can walk around the map as. Five editable
+// immediates plus the three bounds the tab reads but does not offer. Stock values are the
+// disc's, byte-verified; see docs/FIELD_CHARACTER_RESEARCH.md.
+export const AVATAR_SITES = [
+  [0x1FED64, 0x36, "eq"],   // Koroku
+  [0x1FED70, 0x37, "lt"],   // upper bound of the low branch
+  [0x1FED78, 0x3F, "eq"],   // Luc
+  [0x1FED80, 0x04, "lt"],   // ids 1-3: Hugo / Chris / Geddoe
+  [0x1FED88, 0x1D, "eq"],   // Thomas
+  [0x1FEDA0, 0x3F, "lt"], [0x1FEDAC, 0xCC, "lt"], [0x1FEDB4, 0xCA, "lt"],
+];
+export const avatarWord = (imm, kind) =>
+  ((kind === "eq" ? 0x24020000 : 0x2C820000) | (imm & 0xFFFF)) >>> 0;   // addiu / sltiu
 // The per-character assigned horse: u16 at list2 record +0x66. Stock has Chris on her own
 // horse (309) and the other five Zexen Knights on the knight horse (308).
 export const HORSE_OFF = 0x66;
@@ -277,6 +291,7 @@ export function buildSynthIso() {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));
   });
+  AVATAR_SITES.forEach(([o, imm, kind]) => w32(o, avatarWord(imm, kind)));
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
