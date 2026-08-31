@@ -3528,17 +3528,29 @@
       </div>
       <div id="mountCards">${cards}</div>
       <div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · field <i>and</i> battle</span></div>
-        <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route, and the more capable one:
-          each character's own record can name a horse, and the engine honours it in the field and in battle
-          without the horse needing to be in your party. Stock, this is what puts the six Zexen Knights on
-          horseback — Chris on her own horse, the other five on the knight horse.</div>
+        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · grants permission, doesn't stage the horse</span></div>
+        <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route: each character's own
+          record can name a horse, and both the field and the battle gate honour it without the horse being in
+          your party. Stock, this is what puts the six Zexen Knights on horseback — Chris on her own horse,
+          the other five on the knight horse.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>This grants permission — it does not by itself put
+          anyone on a horse.</b> These horses are ordinary NPC models, not party members, so they hold no
+          battle slot: the <i>scene</i> still has to stage one. That is why Chris rides in some battles and
+          not others even though her record has always said 309. Setting this on a new character makes them
+          eligible wherever the game already stages a horse; it cannot add a horse to a fight that has none.
+          To <i>force</i> a horse in battle, use <b>Ruby</b> in the pair table above — she is a party member,
+          so she brings her own battle slot.</div>
         <div class="grid eq">${horseRows}</div>
         <details class="note"><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
             <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
               are honoured</b>. Any other mount id is read and silently discarded — which is why the Karaya horse
               and the flyers aren't offered here.</li>
+            <li>The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
+              character, so it always has a battle slot and the pairing fires from party membership alone —
+              that is why a re-paired Chris+Bright works in any fight with both deployed. An assigned horse
+              needs no party slot but has no battle presence of its own, so it appears only where the scene
+              already puts a horse. Reach beats reliability on one, reliability beats reach on the other.</li>
             <li><b>field+battle</b> characters carry both mounted animation banks. <b>field</b>-only ones
               (Geddoe, Thomas, Salome) will ride correctly on the map but keep their normal pose in battle —
               <i>Geddoe rides perfectly well outside combat</i>, which is the one thing the pair table above
