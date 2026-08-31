@@ -330,6 +330,55 @@
     },
   };
 
+  // ---- what counts as "moving" for a random encounter -------------------------
+  // Before the rate is even computed, the roll is gated on the PLAYER OBJECT's current
+  // motion slot (`obj->+0x0E`) and object kind (`obj->+0x02`):
+  //
+  //   IsWalking(kind, slot) @ 0x16F3860 : kind==2 ? slot in [0x64,0x6F] : [2,0x0D] or [0x42,0x44]
+  //   IsRunning(kind, slot) @ 0x16F38A8 : kind==2 ? slot in [0x70,0x72] : [0x0E,0x13] or [0x45,0x46]
+  //
+  //   walking -> rate = base ; running -> rate = base * (riding ? 150 : 120) / 100 ;
+  //   neither -> rate = 0 and the roll is SKIPPED, silently.
+  //
+  // Two useful things fall out of that, and both are single instruction immediates.
+  //
+  // 1. Zeroing a range's length makes that test always fail, so "no encounters while
+  //    walking" is a real, clean setting rather than a rate fudge — you still get battles
+  //    when you run, so it reads as a QoL option, not as turning encounters off.
+  //
+  // 2. Koroku and Fubar are the only two playable models with no `run_start_L/R` or
+  //    `run_stop_L/R` (checked against every model's clip set on disc: 76 of 78 have them).
+  //    Their run cycle is the unsuffixed `run_start`/`run_loop`/`run_stop`, which live at
+  //    slots 0x11A-0x11F in the animal block next to `naki_*` (a bark) and `sit_stop` —
+  //    outside every band, so running as them never rolls. Confirmed in play: as Koroku
+  //    walking triggers encounters and running does not. Repointing the run test's SECOND
+  //    range at that block fixes it. The cost is named in the UI: that range currently
+  //    holds the mounted fast-move slots, so trading it means no encounters while
+  //    galloping (mounted *walking* still rolls, via IsWalking's own second range).
+  //
+  // Every site below is the 16-bit immediate half of one instruction; `opc` is the other
+  // half and is checked before anything is offered, so a non-stock build is refused.
+  const ENCMOVE = {
+    walk: [
+      { off: 0x13B06C, opc: 0x2C42, stock: 0x0C, what: "slots 2-0x0D" },
+      { off: 0x13B078, opc: 0x2C42, stock: 0x03, what: "slots 0x42-0x44 (mounted walk)" },
+      { off: 0x13B090, opc: 0x2C63, stock: 0x0C, what: "slots 0x64-0x6F (object kind 2)" },
+    ],
+    run: [
+      { off: 0x13B0B4, opc: 0x2C42, stock: 0x06, what: "slots 0x0E-0x13" },
+      { off: 0x13B0D8, opc: 0x2C63, stock: 0x03, what: "slots 0x70-0x72 (object kind 2)" },
+    ],
+    // The run test's second range, which is the one worth repointing.
+    runAlt: {
+      base: { off: 0x13B0BC, opc: 0x24A2 },     // addiu $v0,$a1,-N  (N stored negated)
+      len:  { off: 0x13B0C0, opc: 0x2C42 },     // sltiu $v0,$v0,N
+      modes: [
+        { key: "stock",  base: 0x45,  len: 2, label: "mounted fast-movement (stock)", note: "slots 0x45-0x46 — rdfastrun_loop / rdfastwalk" },
+        { key: "animal", base: 0x11A, len: 6, label: "animal run cycle (Fubar, Koroku)", note: "slots 0x11A-0x11F — run_start / run_loop / run_stop; costs the mounted fast-move slots" },
+      ],
+    },
+  };
+
   const SETS = {
     table: 0x3DDAB8, count: 5, stride: 8,
     slots: ["Head", "Body", "Shield", "Accessory"],
@@ -2043,7 +2092,7 @@
       food: "Consumable / food table: heal amount and proc chance %.",
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
-      encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable.",
+      encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster. Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item, rune and skill lookups, where each item comes from, and every packed sub-file on the disc.",
@@ -4278,6 +4327,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <button class="chip" id="encReset">Restore 100%</button>
         <span class="muted" id="encOut"></span>
       </div>
+      <div id="encMove"></div>
       <div id="encRooms"></div>`;
     const pctEl = q("#encPct", host), rngEl = q("#encRange", host), outEl = q("#encOut", host);
     const dirty = () => ENC.sites.some((o) => isDirty(o, 4));
@@ -4304,8 +4354,91 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     pctEl.onchange = () => apply(pctEl.value);
     qa("[data-enc]", host).forEach((b) => (b.onclick = () => apply(+b.dataset.enc)));
     q("#encReset", host).onclick = () => { ENC.sites.forEach((o) => revertRange(o, 4)); sync(orig === null ? 100 : orig); updateDirtyBadge(); };
+    drawEncMove(q("#encMove", host));
     const rhost = q("#encRooms", host);
     if (needTables(rhost)) drawRoomRates(rhost);
+  }
+
+  // ---- Movement rules: what counts as walking / running -----------------------
+  const encMoveOk = () => ENCMOVE.walk.concat(ENCMOVE.run).every((s2) => inBlk(s2.off, 2) && r16(s2.off + 2) === s2.opc)
+    && inBlk(ENCMOVE.runAlt.base.off, 2) && r16(ENCMOVE.runAlt.base.off + 2) === ENCMOVE.runAlt.base.opc
+    && inBlk(ENCMOVE.runAlt.len.off, 2) && r16(ENCMOVE.runAlt.len.off + 2) === ENCMOVE.runAlt.len.opc;
+  const runAltMode = () => {
+    const b = (-(r16(ENCMOVE.runAlt.base.off) | 0) << 16 >> 16) & 0xFFFF, l = r16(ENCMOVE.runAlt.len.off);
+    const m = ENCMOVE.runAlt.modes.find((x) => x.base === b && x.len === l);
+    return m ? m.key : null;
+  };
+  // A group is "on" when any of its ranges still has a non-zero length.
+  const walkOn = () => ENCMOVE.walk.some((s2) => r16(s2.off) !== 0);
+  const runOn = () => ENCMOVE.run.some((s2) => r16(s2.off) !== 0) || r16(ENCMOVE.runAlt.len.off) !== 0;
+
+  function drawEncMove(host) {
+    if (!host) return;
+    if (!encMoveOk()) {
+      host.innerHTML = `<div class="warnbox" style="margin:12px 0 0">The movement tests aren't where this
+        build expects them — no movement rules offered.</div>`;
+      return;
+    }
+    const w = walkOn(), r = runOn(), mode = runAltMode();
+    const bands = [];
+    if (w) ENCMOVE.walk.forEach((s2) => { if (r16(s2.off)) bands.push("walk " + s2.what); });
+    if (r) { ENCMOVE.run.forEach((s2) => { if (r16(s2.off)) bands.push("run " + s2.what); });
+             if (r16(ENCMOVE.runAlt.len.off)) {
+               const m = ENCMOVE.runAlt.modes.find((x) => x.key === mode);
+               bands.push("run " + (m ? m.note.split(" — ")[0] : "custom range")); } }
+    host.innerHTML = `
+      <div class="bag" style="margin:16px 0 0">
+        <div class="bag-h">Movement rules <span class="u">what counts as moving · patches game code</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          Before the rate above is even used, the game checks which <b>animation</b> your character is
+          playing. Walking and running are separate tests, and if neither matches, the roll is skipped
+          entirely. That makes two things possible that a rate slider can't do.
+        </div>
+        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 6px">
+          <input type="checkbox" id="encWalk"${w ? " checked" : ""}>
+          <b>Walking triggers encounters</b>
+          <span class="muted" style="font-size:12px">off = walk anywhere in peace, run when you want to fight</span></label>
+        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 10px">
+          <input type="checkbox" id="encRun"${r ? " checked" : ""}>
+          <b>Running triggers encounters</b>
+          <span class="muted" style="font-size:12px">stock rate is ${"×"}1.2 running, ${"×"}1.5 mounted</span></label>
+        <label class="field" style="max-width:420px"><span>Second run range points at</span>
+          <select id="encRunAlt"${r ? "" : " disabled"}>
+            ${ENCMOVE.runAlt.modes.map((m) => `<option value="${m.key}"${m.key === mode ? " selected" : ""}>${esc2(m.label)}</option>`).join("")}
+            ${mode === null ? `<option value="" selected>custom</option>` : ""}
+          </select></label>
+        <div class="muted" style="font-size:12px;margin:6px 0 0">
+          ${esc2((ENCMOVE.runAlt.modes.find((m) => m.key === mode) || {}).note || "this range is not one of the two known settings")}
+        </div>
+        <div style="margin:10px 0 0"><b>Encounters currently roll while:</b>
+          <span class="muted">${bands.length ? esc2(bands.join(" · ")) : "— never, on any animation —"}</span></div>
+      </div>`;
+    const setLen = (site, v, label) => { writeW(site.off, 2, v); reg(site.off, 2, "num", "Movement rules", label); };
+    q("#encWalk", host).onchange = (e) => {
+      ENCMOVE.walk.forEach((s2) => setLen(s2, e.target.checked ? s2.stock : 0, "walk " + s2.what));
+      drawView();
+    };
+    q("#encRun", host).onchange = (e) => {
+      const on = e.target.checked;
+      ENCMOVE.run.forEach((s2) => setLen(s2, on ? s2.stock : 0, "run " + s2.what));
+      const m = ENCMOVE.runAlt.modes.find((x) => x.key === (runAltMode() || "stock"));
+      setLen(ENCMOVE.runAlt.len, on ? m.len : 0, "run second range length");
+      drawView();
+    };
+    const sel = q("#encRunAlt", host);
+    if (sel) sel.onchange = () => {
+      const m = ENCMOVE.runAlt.modes.find((x) => x.key === sel.value); if (!m) return;
+      writeW(ENCMOVE.runAlt.base.off, 2, (-m.base) & 0xFFFF);
+      reg(ENCMOVE.runAlt.base.off, 2, "num", "Movement rules", "run second range base");
+      setLen(ENCMOVE.runAlt.len, m.len, "run second range length");
+      drawView();
+    };
+    // One control covers several instructions, so dirty state is the OR over its own sites
+    // (markField is per-offset and would only ever look at the first).
+    const anyDirty = (sites) => sites.some((s2) => isDirty(s2.off, 2));
+    q("#encWalk", host).classList.toggle("dirty", anyDirty(ENCMOVE.walk));
+    q("#encRun", host).classList.toggle("dirty", anyDirty(ENCMOVE.run.concat([ENCMOVE.runAlt.len])));
+    if (sel) sel.classList.toggle("dirty", anyDirty([ENCMOVE.runAlt.base, ENCMOVE.runAlt.len]));
   }
 
   // ---- Per-area base rates ----------------------------------------------------
