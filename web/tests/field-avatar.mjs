@@ -196,6 +196,42 @@ console.log("Per-map coverage data:");
   check("coverage is partial, not universal (a full list would mean the scan matched junk)",
     Object.values(bm).every((m) => m.areas.length < 28)); }
 
+// ---- movement rules: what counts as walking / running ------------------------
+// These decide whether a random encounter is even rolled. Getting a length wrong turns a
+// setting into "no encounters ever" without any error, so the immediates and the two
+// run-range modes are pinned, and the disc check below confirms them byte for byte.
+const encStart = isoSrc.indexOf("const ENCMOVE = {");
+if (encStart < 0) { console.error("FAIL: no `const ENCMOVE = {` in web/iso.js"); process.exit(1); }
+const encEnd = isoSrc.indexOf("\n  };", encStart);
+const ENCMOVE = eval("(" + isoSrc.slice(encStart + "const ENCMOVE = ".length, encEnd + "\n  }".length) + ")");
+
+console.log("Movement rules:");
+{ const all = ENCMOVE.walk.concat(ENCMOVE.run);
+  check("three walk ranges and two run ranges", ENCMOVE.walk.length === 3 && ENCMOVE.run.length === 2);
+  check("every range has a non-zero stock length", all.every((r) => r.stock > 0));
+  check("offsets are distinct",
+    new Set(all.map((r) => r.off).concat([ENCMOVE.runAlt.base.off, ENCMOVE.runAlt.len.off])).size === all.length + 2);
+  check("kind-2 ranges use the $v1 form, the rest $v0",
+    ENCMOVE.walk[2].opc === 0x2C63 && ENCMOVE.run[1].opc === 0x2C63
+      && ENCMOVE.walk[0].opc === 0x2C42 && ENCMOVE.run[0].opc === 0x2C42);
+  const stock = ENCMOVE.runAlt.modes.find((m) => m.key === "stock");
+  const animal = ENCMOVE.runAlt.modes.find((m) => m.key === "animal");
+  check("the stock second run range is the mounted fast-move pair",
+    stock.base === 0x45 && stock.len === 2);
+  // 0x11A-0x11F is run_start / run_loop / run_stop in the animal block — the slots Koroku
+  // and Fubar actually play, and the reason running never rolled for them.
+  check("the animal mode covers exactly slots 0x11A-0x11F",
+    animal.base === 0x11A && animal.len === 6);
+  check("the two modes do not overlap",
+    animal.base >= stock.base + stock.len || stock.base >= animal.base + animal.len);
+  check("switching modes never revives a disabled test (both lengths non-zero)",
+    stock.len > 0 && animal.len > 0);
+  // Turning a group off means zeroing every one of its lengths; missing one leaves the
+  // setting half-applied and silently still firing.
+  check("walking covers all three of its ranges", ENCMOVE.walk.length === 3);
+  check("running covers its own ranges plus the second-range length",
+    ENCMOVE.run.length + 1 === 3); }
+
 // ---- against a real disc, when one is here ----------------------------------
 // ISO/ sits inside the checkout and is gitignored. In a git worktree it is only in the
 // MAIN checkout, so the .git pointer file is followed to find it — otherwise this check
@@ -241,6 +277,17 @@ if (!iso) {
       b[2] === AVATAR.eqSig[0] && b[3] === AVATAR.eqSig[1] && b.readUInt16LE(0) === c.id,
       b.toString("hex"));
   }
+  for (const r of ENCMOVE.walk.concat(ENCMOVE.run)) {
+    const b = word(r.off);
+    check(`movement range 0x${r.off.toString(16).toUpperCase()} is length ${r.stock} (${r.what})`,
+      b.readUInt16LE(2) === r.opc && b.readUInt16LE(0) === r.stock, b.toString("hex"));
+  }
+  { const sm = ENCMOVE.runAlt.modes.find((m) => m.key === "stock");
+    const bb = word(ENCMOVE.runAlt.base.off), lb = word(ENCMOVE.runAlt.len.off);
+    check("the second run range is stock on disc (base -0x45, length 2)",
+      bb.readUInt16LE(2) === ENCMOVE.runAlt.base.opc && ((-bb.readInt16LE(0)) & 0xFFFF) === sm.base
+        && lb.readUInt16LE(2) === ENCMOVE.runAlt.len.opc && lb.readUInt16LE(0) === sm.len,
+      bb.toString("hex") + " " + lb.toString("hex")); }
   for (const [off, want] of [[AVATAR.lo, 0x3F], [AVATAR.hiTop, 0xCC], [AVATAR.hiBot, 0xCA]]) {
     const b = word(off);
     check(`0x${off.toString(16).toUpperCase()} is sltiu with immediate ${want} (read-only half)`,
