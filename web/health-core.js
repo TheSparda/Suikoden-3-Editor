@@ -141,7 +141,8 @@
     const g = save.global || {};
     return { characters, party, bags,
       gold: staged.gold != null ? staged.gold : g.gold,
-      storyPhase: g.storyPhase, merged: !!g.merged, partyLeader: g.partyLeader,
+      storyPhase: g.storyPhase, merged: !!g.merged,
+      partyLeader: staged.leader != null ? staged.leader : g.partyLeader,
       // The formation table as it is ON DISK. Staged party edits do not touch it here —
       // write_save_edits re-derives it — so `partyStaged` says whether it is about to be.
       partyFormation: (save.partyFormation || []).slice(),

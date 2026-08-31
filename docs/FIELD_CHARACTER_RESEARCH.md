@@ -156,23 +156,32 @@ the game itself ships one.
 4. **Story coherence is out of scope.** The herrvillain Roaming Code's warning applies here too:
    walking into a scripted scene as the wrong character is the game's problem, not the editor's.
 
-## 6. Route to a feature
+## 6. What shipped (v1.61.0)
 
-Two independent halves, and the cheap one covers six of the seven characters asked for.
+Both halves, because the cheap one covers six of the seven characters asked for and the other
+one is two words.
 
-**A — save side, no ISO needed (covers Hugo, Chris, Geddoe, Thomas, Koroku, Luc).**
-`Editor/s3save.py` already decodes `partyLeader` at `(0x12, 1)` and `web/app.js` already
-renders it read-only on the Overview. Make it a picker over the 75 battle characters, with the
-eight whitelisted ids marked as the ones the engine will actually load and everything else
-shown as unsupported. Note that `0x12` reads as a `u16` in the engine (`lh`/`lhu`) while
-`s3save` treats it as one byte — harmless today because every legal id is `< 0x100`, but the
-write path should clear `0x13` rather than assume it.
+**A — save side, no ISO needed (Hugo, Chris, Geddoe, Thomas, Koroku, Luc).**
+`s3save.FIELD_AVATAR_IDS` records the whitelist and `party_reference()` hands it to the web
+app; `apply_edits_to_gamedata` takes a `leader=` and writes `0x12` as a **halfword**, so it
+owns `0x13` instead of trusting it to be zero (the engine reads the field with `lh`/`lhu` at
+all 24 of its references). The Overview gained a **Field character** picker that offers the
+whitelisted eight first as *engine default* and every other battle character as *needs ISO
+patch*, and a value the picker cannot offer — a dog, a special — is kept rather than dropped.
 
-**B — ISO side, for Sarah and anyone else.** A small section that rewrites the immediates in
-the table above, in the shape of the Mounts patch: byte-signature check on `+2,+3`, stock-value
-verification, an explicit "widen to all 75" option, and per-name swaps.
+**B — ISO side, for Sarah and anyone else.** A **Field character** section that rewrites the
+immediates in the table above: byte-signature check on `+2,+3`, one button to widen both bounds
+to `0x53`, one to restore stock, and — the part worth having — a "currently loadable" readout
+that re-runs the game's own comparison chain over the bytes just written, rather than restating
+what the buttons were supposed to do.
 
-**The one experiment worth running before either ships:** set `0x12` to `54` (Koroku) on a
-post-merge save in an area that already carries `kork`, boot it, and see whether you walk around
-as the dog and whether the value survives the first area transition. That single test settles
-constraints 1 and 2 together, and `tools/pcsx2/` can drive it.
+**Tested by** `web/tests/field-avatar.mjs` (the restated tables against `s3save.py`, the chain
+against both stock and widened immediates, the picker's grouping, and the eight sites against a
+pristine disc when one is present), the field-character block in `web/tests/save_roundtrip.py`,
+and an end-to-end block in `web/tests/e2e.mjs` that drives the tab and byte-checks what it wrote.
+
+**The one experiment still worth running:** set the leader to `54` (Koroku) on a post-merge save
+in an area that already carries `kork`, boot it, and see whether you walk around as the dog and
+whether the value survives the first area transition. That settles constraints 1 and 2 together,
+and `tools/pcsx2/` can drive it. Everything above is static analysis plus the corpus; nothing
+here has been played.
