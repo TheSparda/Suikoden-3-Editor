@@ -18,7 +18,7 @@ const EQ_CATS = HealthCore.SLOT_CATS;
 const RECRUITERS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 
 let pyReady = null, PY = null;   // PY = resolved pyodide (sync access keeps share() in-gesture)
-let REF = { items: [], skills: [], charById: {}, charRoster: {}, charChoices: [] };
+let REF = { items: [], skills: [], charById: {}, charRoster: {}, charChoices: [], fieldAvatars: [] };
 let ITEM_BY_ID = {}, saves = [], curSlot = 0, origName = "save.bin";
 // File System Access API (desktop Chromium): lets us overwrite the original file in place
 // instead of downloading a copy. Absent on Android/Firefox/Safari → we fall back to download.
@@ -135,6 +135,7 @@ def load_reference():
     charRoster = {str(k): v for k, v in ref["roster"].items()}
     return json.dumps({"items": items, "skills": skills, "charById": charById,
                        "charRoster": charRoster, "charChoices": ref["choices"],
+                       "fieldAvatars": ref["fieldAvatars"],
                        "carryover": s3save.carryover_reference()})
 
 def load_saves(path):
@@ -158,7 +159,7 @@ def apply_edits(path, folder, payload_json):
         path, folder, edits, make_backup=False,
         inv_edits=inv or None, name_edits=(p.get("nameEdits") or None),
         party_edits=party or None, recruit_edits=rec or None, gold=p.get("gold"),
-        carryover=(p.get("carryover") or None))
+        leader=p.get("leader"), carryover=(p.get("carryover") or None))
     return json.dumps(res)
 
 def carryover_bonus(payload_json):
@@ -206,6 +207,25 @@ function charList(curId) {
   const list = [{ id: 0, name: "empty" }, ...CHAR_LIST];
   if (curId && !CHAR_LIST.some((c) => c.id === curId))
     list.push({ id: curId, name: REF.charById[curId] || "id " + curId + " (guest/NPC)" });
+  return list;
+}
+
+// Field-avatar picker. The engine only ever REQUESTS the model of the eight ids in
+// s3save.FIELD_AVATAR_IDS (the comparison chain at vaddr 0x17B7560 — see
+// docs/FIELD_CHARACTER_RESEARCH.md); for anything else the request is simply never made,
+// so you keep whatever model the area already has resident. That is not a crash, but it
+// is not a swap either, so the two groups are labelled rather than one being hidden.
+function avatarList(curId) {
+  const wl = REF.fieldAvatars || [];
+  const wlSet = new Set(wl);
+  const named = (id) => REF.charById[id] || "id " + id + " (guest/NPC)";
+  const list = wl.map((id) => ({ id, name: named(id), cat: "engine default",
+    desc: "the game loads this one itself — shipped and played" }));
+  CHAR_LIST.filter((c) => !wlSet.has(c.id)).forEach((c) => list.push({
+    id: c.id, name: c.name, cat: "needs ISO patch",
+    desc: "not in the engine's whitelist — widen it on the ISO Editor's Field character section first" }));
+  if (curId && !list.some((c) => c.id === curId))
+    list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
   return list;
 }
 
@@ -347,7 +367,7 @@ async function pickupSharedFile() {
 
 // ---- top-level editor render ----------------------------------------------
 // Per-slot pending edits (reset when switching slots), mirroring the desktop editor.
-let EDITS, INV, NAMES, PARTY, RECRUIT, GOLD, SUB, RECRUITED_ONLY, INVCAT, ADDED, SEARCH;
+let EDITS, INV, NAMES, PARTY, RECRUIT, GOLD, LEADER, SUB, RECRUITED_ONLY, INVCAT, ADDED, SEARCH;
 // Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
 // flags are whole-save state, not a character field.
 let CARRY;
@@ -366,7 +386,7 @@ function renderEditor() {
 
 function drawSlot() {
   const s = saves[curSlot];
-  EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; RECRUIT = {}; GOLD = null; CARRY = {};
+  EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; RECRUIT = {}; GOLD = null; LEADER = null; CARRY = {};
   SUB = "chars"; RECRUITED_ONLY = true; INVCAT = "regular"; ADDED = {}; SEARCH = "";
 
   const meta = s.meta || {};
@@ -435,6 +455,18 @@ function drawSlot() {
       </div>
       <h3 class="sec">Names</h3>
       <div class="grid" id="names">${names}</div>
+      <h3 class="sec">Field character</h3>
+      <label class="field" style="max-width:320px"><span>Who you walk around the map as</span>
+        <button type="button" class="picker" id="leaderfld" data-val="${s.global.partyLeader}"
+                data-def="${s.global.partyLeader}">${esc(charLabel(s.global.partyLeader))}</button></label>
+      <div class="muted" style="font-size:12px;margin:6px 0 0">
+        This is the party-leader byte at <b>0x12</b>, and the engine loads the field model it
+        names. Only ${(REF.fieldAvatars || []).length} ids are in the loader's whitelist —
+        ${(REF.fieldAvatars || []).map((id) => esc(REF.charById[id] || "id " + id)).join(", ")} —
+        which is exactly the set the game hands you itself. Anyone else needs the ISO Editor's
+        <b>Field character</b> section; without it the model request is never made and you keep
+        whatever the area already has. Story scripts set this byte at chapter transitions, so a
+        change here holds until the next scene that sets it.</div>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"
@@ -486,6 +518,14 @@ function drawSlot() {
     cb.classList.toggle("dirty", cb.checked !== was);
   }));
   const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
+  $("#leaderfld").onclick = () => {
+    const btn = $("#leaderfld"), cur = +btn.dataset.val;
+    openPicker("Field character", avatarList(cur), cur, (id) => {
+      btn.dataset.val = id; btn.textContent = charLabel(id);
+      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
+      LEADER = id;
+    }, (id) => String(id).padStart(3, "0"));
+  };
   $("#goldfld").oninput = (e) => {
     e.target.classList.toggle("dirty", e.target.value !== e.target.dataset.def);
     GOLD = +e.target.value;
@@ -889,7 +929,8 @@ function healthOpts() {
 function runHealth() {
   const s = saves[curSlot];
   if (!s) return [];
-  return HealthCore.audit(s, { edits: EDITS, inv: INV, party: PARTY, recruit: RECRUIT, gold: GOLD },
+  return HealthCore.audit(s, { edits: EDITS, inv: INV, party: PARTY, recruit: RECRUIT, gold: GOLD,
+                               leader: LEADER },
     healthOpts());
 }
 // Tab badge: errors + warnings only. Notes are worth reading but shouldn't make the tab shout.
@@ -1140,7 +1181,7 @@ function syncQtyCell(btn, slot, id) {
 function hasChanges() {
   return Object.keys(EDITS).length || Object.keys(INV).length || Object.keys(NAMES).length ||
     Object.keys(PARTY).length || Object.keys(RECRUIT).length || GOLD !== null ||
-    Object.keys(CARRY).length;
+    LEADER !== null || Object.keys(CARRY).length;
 }
 
 const RANK_LABEL = (v) => (RANK_TIERS.find((t) => t[0] === v) || [v, "?"])[1];
@@ -1155,6 +1196,8 @@ function buildDiff() {
                         expToNext: "EXP in level" };
 
   if (GOLD !== null && GOLD !== s.global.gold) rows.push({ g: "Gold", t: `${s.global.gold} → ${GOLD}` });
+  if (LEADER !== null && LEADER !== s.global.partyLeader)
+    rows.push({ g: "Field character", t: `${charLabel(s.global.partyLeader)} → ${charLabel(LEADER)}` });
   Object.entries(CARRY).forEach(([g, on]) => {
     const f = s.carryover?.[g] || {};
     if (!!on !== !!f.loaded)
@@ -1340,7 +1383,8 @@ function exportSaveJSON() {
   const out = { _format: SAVE_JSON_FORMAT, _schema: 1,
     _note: "Human-readable snapshot. Edit numeric ids/values, then re-import to stage them for Apply. Keys starting with _ and every *name field are read-only labels, ignored on import.",
     _folder: s.folder, _label: s.label, _playtime: s.global.playtime, _storyPhase: s.global.storyPhase,
-    gold: s.global.gold, carryover: { s1: !!s.carryover?.s1?.loaded, s2: !!s.carryover?.s2?.loaded },
+    gold: s.global.gold, fieldCharacter: { id: s.global.partyLeader, name: REF.charById[s.global.partyLeader] || null },
+    carryover: { s1: !!s.carryover?.s1?.loaded, s2: !!s.carryover?.s2?.loaded },
     names, party, characters: chars, inventory };
   const json = JSON.stringify(out, null, 2);
   const base = (origName || "save").replace(/\.[^.]+$/, "");
@@ -1364,6 +1408,7 @@ async function importSaveJSON(file) {
   let staged = 0;
 
   if (typeof data.gold === "number") { GOLD = data.gold; staged++; }
+  if (data.fieldCharacter != null) { const id = idOf(data.fieldCharacter); if (id) { LEADER = id; staged++; } }
   if (data.carryover && typeof data.carryover === "object")
     ["s1", "s2"].forEach((g) => { if (typeof data.carryover[g] === "boolean") { CARRY[g] = data.carryover[g]; staged++; } });
   if (data.names && typeof data.names === "object") Object.entries(data.names).forEach(([k, v]) => {
@@ -1418,7 +1463,7 @@ async function doApply(mode) {
   const py = PY; if (!py) return setStatus("Engine not ready.", "err");
   const s = saves[curSlot];
   const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY,
-                    recruitEdits: RECRUIT, gold: GOLD, carryover: CARRY };
+                    recruitEdits: RECRUIT, gold: GOLD, leader: LEADER, carryover: CARRY };
   setStatus("Applying…", "");
   let res;
   try {

@@ -251,6 +251,53 @@
     },
   };
 
+  // ---- field character (who you walk around the map as) -----------------------
+  // The avatar is the party-leader byte at save 0x12, and that byte holds a MODEL id — the
+  // party id space and the engine's model id space are the same 75 numbers with the same
+  // gaps. One function decides whether the avatar's model is ever requested:
+  // FieldAvatarModelRequest @ vaddr 0x17B7560, the sole caller of the sole routine that
+  // issues the request (0x16E0FF8). It is a plain comparison chain over eight ids, and the
+  // ids are 16-bit instruction immediates, so widening it is a constant rewrite like the
+  // Mounts table above. A non-whitelisted leader is not an error: the request is simply
+  // never made, so the area keeps whatever model it already has resident.
+  // See docs/FIELD_CHARACTER_RESEARCH.md for the full chain and the byte verification.
+  const AVATAR = {
+    eqSig: [0x02, 0x24],                 // addiu $v0,$zero,imm — bytes at +2,+3
+    ltSig: [0x82, 0x2C],                 // sltiu $v0,$a0,imm
+    // The two range bounds. Setting BOTH to the same N admits every id 1..N-1 through the
+    // first branch, which is the whole "allow everyone" patch.
+    gates: [
+      { off: 0x1FED70, stock: 0x37, label: "upper bound of the low branch" },
+      { off: 0x1FED80, stock: 0x04, label: "ids below this always load" },
+    ],
+    // Single-id slots: each admits exactly one character, and each is one word.
+    slots: [
+      { off: 0x1FED64, stock: 0x36, label: "single id (stock: Koroku)" },
+      { off: 0x1FED78, stock: 0x3F, label: "single id (stock: Luc)" },
+      { off: 0x1FED88, stock: 0x1D, label: "single id (stock: Thomas)" },
+    ],
+    // The second half of the chain, which admits the two "Special Characters". Read by the
+    // simulation below so the readout stays truthful, but not offered as an edit: the pair
+    // is contiguous and there is nothing useful to point it at.
+    lo: 0x1FEDA0, hiTop: 0x1FEDAC, hiBot: 0x1FEDB4,
+    WIDE: 0x53,                          // 0x53 = one past Emily (82), the last battle id
+    STOCK_SET: [1, 2, 3, 29, 54, 63, 202, 203],
+    // model id -> name needs the party id space, which lives in Editor/s3save.py. Restated
+    // here because iso.js has no save engine to ask; web/tests/iso-avatar.mjs parses
+    // PARTY_IDS out of s3save.py and fails if the two ever drift.
+    PARTY_IDS: [
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13,
+      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+      26, 27, 28, 29, 30, 31, 32, 34, 35, 36, 40, 41,
+      42, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+      55, 56, 57, 58, 59, 60, 61, 62, 63, 65, 66, 67,
+      68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+      80, 81, 82,
+    ],
+    // Named ids with no roster slot, so the readout can label them (s3save.PARTY_EXTRA_NAMES).
+    EXTRA: { 202: "Masked Luc", 203: "Grasslands Chris", 204: "Masked Kidd" },
+  };
+
   const SETS = {
     table: 0x3DDAB8, count: 5, stride: 8,
     slots: ["Head", "Body", "Shield", "Accessory"],
@@ -1874,7 +1921,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["avatar", "Field character"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"]];
 
@@ -1957,6 +2004,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
+      avatar: "Who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -1981,6 +2029,7 @@
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "mounts") drawMounts(host);
+    else if (VIEW === "avatar") drawAvatar(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "sets") drawSets(host);
     else if (VIEW === "food") drawFood(host);
@@ -3498,6 +3547,153 @@
       };
       markSites(sel, [off], origLbl);
     });
+  }
+
+  // ---- Field character --------------------------------------------------------
+  function avatarName(id) {
+    const ri = AVATAR.PARTY_IDS.indexOf(id);
+    if (ri >= 0) return (REF.names && REF.names.list1 && REF.names.list1[ri + 1]) || `model ${id}`;
+    return AVATAR.EXTRA[id] || null;
+  }
+
+  // The chain at 0x17B7560, evaluated against whatever the buffer currently holds. Written
+  // as the disassembly reads rather than simplified, so a changed immediate shows up here
+  // the same way it will in the game.
+  function avatarAllows(id) {
+    const eq0 = r16(AVATAR.slots[0].off), gHi = r16(AVATAR.gates[0].off);
+    const eq1 = r16(AVATAR.slots[1].off), gLo = r16(AVATAR.gates[1].off);
+    const eq2 = r16(AVATAR.slots[2].off);
+    if (id === eq0) return true;
+    if (id < gHi) {
+      if (id === 0) return false;
+      if (id < gLo) return true;
+      return id === eq2;
+    }
+    if (id === eq1) return true;
+    if (id < r16(AVATAR.lo)) return false;
+    if (id >= r16(AVATAR.hiTop)) return false;
+    if (id < r16(AVATAR.hiBot)) return false;
+    return true;
+  }
+
+  function avatarAllowedIds() {
+    const out = [];
+    for (let id = 1; id <= 0xD7; id++) if (avatarAllows(id)) out.push(id);
+    return out;
+  }
+
+  function drawAvatar(host) {
+    const all = AVATAR.gates.concat(AVATAR.slots);
+    const bad = all.concat([{ off: AVATAR.lo }, { off: AVATAR.hiTop }, { off: AVATAR.hiBot }])
+      .filter((sIt) => !inBlk(sIt.off, 4));
+    if (bad.length) {
+      host.innerHTML = `<div class="warnbox">The field-character gate is not where this build expects it — no edits offered.</div>`;
+      return;
+    }
+    const sigBad = AVATAR.gates.filter((g) => r8(g.off + 2) !== AVATAR.ltSig[0] || r8(g.off + 3) !== AVATAR.ltSig[1])
+      .concat(AVATAR.slots.filter((s) => r8(s.off + 2) !== AVATAR.eqSig[0] || r8(s.off + 3) !== AVATAR.eqSig[1]));
+    if (sigBad.length) {
+      host.innerHTML = `<div class="warnbox">The instructions at the field-character gate don't look like this disc's — no edits offered.</div>`;
+      return;
+    }
+
+    const allowed = avatarAllowedIds();
+    const stock = new Set(AVATAR.STOCK_SET);
+    const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
+    const chip = (id) => `<span class="tag${stock.has(id) ? "" : " acc2"}">${
+      esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}</span></span>`;
+
+    // Character options for the single-id slots: the 75 battle characters, then the two
+    // named specials. Anything else would name a model the party space cannot address.
+    const opts = (cur) => AVATAR.PARTY_IDS.map((id) =>
+        `<option value="${id}"${id === cur ? " selected" : ""}>${esc2(avatarName(id) || "model " + id)} · #${id}</option>`).join("")
+      + Object.entries(AVATAR.EXTRA).map(([id, nm]) =>
+        `<option value="${id}"${+id === cur ? " selected" : ""}>${esc2(nm)} · #${id}</option>`).join("")
+      + (AVATAR.PARTY_IDS.includes(cur) || AVATAR.EXTRA[cur] ? ""
+         : `<option value="${cur}" selected>unknown id ${cur}</option>`);
+
+    const slotRows = AVATAR.slots.map((sl, i) => {
+      const cur = r16(sl.off), origLbl = avatarName(o16(sl.off)) || `id ${o16(sl.off)}`;
+      return `<label class="field"><span>Slot ${i + 1} <span class="dim">${esc2(sl.label)}</span></span>
+        <select class="av-slot" data-i="${i}" data-orig="${esc2(origLbl)}">${opts(cur)}</select></label>`;
+    }).join("");
+
+    const gateRows = AVATAR.gates.map((g, i) => `<label class="field">
+        <span>Range bound ${i + 1} <span class="dim">${esc2(g.label)}</span></span>
+        <input type="number" class="av-gate" data-i="${i}" min="0" max="511" value="${r16(g.off)}"></label>`).join("");
+
+    host.innerHTML = `
+      <div class="bag">
+        <div class="bag-h">Field character <span class="u">patches game code · untested beyond the stock eight</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          The character you run around the map as is the <b>party-leader byte at save 0x12</b>, and
+          that byte names a <b>model</b>. One function decides whether that model is ever requested,
+          and it is a hardcoded list of eight ids. Widen it here, then pick the character on the
+          <b>Save Editor → Overview → Field character</b> field. Nothing about the party, the story
+          or the scripts changes: this only stops the loader from refusing the id.
+        </div>
+        <div class="warnbox" style="margin:0 0 10px">
+          The stock eight are shipped and played by the game itself. Everyone else is
+          <b>untested</b>: the model has to be resident in the area you are standing in, and story
+          scripts rewrite the leader byte at chapter transitions, so an added character may show up
+          missing or be replaced at the next scene. Keep a backup save.
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
+          <button id="avWide" class="chip${isWide ? " on" : ""}">Allow every battle character</button>
+          <button id="avStock" class="chip">Restore stock eight</button>
+          <span class="muted" style="font-size:12px">The first sets both range bounds to ${AVATAR.WIDE} (one past Emily, the last battle id).</span>
+        </div>
+        <div class="grid">${gateRows}${slotRows}</div>
+        <div style="margin:12px 0 0">
+          <b>Currently loadable as the field character</b>
+          <span class="muted">· ${allowed.length} id${allowed.length === 1 ? "" : "s"}, read back from the patched bytes</span>
+          <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
+        </div>
+        <details class="note" style="margin:10px 0 0"><summary>The chain, and where each byte lives</summary>
+          <pre style="white-space:pre-wrap;font-size:12px">FieldAvatarModelRequest(id)          ; vaddr 0x17B7560
+    if (id == slot1)         LOAD      ; ISO 0x1FED64
+    if (id &lt;  bound1) {                ; ISO 0x1FED70
+        if (id == 0)         return
+        if (id &lt;  bound2)    LOAD      ; ISO 0x1FED80
+        if (id == slot3)     LOAD      ; ISO 0x1FED88
+        return }
+    if (id == slot2)         LOAD      ; ISO 0x1FED78
+    ... 202 / 203 fall through         ; ISO 0x1FEDA0 / 0x1FEDAC / 0x1FEDB4
+LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
+          <div class="muted">Every id above is a 16-bit instruction immediate, so only the low
+          half-word of each instruction changes and the opcode bytes stay put.</div>
+        </details>
+      </div>`;
+
+    qa("select.av-slot", host).forEach((sel) => {
+      const sl = AVATAR.slots[+sel.dataset.i];
+      sel.onchange = () => {
+        writeW(sl.off, 2, clampInt(sel.value, 0, 0xFFFF));
+        reg(sl.off, 2, "num", "Field character", sl.label);
+        drawView();
+      };
+      markField(sel, sl.off, 2, "num");
+    });
+    qa("input.av-gate", host).forEach((el) => {
+      const g = AVATAR.gates[+el.dataset.i];
+      el.onchange = () => {
+        const v = clampInt(el.value, 0, 511); el.value = v;
+        writeW(g.off, 2, v);
+        reg(g.off, 2, "num", "Field character", g.label);
+        drawView();
+      };
+      markField(el, g.off, 2, "num");
+    });
+    q("#avWide", host).onclick = () => {
+      AVATAR.gates.forEach((g) => { writeW(g.off, 2, AVATAR.WIDE); reg(g.off, 2, "num", "Field character", g.label); });
+      drawView();
+    };
+    q("#avStock", host).onclick = () => {
+      AVATAR.gates.concat(AVATAR.slots).forEach((sIt) => {
+        writeW(sIt.off, 2, sIt.stock); reg(sIt.off, 2, "num", "Field character", sIt.label);
+      });
+      drawView();
+    };
   }
 
   function drawGear(host) {

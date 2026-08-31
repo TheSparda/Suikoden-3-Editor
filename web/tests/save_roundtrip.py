@@ -35,6 +35,10 @@ def build_synth():
     b = bytearray(s3save.GAMEDATA_SIZE)
     # gold (u32)
     struct.pack_into("<I", b, s3save.GOLD_OFF, 12345)
+    # party leader / field avatar, with a deliberately dirty high byte: the engine reads
+    # 0x12 as a halfword, so the write has to own 0x13 rather than assume it is already 0.
+    struct.pack_into("<H", b, s3save.LEADER_OFF, 1)
+    b[0x13] = 0xAB
     # roster 0 (Hugo): id / level / HP / EXP / one stat / one skill slot
     base = s3save.CHAR_BASE  # roster index 0
     b[base + s3save.OFF_ID] = s3save.ROSTER_IDS[0]
@@ -233,6 +237,7 @@ def main():
         party_edits={1: 63},
         recruit_edits={1: {"recruited": True, "recruiter": "Chris"}},
         gold=999999,
+        leader=54,
     )
     check("write reports ok", res.get("ok") is True, str(res))
     check("write changed multiple fields", res.get("changed", 0) >= 6, "changed=%s" % res.get("changed"))
@@ -255,6 +260,13 @@ def main():
     _o, _n = s3save.NAME_OFF["s1Hero"]
     _raw = open(path, "rb").read()[_o:_o + _n].split(b"\x00")[0]
     check("edit to a full-width name stays full-width Shift-JIS", any(byte >= 0x80 for byte in _raw))
+    check("leader persisted", s2["global"]["partyLeader"] == 54, str(s2["global"]["partyLeader"]))
+    check("leader names the character it was set to (Koroku, party id 54)",
+          s3save.party_name(s2["global"]["partyLeader"]) == "Koroku",
+          s3save.party_name(s2["global"]["partyLeader"]))
+    # The engine reads 0x12 as a halfword, so the write must own both bytes rather than
+    # trusting 0x13 to be zero. Plant a nonzero high byte and check the write clears it.
+    check("leader write is 16-bit (clears 0x13)", open(path, "rb").read()[0x13] == 0)
     check("party slot persisted", s2["party"][1] == 63)
     check("party slot 1 names the character it was set to (Luc, party id 63)",
           s3save.party_name(s2["party"][1]) == "Luc", s3save.party_name(s2["party"][1]))
@@ -358,6 +370,29 @@ def main():
               s3save.party_id_of(ri) == want)
     # The bug this table fixes: neither of the other two ids a character carries addresses
     # him in a party slot — Bright's list1 id (31) loads Futch, his record id (73) Augustine.
+    # --- the field avatar (docs/FIELD_CHARACTER_RESEARCH.md) ---------------------
+    # FIELD_AVATAR_IDS restates a comparison chain in the boot ELF. Nothing in this repo
+    # can re-derive it at test time, so what is pinned instead is that it stays coherent
+    # with the id space it is expressed in — an id that no longer names anybody is the
+    # failure mode a silent PARTY_IDS change would produce.
+    print("Field avatar whitelist:")
+    check("the whitelist is the eight ids the loader compares",
+          s3save.FIELD_AVATAR_IDS == (1, 2, 3, 29, 54, 63, 0xCA, 0xCB))
+    for pid, want in ((1, "Hugo"), (2, "Chris"), (3, "Geddoe"), (29, "Thomas"),
+                      (54, "Koroku"), (63, "Luc"), (0xCA, "Masked Luc"),
+                      (0xCB, "Grasslands Chris")):
+        check("avatar id %d is %s" % (pid, want), s3save.party_name(pid) == want,
+              s3save.party_name(pid))
+    check("every whitelisted id has a name", all(s3save.party_name(i) for i in s3save.FIELD_AVATAR_IDS))
+    check("party_reference exposes the whitelist",
+          s3save.party_reference()["fieldAvatars"] == list(s3save.FIELD_AVATAR_IDS))
+    # Sarah is the one the user asks for that the engine does not ship: she is a real party
+    # id with a real model, and she is NOT in the chain. If she ever appears here without
+    # the ISO patch story changing, the tab's "needs ISO patch" label has gone wrong.
+    check("Sarah is a battle character but not a stock avatar",
+          s3save.party_id_of(s3save.ROSTER.index("Sarah")) == 66
+          and 66 not in s3save.FIELD_AVATAR_IDS)
+
     bright = s3save.ROSTER.index("Bright")
     check("Bright's party id differs from his list1 id",
           s3save.party_id_of(bright) != bright + 1)
