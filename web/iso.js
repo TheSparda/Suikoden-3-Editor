@@ -1231,34 +1231,53 @@
 
       let pos = 0, finished, failed;
       const done = new Promise((res, rej) => { finished = res; failed = rej; });
-      const reader = isoFile.stream().getReader();
+      // Read the disc in big explicit slices rather than isoFile.stream(). The default stream
+      // hands back ~64 KB chunks, so a 4 GB disc becomes ~65,000 round trips — each one a pull,
+      // a structured-clone hop into the service worker, and a progress repaint. At 4 MB that
+      // is ~1,000, and the next slice is already being read while the current one streams out
+      // (the double-buffer below), so disc reads overlap the download instead of alternating.
+      const CHUNK = 4 * 1024 * 1024;
+      const readAt = (off) => off >= total ? Promise.resolve(null)
+        : isoFile.slice(off, Math.min(off + CHUNK, total)).arrayBuffer().then((ab) => new Uint8Array(ab));
+      const prefetch = (off) => { const p = readAt(off); p.catch(() => {}); return p; };
+      let ahead = prefetch(0);
+      // Repainting the modal once per chunk is cheap now, but keep it time-based anyway so the
+      // UI can never become the bottleneck if CHUNK is ever lowered.
+      let lastUi = 0;
+      const uiNow = () => (performance && performance.now ? performance.now() : Date.now());
+      const report = () => {
+        const t = uiNow();
+        if (t - lastUi < 150 && pos < total) return;
+        lastUi = t;
+        pg.phase("Writing", `Streaming patched ISO to your downloads… ${fmtSize(pos)} / ${fmtSize(total)}`,
+          { pct: total ? (pos / total) * 100 : 0 });
+      };
       const stream = new ReadableStream({
         async pull(controller) {
-          let r;
-          try { r = await reader.read(); }
+          let chunk;
+          try { chunk = await ahead; }
           catch (e) { controller.error(e); failed(e); return; }
-          if (r.done) { const tail = replacer.flush(); if (tail.length) controller.enqueue(tail); controller.close(); finished(); return; }
-          let chunk = r.value;                                  // bytes at [pos, pos+len)
-          const start = pos, end = pos + chunk.length;
+          if (!chunk) { const tail = replacer.flush(); if (tail.length) controller.enqueue(tail); controller.close(); finished(); return; }
+          const start = pos, end = pos + chunk.length;          // bytes at [start, end)
+          ahead = prefetch(end);                                // read the next slice meanwhile
+          // The chunk is our own freshly-read buffer, so every splice is in place — no defensive
+          // copy, and typed-array set() instead of a byte loop over the ~3.75 MB region.
           if (end > ELF_BASE && start < ELF_END) {              // overlaps the editable region
-            chunk = chunk.slice();                              // writable copy
             const a = Math.max(start, ELF_BASE), b = Math.min(end, ELF_END);
-            for (let i = a; i < b; i++) chunk[i - start] = region[i - ELF_BASE];
+            chunk.set(region.subarray(a - ELF_BASE, b - ELF_BASE), a - start);
           }
           for (const r of auxSnap) {                            // aux windows (potch overlay)
             const re = r.off + r.bytes.length;
             if (re > start && r.off < end) {
-              chunk = chunk.slice();
               const a = Math.max(start, r.off), b = Math.min(end, re);
-              for (let i = a; i < b; i++) chunk[i - start] = r.bytes[i - r.off];
+              chunk.set(r.bytes.subarray(a - r.off, b - r.off), a - start);
             }
           }
           controller.enqueue(replacer.push(chunk));             // disc-wide same-length rename
           pos = end;
-          pg.phase("Writing", `Streaming patched ISO to your downloads… ${fmtSize(pos)} / ${fmtSize(total)}`,
-            { pct: total ? (pos / total) * 100 : 0 });
+          report();
         },
-        cancel(reason) { try { reader.cancel(reason); } catch (e) {} failed(new Error("download cancelled")); },
+        cancel(reason) { failed(new Error("download cancelled")); },
       });
 
       // Hand the stream to the service worker, wait for its ack, then trigger the download.
@@ -4492,7 +4511,11 @@
     } else {
       const inp = q("#isoFileInput");
       q("#isoPickInputBtn").onclick = () => loadRef().then(() => inp.click()).catch((e) => setStatus("Failed to load reference tables: " + e.message, "err"));
-      inp.onchange = () => { if (inp.files[0]) loadFromInputFile(inp.files[0]); };
+      // loadRef() again, not just on the button: the Characters view reads REF.names as soon as
+      // the editor renders, and on a phone the reference JSON can still be in flight when the
+      // file arrives (or arrive without the button at all). loadRef() caches, so this is free.
+      inp.onchange = () => { if (inp.files[0]) loadRef().then(() => loadFromInputFile(inp.files[0]))
+        .catch((e) => setStatus("Failed to load reference tables: " + e.message, "err")); };
     }
   }
 
