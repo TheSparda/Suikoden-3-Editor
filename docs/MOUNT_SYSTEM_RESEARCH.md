@@ -363,7 +363,7 @@ is not established). So:
 
 | code | character | field ride (`07x`/`97x`) | fly (`080`) | battle (`301/320/340`) |
 |---|---|---|---|---|
-| `syu1` | **Hugo** | yes — both banks | — | **yes** |
+| `syu1` | **Hugo** | yes — **the only model with both** (`070/071/073/074/076` + `970–976`) | — | **yes** |
 | `syu2` | **Chris** | yes `070–075` | — | **yes** |
 | `bols` | **Borus** | yes `071–075` | — | **yes** |
 | `leoo` | **Leo** | yes `071–075` | — | **yes** |
@@ -378,6 +378,37 @@ is not established). So:
 | `s2hr` | named NPC | yes `970–975` | — | no |
 | `msk1`/`msk2` | Le Buque villagers | yes `070/071/073/074` | yes | no |
 | `jyan` | Juan | `074` only | — | no |
+
+### The `311` vs `321/322` split — it tracks which mount system the rider was built for
+
+Earlier revisions listed this split as unexplained. The distribution is now mapped, off the
+`cha_` record names in `ETC.BIN`, and it is not random — it separates the riders into exactly the
+two mount systems:
+
+| bank shape | models | what they ride in the retail game |
+|---|---|---|
+| `300 301 310` **`311`** `320 340` | `syu1` Hugo, `futi` Futch, `mstk` Franz, `mria` Sharon (partial) | the **three-pair table** — Fubar, Bright, Ruby |
+| `300 301 310 320` **`321 322`** `340` | `syu2` Chris, `loll` Roland, `leoo` Leo, `psvl` Percival, `bols` Borus, `zkk1` knight NPC | the **assigned horse** (`s2um` / `zkum`), §11 |
+
+The correlation is exact. The `311` family is precisely the three stock pair riders (plus Sharon);
+the `321/322` family is precisely the models that carry an assigned horse in their list2 record —
+Chris on 309, the four knights on 308, and `zkk1` getting 308 from a hard-coded case. Salome is not
+a counter-example: `sarm` has no `3xx` bank at all, which is why §5 lists her field-only.
+
+**What the clips are is still unknown** — only that a rider has one shape or the other, never both,
+and that the shape says which mount system authored them. Two consequences worth having:
+
+- It is a **structural** difference between the two rider families, not just a difference in which
+  mount they happen to be paired with. Franz sits in the `311` family even though his mount (Ruby)
+  is a horse, so the split is *not* flyer-vs-horse.
+- It did **not** stop Chris+Bright. Chris is `321/322` — authored for the assigned-horse system —
+  and she rides a pair-table flyer correctly (§4a). So the split is a reason to *test* a crossing,
+  not a reason to predict it fails.
+
+One anomaly, worth knowing before reading a test result as a bug: **Roland carries `341` where every
+other full-bank rider carries `340`** (`b_rdatt_1`, the mounted attack). `cha_loll_341` exists and
+`cha_loll_340` does not. If exactly one Zexen knight animates oddly while mounted, expect it to be
+Roland, and expect it in the attack rather than the idle.
 
 **Geddoe and Thomas can be shown mounted on the field but not in battle.** That is why the
 editor's Mounts tab — which edits the *battle* pair table — keeps Geddoe out of its default rider
@@ -839,7 +870,10 @@ is not established**.
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
   nonetheless in the rideable whitelist.
-- The meaning of individual `3xx` variant numbers, and the `311` vs `321/322` split.
+- The meaning of individual `3xx` variant numbers. The **distribution** of the `311` vs `321/322`
+  split is now mapped and tracks which mount system authored the rider (§5), but what those clips
+  actually animate is still unread — as is why Roland uses `341` for the mounted attack where every
+  other rider uses `340`.
 - Whether the field ride state survives a map transition. The field state lives on per-scene
   EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
 - The rest of the `0x84`-byte list2 record — `+0x66` is now known (§11) but most of the row
