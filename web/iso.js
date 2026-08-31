@@ -136,12 +136,59 @@
     // Only models carrying the 3xx mounted animation bank can actually ride. Anyone else
     // links to the mount and then keeps their normal battle pose, because the motion set
     // call for slots 0xB8+ fails on the missing clips.
-    riders: [[1, "Hugo"], [2, "Chris"], [13, "Roland"], [18, "Leo"], [20, "Percival"],
-      [21, "Borus"], [31, "Futch"], [41, "Franz"], [76, "Sharon", "partial bank — 300/301/310/311 only"]],
+    //
+    // Rider columns: [modelId, name, rig, bank, note]
+    //   rig  — which class of mount the model's mounted-battle clips were authored around.
+    //          Hugo's were built for a griffon and Futch's for a dragon ("flyer"); Chris's and
+    //          the Zexen knights' around a horse, Franz's around Ruby ("horse"). Battle seating
+    //          does NOT read the ground saddle-offset table (that is on the RideOn path only),
+    //          so the rider's position comes from the mounted rig itself — which is why the
+    //          open question on a cross-class pairing is geometry, never permission.
+    //   bank — "full" = the whole 301/320/340 mounted-battle set; "partial" = some clips only.
+    riders: [
+      [1, "Hugo", "flyer", "full"], [2, "Chris", "horse", "full"],
+      [13, "Roland", "horse", "full"], [18, "Leo", "horse", "full"],
+      [20, "Percival", "horse", "full"], [21, "Borus", "horse", "full"],
+      [31, "Futch", "flyer", "full"], [41, "Franz", "horse", "full"],
+      [76, "Sharon", "?", "partial", "partial bank — 300/301/310/311 only"],
+    ],
+    // Party members with a FIELD ride bank but no mounted-battle one. The comparison chain is a
+    // pure id compare, so it accepts them perfectly well — they link to the mount and then keep
+    // their normal battle pose. Offered behind an opt-in, chiefly as the negative control.
+    ridersNoBank: [
+      [3, "Geddoe", "—", "none"], [29, "Thomas", "—", "none"],
+      [45, "Salome", "—", "none"], [55, "Juan", "—", "none"],
+    ],
     // Party members whose model carries a battle animation bank (111/140/160/171/172/180).
     // The field-only horses (zkum / s2um / krum / kru2) have no battle set at all.
-    mounts: [[8, "Fubar", "griffon"], [32, "Bright", "dragon"], [42, "Ruby", "horse"]],
+    // Mount columns: [modelId, name, class, what it is]
+    mounts: [[8, "Fubar", "flyer", "griffon"], [32, "Bright", "flyer", "dragon"], [42, "Ruby", "horse", "horse"]],
     STOCK: [[1, 8], [31, 32], [41, 42]],      // Hugo+Fubar, Futch+Bright, Franz+Ruby
+
+    // Combinations played through an emulator and seen to mount, animate and fight correctly.
+    // The first three are the retail pairs; Hugo+Bright is the first confirmed *re*-pairing
+    // (issue #14, 2026-08-31) and the evidence that a rider's bank drives a mount it was never
+    // authored for. Everything else on the grid is a prediction — see TIERS below.
+    CONFIRMED: [[1, 8], [31, 32], [41, 42], [1, 32]],
+
+    // What the tab claims per combination. Ordered most to least confident; `cls` picks the
+    // badge colour. `why` is the tooltip, and the legend text, so it has to stand alone.
+    TIERS: {
+      confirmed: { cls: "ok", mark: "✓", label: "confirmed",
+        why: "played through an emulator: the pair mounts, animates and fights correctly." },
+      expected: { cls: "exp", mark: "•", label: "expected",
+        why: "this rider's mounted clips were authored around this class of mount, so the rig should fit. Not yet played." },
+      untested: { cls: "unt", mark: "?", label: "untested",
+        why: "the pairing is accepted, but these clips were authored around the other class of mount — a horse-rigged rider on a flyer, or the reverse. Seat height, angle and scale are unknown." },
+      rough: { cls: "rough", mark: "≈", label: "rough",
+        why: "this rider carries only part of the mounted-battle bank, so expect missing or wrong clips whichever mount you pick." },
+      nobank: { cls: "bad", mark: "✗", label: "won't animate",
+        why: "this rider has no mounted-battle bank at all: they link to the mount and then keep their normal battle pose. Predicted, not played." },
+      unknown: { cls: "unt", mark: "?", label: "unknown model",
+        why: "this id isn't a model this tab knows about, so nothing is predicted about it." },
+      off: { cls: "off", mark: "–", label: "disabled",
+        why: "one half of the pair is unset, so this comparison never matches." },
+    },
 
     // ---- the OTHER mount system: a per-character assigned horse ----------------
     // Separate from the three-pair table above and strictly more capable. The game asks
@@ -502,6 +549,8 @@
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...}, shops:{...} }
   let VIEW = "chars", SEARCH = "";
   let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
+  let mntAllRiders = false;                 // Mounts tab: also offer riders with no mounted-battle
+                                            // bank (they pair, then keep their normal pose)
   let spSplitOpen = false, spReskinOpen = false;   // Spells-tab tool cards: collapsed until asked for,
                                                    // and kept open across the drawView() an Apply triggers
   let gearCache = null;                     // {itemId: absStatsOffset}
@@ -1762,7 +1811,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
-      mounts: "BETA — testing only, not yet confirmed in-game. Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons. Both halves of a pair still have to be in your party for it to trigger.",
+      mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game (Hugo+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -2769,8 +2818,32 @@
   }
   // ---- Mounts: the three hard-coded battle rider/mount pairs -------------------
   function drawMounts(host) {
-    const riderName = (id) => (MOUNTS.riders.find((r) => r[0] === id) || [])[1] || null;
+    const riderRow = (id) => MOUNTS.riders.concat(MOUNTS.ridersNoBank).find((r) => r[0] === id) || null;
+    const riderName = (id) => (riderRow(id) || [])[1] || null;
     const mountName = (id) => (MOUNTS.mounts.find((m) => m[0] === id) || [])[1] || null;
+    // Per-combination confidence. The byte patch is the same edit for every pair; what differs
+    // is whether the rider's mounted rig suits that class of mount, which static analysis can't
+    // answer. So: confirmed = played, expected = rig class matches, untested = it doesn't.
+    const tierOf = (rId, mId) => {
+      if (!rId || !mId) return "off";
+      const r = riderRow(rId), m = MOUNTS.mounts.find((x) => x[0] === mId);
+      if (!r || !m) return "unknown";
+      if (MOUNTS.CONFIRMED.some(([a, b]) => a === rId && b === mId)) return "confirmed";
+      if (r[3] === "none") return "nobank";
+      if (r[3] === "partial") return "rough";
+      return r[2] === m[2] ? "expected" : "untested";
+    };
+    // Three shapes of the same fact, sized to where it goes. The grid's rider column is pinned
+    // and never wraps, so it takes the shortest form — anything longer (Sharon's clip list) sets
+    // the column width and pushes the mount columns off a phone screen. A <select> shows only its
+    // selected option, so there the note is trimmed to actual caveats: a rig class in the closed
+    // box just pushes the name out of view.
+    const riderTag = (row) => row[3] === "none" ? "no battle bank"
+      : row[3] === "partial" ? "partial bank" : `${row[2]} rig`;
+    const riderCaveat = (row) => row[4] || (row[3] === "none" ? "no mounted-battle bank"
+      : row[3] === "partial" ? "partial bank" : null);
+    const badge = (t, pre) => { const d = MOUNTS.TIERS[t];
+      return `<span class="mcf ${d.cls}" title="${esc2((pre ? pre + " — " : "") + d.label + ": " + d.why)}">${d.mark} ${esc2(d.label)}</span>`; };
     // Guard: every site must still be an `addiu $v0,$zero,imm`. If the disc doesn't match,
     // don't offer edits — better to say so than to write half a comparison chain.
     const sites = MOUNTS.pairs.flatMap((p) => p.riderSites.concat([p.mountSite]));
@@ -2782,31 +2855,63 @@
         so this tab won't edit it. Revert to a pristine USA SLUS-20387 ISO and reopen.</div></div>`;
       return;
     }
+    // The opt-in extras stay listed whenever a pair already holds one, so an existing edit
+    // (or a disc patched elsewhere) never silently reads back as "model N (not in list)".
+    const setRiders = MOUNTS.pairs.map((p) => r16(p.riderSites[0]));
+    const extraRiders = MOUNTS.ridersNoBank.filter(([id]) => mntAllRiders || setRiders.includes(id));
+    const riderOpts = MOUNTS.riders.concat(extraRiders);
     const cards = MOUNTS.pairs.map((p, i) => {
       const rIdSites = p.riderSites, rId = r16(rIdSites[0]), mId = r16(p.mountSite);
       const [sr, sm] = MOUNTS.STOCK[i];
       // A rider whose two sites disagree is a broken chain — surface it rather than hide it.
       const split = rIdSites.length > 1 && r16(rIdSites[0]) !== r16(rIdSites[1]);
-      const opt = (list, cur, none) => [`<option value="0"${cur === 0 ? " selected" : ""}>${none}</option>`]
-        .concat(list.map(([id, nm, note]) =>
-          `<option value="${id}"${id === cur ? " selected" : ""}${note ? ` title="${esc2(note)}"` : ""}>${esc2(nm)}${note ? " ⚠" : ""}</option>`))
+      // Each option carries the confidence it would give THIS pair, so the marker is visible
+      // before you commit to the change rather than only after.
+      const opt = (list, cur, none, tierFor, noteFor) => [`<option value="0"${cur === 0 ? " selected" : ""}>${none}</option>`]
+        .concat(list.map((row) => {
+          const [id, nm] = row, note = noteFor(row), t = MOUNTS.TIERS[tierFor(id)];
+          return `<option value="${id}"${id === cur ? " selected" : ""} title="${esc2(t.label + ": " + t.why)}">${
+            esc2(nm)} ${t.mark}${note ? ` — ${esc2(note)}` : ""}</option>`;
+        }))
         .concat(cur !== 0 && !list.some(([id]) => id === cur)
           ? [`<option value="${cur}" selected>model ${cur} (not in list)</option>`] : []).join("");
+      const tier = tierOf(rId, mId), td = MOUNTS.TIERS[tier];
       const stockNote = `stock: ${riderName(sr) || sr} + ${mountName(sm) || sm}`;
+      const who = rId && mId ? `${riderName(rId) || `model ${rId}`} + ${mountName(mId) || `model ${mId}`}` : null;
       return `<details class="char" data-rec="${rIdSites[0]}" open><summary>
           <span class="chev">▸</span><span class="nm">Pair ${i + 1}</span>
+          ${badge(tier, who)}
           <span class="muted">${esc2(stockNote)}</span></summary>
         <div class="char-body">
           ${split ? `<div class="warnbox" style="margin:0 0 8px">This pair's two rider sites disagree
             (${r16(rIdSites[0])} vs ${r16(rIdSites[1])}) — pick a rider to rewrite both.</div>` : ""}
           <div class="grid">
             <label class="field"><span>Rider</span>
-              <select class="mnt-rider" data-i="${i}">${opt(MOUNTS.riders, rId, "— none (pair disabled) —")}</select></label>
+              <select class="mnt-rider" data-i="${i}">${
+                opt(riderOpts, rId, "— none (pair disabled) —", (id) => tierOf(id, mId), riderCaveat)}</select></label>
             <label class="field"><span>Mount</span>
-              <select class="mnt-mount" data-i="${i}">${opt(MOUNTS.mounts, mId, "— none (pair disabled) —")}</select></label>
+              <select class="mnt-mount" data-i="${i}">${
+                opt(MOUNTS.mounts, mId, "— none (pair disabled) —", (id) => tierOf(rId, id), (row) => row[3])}</select></label>
           </div>
+          <div class="fnote" style="margin-top:8px">${who ? `<b>${esc2(who)}</b> — ` : ""}${esc2(td.why)}</div>
         </div></details>`;
     }).join("");
+    // The whole grid at a glance: 9 riders × 3 mounts, plus the opt-in no-bank rows when shown.
+    const matrix = `<div class="mcfwrap"><table class="invtbl mcftbl">
+        <thead><tr><th>Rider</th>${MOUNTS.mounts.map(([, nm, , what]) =>
+          `<th>${esc2(nm)}<span class="muted"> · ${esc2(what)}</span></th>`).join("")}</tr></thead>
+        <tbody>${riderOpts.map((row) => `<tr><td${row[4] ? ` title="${esc2(row[4])}"` : ""}>${
+          esc2(row[1])}<span class="muted"> · ${esc2(riderTag(row))}</span></td>${MOUNTS.mounts.map(([mid, mnm]) =>
+            `<td>${badge(tierOf(row[0], mid), `${row[1]} + ${mnm}`)}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>
+      <div class="mcfleg">${["confirmed", "expected", "untested", "rough", "nobank"].map((k) => {
+        const d = MOUNTS.TIERS[k];
+        return `<div class="mcfrow"><span class="mcf ${d.cls}">${d.mark} ${esc2(d.label)}</span>
+          <span class="muted">${esc2(d.why)}</span></div>`; }).join("")}</div>
+      <label class="row" style="gap:6px;cursor:pointer;margin:10px 0 0;align-items:flex-start">
+        <input type="checkbox" id="mntAll"${mntAllRiders ? " checked" : ""} style="flex:0 0 auto;margin-top:3px">
+        <span style="flex:1 1 200px;min-width:0">also list riders with no mounted-battle bank (Geddoe,
+        Thomas, Salome, Juan) — they pair up and then keep their normal battle pose</span></label>`;
     const [l2base, l2stride] = TABLES.list2;
     const horseOff = (roster) => l2base + roster * l2stride + MOUNTS.horse.off;
     const horseRows = MOUNTS.horse.riders.map(([rid, nm, cap]) => {
@@ -2837,33 +2942,49 @@
           `<label class="field"><span>${esc2(d.label)} <span class="muted">stock 1</span></span>
             <input type="number" class="mnt-round" data-off="${d.off}" min="0" max="999" value="${r16(d.off)}"></label>`)).join("");
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Battle mounts <span class="u">BETA · testing only · patches game code</span></div>
-        <div class="warnbox" style="margin:0 0 8px"><b>Beta — not yet confirmed in-game.</b> The code path
-          behind this tab was read out of the disassembly and the byte writes are verified, but no re-paired
-          combination has been played through an emulator yet. Treat any non-stock pairing as an experiment:
-          keep a backup ISO, and expect the possibility that a rider sits oddly, animates wrong, or doesn't
-          mount at all. The three stock pairs are unaffected until you change them.</div>
+        <div class="bag-h">Battle mounts <span class="u">re-pairing confirmed in-game · patches game code</span></div>
         <div class="muted" style="margin:0 0 8px">The engine asks one question before seating a rider —
           <i>is this rider allowed on this mount?</i> — and answers it from three hard-coded comparisons.
-          These dropdowns rewrite those three. There is no fourth slot to add.</div>
+          These dropdowns rewrite those three, so <b>any rider below can be put on Fubar, Bright or Ruby</b>.
+          There is no fourth slot to add.</div>
+        <div class="muted" style="margin:0 0 8px"><b>Re-pairing works.</b> <b>Hugo + Bright</b> has been
+          played through an emulator: it mounts and fights correctly, even though Hugo's mounted clips were
+          authored for a griffon and Bright is a dragon. So the patch itself is settled, and the only thing
+          that still varies by combination is the <i>animation rig</i> — whether a rider authored around one
+          class of mount sits correctly on the other. Every combination below carries its own marker.
+          Keep a backup ISO for anything not marked <span class="mcf ok">✓ confirmed</span>.</div>
         <div class="warnbox" style="margin:0 0 8px"><b>Both halves must be in your party.</b> The candidate
           mount is drawn from party membership, so e.g. Chris on Bright still needs Futch recruited (that's
           how Bright joins) and both Chris and Bright deployed.</div>
-        <details class="note"><summary>Why only these names are listed, and how to give one rider two mounts</summary>
+        <div class="bag-h" style="margin-top:12px">Who can ride what <span class="u">confidence per combination</span></div>
+        ${matrix}
+        <details class="note"><summary>Where the markers come from, and how to give one rider two mounts</summary>
           <ul style="margin:4px 0 0 18px">
-            <li><b>Riders</b> are the models that carry the <code>301/320/340</code> <i>mounted battle</i>
-              clips — Hugo, Chris, Roland, Leo, Percival, Borus, Futch, Franz, and Sharon (partial).
-              <b>Geddoe is not one of them</b>, so he would link to a mount and then just stand there in his
-              normal battle pose. (He <i>does</i> have a full <i>field</i> ride set — the game can show him on
-              horseback out of battle — but this tab edits the battle pairing, which he has no animation for.)</li>
-            <li><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and Ruby.
-              The field horses the Zexen knights and Hugo ride have no battle animations at all, so they aren't offered.</li>
+            <li><b>Riders</b> listed by default are the models that carry the <code>301/320/340</code>
+              <i>mounted battle</i> clips — Hugo, Chris, Roland, Leo, Percival, Borus, Futch, Franz, and
+              Sharon (partial). Those are the ones with an animation to play once they are seated.</li>
+            <li><b>“Rigged for”</b> is the class of mount a rider's mounted clips were built around: Hugo's for
+              a griffon and Futch's for a dragon (<i>flyer</i>), Chris's and the Zexen knights' for a horse,
+              Franz's for Ruby (<i>horse</i>). Same class → <span class="mcf exp">• expected</span>;
+              across classes → <span class="mcf unt">? untested</span>. Hugo+Bright is the one cross-mount
+              case that has actually been played, and it works — which is encouraging for the rest, but
+              flyer→flyer is a smaller jump than horse-rig→flyer.</li>
+            <li><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and
+              Ruby. The field horses the Zexen knights and Hugo ride have no battle animations at all, so they
+              aren't offered here — the <b>Assigned horse</b> card below is the route for those.</li>
+            <li><b>Riders with no bank</b> (Geddoe, Thomas, Salome, Juan) are hidden behind the checkbox
+              above. The comparison chain accepts them — it's a pure id compare — but they link to the mount
+              and then keep their normal battle pose, because the motion call fails on the missing clips.
+              Geddoe <i>does</i> have a full <i>field</i> ride set, so the game can show him on horseback out
+              of battle; that is what the Assigned horse card gives him.</li>
             <li><b>One rider, two mounts</b> works: set two pairs to the same rider with different mounts
               (e.g. Hugo+Fubar and Hugo+Bright). The comparisons are checked in order and fall through cleanly.</li>
             <li>Rider seating in battle does <i>not</i> use the field saddle-offset table, so an unusual pair
-              won't be mis-seated by it.</li>
+              won't be mis-seated by it — but that also means nothing corrects the seat height either, which
+              is exactly why a cross-class pairing is marked untested rather than expected.</li>
           </ul></details>
       </div>
+      <div id="mountCards">${cards}</div>
       <div class="card" style="margin:0 0 12px">
         <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · field <i>and</i> battle</span></div>
         <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route, and the more capable one:
@@ -2895,8 +3016,7 @@
           it can't be exposed here — but it is driven by each half's <b>max HP</b>, which means the
           <b>Growth</b> tab already controls it. Give a mount a fatter HP curve and it carries a bigger share
           of the pair's pool.</div>
-      </div>
-      <div id="mountCards">${cards}</div>`;
+      </div>`;
     // Writes: rider rewrites every site for that pair (delay-slot duplicate included).
     const relabel = (i, what) => `Pair ${i + 1} ${what}`;
     function markSites(el, offs, origLabel) {
@@ -2913,6 +3033,8 @@
       if (dirty) btn.title = `Restore original (${origLabel})`;
       scheduleBadge();
     }
+    { const cb = q("#mntAll", host);
+      if (cb) cb.onchange = () => { mntAllRiders = cb.checked; drawView(); }; }
     qa("select.mnt-mech", host).forEach((sel) => {
       const off = +sel.dataset.off;
       sel.onchange = () => {
@@ -2941,13 +3063,17 @@
       };
       markField(sel, off, 2, "num");
     });
+    // Both halves redraw the view rather than just marking themselves dirty: the confidence
+    // marker on the summary, the note under the grid and the tier glyph on every *other*
+    // option all depend on what this pair now holds, so leaving them as painted would show the
+    // outgoing pair's verdict against the incoming pair's ids.
     qa("select.mnt-rider", host).forEach((sel) => {
       const i = +sel.dataset.i, offs = MOUNTS.pairs[i].riderSites;
       const orig = origW(offs[0], 2), origLbl = orig === 0 ? "none" : (riderName(orig) || `model ${orig}`);
       sel.onchange = () => {
         offs.forEach((o, n) => { writeW(o, 2, +sel.value || 0);
           reg(o, 2, "num", "Battle mounts", relabel(i, `rider${n ? " (delay-slot copy)" : ""}`)); });
-        markSites(sel, offs, origLbl);
+        drawView();
       };
       markSites(sel, offs, origLbl);
     });
@@ -2957,7 +3083,7 @@
       sel.onchange = () => {
         writeW(off, 2, +sel.value || 0);
         reg(off, 2, "num", "Battle mounts", relabel(i, "mount"));
-        markSites(sel, [off], origLbl);
+        drawView();
       };
       markSites(sel, [off], origLbl);
     });
@@ -4584,8 +4710,8 @@
       ["Le Buque villagers", "msk1/msk2", "yes (070/071/073/074)", "no", ""],
     ],
     mounts: [
-      ["Fubar", "guli", "8", "flyer", "full battle set — b_neutral, b_att, b_magic, b_hinsi"],
-      ["Bright", "brit", "32", "flyer", "full battle set"],
+      ["Fubar", "guli", "8", "flyer", "full battle set — b_neutral, b_att, b_magic, b_hinsi; ridden by Hugo (stock)"],
+      ["Bright", "brit", "32", "flyer", "full battle set; ridden by Futch (stock) and by Hugo re-paired (confirmed in-game)"],
       ["Ruby", "mskr", "42", "horse", "full battle set; Franz's horse, a Star of Destiny"],
       ["Chris's horse", "s2um", "309", "ground", "battle clips: b_N_damage + b_down_start only (passive)"],
       ["Zexen-knight horse", "zkum", "308", "ground", "same two passive battle clips"],
@@ -4619,7 +4745,8 @@
     host.innerHTML = refTabs() +
       `<div class="muted" style="margin:0 0 10px">Decoded off this disc. Capability is read from <b>clip
         containment</b> — a clip belongs to the record whose payload holds it. Bundling is <b>asset
-        residency</b>, not proof a scene mounts anyone. Nothing here has been confirmed in an emulator.</div>
+        residency</b>, not proof a scene mounts anyone. Only the battle pair table has been confirmed in an
+        emulator (the three stock pairs plus Hugo+Bright); everything else on this page is static analysis.</div>
       <div class="bag-h">Riders — who is rigged to be mounted</div>
       ${tbl(["Character", "Model", "Field ride", "Mounted battle", "Notes"],
         MOUNTREF.riders.filter((r) => hit(...r)).map((r) =>

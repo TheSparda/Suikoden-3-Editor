@@ -378,3 +378,33 @@ details.fold[open] > summary { margin:0 0 10px; }
 .secdiv > span { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut);
   font-weight:600; }
 .secdiv::after { content:""; flex:1 1 auto; min-width:0; height:1px; background:var(--line); }
+
+/* ===== Mounts: per-combination confidence markers =====
+   The pair table's byte patch is identical for every combination; what varies is whether the
+   rider's mounted animation rig suits that class of mount. One badge does duty in three places
+   (the rider×mount grid, each pair's summary, and the legend), so it has to stay legible at
+   11px next to a name. Colour carries the tier and the glyph repeats it, because the four
+   tiers have to be distinguishable without colour on a phone in sunlight. */
+.mcf { display:inline-block; font-size:11px; white-space:nowrap; border:1px solid var(--line);
+  border-radius:999px; padding:1px 7px; color:var(--mut); background:var(--input-bg); }
+.mcf.ok    { border-color:var(--ok);      color:var(--ok); }
+.mcf.exp   { border-color:var(--acc);     color:var(--acc2); }
+.mcf.unt   { border-color:var(--warnbd);  color:var(--warn); }
+.mcf.rough { border-color:var(--warnbd);  color:var(--warn); opacity:.85; }
+.mcf.bad   { border-color:var(--crimson); color:var(--crimson); }
+.mcf.off   { opacity:.7; }
+/* Three mount columns of badges don't fit 320px, so the grid scrolls rather than wrapping a
+   badge mid-label (same trick as .ranktbl). */
+.mcfwrap { overflow-x:auto; }
+.mcftbl { min-width:420px; }
+.mcftbl th, .mcftbl td { padding:5px 8px; white-space:nowrap; }
+/* The rider name has to stay readable once the grid is scrolled to the Ruby column, and letting
+   it wrap instead doubles every row's height on a phone — so pin it and scroll the mounts past
+   it. The opaque background is what stops a badge showing through the pinned cell. */
+.mcftbl td:first-child, .mcftbl th:first-child { position:sticky; left:0; z-index:1;
+  background:var(--panel); }
+.mcftbl th:first-child { background:var(--panel); }
+.mcfleg { margin-top:10px; display:grid; gap:4px; }
+.mcfrow { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.mcfrow > .mcf { flex:0 0 auto; }
+.mcfrow > .muted { flex:1 1 200px; min-width:0; }

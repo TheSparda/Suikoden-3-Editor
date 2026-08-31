@@ -19,11 +19,13 @@ independent layers, and each layer restricts things differently:
 | **Link primitive** | `RideLink(riderEobj, mountEobj)` @ `0x16e84c0` | **anyone on anything** — no ID check at all |
 | **Field ground ride** | EDS opcodes `RideOn` / `RideOff` | anyone the map's script says — but **horses only** |
 | **Field flying ride** | EDS opcodes `FlyMove*` (a separate path) | scripted flight; this is the only way Fubar/Bright carry anyone outside battle |
-| **Battle mounting** | automatic, gated by a hardcoded pair table @ `0x16e8b78` | **exactly three pairs**, see below |
+| **Battle mounting** | automatic, gated by a hardcoded pair table @ `0x16e8b78` | **exactly three pairs** — but the pairs are editable constants, and re-pairing is confirmed in-game (§4a) |
 
 So: *mechanically* the engine will pair any two objects. What actually stops
 "Chris rides Fubar" is (a) a 24-byte hardcoded pair table for battle, and (b) whether the
-rider's and mount's **models ship the required animation banks**.
+rider's and mount's **models ship the required animation banks**. (a) is an editable set of
+immediates — Hugo+Bright is a confirmed re-pairing — which leaves (b), plus the untested question
+of whether a rider's rig fits a class of mount it was not authored for (§4a).
 
 ---
 
@@ -210,15 +212,75 @@ first two bytes** of the word:
 Riders #2 and #3 each appear **twice** because the compiler hoisted the next comparison's
 constant into a branch delay slot. Change only one of the pair and the check breaks.
 
-This is what the web editor's **Mounts** tab writes (`drawMounts` in `web/iso.js`), shipped
-**beta / testing only** — the byte writes are verified but no re-paired combination has been
-played through an emulator yet. It offers
-only riders whose model carries the `3xx` bank and only mounts with a battle animation set,
-refuses to edit if any of the eight sites is no longer an `addiu $v0,$zero,imm`, and always
-writes a rider's delay-slot duplicate alongside its primary site.
+This is what the web editor's **Mounts** tab writes (`drawMounts` in `web/iso.js`). Re-pairing is
+**confirmed in-game**: a pair patched to **Hugo (model 1) + Bright (model 32)** mounts correctly
+and plays through. That is the first non-stock combination played through an emulator
+(2026-08-31), and it settles two things that had only been inferred — the eight-site patch
+rewrites the comparison chain cleanly, and a rider's mounted-battle bank drives a mount it was
+**never authored for** (Hugo's clips were built for Fubar, a griffon; Bright is a dragon).
+
+The tab offers every model carrying the `3xx` bank against all three battle mounts, marks each
+combination with its own confidence tier (§4a), refuses to edit if any of the eight sites is no
+longer an `addiu $v0,$zero,imm`, and always writes a rider's delay-slot duplicate alongside its
+primary site.
 
 Because the comparisons fall through cleanly, setting two pairs to the **same rider with
 different mounts** works — e.g. Hugo+Fubar and Hugo+Bright lets Hugo take either.
+
+### 4a. Which combinations work — permission vs. rig geometry
+
+Nothing in code discriminates between combinations. `IsValidRidePair` is a pure id compare with
+no per-character special-casing, so **every rider × mount pairing is equally *permitted***; what
+differs is whether the rider's mounted-battle rig suits that class of mount. Battle seating does
+**not** read the ground saddle-offset table (`GetRiderOffset` is on the `RideOn` path only), so
+the rider's position comes from the mounted animation rig itself and nothing corrects it.
+
+So each rider carries a **rig class** — the kind of mount their `3xx` clips were authored around:
+
+| rider | rig authored around | class |
+|---|---|---|
+| Hugo | Fubar (griffon) | flyer |
+| Futch | Bright (dragon) | flyer |
+| Franz | Ruby | horse |
+| Chris | `s2um`, her own horse | horse |
+| Roland, Leo, Percival, Borus | `zkum`, the Zexen-knight horse | horse |
+| Sharon | — (partial bank, `300/301/310/311` only) | unknown |
+
+Crossed against the three battle mounts, with what has actually been played:
+
+| rider | Fubar · flyer | Bright · flyer | Ruby · horse |
+|---|---|---|---|
+| **Hugo** · flyer-rigged | ✓ confirmed (stock) | ✓ **confirmed** (2026-08-31) | ? untested |
+| **Futch** · flyer-rigged | • expected | ✓ confirmed (stock) | ? untested |
+| **Franz** · horse-rigged | ? untested | ? untested | ✓ confirmed (stock) |
+| **Chris** · horse-rigged | ? untested | ? untested | • expected |
+| **Roland / Leo / Percival / Borus** · horse-rigged | ? untested | ? untested | • expected |
+| **Sharon** · partial bank | ≈ rough | ≈ rough | ≈ rough |
+| **Geddoe / Thomas / Salome / Juan** · no battle bank | ✗ won't animate | ✗ won't animate | ✗ won't animate |
+
+- **✓ confirmed** — played through an emulator; mounts, animates and fights correctly.
+- **• expected** — rig class matches the mount's class, so the geometry should fit. Not played.
+- **? untested** — accepted by the code, but the clips were authored around the other class of
+  mount. Seat height, angle and scale are unknown. Hugo+Bright shows a cross-*mount* swap works;
+  it does not show a cross-*class* one does, since griffon→dragon stays within "flyer".
+- **≈ rough** — only part of the mounted-battle bank exists, so expect missing or wrong clips
+  whichever mount is picked.
+- **✗ won't animate** — no `3xx` bank at all: the pair links up and the rider keeps their normal
+  battle pose. Predicted from the failing `SetMotion` on slots `0xB8`+, not yet played. The tab
+  lists these four behind an opt-in specifically as the negative control.
+
+The still-open matrix is tracked in [issue #14](https://github.com/TheSparda/Suikoden-3-Editor/issues/14):
+the headline case is **Chris + Bright** (horse-rigged rider on a flyer), with **Borus or Percival
++ Fubar** as the control that separates "Chris-specific" from "horse-rig-on-a-flyer".
+
+Two constraints come with any re-pairing, both independent of animation:
+
+- **Both halves must be in the party and deployed** — the candidate mount is drawn from party
+  membership (`0x17dede4`), so Chris+Bright still needs Futch recruited, because that is how
+  Bright joins.
+- **There are only three slots.** Giving a new rider a mount means overwriting a stock pair or
+  spending a slot. Adding a fourth is out of reach: the chain has three comparisons and no spare
+  instruction space, so it would take new code rather than a constant rewrite.
 
 The ids are **model ids**, not the roster ids the ISO editor's list 1 uses — see
 [`s3_model_ids.json`](s3_model_ids.json) for the full 517-entry map and the roster
@@ -290,9 +352,11 @@ is not established). So:
 | `jyan` | Juan | `074` only | — | no |
 
 **Geddoe and Thomas can be shown mounted on the field but not in battle.** That is why the
-editor's Mounts tab — which edits the *battle* pair table — still correctly omits Geddoe: he
-would link to a mount and keep his normal battle pose. The ten models with `301/320/340` are
-exactly the tab's rider list, now justified by clip containment rather than by bank presence.
+editor's Mounts tab — which edits the *battle* pair table — keeps Geddoe out of its default rider
+list: he would link to a mount and keep his normal battle pose. (He is offered behind an opt-in,
+marked *won't animate*, so that prediction can be tested; see §4a.) The ten models with
+`301/320/340` are exactly the tab's default rider list, justified by clip containment rather than
+by bank presence.
 
 And the mounts, split by whether they have a battle animation set (`1xx`/`14x`/`16x`/`18x`/`19x`):
 
@@ -353,12 +417,17 @@ three `ctx_`) in **HGB1 (Yaza Plain), HNKT (Budehuc Castle) and KRVI (Karaya Vil
 three areas. `kru2` adds `ctx_` entries in KRVI.
 
 **Can someone else ride Fubar / Bright?**
-In battle, only by patching the three-pair table at ISO `0x130384`–`0x1303B4` (eight 2-byte
-immediates, remembering the two duplicated delay-slot constants). The patch is trivial; the
-animation is not. A substituted rider only animates correctly if their model carries the `3xx`
-bank — Hugo, Futch, Franz, Chris, Borus, Percival, Leo, Roland, `zkk1` and (partially) Sharon.
-Anyone else pairs up and then silently keeps their normal battle pose, because `SetMotion`
-returns failure on the missing `0xB8`+ clips.
+**Yes — confirmed in-game.** In battle it takes patching the three-pair table at ISO
+`0x130384`–`0x1303B4` (eight 2-byte immediates, remembering the two duplicated delay-slot
+constants), and **Hugo + Bright has been played through an emulator**: it mounts, animates and
+fights correctly even though Hugo's mounted clips were authored for a griffon. The patch is
+trivial and now evidence-backed; what remains uncertain is the animation. A substituted rider
+only animates at all if their model carries the `3xx` bank — Hugo, Futch, Franz, Chris, Borus,
+Percival, Leo, Roland, `zkk1` and (partially) Sharon. Anyone else pairs up and then silently
+keeps their normal battle pose, because `SetMotion` returns failure on the missing `0xB8`+ clips.
+Within the ten that do carry the bank, the open question is **rig geometry, not permission** — a
+horse-rigged rider on a flyer may sit at the wrong height or scale. See §4a for the per-combination
+grid and what has actually been played.
 
 On the field there is no pair check at all — an EDS `RideOn` will link any two EOBJs — but the
 mount must be one of the eight whitelisted **horses** to get a correct saddle offset, and
@@ -750,4 +819,11 @@ is not established**.
   setup via a computed offset or a struct copy, but it was not traced.
 - Where the EDS script blobs actually live inside an area archive, which is what a reliable
   "does this scene call RideOn" scan would need (see §9).
-- Nothing here has been tested in an emulator. Every claim above is static analysis.
+- **Emulator coverage is one data point.** The battle pair patch has been played through
+  (Hugo + Bright, 2026-08-31, §4a); every other claim in this document is still static analysis,
+  including the whole field-ride side and every other rider/mount combination.
+- Whether a rider whose mounted clips were authored around a **horse** sits correctly on a
+  **flyer** (Chris + Bright is the headline case), and whether the mounted attack / magic / bow /
+  damage / knockdown / near-death clips read correctly at that scale. §4a lists the open grid.
+- Whether the HP re-split formula (§13) holds in play as well as in the disassembly — it has not
+  been read off an emulator.
