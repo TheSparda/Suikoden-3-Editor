@@ -301,10 +301,14 @@
   const AUX_WINDOWS = [0x3F3E6994, 0x3F3EF194];   // the potch overlay pair (16 bytes each)
   const AUX_LEN = 16;
   const AUX_MASK = 0, AUX_MULT = 8;        // offsets within a potch window
-  // AUX now holds two kinds of windows, told apart by `tag`:
-  //   "potch" — the two fixed 16-byte overlay windows (Sets view)
-  //   "enemy" — coalesced spans covering enemy stat records + reward blocks,
-  //             built from Editor/s3_enemy_packs.json at load (Enemies view)
+  // AUX holds three kinds of window, told apart by `tag`:
+  //   "potch" — the two fixed 16-byte overlay windows (Sets view). Read when the disc opens.
+  //   "enemy" — coalesced spans covering enemy and war stat records, reward blocks and spawn
+  //             zones, from Editor/s3_enemy_packs.json + s3_war_units.json (Enemies/War views)
+  //   "room"  — the per-area encounter-rate tables, from s3_rooms.json (Encounter view)
+  // The last two are NOT read on open — see loadDiscTables(). Until they are, inAux() and
+  // auxWin() do not know their offsets, which is why every path that resolves an out-of-block
+  // offset has to load them first.
   let AUX = [];       // [{off, len, tag, buf, orig}] — empty until an ISO loads
   const auxHasPotch = () => AUX.some((w) => w.tag === "potch");
   const inAux = (off, n) => AUX.some((w) => off >= w.off && off + n <= w.off + w.len);
@@ -831,13 +835,15 @@
     }
     return out;
   }
-  // Read every range with at most `conc` requests in flight. Returns an array parallel to
-  // `ranges`; an entry is null where that read threw or came up short, which the caller
-  // turns into "this feature is unavailable" rather than half a table. Errors are not
-  // rethrown — one unreadable region must not cost the whole disc.
+  // Read every range with at most `conc` requests in flight. Returns {chunks, threw}: `chunks`
+  // is parallel to `ranges`, null where that read threw or came up short; `threw` counts the
+  // ones that threw. The two failures mean different things and get different UI — a short read
+  // is a window this disc genuinely doesn't have, while a throw is the file having moved or
+  // lost permission, which is worth offering a retry for. Errors are not rethrown: one
+  // unreadable region must not cost the whole disc.
   async function readRanges(file, ranges, conc, onDone) {
     const out = new Array(ranges.length).fill(null);
-    let next = 0, done = 0;
+    let next = 0, done = 0, threw = 0;
     const worker = async () => {
       for (;;) {
         const i = next++;
@@ -846,12 +852,12 @@
         try {
           const a = new Uint8Array(await file.slice(s, e).arrayBuffer());
           if (a.length === e - s) out[i] = a;
-        } catch (err) { /* null entry — the caller drops that tag */ }
+        } catch (err) { threw++; }
         if (onDone) onDone(++done, ranges.length);
       }
     };
     await Promise.all(Array.from({ length: Math.min(conc, ranges.length) }, worker));
-    return out;
+    return { chunks: out, threw };
   }
 
   // ---- blocking "opening a disc" overlay -------------------------------------
@@ -925,19 +931,89 @@
       return setStatus(`Not a USA (SLUS-20387) Suikoden III ISO — version word 0x${hex(ver, 8)} ≠ 0x${hex(VERSION_VAL, 8)}. ` +
         `Only the USA release is supported.`, "err");
     }
+    // The only windows read on open are the potch overlay pair — two 16-byte reads that keep
+    // the Sets view synchronous. Everything else the disc needs (enemy, war and room tables,
+    // ~45 ranged reads scattered over 3.6 GB) is deferred to loadDiscTables(); see the note
+    // there. Optional the same way it always was: an unreadable window just makes that one
+    // control read-only, never blocks the load.
+    const potch = coalesce(AUX_WINDOWS.map((off) => [off, off + AUX_LEN]), FETCH_GAP)
+      .map(([s, e]) => [s, Math.min(e, file.size)]).filter(([s, e]) => e > s);
+    const pr = await readRanges(file, potch, READ_CONC);
+    const aux = [];
+    for (let i = 0; i < potch.length; i++) {
+      const c = pr.chunks[i];
+      if (!c) { aux.length = 0; break; }
+      for (const off of AUX_WINDOWS) {
+        if (off < potch[i][0] || off + AUX_LEN > potch[i][1]) continue;
+        const b = c.slice(off - potch[i][0], off - potch[i][0] + AUX_LEN);
+        aux.push({ off, len: AUX_LEN, tag: "potch", buf: b, orig: b.slice() });
+      }
+    }
+    if (aux.length !== AUX_WINDOWS.length) aux.length = 0;
+    // commit
+    BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
+    AUX = aux;
+    resetTables();                              // deferred tables belong to the disc being replaced
+    Object.keys(EREG).forEach((k) => delete EREG[k]);
+    isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
+    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    recipeExported = false; saveNudged = false; RENAMES = {};
+    VIEW = "chars"; SEARCH = "";
+    autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
+    if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
+    renderEditor(file.size);
+    q("#isoRoot").scrollIntoView({ behavior: "smooth", block: "start" });
+    setStatus(`Loaded ${isoName} — USA verified.`, "ok");
+  }
+
+  // ---- deferred disc tables --------------------------------------------------
+  // The enemy, war and room tables are ~45 ranged reads scattered over 3.6 GB, and only three
+  // of the seventeen views ever touch them. Reading them on open charged that price to every
+  // session, including the majority that never open those tabs, so they load on first use
+  // instead. Opening a disc is now three ranged reads: the ~3.75 MB ELF block and the potch
+  // pair.
+  //
+  // Anything that needs these windows must go through loadDiscTables() first, and that is NOT
+  // just the three views. importRecipe() and the .xdelta apply both resolve offsets through
+  // inAux(), to which a window that hasn't loaded yet is indistinguishable from an offset this
+  // editor cannot edit — the recipe path would have skipped those runs silently, neither
+  // applied nor reported.
+  let TABLES_STATE = "idle";        // idle | loading | ready | failed
+  let TABLES_PROMISE = null;
+  let TABLES_ERR = "";
+  // Bumped whenever the open disc changes. A read still in flight when that happens must not
+  // write its windows into the new session's AUX, and must not flip the new session's state.
+  let DISC_GEN = 0;
+  const TABLE_VIEWS = new Set(["enemies", "war", "encounter"]);
+  function resetTables() {
+    TABLES_STATE = "idle"; TABLES_PROMISE = null; TABLES_ERR = ""; DISC_GEN++;
+    EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; WPACKS_SKIPPED = 0;
+    ROOMS = []; ROOMS_SKIPPED = 0;
+  }
+  // Idempotent: concurrent callers (two tabs clicked quickly, or a view and a patch apply at
+  // once) share one read. Never rejects — the outcome is in TABLES_STATE.
+  function loadDiscTables() {
+    if (TABLES_PROMISE) return TABLES_PROMISE;
+    if (TABLES_STATE === "ready" || TABLES_STATE === "failed") return Promise.resolve();
+    const gen = DISC_GEN, file = isoFile;
+    if (!file) { TABLES_STATE = "failed"; TABLES_ERR = "no disc is open"; return Promise.resolve(); }
+    TABLES_STATE = "loading";
+    TABLES_PROMISE = readDiscTables(file, gen).catch((e) => {
+      if (gen !== DISC_GEN) return;
+      TABLES_STATE = "failed"; TABLES_ERR = (e && e.message) || String(e);
+    });
+    return TABLES_PROMISE;
+  }
+  async function readDiscTables(file, gen) {
     // ---- window plan ---------------------------------------------------------
-    // Every extra-ELF window this disc needs is planned before a single byte is read,
-    // so the scattered reads can be merged and issued together (see KEEP_GAP/FETCH_GAP
-    // above). A plan entry is a tag plus the tight ranges AUX keeps under it; building
-    // one touches no I/O.
+    // Every window is planned before a single byte is read, so the scattered reads can be
+    // merged and issued together (see KEEP_GAP/FETCH_GAP above). A plan entry is a tag plus
+    // the tight ranges AUX keeps under it; building one touches no I/O.
     const plan = [];
-    // potch overlay pair — optional: an unreadable window just makes that one control
-    // read-only in the Sets view, never blocks the load.
-    plan.push({ tag: "potch", keep: AUX_WINDOWS.map((off) => [off, off + AUX_LEN]) });
     // enemy windows: spans over every stat record, reward block and spawn zone listed in
-    // s3_enemy_packs.json (all pack copies). Optional the same way — a pack whose offsets
-    // can't be read (short disc / test fixture) is skipped, and the Enemies view reports
-    // it as unavailable instead of showing wrong data.
+    // s3_enemy_packs.json (all pack copies). Optional — a pack whose offsets can't be read
+    // (short disc / test fixture) is skipped, and the Enemies view reports it as unavailable
+    // instead of showing wrong data.
     let epacks = [], eskipped = 0, wskipped = 0;
     const epsrc0 = (typeof window !== "undefined" && window.S3_TEST_ENEMY_PACKS) || (REF && REF.enemyPacks);
     // war-unit packs (s3_war_units.json) share the exact record layout and ride the
@@ -988,26 +1064,30 @@
         if (offs.some(([, e]) => e > file.size)) { rskipped++; continue; }
         rareas.push(a); rspans.push(...offs);
       }
-      // A window another tag already covers can serve these reads and writes (auxWin
-      // searches every window); a second, overlapping one would split the dirty tracking
-      // in two, so drop it. Nothing overlaps on the shipped index — this guards an
-      // offset table that one day does.
-      const taken = plan.flatMap((p) => p.keep);
+      // A window another tag already covers can serve these reads and writes (auxWin searches
+      // every window, including the potch pair already in AUX); a second, overlapping one
+      // would split the dirty tracking in two, so drop it. Nothing overlaps on the shipped
+      // index — this guards an offset table that one day does.
+      const taken = plan.flatMap((p) => p.keep).concat(AUX.map((w) => [w.off, w.off + w.len]));
       const keep = coalesce(rspans, KEEP_GAP).filter(([s, e]) => !taken.some(([cs, ce]) => s >= cs && e <= ce));
       if (keep.length) plan.push({ tag: "room", keep });
     }
     // ---- one batched pass over the disc --------------------------------------
-    // Ranges are clamped to the file so a window planted past the end of a short disc
-    // (the potch pair on a test fixture) fails only its own tag, instead of short-reading
-    // a chunk that other tags were sharing.
+    // Ranges are clamped to the file so a window planted past the end of a short disc fails
+    // only its own tag, instead of short-reading a chunk that other tags were sharing.
     const fetchRanges = coalesce(plan.flatMap((p) => p.keep), FETCH_GAP)
       .map(([s, e]) => [s, Math.min(e, file.size)]).filter(([s, e]) => e > s);
-    let chunks = [];
+    let chunks = [], threw = 0;
     if (fetchRanges.length) {
-      loadStep("Reading enemy data… 0%", 0);
-      chunks = await readRanges(file, fetchRanges, READ_CONC,
-        (n, t) => loadStep(`Reading enemy data… ${Math.round(n * 100 / t)}%`, n * 100 / t));
+      setStatus("Reading area data… 0%", "");
+      ({ chunks, threw } = await readRanges(file, fetchRanges, READ_CONC,
+        (n, t) => { if (gen === DISC_GEN) setStatus(`Reading area data… ${Math.round(n * 100 / t)}%`, ""); }));
     }
+    if (gen !== DISC_GEN) return;               // the disc changed under us — drop everything
+    // A read that THREW is the file having moved or lost permission since the disc was opened
+    // — a state that couldn't arise when these reads happened during open, and one worth a
+    // retry rather than a wrong "this disc doesn't have those offsets".
+    if (threw) throw new Error(`${threw} of ${fetchRanges.length} disc reads failed`);
     // Carve the tight windows out of the wide chunks, then drop the chunks so the bytes
     // bridged between windows stay transient. A tag that loses any window loses all of
     // them: half a table would show wrong values and write wrong bytes, which is worse
@@ -1031,21 +1111,44 @@
       wskipped = epsrc.packs.filter((p) => p.war).length;
     }
     if (lost.has("room")) { rareas = []; rskipped = rsrc.areas.length; }
-    // commit
-    BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
-    AUX = aux;
+    // Commit in one assignment, onto whatever AUX holds NOW — a potch edit made while this
+    // read was in flight has to survive it.
+    AUX = AUX.concat(aux);
     EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped; WPACKS_SKIPPED = wskipped;
     ROOMS = rareas; ROOMS_SKIPPED = rskipped;
-    Object.keys(EREG).forEach((k) => delete EREG[k]);
-    isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
-    recipeExported = false; saveNudged = false; RENAMES = {};
-    VIEW = "chars"; SEARCH = "";
-    autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
-    if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
-    renderEditor(file.size);
-    q("#isoRoot").scrollIntoView({ behavior: "smooth", block: "start" });
-    setStatus(`Loaded ${isoName} — USA verified.`, "ok");
+    TABLES_STATE = "ready";
+  }
+  // Gate for the three views that need the deferred tables. Returns true when the caller can
+  // draw, false when it has put a placeholder up and will re-draw itself once the read lands.
+  // Synchronous on purpose: drawView() stays synchronous, and a view whose tables are already
+  // in draws in the same tick it always did.
+  function needTables(host) {
+    if (!host) return false;
+    if (TABLES_STATE === "ready") return true;
+    if (TABLES_STATE === "failed") {
+      host.innerHTML = `<div class="warnbox">Couldn't read this disc's area tables${TABLES_ERR ? ` — ${esc2(TABLES_ERR)}` : ""}.
+        The file may have moved, been changed, or lost permission since you opened it.
+        <button class="chip mini" id="tblRetry">Retry</button></div>`;
+      const b = q("#tblRetry", host);
+      if (b) b.onclick = () => { TABLES_STATE = "idle"; TABLES_PROMISE = null; TABLES_ERR = ""; drawView(); };
+      return false;
+    }
+    host.innerHTML = `<div class="muted" id="tblLoading">Reading area data off the disc…</div>`;
+    const gen = DISC_GEN;
+    loadDiscTables().then(() => { if (gen === DISC_GEN && TABLE_VIEWS.has(VIEW)) drawView(); });
+    return false;
+  }
+  // Patch applies resolve out-of-block offsets through inAux(), so the windows have to be in
+  // before the first lookup. Returns an error string when they couldn't be, so the caller can
+  // refuse the whole patch: applying the in-block half of a recipe and silently dropping the
+  // enemy half is the one outcome worse than not applying it.
+  async function tablesForPatch() {
+    setStatus("Reading area data off the disc…", "");
+    await loadDiscTables();
+    return TABLES_STATE === "failed"
+      ? `Couldn't read this disc's area tables (${TABLES_ERR}) — nothing was applied, because a patch ` +
+        `touching enemy or encounter data would only have gone in halfway. Retry, or reopen the disc.`
+      : "";
   }
   // How this browser can write edits back: overwrite in place, stream a patched copy, or neither.
   function saveMode() {
@@ -1474,6 +1577,12 @@
     try { mod = JSON.parse(await file.text()); } catch (e) { return setStatus("Not a valid recipe file.", "err"); }
     if (mod.format !== "s3mod") return setStatus("Not an s3mod recipe.", "err");
     if (mod.versionWord && mod.versionWord !== VERSION_VAL) return setStatus("Recipe is for a different game/region.", "err");
+    // Only pay for the deferred tables when the recipe actually reaches outside the ELF
+    // block — most don't, and a recipe that stays inside it has no reason to wait on a read.
+    if ((mod.patches || []).some((p) => !inBlk(+p.off, (p.new || "").length >> 1))) {
+      const err = await tablesForPatch();
+      if (err) return setStatus(err, "err");
+    }
     let applied = 0, mism = 0;
     for (const p of mod.patches || []) {
       const nb = hexBytes(p.new), ob = p.old ? hexBytes(p.old) : null;
@@ -1545,6 +1654,10 @@
       }
       if (!edits.length) return setStatus("This patch changes nothing on this disc — it may already be applied.", "warn");
 
+      if (edits.some((e) => !inBlk(e.off, e.bytes.length))) {
+        const err = await tablesForPatch();
+        if (err) return setStatus(err, "err");
+      }
       const outside = edits.filter((e) => !inBlk(e.off, e.bytes.length) && !inAux(e.off, e.bytes.length));
       if (outside.length) {
         const n = outside.reduce((a, e) => a + e.bytes.length, 0);
@@ -1607,7 +1720,7 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; ROOMS = []; ROOMS_SKIPPED = 0; renderLoader(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; resetTables(); renderLoader(); };
     q("#isoSaveBtn").onclick = saveIso;
     q("#isoRecipeBtn").onclick = exportRecipe;
     q("#isoXdeltaBtn").onclick = exportXdelta;
@@ -1680,8 +1793,10 @@
     else if (VIEW === "text") drawText(host);
     else if (VIEW === "balance") drawBalance(host);
     else if (VIEW === "encounter") drawEncounter(host);
-    else if (VIEW === "enemies") drawEnemies(host);
-    else if (VIEW === "war") drawWar(host);
+    // The three views whose data is read on demand. drawEncounter draws its own global
+    // half first — that lives in the ELF block — and gates only the per-area table.
+    else if (VIEW === "enemies") { if (needTables(host)) drawEnemies(host); }
+    else if (VIEW === "war") { if (needTables(host)) drawWar(host); }
     else if (VIEW === "ref") drawReference(host);
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
@@ -3349,7 +3464,8 @@
     pctEl.onchange = () => apply(pctEl.value);
     qa("[data-enc]", host).forEach((b) => (b.onclick = () => apply(+b.dataset.enc)));
     q("#encReset", host).onclick = () => { ENC.sites.forEach((o) => revertRange(o, 4)); sync(orig === null ? 100 : orig); updateDirtyBadge(); };
-    drawRoomRates(q("#encRooms", host));
+    const rhost = q("#encRooms", host);
+    if (needTables(rhost)) drawRoomRates(rhost);
   }
 
   // ---- Per-area base rates ----------------------------------------------------
