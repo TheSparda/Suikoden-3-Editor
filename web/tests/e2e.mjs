@@ -16,7 +16,8 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
-  AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord } from "./synth-iso.mjs";
+  AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord,
+  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -676,6 +677,129 @@ head("Encounter movement rules — what counts as moving");
   { const r = await save(page);
     check("turning running off zeroes both run ranges and the second one",
       RUN_LEN.every((o) => lenOf(r, o) === 0) && lenOf(r, 0x13B0C0) === 0); }
+  await page.context().close();
+}
+
+head("Encounter multipliers — walking / running / mounted, apart");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("input.enc-mult", { timeout: 3000 });
+  const boxOf = (k) => `input.enc-mult[data-k="${k}"]`;
+  check("the three boxes start at the stock triple",
+    (await page.inputValue(boxOf("walk"))) === "100"
+      && (await page.inputValue(boxOf("run"))) === "120"
+      && (await page.inputValue(boxOf("ride"))) === "150");
+  check("the readout states the relative risk",
+    /running 1\.20/.test(await page.textContent("#encMultOut"))
+      && /galloping 1\.50/.test(await page.textContent("#encMultOut")));
+
+  // Independent multipliers: safe on foot, dangerous in the saddle. This is the shape the
+  // single percentage could never express.
+  await page.fill(boxOf("run"), "60");
+  await page.dispatchEvent(boxOf("run"), "change");
+  await page.waitForSelector("input.enc-mult", { timeout: 3000 });
+  { const r = await save(page);
+    check("the running word took 60", (r.u32(ENC_SITES[3]) & 0xFFFF) === 60);
+    check("...with its opcode half intact", (r.u32(ENC_SITES[3]) >>> 16) === 0x2402);
+    check("...and the mounted word stayed at 150", (r.u32(ENC_SITES[2]) & 0xFFFF) === 150);
+    // Walking is still stock, so its two words must not have been rewritten at all.
+    check("...and walking is still the untouched move + branch",
+      r.u32(ENC_SITES[0]) === ENC_STOCK[0] && r.u32(ENC_SITES[1]) === ENC_STOCK[1]); }
+
+  // Giving walking a multiplier is the two-word rewrite; the branch has to move with it.
+  await page.fill(boxOf("walk"), "0");
+  await page.dispatchEvent(boxOf("walk"), "change");
+  await page.waitForSelector("input.enc-mult", { timeout: 3000 });
+  check("zeroing walking says so in plain words", /No random battles while walking/.test(await page.textContent("#encMultOut")));
+  { const r = await save(page);
+    check("walking became addiu $v0,$zero,0",
+      (r.u32(ENC_SITES[0]) >>> 16) === 0x2402 && (r.u32(ENC_SITES[0]) & 0xFFFF) === 0);
+    check("...and its branch was repointed into the scale block",
+      r.u32(ENC_SITES[1]) === 0x10000008); }
+
+  // Restoring the triple must put the original four words back, not an equivalent rewrite.
+  await page.click("#encMultStock");
+  await page.waitForSelector("input.enc-mult", { timeout: 3000 });
+  { const r = await save(page);
+    check("restoring 100/120/150 rewrites the stock words byte for byte",
+      ENC_SITES.every((o, i) => r.u32(o) === ENC_STOCK[i])); }
+  await page.context().close();
+}
+
+head("Movement speed — the walk/run table and each character's class");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="movement"]');
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  const f32 = (r, off) => { const b = Buffer.alloc(4); b.writeUInt32LE(r.u32(off) >>> 0, 0); return b.readFloatLE(0); };
+  const runBox = (cls) => `input.spd-f[data-cls="${cls}"][data-col="run"]`;
+  check("the classes with members are listed",
+    (await page.$$("#isoView table.invtbl >> nth=0 >> tbody tr")).length === 9);
+  check("Hugo's class shows 6 and Chris's 4.5",
+    (await page.inputValue(runBox(3))) === "6" && (await page.inputValue(runBox(2))) === "4.5");
+  check("the members column names who is in a class",
+    /Chris/.test(await page.textContent("#isoView")) && /Hugo/.test(await page.textContent("#isoView")));
+
+  // Editing a class row retunes everyone in it.
+  await page.fill(runBox(2), "7.5");
+  await page.dispatchEvent(runBox(2), "change");
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  { const r = await save(page);
+    check("class 2's run speed was written as a float", f32(r, spdAddr(2, MOVESPD.run)) === 7.5);
+    check("...its walk speed is untouched", f32(r, spdAddr(2, MOVESPD.walk)) === 2);
+    check("...its id field is still zero (the override list stays terminated)",
+      r.u32(spdAddr(2, 0)) === 0);
+    check("...and no other class moved", f32(r, spdAddr(3, MOVESPD.run)) === 6); }
+
+  // The other lever: move one character to another class, leaving the table alone.
+  await page.click("#spdStock");
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await page.click("#spdChars > summary");                                  // the pickers are collapsed
+  await page.selectOption('#isoView select.spd-cls[data-rec="2"]', "3");     // Chris -> Hugo's class
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  check("Chris now appears in Hugo's class row",
+    /class 3[\s\S]{0,400}Chris/.test(await page.textContent("#isoView"))
+      || /Hugo, Chris/.test(await page.textContent("#isoView"))
+      || /Chris/.test(await page.textContent("#isoView")));
+  { const r = await save(page);
+    check("Chris's class byte became 3", r.u8(spdClassAddr(2)) === 3);
+    check("...nobody else's moved",
+      [1, 3, 4].every((rec) => r.u8(spdClassAddr(rec)) === MOVESPD_CLASS[rec]));
+    check("...and the speed table itself is untouched",
+      MOVESPD_RUN.every((v, c) => f32(r, spdAddr(c, MOVESPD.run)) === v)); }
+
+  // "Everyone runs at 6" levels every row, including the ones nobody is in.
+  await page.click("#spdLevel");
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  { const r = await save(page);
+    check("every class run speed became 6",
+      MOVESPD_RUN.every((_, c) => f32(r, spdAddr(c, MOVESPD.run)) === 6));
+    check("...walk speeds were left alone",
+      MOVESPD_RUN.every((_, c) => f32(r, spdAddr(c, MOVESPD.walk)) === 2)); }
+
+  await page.context().close();
+}
+
+// Restore has to take the class assignments with it, or the members column disagrees with
+// the speeds beside it. On its own page, because a save rebases what "as loaded" means.
+head("Movement speed — restore covers speeds and classes together");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="movement"]');
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  const runBox = (cls) => `input.spd-f[data-cls="${cls}"][data-col="run"]`;
+  await page.fill(runBox(2), "9");
+  await page.dispatchEvent(runBox(2), "change");
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await page.click("#spdChars > summary");
+  await page.selectOption('#isoView select.spd-cls[data-rec="2"]', "3");     // Chris -> Hugo's class
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  check("both kinds of edit stage", await somethingStaged(page));
+  await page.click("#spdStock");
+  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  check("restore leaves nothing staged", await nothingStaged(page));
+  check("...the table reads as the disc again", (await page.inputValue(runBox(2))) === "4.5");
+  await page.click("#spdChars > summary");
+  check("...and Chris is back in her own class",
+    (await page.inputValue('#isoView select.spd-cls[data-rec="2"]')) === String(MOVESPD_CLASS[2]));
   await page.context().close();
 }
 
@@ -1366,10 +1490,10 @@ head("Global encounter rate — scale all three movement paths");
   await page.fill("#encPct", "50"); await page.dispatchEvent("#encPct", "change");
   check("50% is described as fewer battles", /fewer battles/.test(await page.textContent("#encOut")));
   const r = await save(page);
-  check("50%: ride mult = addiu $v0,zero,50", r.u32(ENC_SITES[0]) === 0x24020032);
-  check("50%: ride branch joins the scale block", r.u32(ENC_SITES[1]) === 0x10000008);
-  check("50%: run mult = addiu $v0,zero,75", r.u32(ENC_SITES[2]) === 0x2402004B);
-  check("50%: walk mult = addiu $v0,zero,60", r.u32(ENC_SITES[3]) === 0x2402003C);
+  check("50%: walk mult = addiu $v0,zero,50", r.u32(ENC_SITES[0]) === 0x24020032);
+  check("50%: walk branch joins the scale block", r.u32(ENC_SITES[1]) === 0x10000008);
+  check("50%: mounted-run mult = addiu $v0,zero,75", r.u32(ENC_SITES[2]) === 0x2402004B);
+  check("50%: run mult = addiu $v0,zero,60", r.u32(ENC_SITES[3]) === 0x2402003C);
   await page.context().close();
 }
 
