@@ -219,11 +219,15 @@ function avatarList(curId) {
   const wl = REF.fieldAvatars || [];
   const wlSet = new Set(wl);
   const named = (id) => REF.charById[id] || "id " + id + " (guest/NPC)";
+  // Map coverage is the second thing that decides whether a pick works, so it rides on the
+  // same row as the whitelist status rather than being a separate lookup the user has to do.
+  const cover = (id) => { const a = avatarAreaInfo(id);
+    return a ? ` · field model ships in ${a.areas.length}/${a.total} maps${a.areas.length ? ": " + a.areas.join(", ") : ""}` : ""; };
   const list = wl.map((id) => ({ id, name: named(id), cat: "engine default",
-    desc: "the game loads this one itself — shipped and played" }));
+    desc: "the game loads this one itself — shipped and played" + cover(id) }));
   CHAR_LIST.filter((c) => !wlSet.has(c.id)).forEach((c) => list.push({
     id: c.id, name: c.name, cat: "needs ISO patch",
-    desc: "not in the engine's whitelist — widen it on the ISO Editor's Field character section first" }));
+    desc: "not in the engine's whitelist — widen it on the ISO Editor's Field character section first" + cover(c.id) }));
   if (curId && !list.some((c) => c.id === curId))
     list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
   return list;
@@ -466,7 +470,8 @@ function drawSlot() {
         which is exactly the set the game hands you itself. Anyone else needs the ISO Editor's
         <b>Field character</b> section; without it the model request is never made and you keep
         whatever the area already has. Story scripts set this byte at chapter transitions, so a
-        change here holds until the next scene that sets it.</div>
+        change here holds until the next scene that sets it.
+        <div id="leadercover" style="margin:4px 0 0"></div></div>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"
@@ -518,12 +523,23 @@ function drawSlot() {
     cb.classList.toggle("dirty", cb.checked !== was);
   }));
   const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
+  loadAvatarAreas().then(() => {
+    const el = $("#leadercover"); if (!el) return;
+    const a = avatarAreaInfo(+$("#leaderfld").dataset.val);
+    el.textContent = a
+      ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
+      : "";
+  });
   $("#leaderfld").onclick = () => {
     const btn = $("#leaderfld"), cur = +btn.dataset.val;
     openPicker("Field character", avatarList(cur), cur, (id) => {
       btn.dataset.val = id; btn.textContent = charLabel(id);
       btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
       LEADER = id;
+      const el = $("#leadercover"), a = avatarAreaInfo(id);
+      if (el) el.textContent = a
+        ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
+        : "";
     }, (id) => String(id).padStart(3, "0"));
   };
   $("#goldfld").oninput = (e) => {
@@ -753,6 +769,20 @@ let RTEAM = "Hugo";                 // default team applied when a character is 
 let STARS_FILTER = "missing";       // 108-Stars dashboard: all | recruited | missing
 let STARS_KIND = "all";             // all | optional | story
 let RECRUIT_META = null;            // name -> {auto, how}: story auto-join vs optional recruit
+// modelId -> which DATA/*.BIN area archives ship that character's field model. Optional:
+// without it the Field character picker just drops the coverage note.
+let AVATAR_AREAS = null;
+async function loadAvatarAreas() {
+  if (AVATAR_AREAS) return AVATAR_AREAS;
+  try { AVATAR_AREAS = await (await fetch("../Editor/s3_avatar_areas.json")).json(); }
+  catch (e) { AVATAR_AREAS = { archives: [], byModel: {} }; }
+  return AVATAR_AREAS;
+}
+const avatarAreaInfo = (id) => {
+  const m = AVATAR_AREAS && AVATAR_AREAS.byModel && AVATAR_AREAS.byModel[String(id)];
+  if (!m || !Array.isArray(m.areas)) return null;
+  return { areas: m.areas, total: (AVATAR_AREAS.archives || []).length };
+};
 async function loadRecruitMeta() {
   if (RECRUIT_META) return RECRUIT_META;
   try { RECRUIT_META = await (await fetch("../Editor/s3_recruit_meta.json")).json(); }

@@ -144,7 +144,7 @@ the game itself ships one.
    — which for a chapter transition is soon. This is the same caveat the Health tab already
    states ("the game sets the leader itself on story transitions"), now with the mechanism
    behind it. It is not a reason not to ship the edit; it is what the note next to it should say.
-2. **Residency is a real risk, but a smaller one than `ETC_BIN_MODEL_RESEARCH.md` implies.**
+2. **Residency is a real risk, and §6 now measures it.**
    `0x17B7338` streams party members' and guests' field models per area through the same
    resource path, and any recruited character can be brought anywhere after the merge — so the
    engine already loads arbitrary party models in arbitrary areas. What is *not* proven is that
@@ -156,7 +156,85 @@ the game itself ships one.
 4. **Story coherence is out of scope.** The herrvillain Roaming Code's warning applies here too:
    walking into a scripted scene as the wrong character is the game's problem, not the editor's.
 
-## 6. What shipped (v1.61.0)
+## 6. Which maps carry which avatar
+
+Area archives store asset record names as plain text, so `grep` over the disc answers this
+directly. Per-model results are in [`Editor/s3_avatar_areas.json`](../Editor/s3_avatar_areas.json)
+(all 75 battle characters plus the specials, generated from a pristine disc); the eight
+whitelisted avatars:
+
+| character | id | code | area archives | which |
+|---|---|---|---|---|
+| **Hugo** | 1 | `syu1` | **15/28** | CRRA, DKVI, HAKA, HGB1, HNKT, ICEW, KRVI, KSKR, KTDO, LAST, LZVI, SOGE, TSVI, VDZK, ZKTR |
+| **Chris** | 2 | `syu2` | **12/28** | AKMT, CRRA, HGB1, HNKT, ICEW, IKVI, KRVI, LAST, LZVI, MORI, VDZK, ZKTR |
+| **Geddoe** | 3 | `syu3` | **15/28** | AKVI, CRRA, FAKE, HAKA, HGB1, HNKT, ICEW, KRVI, KTDO, LAST, LZVI, MSVI, SOGE, TSVI, ZKTR |
+| **Thomas** | 29 | `thms` | **5/28** | HGB1, HNKT, LAST, RVER, ZKTR |
+| **Koroku** | 54 | `kork` | **6/28** | FAKE, HNKT, ICEW, KTDO, LZVI, RVER |
+| **Luc** | 63 | `look` | **9/28** | AKVI, CVIS, FAKE, HAKA, ICEW, KSKR, LAST, MSVI, ZKTR |
+| **Masked Luc** | 202 | `mask` | **6/28** | CVIS, FAKE, HAKA, KRVI, KSKR, MSVI |
+| **Grasslands Chris** | 203 | `s2hr` | **13/28** | AKMT, AKVI, CRRA, DKVI, HAKA, HGB1, HNKT, ICEW, IKVI, KSKR, LZVI, TSVI, ZKTR |
+
+Across all 82 models the **median is 4 of 28** archives — per-area sets are small and
+purpose-built. `HNKT` carries almost everyone (it is the archive that bundles the cast).
+
+**This predicts a real observation.** Of the nine archives carrying Luc, exactly four lack
+Masked Luc — `AKVI`, `ICEW`, `LAST`, `ZKTR`. On a map in that group Luc walks around normally
+and Masked Luc does not load at all, which is what happens on Plain Amur. Note also that
+**Duck Village (`DKVI`) carries neither**.
+
+**The honest limit of this table.** `ETC.BIN` also carries all 82, and a model already
+resident is not evicted on an area change — so presence is not a guarantee and absence is not
+a verdict. It is the streaming set for that map, which is the strongest signal available
+without running the game. The editor therefore says "ships in N of 28 maps" and never
+"will not work".
+
+## 7. The leader byte is also *whose story this is*
+
+`0x196B3F2` is read at **29 sites and written at none**. Thirteen of the reads are inside EDS
+script-opcode handlers, covering opcodes **6, 7, 16, 26, 27, 40, 50–53, 55, 56, 63, 64, 82,
+83, 88, 310, 324, 345, 346**. They split two ways.
+
+**"The player" resolution.** Ops 26/27 put the leader at the head of the actor list they
+build; op 40 substitutes it when its parameter is 0; ops 55/56 find the camera target by
+matching an EOBJ's model id against it; ops 6/7/50–53 and 88 store it into an actor record.
+This is why a chosen avatar works in cutscenes as well as on the field.
+
+**Story-team dispatch.** Seven sites switch on the leader to pick which team's content loads.
+Six carry only `1, 2, 3, 0x1D, 0xCB` and route everything else to a default. The seventh, at
+**`0x177FEB4`**, is the wide one — it resolves a **team index 0–7** and is the only site that
+gives the non-protagonists an index of their own:
+
+| leader | 1 Hugo | 2 Chris | 3 Geddoe | 0xCB | 0x3F Luc | 0xCA M.Luc | 0x11 | 0x42 Sarah | 0x36 Koroku | *default* |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **index** | 0 | 1 | 2 | 3 | 4 | 4 | 5 | 6 | 7 | **0** |
+
+That index feeds the area's own town-data table (`work->0x12D0`). **Empty dialogue boxes are a
+missing row, not a failed lookup**: as Luc the switch correctly asks for index 4, and a town
+that ships no index-4 content has nothing to show. Sarah has an index here even though she is
+absent from the model whitelist — the engine knows more leaders than it will draw.
+
+### Why the fix is one word
+
+`s0` is zeroed on entry to that switch; the default path only calls the (stubbed) debug printf
+at `0x1712238` and falls into the same tail. **An unrecognised leader therefore resolves to
+index 0 — Hugo.** So retiring a character's case immediate hands it Hugo's story content, with
+no branch surgery and nothing else disturbed. The nine case immediates, byte-verified:
+
+| ISO offset | id | index | character |
+|---|---|---|---|
+| `0x1C76DC` | 1 | 0 | Hugo — the fallback itself |
+| `0x1C76CC` | 2 | 1 | Chris |
+| `0x1C76F0` | 3 | 2 | Geddoe |
+| `0x1C7740` | 0xCB | 3 | Grasslands Chris |
+| `0x1C7724` | 0x3F | 4 | **Luc** |
+| `0x1C7738` | 0xCA | 4 | Masked Luc |
+| `0x1C76F8` | 0x11 | 5 | id 17 |
+| `0x1C770C` | 0x42 | 6 | Sarah |
+| `0x1C771C` | 0x36 | 7 | Koroku |
+
+Writing `0x7FFF` (an id the leader byte cannot hold) into one of these retires that case.
+
+## 8. What shipped (v1.61.0, extended in v1.62.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other
 one is two words.
@@ -174,6 +252,11 @@ immediates in the table above: byte-signature check on `+2,+3`, one button to wi
 to `0x53`, one to restore stock, and — the part worth having — a "currently loadable" readout
 that re-runs the game's own comparison chain over the bytes just written, rather than restating
 what the buttons were supposed to do.
+
+**v1.62.0 added** the per-map coverage from §6 to both tabs (the save picker names how many
+of the 28 area archives ship each character's field model, before you pick) and a **Story
+content** control in the ISO tab that retires a character's case at the `0x177FEB4` switch so
+it falls through to Hugo's index — the empty-dialogue fix from §7.
 
 **Tested by** `web/tests/field-avatar.mjs` (the restated tables against `s3save.py`, the chain
 against both stock and widened immediates, the picker's grouping, and the eight sites against a

@@ -16,7 +16,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
-  AVATAR_SITES, avatarWord } from "./synth-iso.mjs";
+  AVATAR_SITES, avatarWord, STORY_CASES } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -574,6 +574,49 @@ head("Field character — the whitelist that decides who you can walk around as"
     check("the read-only second-half bounds were left alone",
       r.u32(0x1FEDA0) === avatarWord(0x3F, "lt") && r.u32(0x1FEDAC) === avatarWord(0xCC, "lt")
       && r.u32(0x1FEDB4) === avatarWord(0xCA, "lt")); }
+  await page.context().close();
+}
+
+head("Field character — per-map coverage and the story-content switch");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="avatar"]');
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  // Coverage rides on the chip, because "is this character even in the map I am on" is the
+  // second thing that decides whether a pick works and the user cannot check it themselves.
+  { const txt = await page.textContent("#isoView");
+    check("chips report how many maps ship each model", /\d+\/28 maps/.test(txt), (txt.match(/\d+\/28 maps/) || [])[0]);
+    check("Thomas's chip shows his small coverage", /5\/28 maps/.test(txt)); }
+
+  // The story-content control: retiring a case must move that character to Hugo's index.
+  const storyRow = async (id) => {
+    const rows = await page.$$("#isoView table.invtbl tbody tr");
+    for (const tr of rows) {
+      const tds = await tr.$$("td");
+      if ((await tds[0].textContent()).includes("#" + id)) return { tr, tds };
+    }
+    return null; };
+  { const r = await storyRow(63);
+    check("Luc has a story-content row", !!r);
+    check("...defaulting to his own content", (await r.tds[1].$eval("select", (e) => e.value)) === "own");
+    check("...showing his own team index 4", (await r.tds[2].textContent()).trim() === "4"); }
+  await page.selectOption('#isoView select.av-story >> nth=3', "hugo");   // Luc's row
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  { const r = await storyRow(63);
+    check("switching Luc to Hugo's content reports index 0", /0 \(Hugo\)/.test(await r.tds[2].textContent()));
+    const other = await storyRow(54);
+    check("...and leaves Koroku on his own index 7", (await other.tds[2].textContent()).trim() === "7"); }
+  { const r = await save(page);
+    check("Luc's case immediate was retired", (r.u32(0x1C7724) & 0xFFFF) === 0x7FFF);
+    check("...with the opcode half untouched", (r.u32(0x1C7724) >>> 16) === 0x2402);
+    check("every other story case is untouched",
+      STORY_CASES.filter(([o]) => o !== 0x1C7724).every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
+
+  // Restore-stock has to cover the story cases too, or the button half-reverts.
+  await page.click("#avStock");
+  await page.waitForSelector("#avWide", { timeout: 3000 });
+  { const r = await save(page);
+    check("Restore stock returns every story case",
+      STORY_CASES.every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
   await page.context().close();
 }
 

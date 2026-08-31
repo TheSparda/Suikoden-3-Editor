@@ -1,0 +1,1027 @@
+{
+ "_format": "s3avatarareas",
+ "_schema": 1,
+ "_source": "Asset-record names grepped from the pristine SLUS-20387 disc (archives store cha_/imf_/ctx_ names as plain text). An entry lists the DATA/*.BIN area archives whose records include that model's cha_ set.",
+ "_caveat": "Presence in an area archive is not proof the model can be the field avatar there, and absence is not proof it cannot: ETC.BIN also carries every one of these, and a model already resident is not evicted on an area change. Treat it as the streaming set for that map \u2014 the strongest signal available without running the game.",
+ "archives": [
+  "AKMT",
+  "AKVI",
+  "CRRA",
+  "CVIS",
+  "DKVI",
+  "FAKE",
+  "GDOP",
+  "HAKA",
+  "HGB1",
+  "HGB2",
+  "HNKT",
+  "ICEW",
+  "IKVI",
+  "KRVI",
+  "KSKR",
+  "KTDO",
+  "LAST",
+  "LKOE",
+  "LZVI",
+  "MORI",
+  "MSVI",
+  "RVER",
+  "SKBN",
+  "SOGE",
+  "TSVI",
+  "VDZK",
+  "YMMT",
+  "ZKTR"
+ ],
+ "etcBin": [
+  "acee",
+  "alns",
+  "arma",
+  "armb",
+  "ayam",
+  "bell",
+  "biki",
+  "bity",
+  "bols",
+  "brit",
+  "bzba",
+  "cecl",
+  "ddga",
+  "ddgb",
+  "ddgc",
+  "deco",
+  "dgns",
+  "duke",
+  "dyup",
+  "elin",
+  "fred",
+  "frms",
+  "futi",
+  "gauu",
+  "guli",
+  "gyom",
+  "hole",
+  "hrec",
+  "jack",
+  "jimb",
+  "jyan",
+  "kbki",
+  "kkmz",
+  "kmrj",
+  "kork",
+  "lead",
+  "leoo",
+  "lett",
+  "lily",
+  "loll",
+  "look",
+  "lulu",
+  "lusi",
+  "mask",
+  "meru",
+  "mgcd",
+  "mgcg",
+  "mktt",
+  "mlvl",
+  "mria",
+  "mskr",
+  "mstk",
+  "naru",
+  "nash",
+  "nicl",
+  "pikr",
+  "psvl",
+  "quen",
+  "riko",
+  "rnbl",
+  "s2hr",
+  "sams",
+  "sarm",
+  "sera",
+  "ssly",
+  "syu1",
+  "syu2",
+  "syu3",
+  "tato",
+  "thms",
+  "tiba",
+  "undo",
+  "watl",
+  "wghd",
+  "wild",
+  "yuba",
+  "ziba",
+  "ztor"
+ ],
+ "byModel": {
+  "1": {
+   "code": "syu1",
+   "name": "Hugo",
+   "areas": [
+    "CRRA",
+    "DKVI",
+    "HAKA",
+    "HGB1",
+    "HNKT",
+    "ICEW",
+    "KRVI",
+    "KSKR",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "SOGE",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "2": {
+   "code": "syu2",
+   "name": "Chris",
+   "areas": [
+    "AKMT",
+    "CRRA",
+    "HGB1",
+    "HNKT",
+    "ICEW",
+    "IKVI",
+    "KRVI",
+    "LAST",
+    "LZVI",
+    "MORI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "3": {
+   "code": "syu3",
+   "name": "Geddoe",
+   "areas": [
+    "AKVI",
+    "CRRA",
+    "FAKE",
+    "HAKA",
+    "HGB1",
+    "HNKT",
+    "ICEW",
+    "KRVI",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "MSVI",
+    "SOGE",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "4": {
+   "code": "lusi",
+   "name": "Lucia",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "ICEW",
+    "KRVI",
+    "LAST",
+    "LZVI",
+    "SOGE",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "5": {
+   "code": "fred",
+   "name": "Fred",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "DKVI",
+    "HAKA",
+    "HNKT",
+    "LAST",
+    "MORI",
+    "TSVI"
+   ]
+  },
+  "6": {
+   "code": "riko",
+   "name": "Rico",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "DKVI",
+    "HAKA",
+    "HNKT",
+    "LAST",
+    "MORI",
+    "TSVI"
+   ]
+  },
+  "7": {
+   "code": "biki",
+   "name": "Viki",
+   "areas": [
+    "HNKT",
+    "YMMT"
+   ]
+  },
+  "8": {
+   "code": "guli",
+   "name": "Fubar",
+   "areas": [
+    "HNKT",
+    "KRVI",
+    "KSKR",
+    "LAST",
+    "LZVI",
+    "MORI",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "9": {
+   "code": "dgns",
+   "name": "Sgt. Joe",
+   "areas": [
+    "DKVI",
+    "HAKA",
+    "HNKT",
+    "KRVI",
+    "KSKR",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "10": {
+   "code": "lulu",
+   "name": "Lulu",
+   "areas": [
+    "KRVI",
+    "KTDO",
+    "LAST",
+    "SOGE",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "11": {
+   "code": "deco",
+   "name": "Aila",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HNKT",
+    "KRVI",
+    "KSKR",
+    "LAST",
+    "MSVI",
+    "SOGE",
+    "YMMT"
+   ]
+  },
+  "13": {
+   "code": "loll",
+   "name": "Roland",
+   "areas": [
+    "HNKT",
+    "IKVI",
+    "KRVI",
+    "LAST",
+    "ZKTR"
+   ]
+  },
+  "14": {
+   "code": "lily",
+   "name": "Lilly",
+   "areas": [
+    "DKVI",
+    "HGB1",
+    "HNKT",
+    "KSKR",
+    "LZVI",
+    "ZKTR"
+   ]
+  },
+  "15": {
+   "code": "lead",
+   "name": "Reed",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "KSKR",
+    "LZVI",
+    "ZKTR"
+   ]
+  },
+  "16": {
+   "code": "sams",
+   "name": "Samus",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "KSKR",
+    "LZVI",
+    "ZKTR"
+   ]
+  },
+  "17": {
+   "code": "acee",
+   "name": "Ace",
+   "areas": [
+    "CRRA",
+    "DKVI",
+    "FAKE",
+    "HAKA",
+    "HNKT",
+    "KRVI",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "MSVI",
+    "SOGE",
+    "TSVI",
+    "VDZK",
+    "YMMT",
+    "ZKTR"
+   ]
+  },
+  "18": {
+   "code": "leoo",
+   "name": "Leo",
+   "areas": [
+    "HNKT",
+    "IKVI",
+    "LAST",
+    "LZVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "19": {
+   "code": "bity",
+   "name": "Beecham",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "KRVI",
+    "LZVI",
+    "SOGE",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "20": {
+   "code": "psvl",
+   "name": "Percival",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "IKVI",
+    "LAST",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "21": {
+   "code": "bols",
+   "name": "Borus",
+   "areas": [
+    "AKMT",
+    "HNKT",
+    "IKVI",
+    "KRVI",
+    "LAST",
+    "SOGE",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "22": {
+   "code": "quen",
+   "name": "Queen",
+   "areas": [
+    "CRRA",
+    "DKVI",
+    "FAKE",
+    "HAKA",
+    "HNKT",
+    "KRVI",
+    "LAST",
+    "LZVI",
+    "MSVI",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "23": {
+   "code": "jack",
+   "name": "Jacques",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HAKA",
+    "HNKT",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "MSVI",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "24": {
+   "code": "tiba",
+   "name": "Joker",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HAKA",
+    "HNKT",
+    "KRVI",
+    "KSKR",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "MSVI",
+    "SOGE",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "25": {
+   "code": "duke",
+   "name": "Duke",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HNKT",
+    "KTDO"
+   ]
+  },
+  "26": {
+   "code": "gauu",
+   "name": "Gau",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HNKT",
+    "KTDO"
+   ]
+  },
+  "27": {
+   "code": "elin",
+   "name": "Elaine",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HNKT",
+    "KTDO"
+   ]
+  },
+  "28": {
+   "code": "nicl",
+   "name": "Nicolas",
+   "areas": [
+    "CRRA",
+    "FAKE",
+    "HNKT",
+    "KTDO"
+   ]
+  },
+  "29": {
+   "code": "thms",
+   "name": "Thomas",
+   "areas": [
+    "HGB1",
+    "HNKT",
+    "LAST",
+    "RVER",
+    "ZKTR"
+   ]
+  },
+  "30": {
+   "code": "cecl",
+   "name": "Cecile",
+   "areas": [
+    "HNKT",
+    "LAST",
+    "RVER",
+    "ZKTR"
+   ]
+  },
+  "31": {
+   "code": "futi",
+   "name": "Futch",
+   "areas": [
+    "CRRA",
+    "HNKT",
+    "YMMT"
+   ]
+  },
+  "32": {
+   "code": "brit",
+   "name": "Bright",
+   "areas": [
+    "CRRA",
+    "HNKT",
+    "YMMT"
+   ]
+  },
+  "34": {
+   "code": "dyup",
+   "name": "Dupa",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "IKVI",
+    "LAST",
+    "LZVI",
+    "SOGE",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "35": {
+   "code": "ziba",
+   "name": "Shiba",
+   "areas": [
+    "HNKT",
+    "IKVI",
+    "LZVI"
+   ]
+  },
+  "36": {
+   "code": "bzba",
+   "name": "Bazba",
+   "areas": [
+    "HNKT",
+    "LZVI",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "40": {
+   "code": "ssly",
+   "name": "Sasarai",
+   "areas": [
+    "CRRA",
+    "CVIS",
+    "HNKT",
+    "LAST",
+    "TSVI"
+   ]
+  },
+  "41": {
+   "code": "mstk",
+   "name": "Franz",
+   "areas": [
+    "FAKE",
+    "HNKT",
+    "MSVI",
+    "TSVI",
+    "YMMT"
+   ]
+  },
+  "42": {
+   "code": "mskr",
+   "name": "Ruby",
+   "areas": [
+    "HNKT",
+    "MSVI",
+    "TSVI"
+   ]
+  },
+  "44": {
+   "code": "ayam",
+   "name": "Ayame",
+   "areas": [
+    "HNKT",
+    "KTDO"
+   ]
+  },
+  "45": {
+   "code": "sarm",
+   "name": "Salome",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "KRVI",
+    "KTDO",
+    "LAST",
+    "LZVI",
+    "SOGE",
+    "TSVI",
+    "VDZK",
+    "ZKTR"
+   ]
+  },
+  "46": {
+   "code": "watl",
+   "name": "Watari",
+   "areas": [
+    "HNKT",
+    "IKVI",
+    "KTDO"
+   ]
+  },
+  "47": {
+   "code": "mlvl",
+   "name": "Melville",
+   "areas": [
+    "HNKT",
+    "KTDO",
+    "LZVI",
+    "VDZK"
+   ]
+  },
+  "48": {
+   "code": "alns",
+   "name": "Alanis",
+   "areas": [
+    "HNKT",
+    "KTDO",
+    "LZVI",
+    "VDZK"
+   ]
+  },
+  "49": {
+   "code": "wild",
+   "name": "Wilder",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "TSVI"
+   ]
+  },
+  "50": {
+   "code": "lett",
+   "name": "Rhett",
+   "areas": [
+    "DKVI",
+    "HNKT",
+    "TSVI"
+   ]
+  },
+  "51": {
+   "code": "nash",
+   "name": "Nash",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "CVIS",
+    "HAKA",
+    "HNKT",
+    "IKVI",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "52": {
+   "code": "bell",
+   "name": "Belle",
+   "areas": [
+    "HNKT",
+    "ZKTR"
+   ]
+  },
+  "53": {
+   "code": "meru",
+   "name": "Mel",
+   "areas": [
+    "HNKT",
+    "IKVI"
+   ]
+  },
+  "54": {
+   "code": "kork",
+   "name": "Koroku",
+   "areas": [
+    "FAKE",
+    "HNKT",
+    "ICEW",
+    "KTDO",
+    "LZVI",
+    "RVER"
+   ]
+  },
+  "55": {
+   "code": "jyan",
+   "name": "Juan",
+   "areas": [
+    "HNKT",
+    "RVER"
+   ]
+  },
+  "56": {
+   "code": "gyom",
+   "name": "Guillaume",
+   "areas": [
+    "HNKT",
+    "KSKR",
+    "KTDO",
+    "VDZK"
+   ]
+  },
+  "57": {
+   "code": "pikr",
+   "name": "Piccolo",
+   "areas": [
+    "HNKT"
+   ]
+  },
+  "58": {
+   "code": "kmrj",
+   "name": "Mua",
+   "areas": [
+    "HNKT",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "59": {
+   "code": "arma",
+   "name": "Yuiri",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "HNKT",
+    "ZKTR"
+   ]
+  },
+  "60": {
+   "code": "armb",
+   "name": "Yumi",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "HNKT",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "61": {
+   "code": "jimb",
+   "name": "Jimba",
+   "areas": [
+    "ICEW",
+    "IKVI",
+    "KRVI",
+    "LZVI",
+    "ZKTR"
+   ]
+  },
+  "62": {
+   "code": "kkmz",
+   "name": "Gadget Z",
+   "areas": [
+    "HNKT",
+    "ZKTR"
+   ]
+  },
+  "63": {
+   "code": "look",
+   "name": "Luc",
+   "areas": [
+    "AKVI",
+    "CVIS",
+    "FAKE",
+    "HAKA",
+    "ICEW",
+    "KSKR",
+    "LAST",
+    "MSVI",
+    "ZKTR"
+   ]
+  },
+  "65": {
+   "code": "yuba",
+   "name": "Yuber",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "CRRA",
+    "HAKA",
+    "ICEW",
+    "KRVI",
+    "KSKR",
+    "LAST",
+    "SOGE",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "66": {
+   "code": "sera",
+   "name": "Sarah",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "FAKE",
+    "HAKA",
+    "ICEW",
+    "KRVI",
+    "KSKR",
+    "LAST",
+    "LZVI",
+    "MSVI",
+    "SOGE",
+    "ZKTR"
+   ]
+  },
+  "67": {
+   "code": "ddga",
+   "name": "Nei",
+   "areas": [
+    "HNKT",
+    "VDZK"
+   ]
+  },
+  "68": {
+   "code": "ddgb",
+   "name": "Toppo",
+   "areas": [
+    "HNKT",
+    "VDZK"
+   ]
+  },
+  "69": {
+   "code": "ddgc",
+   "name": "Shabon",
+   "areas": [
+    "HNKT",
+    "VDZK"
+   ]
+  },
+  "70": {
+   "code": "hrec",
+   "name": "Hallec",
+   "areas": [
+    "HNKT",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "71": {
+   "code": "undo",
+   "name": "Kenji",
+   "areas": [
+    "HGB1",
+    "HNKT"
+   ]
+  },
+  "72": {
+   "code": "hole",
+   "name": "Twaikin",
+   "areas": [
+    "HNKT",
+    "LZVI"
+   ]
+  },
+  "73": {
+   "code": "naru",
+   "name": "Augustine",
+   "areas": [
+    "HNKT",
+    "VDZK"
+   ]
+  },
+  "74": {
+   "code": "wghd",
+   "name": "Landis",
+   "areas": [
+    "HNKT"
+   ]
+  },
+  "75": {
+   "code": "frms",
+   "name": "Sanae Y",
+   "areas": [
+    "DKVI",
+    "HNKT"
+   ]
+  },
+  "76": {
+   "code": "mria",
+   "name": "Sharon",
+   "areas": [
+    "CRRA",
+    "HNKT"
+   ]
+  },
+  "77": {
+   "code": "kbki",
+   "name": "Viki (Young)",
+   "areas": [
+    "HNKT",
+    "YMMT"
+   ]
+  },
+  "78": {
+   "code": "ztor",
+   "name": "Edge",
+   "areas": [
+    "HNKT",
+    "MSVI"
+   ]
+  },
+  "79": {
+   "code": "tato",
+   "name": "Wan Fu",
+   "areas": [
+    "HNKT",
+    "TSVI"
+   ]
+  },
+  "80": {
+   "code": "mgcg",
+   "name": "Estella",
+   "areas": [
+    "AKVI",
+    "HNKT"
+   ]
+  },
+  "81": {
+   "code": "mgcd",
+   "name": "Rody",
+   "areas": [
+    "AKVI",
+    "HNKT"
+   ]
+  },
+  "82": {
+   "code": "rnbl",
+   "name": "Emily",
+   "areas": [
+    "HNKT",
+    "TSVI"
+   ]
+  },
+  "202": {
+   "code": "mask",
+   "name": "Masked Luc",
+   "areas": [
+    "CVIS",
+    "FAKE",
+    "HAKA",
+    "KRVI",
+    "KSKR",
+    "MSVI"
+   ]
+  },
+  "203": {
+   "code": "s2hr",
+   "name": "Grasslands Chris",
+   "areas": [
+    "AKMT",
+    "AKVI",
+    "CRRA",
+    "DKVI",
+    "HAKA",
+    "HGB1",
+    "HNKT",
+    "ICEW",
+    "IKVI",
+    "KSKR",
+    "LZVI",
+    "TSVI",
+    "ZKTR"
+   ]
+  },
+  "204": {
+   "code": "mktt",
+   "name": "Masked Kidd",
+   "areas": [
+    "DKVI"
+   ]
+  },
+  "210": {
+   "code": "koit",
+   "name": "Koichi",
+   "areas": []
+  },
+  "211": {
+   "code": "koni",
+   "name": "Connie",
+   "areas": []
+  },
+  "212": {
+   "code": "kosn",
+   "name": "Kosanji",
+   "areas": []
+  },
+  "213": {
+   "code": "kogr",
+   "name": "Kogoro",
+   "areas": []
+  }
+ }
+}
