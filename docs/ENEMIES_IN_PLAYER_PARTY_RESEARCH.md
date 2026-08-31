@@ -40,10 +40,17 @@ loaded** (see `Editor/Suikoden3_ISO_offsets.md`, "ENEMY STATS — FOUND").
 
 ## 2. Class A — bosses are already party-able (no new mechanism needed)
 
-Active-party composition is 6 × u16 char ids at save offset **0x3216**, "ids in the exe list1
-space" (`Editor/s3save.py:89`). Nothing in the write path restricts the value
-(`apply_edits_to_gamedata` just clamps to u16), and the picker is built from *all 79* list1
-names (`web/app.js` → `REF.charById`), Luc / Yuber / Sarah included.
+Active-party composition is 6 × u16 ids at save offset **0x3216**. Nothing in the write path
+restricts the value (`apply_edits_to_gamedata` just clamps to u16), and the picker offers every
+battle character, Luc / Yuber / Sarah included.
+
+> **Correction (2026-08-30).** This section originally said those ids are "in the exe list1
+> space", repeating what `s3save.py` claimed at the time. They are not: `0x3216` holds a third
+> numbering (`s3save.PARTY_IDS` — the reference's *Party Modifier digits*), which agrees with
+> list1 only for Hugo…Aila. Luc is list1 57 but party id **63**, Yuber 58 → **65**, Sarah
+> 59 → **66**. The reasoning below is unaffected — every id named here has one — but any code
+> that writes a party slot must go through `s3save.party_id_of()`. See
+> `Editor/Suikoden3_ISO_offsets.md`, "The party list is a THIRD id space".
 
 Those characters are not stubs. Each has:
 
@@ -79,7 +86,8 @@ until someone boots it.
 
 Each of these alone is fatal; there is no ordering that avoids them.
 
-1. **No addressable identity.** Party slots hold list1 ids. Monster ids are 501–599 and resolve
+1. **No addressable identity.** Party slots hold party ids (`s3save.PARTY_IDS`, max 0xD7).
+   Monster ids are 501–599 and resolve
    down a different branch of `0x16C6D08`. Writing 501 into a party slot indexes the character
    lut out of range.
 2. **No persistent record.** A monster's 0x8C stat record lives *inside an area pack*
@@ -170,8 +178,8 @@ The Suikosource data agrees: `skills.txt` gives him one support skill, *Discount
 "Dios doesn't do anything in the castle."
 
 **So there is no id that means "Dios" in the party's id space.** Party slots at 0x3216 hold
-*list1* ids; support stars live in a disjoint 34-entry table. Writing 33 there gives you
-**Shiba** (list1 33), not Dios. His save block is roster index **107**, past the editor's
+*party* ids (`s3save.PARTY_IDS`); support stars live in a disjoint 34-entry table. Writing 33
+there gives you **Bazba** (party id 33 is list1 34), not Dios. His save block is roster index **107**, past the editor's
 `CHAR_COUNT = 100` decode window and past the ~99 blocks the offset map documents — the Save
 Editor doesn't even surface him as a character.
 
