@@ -248,6 +248,8 @@ def main():
     _raw = open(path, "rb").read()[_o:_o + _n].split(b"\x00")[0]
     check("edit to a full-width name stays full-width Shift-JIS", any(byte >= 0x80 for byte in _raw))
     check("party slot persisted", s2["party"][1] == 63)
+    check("party slot 1 names the character it was set to (Luc, party id 63)",
+          s3save.party_name(s2["party"][1]) == "Luc", s3save.party_name(s2["party"][1]))
     check("recruit persisted (recruited + recruiter)", r1["recruited"] and r1["recruiter"] == "Chris")
     check("checksum invariant holds after write", sum_words(open(path, "rb").read()) == 0)
 
@@ -324,6 +326,54 @@ def main():
         check("unrecognized file is rejected", False, "no exception raised")
     except Exception:
         check("unrecognized file is rejected (raises; web layer reports it)", True)
+
+    # --- the party id space -------------------------------------------------
+    # 0x3216 and the leader byte at 0x12 hold PARTY_IDS values, which are neither the exe
+    # list1 ids nor the record id at block +0x0C. Both wrong readings are self-consistent —
+    # the editor shows back what you picked while the game loads someone else — so the
+    # divergences are pinned here rather than left to a plausible-looking refactor.
+    print("Party id space:")
+    check("PARTY_IDS covers the 75 roster slots that have a character block",
+          len(s3save.PARTY_IDS) == 75)
+    check("PARTY_IDS is 1:1", len(set(s3save.PARTY_IDS)) == len(s3save.PARTY_IDS))
+    check("PARTY_IDS rises with roster order",
+          all(b > a for a, b in zip(s3save.PARTY_IDS, s3save.PARTY_IDS[1:])))
+    check("every party id round-trips back to its roster slot",
+          all(s3save.party_roster_index(s3save.party_id_of(ri)) == ri
+              for ri in range(len(s3save.PARTY_IDS))))
+    # Hugo..Aila (roster 0-10) are the run where all three id spaces happen to agree.
+    check("Hugo..Aila are rosterIndex+1 in the party space",
+          s3save.PARTY_IDS[:11] == list(range(1, 12)))
+    # The four documented divergences, by name, from the reference's Party Modifier digits.
+    for ri, want in ((11, 13), (30, 32), (47, 54), (74, 82)):
+        check("%s is party id %d" % (s3save.ROSTER[ri], want),
+              s3save.party_id_of(ri) == want)
+    # The bug this table fixes: neither of the other two ids a character carries addresses
+    # him in a party slot — Bright's list1 id (31) loads Futch, his record id (73) Augustine.
+    bright = s3save.ROSTER.index("Bright")
+    check("Bright's party id differs from his list1 id",
+          s3save.party_id_of(bright) != bright + 1)
+    check("Bright's party id differs from his record id",
+          s3save.party_id_of(bright) != s3save.ROSTER_IDS[bright])
+    check("Bright's list1 id names Futch in the party space",
+          s3save.party_name(bright + 1) == "Futch", s3save.party_name(bright + 1))
+    check("Bright's record id names someone else in the party space",
+          s3save.party_name(s3save.ROSTER_IDS[bright]) not in ("", "Bright"),
+          s3save.party_name(s3save.ROSTER_IDS[bright]))
+    # Ids a save can legitimately carry that have no character block of their own.
+    check("Koroku's dogs are named but not pickable",
+          s3save.party_name(0xD2) == "Koichi" and 0xD2 not in s3save.PARTY_IDS)
+    check("the Special Characters are named", s3save.party_name(0xCA) == "Masked Luc")
+    check("an id the reference does not name stays unnamed", s3save.party_name(0x1234) == "")
+
+    # A party edit writes the party id verbatim, and re-decodes as that character.
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+                            party_edits={2: s3save.party_id_of(bright)})
+    s3 = s3save.read_all_s3_saves(path)[0]
+    check("staging Bright writes his party id (32), not 31 or 73", s3["party"][2] == 32)
+    check("...and re-decodes as Bright", s3save.party_name(s3["party"][2]) == "Bright")
+    check("checksum invariant holds after the party write",
+          sum_words(open(path, "rb").read()) == 0)
 
     # --- memory-card ECC helper (used when writing .ps2 cards) ---
     print("Memory-card ECC helper:")
