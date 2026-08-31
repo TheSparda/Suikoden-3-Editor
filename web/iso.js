@@ -431,12 +431,49 @@
       growth: { HP: 0.5, PWR: 0.55, MAG: 0.55, SKL: 0.7, MDF: 0.7, SPD: 0.85, REP: 0.85, LUK: 1 }, spell: 0.6, unite: 0.6 },
   };
 
-  const ELEMENTS = { 0: "None", 1: "Fire", 2: "Water", 3: "Wind", 4: "Earth", 5: "Lightning", 6: "Pale (Dark)" };
+  // The spell "element" byte is really a magic FAMILY, and 1..5 are proven outright: every one of
+  // those 32 spells opens its description with the matching "<X> MGC." prefix (Fire 8/8, Water 6/6,
+  // Wind 6/6, Earth 6/6, Lightning 6/6). 6 is the Pale Gate rune's four spells. 7..10 carry no
+  // "MGC." prefix because they aren't elemental at all — each is exactly one rune's spell set:
+  //   7  Sword of Rage / Thunder / Cyclone + the Fire / Thunder / Wind Amulets   (6 spells)
+  //   8  Song of Skylark / Serenity / Madness / a Hero — the Jongleur rune       (4 spells)
+  //   9  Battle Oath / Great Blessing / Battlefield — the Shield rune            (4 spells)
+  //   10 Ready! / Set! / Go! — the Blinking rune                                (3 spells)
+  // Before these were named the Spells tab rendered a bare "undefined" for 17 of the 94 records,
+  // so unknown values now fall back to a readable label instead of leaking undefined into the UI.
+  const ELEMENTS = { 0: "None", 1: "Fire", 2: "Water", 3: "Wind", 4: "Earth", 5: "Lightning", 6: "Pale (Dark)",
+    7: "Enhance (Sword/Amulet)", 8: "Song (Jongleur)", 9: "Blessing (Shield)", 10: "Blinking" };
+  const elemName = (v) => ELEMENTS[v] || `Family ${v}`;
   const AREA_BIT = 0x8000;                  // flags14 bit15 = area-of-effect
   const F18_BITS = { 1: "poison", 3: "instant-death", 4: "unbalance", 9: "teleport/chant",
     10: "sleep", 13: "silence/berserk", 14: "mgc-boost", 15: "mgc-shield", 19: "mgc-immune-once",
     21: "buff-pdf/mdf", 22: "sword-fire", 23: "sword-lightning", 24: "sword-wind",
     25: "resist-fire", 26: "resist-lightning", 27: "resist-wind" };
+  // Same bits in plain language, for the checkbox editor. flags18 is a bit SET, not an enum —
+  // the full heal/restore spells carry 0x1DE7 (restore HP + clear every status at once) — so the
+  // editor has to be able to author and preserve combinations. The mask is shown beside each
+  // label for anyone cross-referencing Editor/Suikoden3_ISO_offsets.md.
+  const F18_TEXT = { 1: "inflicts poison", 3: "instant death", 4: "unbalances the target",
+    9: "teleport / chant speed", 10: "puts the target to sleep",
+    13: "silence / berserk", 14: "raises MGC", 15: "magic shield (one hit)",
+    19: "immune to magic once", 21: "raises PDF/MDF", 22: "adds fire damage to physical attacks",
+    23: "adds lightning damage to physical attacks", 24: "adds wind damage to physical attacks",
+    25: "resists fire", 26: "resists lightning", 27: "resists wind" };
+  // Sword-enhance and elemental-resist bits, in the order the runes that grant them appear.
+  // Used to explain a rune's effect in the Runes browser without the reader knowing bit numbers.
+  const F18_ORDER = Object.keys(F18_BITS).map(Number).sort((a, b) => a - b);
+  // What the engine fixes and data cannot move: strength and duration. Stated up front so nobody
+  // goes looking for a "sleep lasts N turns" field — a full search found only description and
+  // debug strings (see the offsets doc, "Status strength/duration").
+  const F18_NOTE = "Which element or status an effect applies is data and editable here. " +
+    "How much it is WORTH is a code constant, editable under \u201cStatus effect strength\u201d on the " +
+    "Spells tab \u2014 but globally, not per rune. How long it lasts still isn\u2019t reachable.";
+  const decodeF18Plain = (v) => {
+    if (!v) return "no status effect";
+    const out = [];
+    for (let b = 0; b < 32; b++) if ((v >>> b) & 1) out.push(F18_TEXT[b] || F18_BITS[b] || `unknown bit ${b}`);
+    return out.length > 6 ? "restores HP and clears all status" : out.join(", ");
+  };
   const RANK_OPTS = [[0, "— (not learned)"], [1, "E"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [7, "A+"], [8, "S"]];
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
   const MAX_BY_GRADE = {}; MAX_OPTS.forEach(([v, l]) => (MAX_BY_GRADE[l] = v));   // "B+"->5, "A+"->1, "S"->7
@@ -451,8 +488,28 @@
   // spell carrying it is a self-centred burst — War Horse (Cecile), Watari Special ("Explosion.
   // DMGx1.5 to foes in area") and Goss (the axe swing) — and their descriptions say "to foes in
   // area" where the aimed area spells at 0x82 all say "to TARGET+foes in area".
+  // Three more bytes the disc actually uses were missing from this list, so 15 of the 94 spells
+  // showed as "custom 0xNN" and could only be changed by picking a different targeting mode
+  // altogether. All three are read straight off the bit meanings above and confirmed by every
+  // description that carries them — no guesswork, and the counts are exhaustive for a pristine
+  // SLUS-20387 (the nine bytes below are the complete set in use across all 94 spells):
+  //   0x05 = 0x04|0x01  caster-centred + ally side -> the CHANTER ALONE. 7 spells, and all seven
+  //          say so: "Enhances chanter's direct ATK with fire MGC.", "Raises chanter's fire
+  //          resistance." (x6 Sword/Amulet) plus Wrath, a self-heal ("Heals half of lost HP").
+  //   0x09 = 0x08|0x01  aim one unit + ally side -> ONE ALLY. 2 spells, both explicit: Healing
+  //          Wind "Restores 300HP+status of 1 ally", Mother Ocean "Restore 1 ally's HP+status".
+  //   0x12 = 0x10|0x02  line/front + foe side -> a LINE of foes through the target. 6 spells, all
+  //          six say it: "to target+foes in front" (Thunder Runner, Sickle-Weasel, Unicorn),
+  //          "to target+foes in line" (Shining Wind, Shining Wing), "target+LOS foes beyond"
+  //          (Furious Blow) — and each carries a non-zero radius, which the single-target 0x0A
+  //          spells never do.
   const TARGET_OPTS = [[0x0A, "Single target"], [0x02, "All foes"], [0x03, "All foes + allies"],
-    [0x01, "All allies"], [0x41, "Single ally (pair)"], [0x06, "Foes around caster"]];
+    [0x01, "All allies"], [0x09, "Single ally"], [0x41, "Single ally (pair)"],
+    [0x05, "Caster only (chanter)"], [0x12, "Line of foes (target + behind)"],
+    [0x06, "Foes around caster"]];
+  // Every target byte a pristine disc uses. The Spells tab must never show "custom" on a stock
+  // ISO; a regression here means a byte lost its name again (see tests/validate.mjs).
+  const TARGET_BYTES_IN_USE = [0x01, 0x02, 0x03, 0x05, 0x06, 0x09, 0x0A, 0x12, 0x41];
 
   // gear effect-slot semantics (mirror s3patch.py)
   const GEAR_EFFECT_TYPES = { 0: "(none)", 1: "HP regen/turn", 2: "Stat bonus", 3: "Accuracy +%",
@@ -632,6 +689,7 @@
     return dec.decode(BUF.subarray(rel, e));
   }
   const vaOff = (v) => v - ELF_VADDR + ELF_BASE;                 // vaddr -> absolute file offset
+  const offVa = (o) => o - ELF_BASE + ELF_VADDR;                 // and back
   const latin1Enc = (s) => { const o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); o[i] = c < 256 ? c : 63; } return o; };
   function writeBytes(off, bytes) { for (let i = 0; i < bytes.length; i++) if (inBlk(off + i, 1)) { recByte(off - ELF_BASE + i); BUF[off - ELF_BASE + i] = bytes[i]; } }
   // decode a null-terminated string from a given block copy (BUF or ORIG), bounded by maxlen
@@ -645,6 +703,87 @@
     const rel = vaOff(dptr) - ELF_BASE; if (rel < 0 || rel >= ORIG.length) return 0;
     let e = ORIG.indexOf(0, rel); if (e < 0) e = rel; return e - rel;
   }
+  // ---- descriptions stored twice ---------------------------------------------
+  // 27 descriptions on this disc live at TWO addresses, each pointed at by a different table:
+  // the 20 attack runes (RUNE_TBL's desc + the spell record of the attack the rune grants) and
+  // the 7 magic scrolls (the item's desc + the spell the scroll casts). Editing one copy left
+  // the other stale — issue #11, where a Kite rune description edit never showed in game. The
+  // game's rune menu resolves an item description through getDesc (VA 0x16DBE48) -> itemRecord
+  // (VA 0x16DBCD8), which maps ids 317..462 to RUNE_TBL and reads +4, so RUNE_TBL's copy is the
+  // one that matters there; the Text tab happened to list the *spell* copy first (0x4232E8 <
+  // 0x424F20 for Kite), which is the copy a reader would pick. Rather than expect anyone to
+  // know which of two identical rows is which, every description write now writes both.
+  //
+  // The index is built from the pointer TABLES, never by matching text across the ELF: two
+  // unrelated UI strings that happen to read alike must not become aliases. Verified on a
+  // pristine SLUS-20387: 27 groups, exactly 2 copies each, and every pair has the same slot
+  // length, so a mirrored write can never overflow one copy while fitting the other.
+  //
+  // The five item-record bands come from the disc's own dispatcher at VA 0x16DBCD8, which is
+  // also where the two bands the editor has no view for (463..514 stride 0x14, 515..612 stride
+  // 0x10) are documented. Every band uses name @+0, desc @+4.
+  const DESC_BANDS = [
+    [1, 160, 0x3E8CBC, 0x24],       // consumables, scrolls, herbs
+    [161, 316, 0x3D8684, 0x44],     // weapons / armour / shields / accessories
+    [317, 462, 0x3EAF78, 0x20],     // runes — the same table as RUNE_TBL
+    [463, 514, 0x3EEB4C, 0x14],     // statues, fruit
+    [515, 612, 0x3E6680, 0x10],     // hammers, quest items
+  ];
+  // Two copies are only treated as one string when they are reached from DIFFERENT tables. That
+  // is the actual mechanism — a description is duplicated because two tables each want their own
+  // copy — and the restriction matters: within a single table, repeated text is just repeated
+  // text and linking it would make editing one spell silently rewrite three others. On a
+  // pristine disc the cross-table rule finds all 27 real groups and nothing else (0 same-table
+  // groups), every group is exactly 2 copies, and every pair shares its slot length.
+  let DESC_ALIAS = null;            // Map<fileOff, fileOff[]> — every offset holding that string
+  function descAlias() {
+    if (DESC_ALIAS) return DESC_ALIAS;
+    const byText = new Map(), tableOf = new Map();
+    const note = (table, va) => {
+      if (!va) return;
+      const off = vaOff(va), len = origSlotLen(va);
+      if (len <= 0 || !inBlk(off, len)) return;
+      const t = strFrom(ORIG, off, len);        // keyed on the ORIGINAL text so the index is
+      if (!t) return;                           // stable no matter what is staged on top of it
+      let a = byText.get(t); if (!a) byText.set(t, (a = []));
+      if (!a.includes(off)) a.push(off);
+      let k = tableOf.get(off); if (!k) tableOf.set(off, (k = new Set()));
+      k.add(table);
+    };
+    DESC_BANDS.forEach(([lo, hi, base, stride], n) => {
+      for (let id = lo; id <= hi; id++) { const o = base + id * stride + 4; if (inBlk(o, 4)) note("band" + n, o32(o)); }
+    });
+    for (let i = 0; i < SPELL.count; i++) note("spell", o32(SPELL.off + i * SPELL.stride + 0x0C));
+    for (let i = 0; i < UNITE.count; i++) note("unite", o32(UNITE.off + i * UNITE.stride + 0x0C));
+    for (let i = 0; i < FOOD.count; i++) note("food", o32(FOOD.off + i * FOOD.stride + FOOD.desc));
+    const m = new Map();
+    for (const offs of byText.values()) {
+      if (offs.length < 2) continue;
+      const tables = new Set();
+      offs.forEach((o) => (tableOf.get(o) || []).forEach((t) => tables.add(t)));
+      if (tables.size < 2) continue;                                  // same table: not an alias
+      const len = origSlotLen(offVa(offs[0]));
+      if (offs.some((o) => origSlotLen(offVa(o)) !== len)) continue;   // never mirror unequal slots
+      for (const o of offs) m.set(o, offs);
+    }
+    return (DESC_ALIAS = m);
+  }
+  // Every offset holding the same original description as `off`, itself included. One entry
+  // when the string is unique, which is the case for all but 27 of them.
+  const descCopies = (off) => descAlias().get(off) || [off];
+  const descCopyCount = (off) => descCopies(off).length;
+  // Write one description's bytes to every copy of it, and register each so the review list and
+  // the dirty badge account for both. Callers have already length-checked against the slot; the
+  // index guarantees the other copies share that length.
+  function writeDescAll(off, padded, group, label) {
+    const copies = descCopies(off);
+    for (const o of copies) {
+      writeBytes(o, padded);
+      FIELD_REG[o] = { group, label: copies.length > 1 ? `${label} (copy ${copies.indexOf(o) + 1} of ${copies.length})` : label,
+        off: o, width: padded.length, kind: "text" };
+    }
+    return copies.length;
+  }
   // Rewrite an in-place description string. transform(currentText)->newText. Capped to the
   // ORIGINAL slot length, null-padded. Returns a status object. Registers a review entry.
   function rewriteDesc(dptr, transform, group, label) {
@@ -655,8 +794,7 @@
     const enc = latin1Enc(next);
     if (enc.length > maxlen) return { truncated: true };
     const padded = new Uint8Array(maxlen); padded.set(enc);
-    writeBytes(off, padded); FIELD_REG[off] = { group, label, off, width: maxlen, kind: "text" };
-    return { ok: true };
+    return { ok: true, copies: writeDescAll(off, padded, group, label) };
   }
   // Set a description to explicit text (gear custom desc). Rejects text longer than the slot.
   function setDescText(dptr, text, group, label) {
@@ -665,8 +803,7 @@
     const enc = latin1Enc(text);
     if (enc.length > maxlen) return { tooLong: true, max: maxlen };
     const padded = new Uint8Array(maxlen); padded.set(enc);
-    writeBytes(off, padded); FIELD_REG[off] = { group, label, off, width: maxlen, kind: "text" };
-    return { ok: true, max: maxlen };
+    return { ok: true, max: maxlen, copies: writeDescAll(off, padded, group, label) };
   }
   // description-number transforms (mirror the desktop's regex rewrites)
   const descPower = (t, pw) => /DMGx\d+(?:\.\d+)?/.test(t) ? t.replace(/DMGx\d+(?:\.\d+)?/, "DMGx" + String(pw / 100))
@@ -749,10 +886,13 @@
   }
   function decodeTarget(f14) {
     const tb = (f14 >>> 8) & 0xFF, area = !!(f14 & AREA_BIT), low = tb & 0x0F;
-    let who = { 0xA: "single", 0x2: "all-foes", 0x3: "foes+allies", 0x1: "self/ally",
-      0x6: "foes-around-caster" }[low] || "who" + low;
+    let who = { 0xA: "single", 0x2: "all-foes", 0x3: "foes+allies", 0x1: "all-allies",
+      0x5: "chanter", 0x9: "one-ally", 0x6: "foes-around-caster" }[low] || "who" + low;
     if (tb & 0x40) who += "(1 pair)";       // pair-select bit: target one ally pair, not the side
-    const shape = area ? "AREA" : (tb & 0x10) ? "LINE" : low === 0xA ? "single" : "spread";
+    // The caster bit (0x04) without an area is a self-only cast — the Sword/Amulet runes read
+    // "spread:who5" before this, which named neither the shape nor the target.
+    const shape = area ? "AREA" : (tb & 0x10) ? "LINE" : (tb & 0x04) ? "self"
+      : low === 0xA ? "single" : "spread";
     return `${shape}:${who}`;
   }
 
@@ -1010,7 +1150,7 @@
     resetTables();                              // deferred tables belong to the disc being replaced
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = null; RUNE_FX_OPEN = new Set(); resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     VIEW = "chars"; SEARCH = "";
     autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
@@ -2095,7 +2235,9 @@
   // either side of the pair. Every edit funnels through commitEdit/undo/redo, which calls this —
   // the next picker or tooltip then rebuilds from the current bytes (94 + 60 records, cheap).
   // Rune and gear text is read per call, so it needs no cache to drop.
-  function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; }
+  // CLASS_NAMES reads strings out of BUF, so a staged edit to a class word must drop it too.
+  // DESC_ALIAS is keyed on ORIG and so never goes stale mid-session — only on a new ISO (below).
+  function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; CLASS_NAMES = null; }
   // Equipment carries its description in its own gear record, so read that live too — a
   // description rewritten on the Gear tab then shows up in every picker and tooltip. The
   // bundled s3_item_desc.json stays as the fallback for items scanGear can't pin down.
@@ -2398,7 +2540,11 @@
     }
     if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((f.target & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
     if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
-    if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
+    // statusMask writes flags18 whole, so a composite record (e.g. the 0x1DE7 restore-all
+    // spells) survives an edit instead of being flattened to a single bit. f.status is the older
+    // one-of form, still used by the rune-reskin card's dropdown.
+    if (f.statusMask != null) { writeW(off + 0x18, 4, f.statusMask >>> 0); reg(off + 0x18, 4, "status", name, "Status"); }
+    else if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
     if (f.radius != null && idx + 1 < SPELL.count) {
       const ro = off + SPELL.radius; writeW(ro, 1, clampInt(f.radius, 0, 255)); reg(ro, 1, "num", name, "Radius");
     }
@@ -2407,11 +2553,224 @@
     }
     return descRes;
   }
+  // ---- the flags18 effect editor ---------------------------------------------
+  // One checkbox per known bit, plus a checkbox for any bit that is SET but unlabelled (so an
+  // unknown bit is visible and preserved rather than silently dropped), plus a raw-hex escape
+  // hatch for authoring a bit nobody has named yet. The mask is rebuilt from the boxes on every
+  // change, which is what keeps a composite record composite.
+  const f18UnknownBits = (v) => {
+    const out = [];
+    for (let b = 0; b < 32; b++) if (((v >>> b) & 1) && !(b in F18_BITS)) out.push(b);
+    return out;
+  };
+  function f18CtlHTML(i, v) {
+    const box = (b, unknown) => `<label class="row" style="gap:6px;cursor:pointer;margin:0;align-items:baseline">
+        <input type="checkbox" class="sp18" data-i="${i}" data-b="${b}"${((v >>> b) & 1) ? " checked" : ""}>
+        <span${unknown ? ' class="warn"' : ""}>${esc2(F18_TEXT[b] || `bit ${b} — unknown, keep unless you know better`)}
+          <span class="u">0x${hex(1 << b, 4)}</span></span></label>`;
+    const known = F18_ORDER.map((b) => box(b, false)).join("");
+    const unk = f18UnknownBits(v).map((b) => box(b, true)).join("");
+    return `<div class="field" style="grid-column:1/-1">
+        <span>Effects / status <span class="muted">(flags18 · any combination)</span></span>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:2px 14px;margin:4px 0 6px">${known}${unk}</div>
+        <label class="row" style="gap:6px;margin:0;align-items:baseline"><span class="muted">raw mask 0x</span>
+          <input type="text" class="sp18hex" data-i="${i}" value="${hex(v, 8)}" style="width:11ch" spellcheck="false"></label>
+        <div class="muted" style="margin-top:4px">${esc2(F18_NOTE)}</div></div>`;
+  }
+  // Same escape hatch the target dropdown has: a byte with no named option still shows, and
+  // still round-trips, instead of silently reading back as whatever option happens to be first.
+  const elemOptsHTML = (cur) => {
+    let html = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === cur ? " selected" : ""}>${l}</option>`).join("");
+    if (!(cur in ELEMENTS)) html += `<option value="${cur}" selected>${elemName(cur)} (0x${hex(cur, 2)})</option>`;
+    return html;
+  };
   const targetOptsHTML = (cur) => {
     let html = TARGET_OPTS.map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`).join("");
     if (!TARGET_OPTS.some(([v]) => v === cur)) html += `<option value="${cur}" selected>custom 0x${hex(cur, 2)}</option>`;
     return html;
   };
+  // ---- Status effect STRENGTH (engine constants) ------------------------------
+  // What a status effect actually DOES — how much damage "adds lightning damage to physical
+  // attacks" adds, how much an Amulet's resistance cuts incoming damage, how much the PDF/MDF
+  // buff and the MGC boost are worth. None of it is a data table; every one of these is an
+  // `addiu $rt, $zero, imm` instruction immediate in the battle code, which is the same class
+  // of patch the editor already makes for encounter rates, the potch multiplier, the mount
+  // pairs and the damage+heal slot.
+  //
+  // How they were found (all re-checkable with Editor/re_elf.py):
+  //   * The flags18 bit is only a SELECTOR. The translator at VA 0x1816400 remaps flags18 into a
+  //     character state word and carries no magnitude at all — bits 22|23|24 (sword fire /
+  //     lightning / wind) collapse into ONE "weapon enchanted" flag 0x10000000, losing even the
+  //     element. So no per-bit strength field exists to edit, which is why the effect editor on
+  //     the Spells tab can only change WHICH effect fires.
+  //   * VA 0x16BFC50 is where the enchant's element is recovered and turned into a percentage:
+  //     bit22 -> 20, bit23 -> 20, otherwise 15, plus the chanter's Sword of Magic (skill 0x29)
+  //     rank, then `base * percent / 100`.
+  //   * VA 0x16BAC7C adds a further flat +30% when the weapon is enchanted at all.
+  //   * VA 0x17FFE3C is the elemental resistance ladder: incoming damage is scaled to
+  //     120 / 80 / 60 / 40 percent by tier, each an immediate.
+  //   * VA 0x16BD010 and VA 0x16BDBDC both scale by 85 under the buff-PDF/MDF bit (two sites,
+  //     one constant — they are written together, like the potch overlay pair).
+  //   * VA 0x16BDC0C is the mgc-boost multiplier, 150.
+  //
+  // Cross-checked against the guides in Guides/. Two results worth keeping:
+  //   * The RPGClassics status page says poison deals damage "depending on the type of poison" —
+  //     independent corroboration that poison carries a strength, which is exactly what the setter
+  //     at VA 0x16BE920 stores for it: `(level & 7) << 2`, a 3-bit value.
+  //   * The Suikosource Rare Armor guide says elemental resistance reduces damage by 20% / 30% /
+  //     40% at levels 1/2/3. The decoded ladder is 80 / 60 / 40 percent DAMAGE TAKEN, i.e.
+  //     reductions of 20 / 40 / 60. Level 1 agrees exactly; levels 2 and 3 do not, and no
+  //     arithmetic on the decoded values produces 30/40. The jump table is read directly off the
+  //     disc and is unambiguous, so the values stand; what is an inference is the tier -> "level N"
+  //     naming, and that is the likely site of the disagreement. Flagged in the UI, not smoothed over.
+  //
+  // Still open, with the numbers to look for if anyone wants them: the RPGClassics page says Alert
+  // doubles offensive magic with a 20% chance to backfire, Berserk raises strength 50%, and Boost
+  // lasts three turns. A 150 (= +50%) does exist here but it is gated on mask 0x4000, which this
+  // repo labels mgc-boost rather than berserk, so it is NOT presented as the berserk figure.
+  //
+  // Two honest limits, stated in the UI as well:
+  //   * These are CODE constants, so they are global. Raising the fire-enchant percentage raises
+  //     it for every character and every Sword of Rage in the game — there is no per-rune copy.
+  //   * Duration (how many turns sleep lasts, how long poison ticks) is still not reachable. The
+  //     status setter at VA 0x16BE920 does take a level argument — poison stores `(level & 7) << 2`,
+  //     a real 3-bit strength — but every live call site computes that level at runtime rather than
+  //     reading an immediate, and the one routine that does read per-status levels out of a record
+  //     (VA 0x16BF1E0, a byte array of them at +0x00..+0x22) has ZERO references anywhere in the
+  //     ELF: no jal, no j, no lui/addiu materialisation, no data pointer. It is dead code.
+  const STATUSFX = [
+    { g: "Weapon enchant", key: "swFire", stock: 20, max: 500,
+      label: "Sword of Rage — fire damage added",
+      help: "Percent of the base value added when the weapon is enchanted with fire (flags18 bit 22).",
+      sites: [[0x107470, 0x24100014]] },
+    { g: "Weapon enchant", key: "swLightning", stock: 20, max: 500,
+      label: "Sword of Thunder — lightning damage added",
+      help: "Percent added when the weapon is enchanted with lightning (flags18 bit 23).",
+      sites: [[0x107480, 0x24030014]] },
+    { g: "Weapon enchant", key: "swWind", stock: 15, max: 500,
+      label: "Sword of Cyclone — wind damage added",
+      help: "The fall-through percentage, which is what wind (flags18 bit 24) gets. Shared with any "
+        + "enchant that is neither fire nor lightning, so treat it as the default rather than wind-only.",
+      sites: [[0x107478, 0x2410000F]] },
+    { g: "Weapon enchant", key: "swAny", stock: 30, max: 500,
+      label: "Any enchanted weapon — extra bonus",
+      help: "A further flat percentage added whenever the weapon is enchanted at all, on top of the "
+        + "per-element figure above. Gated on the single \u201cweapon enchanted\u201d state flag "
+        + "(0x10000000) that bits 22|23|24 all collapse into.",
+      sites: [[0x102488, 0x2402001E]] },
+    { g: "Elemental resistance", key: "resWeak", stock: 120, max: 500,
+      label: "Weak to the element — damage taken",
+      help: "Incoming elemental damage is scaled to this percent when the target is weak to it.",
+      sites: [[0xE3868, 0x24040078], [0x24765C, 0x24020078]] },
+    { g: "Elemental resistance", key: "resNeutral", stock: 100, max: 500,
+      label: "Neither weak nor resistant — damage taken",
+      help: "The neutral tier. Only the jump-table ladder has an explicit entry for it, so this is a "
+        + "single site — and because it is the default for most damage, changing it is a broad nerf or "
+        + "buff to elemental magic across the board.",
+      sites: [[0xE3870, 0x24040064]] },
+    { g: "Elemental resistance", key: "res1", stock: 80, max: 500,
+      label: "Resistant (tier 1) — damage taken",
+      help: "What an Amulet-level resistance cuts incoming damage to \u2014 a 20% reduction, which is the "
+        + "one figure the Suikosource Rare Armor guide agrees with exactly.",
+      sites: [[0xE3878, 0x24040050], [0x247664, 0x24020050]] },
+    { g: "Elemental resistance", key: "res2", stock: 60, max: 500,
+      label: "Resistant (tier 2) — damage taken",
+      help: "The middle resistance tier: a 40% reduction. NOTE the Suikosource Rare Armor guide says level 2 "
+        + "resistance is 30%, which does not match this. The value here is read straight out of the game\u2019s "
+        + "own 5-entry jump table (120/100/80/60/40 at VA 0x169C040), so the disc is the stronger evidence \u2014 "
+        + "but the tier-to-\u201clevel N\u201d naming is an inference, and that is where the two could differ.",
+      sites: [[0xE3880, 0x2404003C], [0x247668, 0x2402003C]] },
+    { g: "Elemental resistance", key: "res3", stock: 40, max: 500,
+      label: "Resistant (tier 3, best) — damage taken",
+      help: "The strongest resistance tier: a 60% reduction (the guide says level 3 is 40% \u2014 see the note on "
+        + "tier 2). Set it to 0 for outright immunity.",
+      sites: [[0xE3884, 0x24040028], [0x24768C, 0x24040028]] },
+    { g: "Other statuses", key: "buffDef", stock: 85, max: 500,
+      label: "PDF/MDF buff — damage taken",
+      help: "Incoming damage is scaled to this percent while the buff-PDF/MDF status is up "
+        + "(flags18 bit 21). Two code sites carry it; both are written together.",
+      sites: [[0x104810, 0x24020055], [0x1053DC, 0x24020055]] },
+    { g: "Other statuses", key: "mgcBoost", stock: 150, max: 500,
+      label: "MGC-boost status — multiplier",
+      help: "The multiplier applied while the status gated by mask 0x4000 (flags18 bit 14) is up. Four "
+        + "code sites carry it \u2014 two functions, each testing both sides of the field with the "
+        + "value duplicated into a branch delay slot \u2014 and all four are written together.",
+      sites: [[0x10540C, 0x24020096], [0x105420, 0x24020096], [0x1054B8, 0x24020096], [0x1054CC, 0x24020096]] },
+  ];
+  // A site is only editable if the instruction is still the one we decoded — same opcode and
+  // same registers. That check is why a wrong-region or already-modded disc degrades to
+  // read-only here instead of having a number written into whatever now occupies the address.
+  function fxSiteOk(off, stockWord) {
+    if (!inBlk(off, 4)) return false;
+    return ((readW(off, 4) >>> 0) & 0xFFFF0000) === ((stockWord >>> 0) & 0xFFFF0000);
+  }
+  function fxState(e) {
+    const ok = e.sites.every(([off, wd]) => fxSiteOk(off, wd));
+    if (!ok) return { known: false };
+    const vals = e.sites.map(([off]) => readW(off, 4) & 0xFFFF);
+    const agree = vals.every((v) => v === vals[0]);
+    return { known: true, agree, value: vals[0], vals,
+      dirty: e.sites.some(([off]) => isDirty(off, 4)) };
+  }
+  // Register each site as the 2-byte IMMEDIATE, not the 4-byte instruction: the word is
+  // little-endian so the immediate is the low two bytes, which makes the review list read
+  // "150 -> 300" instead of the whole opcode as a meaningless decimal. Numbering the sites is
+  // what makes a partial write visible — four rows that all say the same thing read as
+  // duplicates, "site 3 of 4" does not.
+  function fxWrite(e, v) {
+    const n = clampInt(v, 0, e.max);
+    e.sites.forEach(([off], i) => {
+      writeW(off, 4, withImm(readW(off, 4), n));
+      reg(off, 2, "num", "Status effects",
+        e.sites.length > 1 ? `${e.label} (site ${i + 1} of ${e.sites.length})` : e.label);
+    });
+    return n;
+  }
+  let spFxOpen = false;
+  function fxCard() {
+    const groups = [];
+    for (const e of STATUSFX) if (!groups.includes(e.g)) groups.push(e.g);
+    const rows = groups.map((g) => {
+      const fields = STATUSFX.filter((e) => e.g === g).map((e) => {
+        const st = fxState(e);
+        if (!st.known) return `<label class="field"><span>${esc2(e.label)}</span>
+          <input type="number" value="" disabled title="This disc's code doesn't match the instruction this control patches, so it is read-only."></label>`;
+        return `<label class="field"><span>${esc2(e.label)}
+            <span class="u" title="${esc2(e.help)}">stock ${e.stock}%</span></span>
+          <input type="number" class="fx" data-k="${e.key}" min="0" max="${e.max}" value="${st.value}"></label>`;
+      }).join("");
+      return `<div class="bag-h" style="margin-top:10px">${esc2(g)}</div><div class="grid">${fields}</div>`;
+    }).join("");
+    const unknown = STATUSFX.filter((e) => !fxState(e).known).length;
+    return `<details class="card" id="spFxBox"${spFxOpen ? " open" : ""}>
+      <summary><b>Status effect strength</b> <span class="u">what an effect is actually worth · ${STATUSFX.length} engine constants</span></summary>
+      <div class="warnbox" style="margin:8px 0">These are <b>code</b> constants, not table entries, so each one is
+        <b>global</b>: raising the fire figure raises it for every character and every Sword of Rage in the game.
+        Percentages are of the value the battle code already computed. ${unknown ? `<b>${unknown}</b> control(s) are
+        read-only because this disc's instructions don't match what they patch.` : ""}</div>
+      <div class="muted" style="margin:0 0 8px">The Spells tab picks <b>which</b> effect fires; this picks <b>how much
+        it is worth</b>. Turn duration is still not editable — the status setter does take a strength argument, but every
+        live caller computes it at runtime, and the one routine that reads per-status strengths out of a record is dead
+        code with no references anywhere in the executable.</div>
+      ${rows}
+      <div class="row" style="margin-top:10px"><button class="chip mini" id="fxReset">Restore all to stock</button></div>
+    </details>`;
+  }
+  function wireFx(host) {
+    const box = q("#spFxBox", host); if (box) box.ontoggle = () => { spFxOpen = box.open; };
+    qa("input.fx", host).forEach((el) => {
+      const e = STATUSFX.find((x) => x.key === el.dataset.k); if (!e) return;
+      const st = fxState(e);
+      if (st.known) markField(el, e.sites[0][0], 2, "num");
+      el.onchange = () => {
+        const n = fxWrite(e, +el.value || 0);
+        el.value = n; drawView();
+        setStatus(`${e.label}: ${n}% (was ${e.stock}% on a stock disc).`, "ok");
+      };
+    });
+    const rb = q("#fxReset", host);
+    if (rb) rb.onclick = () => { STATUSFX.forEach((e) => fxWrite(e, e.stock)); drawView(); setStatus("Status effect strengths restored to stock.", "ok"); };
+  }
   // ---- the damage+heal slot (see the SPLIT constant for how it was pinned) ----
   // Read the three instruction immediates back. `idx`/`amtIdx` are editor rows (game id - 1);
   // either is null when the word is no longer the instruction we know how to rewrite.
@@ -2544,9 +2903,7 @@
       const canTail = i + 1 < SPELL.count, elVal = canTail ? (r16(off + SPELL.elem) & 0xFF) : 0;
       const radVal = canTail ? r8(off + SPELL.radius) : 0, chVal = canTail ? r16(off + SPELL.chance) : 0;
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F, f18 = r32(off + 0x18);
-      const statCur = f18 === 0 ? "none" : (Object.entries(F18_BITS).find(([b]) => f18 === (1 << b)) || [])[1] || "custom";
-      const elemSel = Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}"${+v === elVal ? " selected" : ""}>${l}</option>`).join("");
-      const statOpts = ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}"${s === statCur ? " selected" : ""}>${s}</option>`).join("");
+      const elemSel = elemOptsHTML(elVal);
       // editable, length-capped description (cap = original slot length; can't grow past it)
       const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
       const descField = dmax > 0
@@ -2555,7 +2912,7 @@
         : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
       return `<details class="char" data-i="${i}"><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
-          <span class="lv sp-sum">${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
+          <span class="lv sp-sum">${elemName(elVal)} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
         <div class="char-body">
           ${descField}
           <div class="grid">
@@ -2564,18 +2921,20 @@
             <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
             <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
-            <label class="field"><span>Status</span><select class="sp" data-i="${i}" data-k="status">${statOpts}</select></label>
             <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}></label>
             <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
+            ${f18CtlHTML(i, f18)}
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
     // Two collapsed cards in a row read as one stack, so each section says what it is:
     // a one-off engine patch, a rune-wide bulk edit, then the table itself.
     const sec = (t) => `<div class="secdiv"><span>${t}</span></div>`;
-    host.innerHTML = sec("Special effect \u00b7 one spell only") + splitCard()
+    host.innerHTML = sec("Status effects \u00b7 what an effect is worth") + fxCard()
+      + sec("Special effect \u00b7 one spell only") + splitCard()
       + sec("Bulk edit \u00b7 a whole rune") + reskin
       + sec("Every spell") + updBox + body;
 
+    wireFx(host);
     wireSplit(host);
     const fold = (id, set) => { const d = q(id, host); if (d) d.ontoggle = () => set(d.open); };
     fold("#spSplitBox", (v) => { spSplitOpen = v; });
@@ -2605,6 +2964,28 @@
       updateSpellSummary(host, i);
       if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn");
     }));
+    // flags18 checkboxes: rebuild the whole mask from the boxes in this spell's block, so any
+    // combination (and any set-but-unlabelled bit, which gets its own box) round-trips intact.
+    const f18FromBoxes = (d) => {
+      let m = 0;
+      qa("input.sp18", d).forEach((c) => { if (c.checked) m |= (1 << +c.dataset.b); });
+      return m >>> 0;
+    };
+    qa("input.sp18", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, d = q(`details.char[data-i="${i}"]`, host);
+      applySpell(i, { statusMask: f18FromBoxes(d) }, false);
+      updateSpellSummary(host, i);
+    }));
+    qa("input.sp18hex", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, raw = el.value.trim().replace(/^0x/i, "");
+      if (!/^[0-9a-f]{1,8}$/i.test(raw)) {
+        setStatus(`“${el.value}” isn't a hex mask — use up to 8 hex digits, e.g. 1DE7.`, "err");
+        el.value = hex(r32(SPELL.off + i * SPELL.stride + 0x18), 8); return;
+      }
+      applySpell(i, { statusMask: parseInt(raw, 16) }, false);
+      // re-render the row so a bit typed in by hand gains its checkbox (and an unknown bit its warning)
+      drawView(); setStatus("", "");
+    }));
     // manual free-text description edit (capped to the slot length via maxlength + setDescText)
     qa(".spdesc", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, off = SPELL.off + i * SPELL.stride, name = strAt(r32(off + 0x08));
@@ -2619,7 +3000,7 @@
     const off = SPELL.off + i * SPELL.stride, elVal = i + 1 < SPELL.count ? (r16(off + SPELL.elem) & 0xFF) : 0;
     const f18 = r32(off + 0x18);
     const rad = i + 1 < SPELL.count ? r8(off + SPELL.radius) : 0;
-    d.querySelector(".sp-sum").textContent = `${ELEMENTS[elVal]} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${rad ? " r" + rad : ""}${f18 ? " · " + decodeF18(f18) : ""}`;
+    d.querySelector(".sp-sum").textContent = `${elemName(elVal)} · pw ${r32(off + 0x1C)} · ${decodeTarget(r32(off + 0x14))}${rad ? " r" + rad : ""}${f18 ? " · " + decodeF18(f18) : ""}`;
     const MAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], elementId: [SPELL.elem, 2, "elem"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"], status: [0x18, 4, "status"],
       radius: [SPELL.radius, 1, "num"], chance: [SPELL.chance, 2, "num"] };
     qa(".sp", d).forEach((el) => {
@@ -2627,6 +3008,15 @@
       if (kind === "flags14") markFlagsField(el, off + o, el.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
       else markField(el, off + o, w, kind);
     });
+    // flags18 is one word behind ~16 checkboxes, so highlight the changed bits but hang the
+    // single ↺ off the raw-mask box — one revert for the word, not one per bit.
+    const f18Orig = origW(off + 0x18, 4) >>> 0;
+    qa("input.sp18", d).forEach((el) => {
+      const m = 1 << +el.dataset.b;
+      el.classList.toggle("dirty", ((f18 ^ f18Orig) & m) !== 0);
+    });
+    const hexEl = d.querySelector("input.sp18hex");
+    if (hexEl) { hexEl.value = hex(f18, 8); markField(hexEl, off + 0x18, 4, "num"); }
     // reflect any auto-rewrite of the description (e.g. Power change) inline + highlight if changed
     const dEl = d.querySelector(".spdesc");
     if (dEl) {
@@ -3439,7 +3829,13 @@
     const shown = hits.slice(0, TEXT_ROW_CAP);
     const rows = shown.map((t) => {
       const cur = strFrom(BUF, t.off, t.max);
-      return `<label class="field tx"><span>0x${hex(t.off, 6)} <span class="muted">(max ${t.max})</span></span>
+      // A description the disc stores twice (attack runes, magic scrolls) shows both addresses,
+      // so two identical rows can't be mistaken for each other — and says the edit hits both.
+      const cop = descCopies(t.off);
+      const twin = cop.length > 1
+        ? ` <span class="u" title="This description is stored ${cop.length} times on the disc (${cop.map((o) => "0x" + hex(o, 6)).join(", ")}). Editing any one of them writes them all.">· ${cop.length} copies, mirrored</span>`
+        : "";
+      return `<label class="field tx"><span>0x${hex(t.off, 6)} <span class="muted">(max ${t.max})</span>${twin}</span>
         <input type="text" class="txt" data-off="${t.off}" data-max="${t.max}" maxlength="${t.max}" value="${esc2(cur)}"></label>`;
     }).join("");
     const capped = hits.length > shown.length
@@ -3460,10 +3856,11 @@
           el.value = strFrom(BUF, off, max); markField(el, off, max, "text"); return;
         }
         const padded = new Uint8Array(max); padded.set(enc);
-        writeBytes(off, padded);
-        reg(off, max, "text", "Text", `0x${hex(off, 6)}`);
+        const n = writeDescAll(off, padded, "Text", `0x${hex(off, 6)}`);
         markField(el, off, max, "text");
-        setStatus("", "");
+        // Sibling rows for the other copy are showing stale text until they redraw.
+        if (n > 1) { drawView(); setStatus(`Written to all ${n} copies of that description on the disc.`, "ok"); }
+        else setStatus("", "");
       };
     });
   }
@@ -4341,6 +4738,7 @@
   const REF_HINT = {
     items: "Reference (read-only): every item id on the disc, with its category and description.",
     runes: "Reference (read-only): every rune — what it does, the spells it grants, who carries it and where it drops.",
+    classes: "Reference (read-only): the war-battle class each unit shows — and why there is no class field to edit. It is derived from the character's skills.",
     skills: "Reference (read-only): every skill — what each rank is worth, who can learn it and how far, and who has it on this disc.",
     sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
     mountref: "Reference (read-only): the mount system as decoded off this disc — what each model can do, which areas carry a mount, and the battle mechanics that aren't exposed as editable fields.",
@@ -4508,15 +4906,75 @@
   // What a rune is and does. The menu text is read off the LOADED disc (RUNE_TBL), so a rewrite
   // on the Text tab shows up here immediately; s3_rune_food_desc.json is the fallback, and it
   // also carries the "— Grants a, b, c" spell list that the disc's own one-liner leaves out.
+  // Rune -> the spell records that carry its status/enhance bits, read live off the disc. This is
+  // the mapping that used to be missing: "Sword of Cyclone" and "Wind Amulet" are spell records,
+  // and without this you had to already know that to find them. Bits are decoded in plain
+  // language so the row says what the rune does before you open the editor.
+  function runeEffects(grants) {
+    if (!BUF || !grants.length) return [];
+    const idx = spellNameIndex();
+    return grants.map((n) => {
+      const i = idx[n];
+      if (i == null) return null;
+      const f18 = r32(SPELL.off + i * SPELL.stride + 0x18) >>> 0;
+      return { spell: n, i, f18, text: decodeF18Plain(f18) };
+    }).filter(Boolean).filter((e) => e.f18);          // only spells that actually carry an effect
+  }
+  // The effect editor, inline in the rune row. Same flags18 checkbox set the Spells tab uses
+  // (so there is one implementation of "which bits are set"), plus the two other numbers that
+  // actually change what an enhance/status rune does: how often it lands and how hard it hits.
+  // Strength and duration of a status are engine-coded and deliberately absent — see F18_NOTE.
+  const F18_SWORD = { 22: "fire", 23: "lightning", 24: "wind" };
+  const F18_RESIST = { 25: "fire", 26: "lightning", 27: "wind" };
+  function runeFxHTML(e) {
+    const off = SPELL.off + e.i * SPELL.stride, canTail = e.i + 1 < SPELL.count;
+    const swordChips = Object.entries(F18_SWORD).map(([b, el]) =>
+      `<button class="chip mini" data-fxpreset="sword:${b}" data-i="${e.i}"
+        title="Set the sword-enhance element to ${el}, clearing the other two">adds ${el}</button>`).join("");
+    const resistChips = `<button class="chip mini" data-fxpreset="resist:all" data-i="${e.i}"
+        title="Set all three elemental-resist bits">resists all three</button>`;
+    const num = (k, label, val, cap) => `<label class="field"><span>${label}</span>
+        <input type="number" class="rfx" data-i="${e.i}" data-k="${k}" min="0" max="${cap}" value="${val}" ${canTail || k === "power" ? "" : "disabled"}></label>`;
+    return `<details class="runefx" data-i="${e.i}"${RUNE_FX_OPEN.has(e.i) ? " open" : ""}>
+      <summary><span class="chev">▸</span> <b>${esc2(e.spell)}</b>
+        <span class="muted">${esc2(e.text)}</span></summary>
+      <div class="char-body">
+        <div class="subtabs" style="margin:0 0 8px">${swordChips}${resistChips}
+          <button class="chip mini" data-fxpreset="none" data-i="${e.i}">no status</button></div>
+        <div class="grid">
+          ${num("chance", "Chance it lands %", canTail ? r16(off + SPELL.chance) : 0, 100)}
+          ${num("power", "Power", r32(off + 0x1C), 99999)}
+          ${f18CtlHTML(e.i, r32(off + 0x18) >>> 0)}
+        </div></div></details>`;
+  }
+  let RUNE_FX_OPEN = new Set();          // which effect editors stay open across a redraw
   function runeInfo(id) {
     const nm = REF.items[id] || "";
     const fb = (REF.runeFood && REF.runeFood[String(id)]) || "";
     const m = /^(.*?)\s*—\s*Grants\s+(.+)$/.exec(fb);
     const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");
+    // An attack rune's spell carries the rune's own name (Kite -> "Kite"), so it has no
+    // RUNE_SPELLS entry and no "— Grants" clause; fall back to the rune name so those runes
+    // reach the effect editor too. Resolved against the loaded disc, not a bundled list.
+    let grants = RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []);
+    if (!grants.length && BUF && nm && nm in spellNameIndex()) grants = [nm];
+    // The rune's own desc string, as a pointer + slot cap, so the browser can edit it in place.
+    // This is the copy the game's rune menu actually reads (getDesc VA 0x16DBE48 -> itemRecord
+    // VA 0x16DBCD8 -> RUNE_TBL +4), and until now nothing in the editor could write it: the
+    // Text tab's prose filter rejects every one of these strings ("DMGx0.4" trips its
+    // letter-then-digit reject), so the only editable copy was the spell record's — the wrong
+    // one. That is issue #11. Edits here go through setDescText, which mirrors both copies.
+    const dp = BUF && id >= RUNE_TBL.lo && id <= RUNE_TBL.hi && inBlk(RUNE_TBL.off + id * RUNE_TBL.stride, RUNE_TBL.stride)
+      ? r32(RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.desc) : 0;
+    const own = dp ? runeTblDesc(id) : "";
     return {
       id, name: nm, group: runeGroupOf(id),
       text: (BUF && runeTblDesc(id)) || (m ? m[1] : fb),
-      grants: RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []),
+      descPtr: own ? dp : 0,                       // 0 when this row has no trustworthy record
+      descMax: own ? origSlotLen(dp) : 0,
+      descCopies: own ? descCopyCount(vaOff(dp)) : 1,
+      grants,
+      effects: runeEffects(grants),
       owner: runeOwners()[nameKey(nm)] || "",
       holders: runeHolders()[nameKey(nm)] || [],
       sources: sourceRows(id),
@@ -4558,17 +5016,97 @@
         the Spells tab is where those are edited. Rows in the last column are tagged
         <span class="srctag guide">guide</span> when they come from the Suikosource rune-slot and character
         guides and <span class="srctag disc">disc</span> when decoded from this disc's enemy drop tables.
-        Nothing here is editable — runes are equipped per character on the <b>Characters</b> tab.</div>
+        The <b>menu text</b> box writes the rune's description straight into the table the game reads for it, capped
+        to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
+        spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
+        edits from showing up in game.
+        Where a rune carries a status or enhance effect — Sword of Rage/Thunder/Cyclone, the Fire/Thunder/Wind
+        Amulets, the poison and sleep runes — the effect is named in plain language and is <b>editable right
+        here</b>: open it to tick any combination of effects, change how often it lands, and change its power.
+        You don't need to know which spell record backs a rune. ${esc2(F18_NOTE)}
+        Which rune a character has equipped is still set on the <b>Characters</b> tab.</div>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
           <td>${esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
-          <td><div class="muted">${esc2(r.text || "—")}</div>
+          <td>${r.descMax > 0
+            ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text
+                 <span class="u">max ${r.descMax}${r.descCopies > 1 ? ` · ${r.descCopies} copies, mirrored` : ""}</span></span>
+               <input type="text" class="rdesc" data-id="${r.id}" maxlength="${r.descMax}" value="${esc2(r.text)}"></label>`
+            : `<div class="muted">${esc2(r.text || "—")}</div>`}
             ${r.grants.length ? `<div class="grants">${r.grants.map((s) =>
-              `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}</td>
+              `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
+            ${r.effects.map(runeFxHTML).join("")}
+            ${r.effects.length ? `<div class="srcrow"><button class="chip mini" data-spjump="${esc2(r.effects[0].spell)}"
+                title="Open the full spell record on the Spells tab">Open on Spells tab</button></div>` : ""}</td>
           <td>${runeWhoHTML(r)}</td></tr>`).join("")
         || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
     qa("[data-rgrp]", host).forEach((b) => (b.onclick = () => { RUNE_GROUP = b.dataset.rgrp; drawRunes(host); }));
+    // "Open on Spells tab" hands off with the search box already narrowed to that spell, for the
+    // fields the inline editor doesn't carry (element, target, radius, description).
+    qa("[data-spjump]", host).forEach((b) => (b.onclick = () => {
+      VIEW = "spells"; SEARCH = b.dataset.spjump.toLowerCase();
+      const box = q("#isoSearch"); if (box) box.value = b.dataset.spjump;
+      drawView();
+    }));
+    // In-place rune menu text. Writes RUNE_TBL's copy — the one the game reads — and
+    // setDescText mirrors it onto the spell record's copy for the 20 attack runes.
+    qa("input.rdesc", host).forEach((el) => {
+      const id = +el.dataset.id, dptr = r32(RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.desc);
+      markField(el, vaOff(dptr), origSlotLen(dptr), "text");
+      el.onchange = () => {
+        const res = setDescText(dptr, el.value, REF.items[id] || `Rune ${hex(id, 3)}`, "Menu text");
+        if (res.tooLong) { setStatus(`Description too long — max ${res.max} characters for this rune.`, "warn"); return drawRunes(host); }
+        if (res.skip) return setStatus("That rune's description can't be written on this disc.", "err");
+        setStatus(res.copies > 1 ? `Written to all ${res.copies} copies of that description on the disc.` : "", res.copies > 1 ? "ok" : "");
+        drawRunes(host);
+      };
+    });
+    // ---- inline effect editing -------------------------------------------------
+    // Two runes can grant the same spell (Phoenix and Mallet both grant spell 51), so a mask is
+    // always rebuilt from the boxes inside THIS <details> — never from every box with that
+    // data-i, which would OR a stale sibling group back in.
+    qa("details.runefx", host).forEach((d) => (d.ontoggle = () => {
+      const i = +d.dataset.i; d.open ? RUNE_FX_OPEN.add(i) : RUNE_FX_OPEN.delete(i);
+    }));
+    const maskOf = (d) => {
+      let m = 0;
+      qa("input.sp18", d).forEach((c) => { if (c.checked) m |= (1 << +c.dataset.b); });
+      return m >>> 0;
+    };
+    qa("input.sp18", host).forEach((el) => (el.onchange = () => {
+      const d = el.closest("details.runefx");
+      applySpell(+el.dataset.i, { statusMask: maskOf(d) }, false);
+      drawRunes(host);
+    }));
+    qa("input.sp18hex", host).forEach((el) => (el.onchange = () => {
+      const i = +el.dataset.i, raw = el.value.trim().replace(/^0x/i, "");
+      if (!/^[0-9a-f]{1,8}$/i.test(raw)) {
+        setStatus(`“${el.value}” isn't a hex mask — use up to 8 hex digits, e.g. 1DE7.`, "err");
+        return drawRunes(host);
+      }
+      applySpell(i, { statusMask: parseInt(raw, 16) }, false);
+      setStatus("", ""); drawRunes(host);
+    }));
+    qa("input.rfx", host).forEach((el) => (el.onchange = () => {
+      const k = el.dataset.k, f = {};
+      f[k] = Math.max(0, +el.value || 0);
+      applySpell(+el.dataset.i, f, false);
+      drawRunes(host);
+    }));
+    qa("[data-fxpreset]", host).forEach((b) => (b.onclick = () => {
+      const i = +b.dataset.i, p = b.dataset.fxpreset;
+      let m = r32(SPELL.off + i * SPELL.stride + 0x18) >>> 0;
+      if (p === "none") m = 0;
+      else if (p === "resist:all") m |= (1 << 25) | (1 << 26) | (1 << 27);
+      else if (p.startsWith("sword:")) {                       // one element, not three
+        const keep = +p.slice(6);
+        m &= ~((1 << 22) | (1 << 23) | (1 << 24));
+        m |= (1 << keep);
+      }
+      applySpell(i, { statusMask: m }, false);
+      RUNE_FX_OPEN.add(i); drawRunes(host);
+    }));
     wireRefTabs(host);
   }
 
@@ -4689,6 +5227,7 @@
   const REF_MODES = [
     ["items", "Items", () => Object.keys(REF.items).length, drawItemsRef],
     ["runes", "Runes", () => runeIds().length, drawRunes],
+    ["classes", "Classes", () => CLASS_TYPES, drawClassesRef],
     ["skills", "Skills", () => Object.keys(REF.skills).length, drawSkillsRef],
     ["sources", "Item sources", () => Object.keys((REF.itemSources && REF.itemSources.items) || {}).length, drawSources],
     ["files", "Files", () => { const sf = subfileIndex(); return (sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0).toLocaleString(); }, drawFiles],
@@ -4705,6 +5244,100 @@
       REF_KIND = b.dataset.ref; RUNE_GROUP = ""; SKILL_TYPE = "";   // a mode's filter chips don't outlive it
       drawView();
     }));
+  }
+  // ---- Classes (war-battle unit type) ----------------------------------------
+  // What the game shows as a unit's class — Hugo a Slasher, Lulu a Knight, Fubar a Slasher.
+  // There is NO per-character class byte, which is the whole finding: the class is DERIVED at
+  // runtime from the character's own skill list. Chain, all read off this disc:
+  //
+  //   display fn  VA 0x169B5F8  keeps the skill slots with rank > 0, selection-sorts them by
+  //                             rank descending, then looks up the top two skill ids
+  //   skill id    VA 0x16C7758 -> *(u8)(rec + 0x10 + slot*2)
+  //   skill rank  VA 0x16C7878 -> *(u8)(rec + 0x11 + slot*2)
+  //   record      VA 0x16C6D08 -> live 140-byte character record (list1's layout)
+  //   class table VA 0x19605C0 (file 0x3A7DC0), 43 rows x 47 pairs of bytes, indexed
+  //               [skillA-1][skillB-1] -> (type word, modifier word)
+  //   word pool   VA 0x1960480 (file 0x3A7C80), 78 pointers, index 0 blank
+  //
+  // Column index == skill id, all 43 of them: 0x0C Shield Protect -> "Shield Knight",
+  // 0x0D Armor Protect -> "Armored Knight", 0x0E Fire Magic -> "Fire Cmdr.", 0x1F Cook ->
+  // "Cook Fighter", 0x28 Pale Gate Magic -> "Gate Cmdr.". Re-running the derivation over
+  // list1 reproduces the three known-good anchors exactly, which is why this is stated as
+  // fact rather than as a guess: change a character's skills and their class changes with it.
+  const CLASS_POOL = { off: 0x3A7C80, count: 78 };
+  const CLASS_TBL = { off: 0x3A7DC0, stride: 94, max: 43 };
+  const CLASS_TYPES = 21;                  // pool indices 1..21 are the class words; 22+ modifiers
+  let CLASS_NAMES = null;
+  function classNames() {
+    if (CLASS_NAMES) return CLASS_NAMES;
+    const out = [];
+    for (let i = 0; i < CLASS_POOL.count; i++) {
+      const o = CLASS_POOL.off + i * 4;
+      out.push(inBlk(o, 4) ? strAt(r32(o)) : "");
+    }
+    return (CLASS_NAMES = out);
+  }
+  // (skillA, skillB) -> the class label the game prints. Both are skill ids, 1..43.
+  function classOf(a, b) {
+    if (!(a >= 1 && a <= CLASS_TBL.max && b >= 1 && b <= CLASS_TBL.max)) return "";
+    const o = CLASS_TBL.off + (a - 1) * CLASS_TBL.stride + (b - 1) * 2;
+    if (!inBlk(o, 2)) return "";
+    const N = classNames();
+    return [N[r8(o)] || "", N[r8(o + 1)] || ""].filter(Boolean).join(" ");
+  }
+  // Derive one list1 character's class the way VA 0x169B5F8 does. Returns the label plus the
+  // two skills that decided it, so the reference can show its own working.
+  function classForChar(i) {
+    const [b0, s0] = TABLES.list1, base = b0 + i * s0, slots = [];
+    for (let k = 0; k < 8; k++) {
+      const o = base + 12 + k * 2; if (!inBlk(o, 2)) break;
+      const id = r8(o), rk = r8(o + 1);
+      if (!id && !rk) break;
+      if (rk > 0) slots.push({ id, rk, n: k });
+    }
+    if (!slots.length) return { label: "", slots, a: 0, b: 0 };
+    const ord = slots.slice().sort((p, q) => q.rk - p.rk || p.n - q.n);   // stable, rank desc
+    const a = ord[0].id, bb = (ord[1] || ord[0]).id;
+    return { label: classOf(a, bb), slots, a, b: bb, same: ord.length < 2 };
+  }
+  function drawClassesRef(host) {
+    const N = classNames();
+    const words = (lo, hi) => N.map((s, i) => ({ s, i })).filter((x) => x.s && x.i >= lo && x.i <= hi)
+      .map((x) => `<span class="spellchip" title="pool index ${x.i}">${esc2(x.s)}</span>`).join(" ");
+    const names = REF.names.list1 || {};
+    const rows = [];
+    for (let i = 0; i < LIST_COUNT.list1; i++) {
+      const nm = names[String(i)]; if (!nm) continue;
+      const c = classForChar(i); if (!c.slots.length) continue;
+      const q2 = SEARCH;
+      const hay = `${nm} ${c.label} ${c.slots.map((x) => skillName(x.id)).join(" ")}`.toLowerCase();
+      if (q2 && !hay.includes(q2)) continue;
+      rows.push(`<tr><td>${esc2(nm)}</td>
+        <td><b>${esc2(c.label || "—")}</b></td>
+        <td class="sl">${esc2(skillName(c.a))} <span class="muted">+</span> ${esc2(skillName(c.b))}${
+          c.same ? ` <span class="u">(only one skill — the game reads a second slot that was never filled)</span>` : ""}</td>
+        <td><span class="muted">${c.slots.map((x) => `${esc2(skillName(x.id))} ${rankLabel(x.rk)}`).join(", ")}</span></td></tr>`);
+    }
+    host.innerHTML = refTabs() +
+      `<div class="warnbox" style="margin:0 0 10px"><b>There is no class byte.</b> A character's class is
+        worked out from their own skill list every time the game draws it: the skills they actually have are
+        sorted by rank, and the top two are looked up in a 43&times;43 table of class words. So the way to
+        change someone's class is to change their <b>skills</b> (Characters tab) — there is no field to set,
+        and nothing here is editable.</div>
+      <div class="muted" style="margin:0 0 10px">Read live off <b>this</b> disc: the word pool at
+        <code>0x${hex(CLASS_POOL.off, 6)}</code> and the class table at <code>0x${hex(CLASS_TBL.off, 6)}</code>,
+        with the derivation copied from the game's own display routine (VA <code>0x169B5F8</code>). The table's
+        column index is the skill id, all 43 of them — Shield Protect gives &ldquo;Shield Knight&rdquo;, Fire
+        Magic &ldquo;Fire Cmdr.&rdquo;, Cook &ldquo;Cook Fighter&rdquo;. Verified against three known units:
+        Hugo and Fubar come out Slashers, Lulu a Knight.</div>
+      <div class="card" style="margin:0 0 12px"><div class="bag-h">Class words <span class="u">${CLASS_TYPES} of them</span></div>
+        <div class="grants">${words(1, CLASS_TYPES)}</div>
+        <div class="bag-h" style="margin-top:10px">Modifier words <span class="u">appended to the class</span></div>
+        <div class="grants">${words(CLASS_TYPES + 1, CLASS_POOL.count - 1)}</div></div>
+      <table class="invtbl"><thead><tr><th style="width:16%">Character</th><th style="width:18%">Class</th>
+        <th style="width:30%">Decided by</th><th>Their skills</th></tr></thead>
+        <tbody>${rows.join("") || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+    wireRefTabs(host);
   }
   function drawReference(host) { (REF_MODES.find(([k]) => k === REF_KIND) || REF_MODES[0])[3](host); }
 

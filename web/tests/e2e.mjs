@@ -287,7 +287,10 @@ head("Byte-exact edits across every editable view");
   await page.selectOption('details.char[data-i="0"] select[data-k="elementId"]', "5");
   await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2");
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1");
-  await page.selectOption('details.char[data-i="0"] select[data-k="status"]', "sleep");
+  // flags18 is a bit SET, so the control is a checkbox group, not a one-of. Tick sleep (bit 10)
+  // AND poison (bit 1) to prove a composite mask is authored rather than flattened to one bit.
+  await page.check('details.char[data-i="0"] input.sp18[data-b="10"]');
+  await page.check('details.char[data-i="0"] input.sp18[data-b="1"]');
   // radius + status chance (tail fields, stored one record ahead for spells)
   await page.fill('details.char[data-i="0"] input[data-k="radius"]', "3"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="radius"]', "change");
   await page.fill('details.char[data-i="0"] input[data-k="chance"]', "75"); await page.dispatchEvent('details.char[data-i="0"] input[data-k="chance"]', "change");
@@ -326,7 +329,8 @@ head("Byte-exact edits across every editable view");
   // AOE is the top bit of the target byte, so target=all-foes(0x02) + AOE => high byte 0x82
   { const f14 = r.u32(SPELL.off + 0x14); check("spell0 target=all-foes + AOE bit", ((f14 >> 8) & 0x0F) === 0x02 && !!(f14 & 0x8000)); }
   { const f14 = r.u32(SPELL.off + SPELL.stride + 0x14); check("spell1 target=ally-pair (0x41)", ((f14 >> 8) & 0x7F) === 0x41 && !(f14 & 0x8000)); }
-  check("spell0 status = sleep(bit10)", r.u32(SPELL.off + 0x18) === (1 << 10));
+  check("spell0 status = sleep(bit10)|poison(bit1) — composite mask preserved",
+    r.u32(SPELL.off + 0x18) === ((1 << 10) | (1 << 1)));
   // tail fields land one record ahead for spells — a wrong phase would write spell0's own record
   check("spell0 radius = 3 (one record ahead)", r.u8(SPELL.off + SPELL.radius) === 3);
   check("spell0 chance = 75%", r.u16(SPELL.off + SPELL.chance) === 75);
@@ -1403,7 +1407,20 @@ head("Reference — rune lookup: families, granted spells, who has it");
   const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
   check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
   check("the view stages nothing", await nothingStaged(page));
-  check("no inputs in the rune browser", (await page.locator("#isoView input").count()) === 0);
+  // The browser is no longer read-only — it now owns the rune's menu text (issue #11: the only
+  // copy of it the game actually reads) and its effect bits (issue #12). It must still stage
+  // nothing until touched, and it must carry ONLY those fields: any other input here would be
+  // an accident, since every other rune property belongs to another tab.
+  const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
+  check("the only editable fields are menu text and effect bits",
+    kinds.every((k) => /^(rdesc|sp18|sp18hex|rfx)$/.test(k)), kinds.join(" | "));
+  // A rune is only editable when its table row still names it — the same check runeTblDesc()
+  // makes before trusting a record. The fixture fills a handful of the 72 rows; the rest are
+  // zeroed and stay read-only, so the editor never writes into a row it can't vouch for.
+  const editable = new Set([...mapping.runes.map((r) => r.id), mapping.twin.rune.id]).size;
+  check("only runes whose table row names them are editable",
+    (await page.locator("input.rdesc").count()) === editable,
+    `${await page.locator("input.rdesc").count()} of 72, expected ${editable}`);
   await page.context().close();
 }
 
@@ -1534,6 +1551,225 @@ head("Text tab — in-ELF strings: filtered, editable, length-capped, byte-exact
   check("tail of the slot is NUL-padded, not left over",
     r.at(T.off + NEW.length) === 0 && r.at(T.off + T.max - 1) === 0);
   check("the write never runs past the slot", !r.wrote(T.off + T.max, 1));
+  await page.context().close();
+}
+
+head("Status effect strength — what an effect is worth (engine constants)");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]');
+  await page.waitForSelector("#spFxBox");
+  check("the status-strength card starts collapsed", !(await page.locator('input.fx[data-k="swLightning"]').isVisible()));
+  await openFold(page, "#spFxBox");
+  // every control must decode the disc's own immediate, not a hardcoded default
+  const fxKeys = [...new Set(mapping.statusfx.map((f) => f.key))];
+  for (const k of fxKeys) {
+    const f = mapping.statusfx.find((x) => x.key === k);
+    const el = page.locator(`input.fx[data-k="${k}"]`);
+    check(`${k} decodes ${f.pct} off the disc`, (await el.inputValue()) === String(f.pct), await el.inputValue());
+  }
+  // the headline case: change what sword-lightning is worth
+  await page.fill('input.fx[data-k="swLightning"]', "75");
+  await page.dispatchEvent('input.fx[data-k="swLightning"]', "change"); await page.waitForTimeout(60);
+  const site = mapping.statusfx.find((f) => f.key === "swLightning");
+  { const r = await save(page);
+    const wd = r.u32(site.off) >>> 0;
+    check("sword-lightning now worth 75%", (wd & 0xFFFF) === 75, "0x" + wd.toString(16));
+    check("only the immediate changed — opcode and registers intact",
+      (wd & 0xFFFF0000) === (site.word & 0xFFFF0000), "0x" + wd.toString(16));
+    check("the write is 4 bytes at that site, nothing either side",
+      r.wrote(site.off, 4) && !r.wrote(site.off + 4, 4) && !r.wrote(site.off - 4, 4)); }
+  // a constant carried by two code sites must be written at BOTH, or half the game disagrees
+  await openFold(page, "#spFxBox");
+  await page.fill('input.fx[data-k="buffDef"]', "50");
+  await page.dispatchEvent('input.fx[data-k="buffDef"]', "change"); await page.waitForTimeout(60);
+  { const r = await save(page);
+    const all = mapping.statusfx.filter((f) => f.key === "buffDef");
+    const got = all.map((f) => r.u32(f.off) & 0xFFFF);
+    check(`all ${all.length} PDF/MDF sites were written`, got.every((v) => v === 50), got.join(" / ")); }
+  // The constant carried by the MOST sites is the one a partial write would break most quietly:
+  // it doesn't error, the game just behaves differently depending on which code path runs. The
+  // unsaved-field badge counts REGISTERED sites, so it catches that for free — a write that hit
+  // 1 of 4 sites reads as a smaller count. This assertion is the check that caught the bug
+  // originally: the first cut of the table listed one mgc-boost site instead of four.
+  await openFold(page, "#spFxBox");
+  const mgcSites = mapping.statusfx.filter((f) => f.key === "mgcBoost").length;
+  await page.fill('input.fx[data-k="mgcBoost"]', "300");
+  await page.dispatchEvent('input.fx[data-k="mgcBoost"]', "change"); await page.waitForTimeout(60);
+  check(`the badge counts all ${mgcSites} mgc-boost sites, not one`,
+    new RegExp(`\\b${mgcSites} unsaved\\b`).test(await dirtyLabel(page, new RegExp(`${mgcSites} unsaved`))),
+    await page.textContent("#isoDirty"));
+  { // and every site is named in the review list, so a partial write is visible before saving
+    const { r, review } = await saveAndReview(page);
+    // .cf-list has no newlines between rows, so count label occurrences rather than lines
+    const named = (review.match(/MGC-boost status/gi) || []).length;
+    check(`the review list names all ${mgcSites} sites`, named === mgcSites, `${named}: ${review.slice(0, 220)}`);
+    check("each site is numbered so a partial write is visible",
+      /site 1 of 4/.test(review) && /site 4 of 4/.test(review), review.slice(0, 220));
+    check("the review shows the percentage, not the raw instruction word",
+      /150\s*→\s*300/.test(review) || /150.*300/.test(review.replace(/\s+/g, " ")), review.slice(0, 220));
+    const all = mapping.statusfx.filter((f) => f.key === "mgcBoost").map((f) => r.u32(f.off) & 0xFFFF);
+    check(`all ${mgcSites} MGC-boost sites were written`, all.every((v) => v === 300), all.join(" / "));
+    check("every MGC-boost site kept its opcode and registers",
+      mapping.statusfx.filter((f) => f.key === "mgcBoost")
+        .every((f) => (r.u32(f.off) & 0xFFFF0000) === (f.word & 0xFFFF0000))); }
+  // the resistance ladder exists twice in the code; both copies must agree or the two damage
+  // paths disagree about what a resistance is worth
+  await openFold(page, "#spFxBox");
+  await page.fill('input.fx[data-k="res3"]', "10");
+  await page.dispatchEvent('input.fx[data-k="res3"]', "change"); await page.waitForTimeout(60);
+  { const r = await save(page);
+    const all = mapping.statusfx.filter((f) => f.key === "res3");
+    const got = all.map((f) => r.u32(f.off) & 0xFFFF);
+    check(`both resistance ladders were written (${all.length} sites)`, got.every((v) => v === 10), got.join(" / ")); }
+  await page.context().close();
+}
+{ const page = await newPage(); await loadIso(page);
+  // "Restore all to stock" must put every immediate back, and stage nothing net
+  await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spFxBox");
+  await page.fill('input.fx[data-k="res3"]', "0");
+  await page.dispatchEvent('input.fx[data-k="res3"]', "change"); await page.waitForTimeout(60);
+  check("an edit is staged", !(await nothingStaged(page)));
+  await openFold(page, "#spFxBox");
+  await page.click("#fxReset"); await page.waitForTimeout(80);
+  check("restore-to-stock clears the change", await nothingStaged(page));
+  await page.context().close();
+}
+{ // A disc whose instruction no longer matches must go READ-ONLY rather than be written blind.
+  const drift = bytes.slice();
+  const site = mapping.statusfx.find((f) => f.key === "swFire");
+  new DataView(drift.buffer).setUint32(site.off, 0x00000000, true);   // clobber the instruction
+  setServed(drift);
+  const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spFxBox");
+  check("a drifted instruction is refused, not patched",
+    (await page.locator('input.fx[data-k="swFire"]').count()) === 0
+    && (await page.locator("#spFxBox input[disabled]").count()) >= 1);
+  check("the card says a control is read-only", /read-only/.test(await page.textContent("#spFxBox")));
+  // the other ten controls must still work — one drifted site can't disable the whole card
+  const keys = [...new Set(mapping.statusfx.map((f) => f.key))];
+  check("the undrifted controls stay editable",
+    (await page.locator("#spFxBox input.fx").count()) === keys.length - 1,
+    `${await page.locator("#spFxBox input.fx").count()} of ${keys.length}`);
+  setServed(bytes);
+  await page.context().close();
+}
+
+head("Spell targeting + element: every byte the disc uses has a name");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="spells"]');
+  // Fixture spell #2 carries target byte 0x05 and element 7 — the Sword/Amulet shape that used
+  // to read "custom 0x05" in the dropdown and "undefined" in the summary line.
+  await openRec(page, 'details.char[data-i="2"]');
+  const tgt = 'details.char[data-i="2"] select[data-k="target"]';
+  const opts = await page.$$eval(`${tgt} option`, (es) => es.map((e) => ({ v: e.value, t: e.textContent, sel: e.selected })));
+  const cur = opts.find((o) => o.sel);
+  check("target 0x05 is a named option, not 'custom'", cur && cur.t === "Caster only (chanter)", cur ? cur.t : "none selected");
+  check("no 'custom' option is offered for a stock byte", !opts.some((o) => /custom/i.test(o.t)), opts.map((o) => o.t).join(" | "));
+  // the three bytes that were missing must all be offerable, or you can't author them
+  for (const [v, label] of [["5", "Caster only (chanter)"], ["9", "Single ally"], ["18", "Line of foes (target + behind)"]])
+    check(`0x${(+v).toString(16).toUpperCase().padStart(2, "0")} is offered as "${label}"`,
+      opts.some((o) => o.v === v && o.t === label), opts.map((o) => o.v + "=" + o.t).join(" | "));
+  const elOpts = await page.$$eval('details.char[data-i="2"] select[data-k="elementId"] option', (es) => es.map((e) => ({ t: e.textContent, sel: e.selected })));
+  const elCur = elOpts.find((o) => o.sel);
+  check("element 7 is named, not undefined", elCur && elCur.t === "Enhance (Sword/Amulet)", elCur ? elCur.t : "none selected");
+  const sum = await page.textContent('details.char[data-i="2"] .sp-sum');
+  check("the summary names the family, not 'undefined'", /Enhance \(Sword\/Amulet\)/.test(sum) && !/undefined/.test(sum), sum);
+  check("the summary names the shape and who, not 'spread:who5'", /self:chanter/.test(sum) && !/who\d/.test(sum), sum);
+  // and nothing anywhere on the tab leaks undefined into the UI
+  const all = await page.textContent("#isoView");
+  check("no 'undefined' anywhere on the Spells tab", !/undefined/.test(all));
+  // changing the target must still round-trip through the newly named byte
+  await page.selectOption(tgt, "9"); await page.waitForTimeout(60);
+  { const r = await save(page); const f14 = r.u32(SPELL.off + 2 * SPELL.stride + 0x14);
+    check("selecting a newly named target writes that byte", ((f14 >> 8) & 0x7F) === 0x09, "0x" + (((f14 >> 8) & 0x7F)).toString(16)); }
+  await page.context().close();
+}
+
+head("Reference — Classes: derived from skills, not stored (issue #13)");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="classes"]', { timeout: 3000 });
+  await page.click('[data-ref="classes"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  const body = await page.textContent("#isoView");
+  // the finding itself has to be stated, or the view reads as "class field not implemented yet"
+  check("the view says there is no class byte", /no class byte/i.test(body));
+  check("it points at skills as the way to change a class", /change their <b>skills<\/b>|change their.{0,3}skills/i.test(await page.innerHTML("#isoView")));
+  check("the class words are read off the disc", /Slasher/.test(body) && /Knight/.test(body));
+  // the fixture gives list1 #1 (Hugo) Heavy Damage r2 + Counter Attack r1, the real disc's own
+  // loadout, and plants the table cell those two resolve through
+  const row = await page.$$eval("table.invtbl tbody tr", (rs) => rs.map((r) => [...r.cells].map((c) => c.textContent.trim())));
+  const hugo = row.find((r) => r[0] === "Hugo");
+  check("the derived class is shown", hugo && hugo[1] === "Slasher", hugo ? hugo.join(" | ") : "no Hugo row");
+  check("it shows which two skills decided it",
+    hugo && /Heavy Damage/.test(hugo[2]) && /Counter Attack/.test(hugo[2]), hugo ? hugo[2] : "");
+  check("it lists the character's skills with ranks", hugo && /Heavy Damage D|Heavy Damage/.test(hugo[3]), hugo ? hugo[3] : "");
+  // a cell is (type word, modifier word) — a two-word label must join both, not show one half
+  for (const c of mapping.classes.cases) {
+    const r = row.find((x) => x[0] === c.who);
+    check(`${c.who} resolves to "${c.label}"`, r && r[1] === c.label, r ? r.join(" | ") : `no ${c.who} row`);
+  }
+  check("the view stages nothing", await nothingStaged(page));
+  check("no inputs in the Classes view", (await page.locator("#isoView input").count()) === 0);
+  await page.context().close();
+}
+
+head("Duplicated descriptions — one edit writes both copies (issue #11)");
+// The Text tab can't reach these strings at all: its prose filter rejects every real one
+// ("DMGx0.4" trips the letter-then-digit reject), which is exactly why the only editable copy
+// used to be the spell record's — the copy the game's rune menu does NOT read.
+{ const page = await newPage(); await loadIso(page);
+  const T = mapping.twin;
+  const read = (r, off, n) => { let s = ""; for (let i = 0; i < n; i++) { const c = r.at(off + i); if (!c) break; s += String.fromCharCode(c); } return s; };
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="runes"]', { timeout: 3000 });
+  await page.click('[data-ref="runes"]'); await page.waitForSelector("input.rdesc", { timeout: 5000 });
+  await page.fill("#isoSearch", T.rune.name.toLowerCase()); await page.waitForTimeout(100);
+  const box = page.locator(`input.rdesc[data-id="${T.rune.id}"]`);
+  check("the rune browser offers an editable menu text", (await box.count()) === 1);
+  check("it starts at the disc's own rune text", (await box.inputValue()) === T.text);
+  check("it is capped to the on-disc slot", +(await box.getAttribute("maxlength")) === T.text.length);
+  const label = await box.evaluate((el) => el.closest("label").querySelector("span").textContent);
+  check("the field says the text is mirrored", /2 copies, mirrored/.test(label), label);
+
+  const NEW = "DMGx9 to one foe.";
+  await box.fill(NEW); await box.dispatchEvent("change"); await page.waitForTimeout(80);
+  check("status says both copies were written", await statusHas(page, /all 2 copies/i));
+  const r = await save(page);
+  check("the rune copy holds the new text", read(r, T.runeOff, T.text.length) === NEW);
+  check("the spell copy holds it too — this is the bug", read(r, T.spellOff, T.text.length) === NEW);
+  check("both slots are NUL-padded past the new text",
+    r.at(T.runeOff + NEW.length) === 0 && r.at(T.spellOff + NEW.length) === 0);
+  check("neither write runs past its slot",
+    !r.wrote(T.runeOff + T.text.length, 1) && !r.wrote(T.spellOff + T.text.length, 1));
+  await page.context().close();
+}
+{ const page = await newPage(); await loadIso(page);
+  // …and it mirrors the other way too, from the Spells tab's own description field.
+  const T = mapping.twin;
+  await page.click('#isoTabs [data-v="spells"]');
+  await openRec(page, `details.char[data-i="${T.spellIdx}"]`);
+  const d = `details.char[data-i="${T.spellIdx}"] input.spdesc`;
+  check("the spell's description field shows the shared text", (await page.inputValue(d)) === T.text);
+  await page.fill(d, "DMGx1 to foes."); await page.dispatchEvent(d, "change"); await page.waitForTimeout(80);
+  const r = await save(page);
+  let got = ""; for (let i = 0; i < T.text.length; i++) { const c = r.at(T.runeOff + i); if (!c) break; got += String.fromCharCode(c); }
+  check("Spells-tab edit reached the rune copy as well", got === "DMGx1 to foes.");
+  await page.context().close();
+}
+{ const page = await newPage(); await loadIso(page);
+  // A description that is NOT duplicated must stay a single write. The alias rule is
+  // cross-table only: repeated text inside one table (the synth fixture gives four spells
+  // their own copy of "Deals 100DMG") must NOT be linked.
+  await page.click('#isoTabs [data-v="spells"]');
+  await openRec(page, 'details.char[data-i="0"]');
+  await page.fill('details.char[data-i="0"] input.spdesc', "Deals 1DMG");
+  await page.dispatchEvent('details.char[data-i="0"] input.spdesc', "change"); await page.waitForTimeout(80);
+  const r = await save(page);
+  const at = (i) => { const o = SPELL.off + i * SPELL.stride + 0x0C; return r.u32(o); };
+  const txt = (va) => { const off = va - ELF_VADDR + ELF_BASE; let s = ""; for (let i = 0; i < 12; i++) { const c = r.at(off + i); if (!c) break; s += String.fromCharCode(c); } return s; };
+  check("the edited spell description changed", txt(at(0)) === "Deals 1DMG");
+  check("a same-table twin was NOT rewritten", txt(at(1)) === "Deals 100DMG", txt(at(1)));
   await page.context().close();
 }
 
@@ -2024,9 +2260,20 @@ head("Undo/redo + skill-cap & rune presets");
   // spell #1 inflicts unbalance → summary shows it, and clearing its Status zeroes flags18
   check("spell summary shows the inflicted status", (await page.textContent('details.char[data-i="1"] .sp-sum')).includes("unbalance"));
   await openRec(page, 'details.char[data-i="1"]');
-  await page.selectOption('details.char[data-i="1"] select[data-k="status"]', "none");
+  await page.fill('details.char[data-i="1"] input.sp18hex', "0");
+  await page.dispatchEvent('details.char[data-i="1"] input.sp18hex', "change");
   const rs = await save(page);
   check("clearing status zeroes flags18 (removes unbalance)", rs.u32(SPELL.off + 1 * 0x20 + 0x18) === 0);
+  // the raw-hex escape hatch authors a bit the label table doesn't name, and rejects junk
+  await openRec(page, 'details.char[data-i="1"]');
+  await page.fill('details.char[data-i="1"] input.sp18hex', "1DE7");
+  await page.dispatchEvent('details.char[data-i="1"] input.sp18hex', "change");
+  const rh = await save(page);
+  check("raw mask writes a composite (0x1DE7 restore-all)", rh.u32(SPELL.off + 1 * 0x20 + 0x18) === 0x1DE7);
+  await openRec(page, 'details.char[data-i="1"]');
+  await page.fill('details.char[data-i="1"] input.sp18hex', "zz");
+  await page.dispatchEvent('details.char[data-i="1"] input.sp18hex', "change");
+  check("a junk mask is refused with a message", await statusHas(page, /hex mask/i));
   await page.context().close();
 }
 head("Damage+heal slot — move Shining Wind's split effect to another spell");
@@ -2035,8 +2282,9 @@ head("Damage+heal slot — move Shining Wind's split effect to another spell");
   check("the damage+heal card starts collapsed", !(await page.locator("#spSplitSpell").isVisible()));
   // two collapsed bars in a row are ambiguous — each section carries a captioned rule
   { const secs = await page.locator("#isoView > .secdiv > span").allTextContents();
-    check("the tab reads as three labelled sections",
-      secs.length === 3 && /Special effect/.test(secs[0]) && /Bulk edit/.test(secs[1]) && /Every spell/.test(secs[2]),
+    check("the tab reads as four labelled sections",
+      secs.length === 4 && /Status effects/.test(secs[0]) && /Special effect/.test(secs[1])
+      && /Bulk edit/.test(secs[2]) && /Every spell/.test(secs[3]),
       secs.join(" | ")); }
   await openFold(page, "#spSplitBox");
   // the fixture ships the stock wiring: spell id 17 (row 16) + a 300 HP heal
