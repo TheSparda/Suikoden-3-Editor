@@ -296,6 +296,38 @@
     ],
     // Named ids with no roster slot, so the readout can label them (s3save.PARTY_EXTRA_NAMES).
     EXTRA: { 202: "Masked Luc", 203: "Grasslands Chris", 204: "Masked Kidd" },
+
+    // ---- which story content a leader gets -----------------------------------
+    // The leader byte is also "whose story is this". Seven sites switch on it; six carry
+    // the four protagonists (+ 0xCB) and route everything else to a default. The seventh,
+    // at vaddr 0x177FEB4, is the wide one: it turns the leader into a per-team INDEX 0-7
+    // that indexes the area's own town-data table, and it is the ONLY site that gives Luc,
+    // Koroku, Sarah, Masked Luc and id 17 an index of their own.
+    //
+    // Its default path is the whole reason this is cheap. `s0` is zeroed on entry, the
+    // default only calls the (stubbed) debug printf, and then falls into the same tail —
+    // so an unrecognised leader silently resolves to **index 0, which is Hugo**. Blanking
+    // one case immediate therefore hands that character Hugo's story content, with no
+    // branch surgery and nothing else touched.
+    //
+    // That is what fixes the empty dialogue boxes: a town whose table has no entry for
+    // index 4 (Luc) has one for index 0.
+    STORY: {
+      switchVa: 0x177FEB4,
+      OFF: 0x7FFF,          // an id the leader byte can never hold, so the case never fires
+      // off = the `addiu $v0,$zero,N` holding the compared id; idx = the team index it selects
+      cases: [
+        { off: 0x1C76DC, id: 1,    idx: 0, fixed: true },   // Hugo — the fallback itself
+        { off: 0x1C76CC, id: 2,    idx: 1 },                // Chris
+        { off: 0x1C76F0, id: 3,    idx: 2 },                // Geddoe
+        { off: 0x1C7740, id: 0xCB, idx: 3 },                // Grasslands Chris
+        { off: 0x1C7724, id: 0x3F, idx: 4 },                // Luc
+        { off: 0x1C7738, id: 0xCA, idx: 4 },                // Masked Luc
+        { off: 0x1C76F8, id: 0x11, idx: 5 },                // id 17
+        { off: 0x1C770C, id: 0x42, idx: 6 },                // Sarah
+        { off: 0x1C771C, id: 0x36, idx: 7 },                // Koroku
+      ],
+    },
   };
 
   const SETS = {
@@ -882,6 +914,7 @@
     const shops = await grabOpt("../Editor/s3_shops.json");        // shop counter map + town names
     const runeFood = await grabOpt("../Editor/s3_rune_food_desc.json");    // rune/food menu text + spell lists
     const runeOwner = await grabOpt("../Editor/s3_rune_owner.json");       // whose rune each signature rune is
+    const avatarAreas = await grabOpt("../Editor/s3_avatar_areas.json");   // which maps carry each field model
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -896,7 +929,7 @@
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
             enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources,
-            runeFood, runeOwner, shops };
+            runeFood, runeOwner, shops, avatarAreas };
     return REF;
   }
 
@@ -3576,6 +3609,24 @@
     return true;
   }
 
+  // Which area archives ship this model's cha_ records. Absence is a warning, not a verdict
+  // — ETC.BIN carries every one of them too, and a resident model is not evicted on an area
+  // change — so the readout says "ships in", never "will not work".
+  function avatarAreas(id) {
+    const m = REF && REF.avatarAreas && REF.avatarAreas.byModel && REF.avatarAreas.byModel[String(id)];
+    return m && Array.isArray(m.areas) ? m.areas : null;
+  }
+  function avatarAreaCount() {
+    const a = REF && REF.avatarAreas && REF.avatarAreas.archives;
+    return Array.isArray(a) ? a.length : 0;
+  }
+  // The team index 0x177FEB4 resolves for this id, read back from the patched bytes.
+  // Anything with no live case falls through the switch's default, which is index 0 (Hugo).
+  function storyIndexOf(id) {
+    const c = AVATAR.STORY.cases.find((x) => r16(x.off) === id);
+    return c ? c.idx : 0;
+  }
+
   function avatarAllowedIds() {
     const out = [];
     for (let id = 1; id <= 0xD7; id++) if (avatarAllows(id)) out.push(id);
@@ -3600,8 +3651,18 @@
     const allowed = avatarAllowedIds();
     const stock = new Set(AVATAR.STOCK_SET);
     const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
-    const chip = (id) => `<span class="tag${stock.has(id) ? "" : " acc2"}">${
-      esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}</span></span>`;
+    const nArch = avatarAreaCount();
+    const chip = (id) => {
+      const ar = avatarAreas(id), si = storyIndexOf(id);
+      const maps = ar ? ` · ${ar.length}/${nArch} maps` : "";
+      const story = si === 0 ? "" : ` · story ${si}`;
+      const title = ar
+        ? `field model ships in ${ar.length} of ${nArch} area archives: ${ar.join(", ") || "none"}`
+             + (si ? ` — uses its own story content (team index ${si})` : " — uses Hugo's story content")
+        : "";
+      return `<span class="tag${stock.has(id) ? "" : " acc2"}"${title ? ` title="${esc2(title)}"` : ""}>${
+        esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}${maps}${story}</span></span>`;
+    };
 
     // Character options for the single-id slots: the 75 battle characters, then the two
     // named specials. Anything else would name a model the party space cannot address.
@@ -3649,6 +3710,30 @@
           <span class="muted">· ${allowed.length} id${allowed.length === 1 ? "" : "s"}, read back from the patched bytes</span>
           <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
         </div>
+        <div class="bag-h" style="margin:16px 0 8px">Story content <span class="u">which team's events and dialogue a leader gets</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          The leader byte is also <b>whose story this is</b>. One switch turns it into a team
+          index that picks which variant of a town's events and dialogue loads. Hugo is index
+          <b>0</b>, and <b>0 is also what an unrecognised leader gets</b> — so switching a
+          character to <i>Hugo's</i> here just retires its own case and lets it fall through.
+          That is the fix for empty dialogue boxes: a town with no entry for Luc's index has
+          one for Hugo's.
+        </div>
+        <table class="invtbl"><thead><tr><th>Character</th><th>Story content</th><th>Team index</th></tr></thead><tbody>
+        ${AVATAR.STORY.cases.filter((c) => !c.fixed).map((c, i) => {
+          const live = r16(c.off) === c.id;
+          return `<tr><td>${esc2(avatarName(c.id) || "id " + c.id)} <span class="dim">#${c.id}</span></td>
+            <td><select class="av-story" data-i="${i}">
+              <option value="own"${live ? " selected" : ""}>its own (stock)</option>
+              <option value="hugo"${live ? "" : " selected"}>Hugo's</option></select></td>
+            <td class="dim">${live ? c.idx : "0 (Hugo)"}</td></tr>`;
+        }).join("")}
+        </tbody></table>
+        <div class="muted" style="font-size:12px;margin:6px 0 0">
+          Only this one switch knows these characters; the other six already send them to
+          Hugo, which is why a single word is enough. Untested in play — it changes which
+          content loads, not whether that content fits the scene you are standing in.
+        </div>
         <details class="note" style="margin:10px 0 0"><summary>The chain, and where each byte lives</summary>
           <pre style="white-space:pre-wrap;font-size:12px">FieldAvatarModelRequest(id)          ; vaddr 0x17B7560
     if (id == slot1)         LOAD      ; ISO 0x1FED64
@@ -3688,9 +3773,24 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       AVATAR.gates.forEach((g) => { writeW(g.off, 2, AVATAR.WIDE); reg(g.off, 2, "num", "Field character", g.label); });
       drawView();
     };
+    { const editable = AVATAR.STORY.cases.filter((c) => !c.fixed);
+      qa("select.av-story", host).forEach((sel) => {
+        const c = editable[+sel.dataset.i];
+        sel.onchange = () => {
+          writeW(c.off, 2, sel.value === "own" ? c.id : AVATAR.STORY.OFF);
+          reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
+          drawView();
+        };
+        markField(sel, c.off, 2, "num");
+      }); }
     q("#avStock", host).onclick = () => {
       AVATAR.gates.concat(AVATAR.slots).forEach((sIt) => {
         writeW(sIt.off, 2, sIt.stock); reg(sIt.off, 2, "num", "Field character", sIt.label);
+      });
+      // "stock" means the whole section, story cases included — otherwise the button half
+      // reverts and the readout disagrees with the label.
+      AVATAR.STORY.cases.forEach((c) => {
+        writeW(c.off, 2, c.id); reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
       });
       drawView();
     };

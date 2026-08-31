@@ -82,6 +82,14 @@ export const AVATAR_SITES = [
   [0x1FED88, 0x1D, "eq"],   // Thomas
   [0x1FEDA0, 0x3F, "lt"], [0x1FEDAC, 0xCC, "lt"], [0x1FEDB4, 0xCA, "lt"],
 ];
+// The story-content switch at vaddr 0x177FEB4: leader id -> team index 0-7. Only the ids
+// below get an index of their own; anything else falls to the default, which is index 0
+// (Hugo). Retiring a case is what hands that character Hugo's events and dialogue.
+export const STORY_CASES = [
+  [0x1C76DC, 1, 0], [0x1C76CC, 2, 1], [0x1C76F0, 3, 2], [0x1C7740, 0xCB, 3],
+  [0x1C7724, 0x3F, 4], [0x1C7738, 0xCA, 4], [0x1C76F8, 0x11, 5],
+  [0x1C770C, 0x42, 6], [0x1C771C, 0x36, 7],
+];
 export const avatarWord = (imm, kind) =>
   ((kind === "eq" ? 0x24020000 : 0x2C820000) | (imm & 0xFFFF)) >>> 0;   // addiu / sltiu
 // The per-character assigned horse: u16 at list2 record +0x66. Stock has Chris on her own
@@ -292,6 +300,7 @@ export function buildSynthIso() {
     w32(p.mountSite, mountWord(p.mount));
   });
   AVATAR_SITES.forEach(([o, imm, kind]) => w32(o, avatarWord(imm, kind)));
+  STORY_CASES.forEach(([o, imm]) => w32(o, avatarWord(imm, "eq")));
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
