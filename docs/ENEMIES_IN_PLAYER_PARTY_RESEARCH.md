@@ -78,9 +78,22 @@ the block a sane level/stats. **All of that is existing editor functionality** �
 3. **Menu/soft-lock behaviour** — party-leader checks, chapter-locked teams, the pre-merge
    three-party split, and 108-Stars/ending logic all key off the recruit table.
 
-Verdict: **plausible and cheap to try, unproven in-game.** Under the repo's correct-or-absent
-rule it stays a save-edit users can already perform, not a promoted "Add boss to party" button,
-until someone boots it.
+Verdict: **the mechanism is proven; the boss-specific risks are not.**
+
+Updated 2026-08-30. The write path itself has now been confirmed in-game: a roster character
+put into a previously empty party slot — with the correct party id and a re-derived formation
+table — is built by the game and is usable. So "set the recruit word, fill a party slot" really
+does reach the party, which was the part this section could only assume.
+
+What that test used was Bright and Koroku: ordinary roster battle characters with field models
+in every area. It says nothing about **Luc / Yuber / Sarah / Bazba** specifically, and the three
+blockers listed above (per-area model residency, story overwrite of 0x3216, menu/soft-lock
+behaviour) are exactly the ones a normal party member never exercises. Under the repo's
+correct-or-absent rule this therefore stays a save-edit users can perform, not a promoted
+"Add boss to party" button, until someone boots *that*.
+
+Note also that filling the slot takes more than the id: see "The battle formation at 0x3240" in
+`Editor/Suikoden3_ISO_offsets.md`. Writing `0x3216` alone is inert for an empty slot.
 
 ## 3. Class C — bestiary monsters: four independent blockers
 
