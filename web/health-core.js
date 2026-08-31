@@ -142,6 +142,10 @@
     return { characters, party, bags,
       gold: staged.gold != null ? staged.gold : g.gold,
       storyPhase: g.storyPhase, merged: !!g.merged, partyLeader: g.partyLeader,
+      // The formation table as it is ON DISK. Staged party edits do not touch it here —
+      // write_save_edits re-derives it — so `partyStaged` says whether it is about to be.
+      partyFormation: (save.partyFormation || []).slice(),
+      partyStaged: Object.keys(P).length > 0,
       problems: save.problems || [], notes: save.notes || [] };
   }
 
@@ -210,6 +214,25 @@
           fix: { label: `Recruit ${c.name}`, ops: [{ kind: "recruit", ri: c.rosterIndex, recruited: true }] } });
       }
     });
+    // The battle formation (0x3240) is the other half of the party list, and the half whose
+    // absence is silent: it names which party members the game actually builds, so a slot
+    // filled without it shows up empty in-game. An older build of this editor wrote the party
+    // list alone, so saves it touched carry the mismatch — flag it, and let a Fix re-derive it
+    // through the normal write path (any party edit rebuilds the table).
+    if (!eff.partyStaged && eff.partyFormation.length) {
+      const vals = eff.partyFormation.filter((v) => v > 0).sort((a, b) => a - b);
+      const okForm = vals.length === filled.length && vals.every((v, i) => v === i + 1);
+      if (!okForm) {
+        add({ id: "party-formation", sev: "error", group: "Party",
+          title: `The battle formation lists ${vals.length} member${vals.length === 1 ? "" : "s"}, but the party holds ${filled.length}`,
+          detail: "The formation table at 0x3240 is what the game reads to build the party. " +
+            "Where it disagrees with the party list, the extra members simply don't appear — " +
+            "no error, just empty slots. Saves edited by an older build of this editor have this.",
+          where: { sub: "party", search: "" },
+          fix: { label: "Rebuild the formation",
+                 ops: [{ kind: "party", slot: 0, value: eff.party[0] || 0 }] } });
+      }
+    }
     if (eff.partyLeader && filled.length && !filled.includes(eff.partyLeader)) {
       add({ id: "party-leader-absent", sev: "info", group: "Party",
         title: `The party leader (${charName(eff.partyLeader)}) is not in the active party`,
