@@ -149,10 +149,109 @@ ROSTER_IDS = [
     69, 70, 71,
 ]
 
-# Active-party composition: up to 6 member char-ids (u16) at file 0x3216 (herrvillain
-# map), ids in the exe list1 space (1=Hugo, 63=Hallec, ...). 0 = empty slot.
+# Active-party composition: up to 6 member ids (u16) at file 0x3216 (herrvillain map).
+# 0 = empty slot. The leader byte at 0x12 uses the same numbering.
 PARTY_OFF   = 0x3216
 PARTY_SLOTS = 6
+
+# ---------------------------------------------------------------------------
+# The party id space. This is a THIRD numbering, and getting it wrong is invisible:
+# both the wrong read and the wrong write are self-consistent, so the editor shows you
+# back exactly what you picked while the game loads somebody else (or nobody).
+#
+#   * list1 (Editor/s3_names.json)      — the exe's stat-record table, 1..79
+#   * the record id at block +0x0C      — ROSTER_IDS above; Fubar 72, Bright 73, Ruby 74,
+#                                         Koroku 75, everyone else rosterIndex+1
+#   * PARTY_IDS (this table)            — what 0x3216 and 0x12 actually hold
+#
+# PARTY_IDS is the "Party Modifier digits" of the herrvillain cheat reference
+# (Cheat files/Cheat info/Suikoden III Cheat Codes.pdf, "Party Modifier Digits" ->
+# "Battle Characters"). It agrees with list1 for 0x01-0x0B (Hugo..Aila) and then diverges,
+# because it reserves ids the roster does not: gaps at 0x0C, 0x21, 0x25-0x27, 0x2B, 0x40.
+# So Roland is list1 12 but party id 0x0D, Bright list1 31 but 0x20, Koroku list1 48 but
+# 0x36, Emily list1 75 but 0x52.
+#
+# Confirmed against the 20-save playthrough corpus + the 5 extracted gamedata blobs: under
+# this table every stored party decodes to a party the game actually builds, and under the
+# old list1 reading none of them did.
+#
+#   0x3216                 this table                  read as list1 (wrong)
+#   [2,13,18,20,21,45]     Chris + Roland + Leo +      Chris, Lilly, Beecham, Borus,
+#                          Percival + Borus + Salome   Queen, Nash
+#                          (the Zexen knights)
+#   [3,17,22,24,23,11]     Geddoe + Ace + Queen +      Geddoe, Leo, Jacques, Duke,
+#                          Joker + Jacques + Aila      Joker, Aila
+#                          (his mercenaries)
+#   [1,54,210,211,212,213] Hugo + Koroku + Koichi +    Hugo, Yumi, and four ids that
+#                          Connie + Kosanji + Kogoro   decode to nothing at all
+#   [63,66,65]             Luc + Sarah + Yuber         Hallec, Augustine, Twaikin
+#
+# and the leader byte on both phase-4 (Thomas chapter) saves reads 29 = Thomas here, but
+# "Cecile" through list1.
+#
+# Indexed by roster index, so it lines up with the recruit table and the character blocks.
+# Roster slots past 74 are the non-combat 108 Stars: they have their own "Support
+# Characters" digits (a different field — the support slot at 0x3252, which this editor
+# does not expose), so they are not battle-party ids and are absent here.
+PARTY_IDS = [
+    1, 2, 3, 4, 5, 6, 7, 8,
+    9, 10, 11, 13, 14, 15, 16, 17,
+    18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30, 31, 32, 34,
+    35, 36, 40, 41, 42, 44, 45, 46,
+    47, 48, 49, 50, 51, 52, 53, 54,
+    55, 56, 57, 58, 59, 60, 61, 62,
+    63, 65, 66, 67, 68, 69, 70, 71,
+    72, 73, 74, 75, 76, 77, 78, 79,
+    80, 81, 82,
+]
+PARTY_ROSTER = {pid: ri for ri, pid in enumerate(PARTY_IDS)}
+
+# Party ids with no character block of their own, so they can be shown but not edited
+# coherently: the four dogs of Koroku's bonus chapter (list1 76-79, no roster slot) and the
+# "Special Characters" the same reference lists. Real saves carry these — gamedata_u03 holds
+# the dogs, and two corpus saves are led by 0xCA "Masked Luc" — so naming them is the
+# difference between a readable party and a row of bare numbers.
+PARTY_EXTRA_NAMES = {
+    0xD2: "Koichi", 0xD3: "Connie", 0xD4: "Kosanji", 0xD5: "Kogoro",
+    0xCA: "Masked Luc", 0xCB: "Grasslands Chris", 0xCC: "Masked Kidd",
+    0xCD: "Flame Champion", 0xCE: "Wyatt Lightfellow", 0xCF: "Sana",
+    0xD0: "Fire Bringer", 0xD1: "Ruby (special)", 0xD6: "Ultra Gadget Z",
+    0xD7: "Zexen Aila",
+}
+
+
+def party_id_of(roster_index):
+    """Party id for a roster slot, or None for the support-only 108 Stars."""
+    if 0 <= roster_index < len(PARTY_IDS):
+        return PARTY_IDS[roster_index]
+    return None
+
+
+def party_roster_index(party_id):
+    """Roster slot a party id addresses, or None (guest/NPC/special — no character block)."""
+    return PARTY_ROSTER.get(party_id)
+
+
+def party_name(party_id):
+    """Display name for a party id, or '' when the reference does not name it."""
+    ri = PARTY_ROSTER.get(party_id)
+    if ri is not None:
+        return ROSTER[ri]
+    return PARTY_EXTRA_NAMES.get(party_id, "")
+
+
+def party_reference():
+    """Everything the UI needs to speak the party id space:
+    {"names": {partyId: name}, "roster": {partyId: rosterIndex}, "choices": [partyId...]}.
+    `choices` is the pickable set — the battle characters that have a character block, in
+    roster order. The named-but-unpickable ids (dogs, Special Characters) appear in `names`
+    only, so an existing slot reads correctly without offering an unverified edit."""
+    names = {pid: ROSTER[ri] for ri, pid in enumerate(PARTY_IDS)}
+    names.update(PARTY_EXTRA_NAMES)
+    return {"names": names,
+            "roster": dict(PARTY_ROSTER),
+            "choices": list(PARTY_IDS)}
 
 # Recruitment table (herrvillain "Recruit Modifiers" region): one u16 per roster slot at
 # 0x232 + rosterIndex*2. Nonzero = recruited; 0 = not recruited. Verified by diffing 4
@@ -590,7 +689,7 @@ def decode_character(gamedata, roster_index):
 
 
 def decode_party(gamedata):
-    """Active-party member char-ids (0 = empty slot)."""
+    """Active-party member ids, in the PARTY_IDS space (0 = empty slot)."""
     return [struct.unpack_from("<H", gamedata, PARTY_OFF + k*2)[0] for k in range(PARTY_SLOTS)]
 
 
@@ -1469,7 +1568,11 @@ if __name__ == "__main__":
         print(json.dumps(saves, indent=2)); sys.exit(0)
     for s in saves:
         print(f"\n=== {s['label']} ({s['folder']})  checksum=0x{s['checksumWord']:08X} ===")
-        print(f"  party leader id={s['global']['partyLeader']}  story phase={s['global']['storyPhase']}")
+        lid = s['global']['partyLeader']
+        print(f"  party leader id={lid} ({party_name(lid) or '?'})  "
+              f"story phase={s['global']['storyPhase']}")
+        print("  party: " + ", ".join(f"{p} ({party_name(p) or '?'})"
+                                      for p in s["party"] if p) or "  party: (empty)")
         for c in s["characters"]:
             if c["level"] == 0 and c["curHP"] == 0 and c["expToNext"] == 0:
                 continue   # unrecruited/empty slot

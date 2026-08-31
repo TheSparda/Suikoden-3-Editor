@@ -57,10 +57,20 @@ const mkSave = (over) => Object.assign({
 // A small item table: 0x001 a consumable, 0x0A0 a rune, 0x0C0 a helm, 0x0D0 body armor.
 const ITEMS = { 0x001: { name: "Medicine", cat: "Recovery" }, 0x0a0: { name: "Fury Rune", cat: "Runes" },
                 0x0c0: { name: "Iron Helm", cat: "Headgear" }, 0x0d0: { name: "Chain Mail", cat: "Armor" } };
+// Party ids are their own space (s3save.PARTY_IDS), so the audit can only reach a party
+// member's character block through partyRoster. Read the real table out of s3save.py rather
+// than restating it: a drift there should fail here, not silently mislabel party slots.
+const PARTY_IDS = (() => {
+  const py = fs.readFileSync(path.join(REPO, "Editor", "s3save.py"), "utf8");
+  const m = py.match(/^PARTY_IDS = \[([\s\S]*?)\]/m);
+  return m ? m[1].split(",").map((t) => t.trim()).filter(Boolean).map(Number) : [];
+})();
+const PARTY_ROSTER = Object.fromEntries(PARTY_IDS.map((pid, ri) => [pid, ri]));
 const OPTS = {
   item: (id) => ITEMS[id] || null,
   skillName: (id) => "Skill" + id,
   charName: (id) => ({ 1: "Hugo", 2: "Chris", 3: "Geddoe" })[id] || "id " + id,
+  partyRoster: (id) => (id in PARTY_ROSTER ? PARTY_ROSTER[id] : null),
 };
 // Guide stubs: Hugo caps Skill10 at B+ and cannot learn Skill40; his left rune opens at Lv 35.
 const GUIDE_OPTS = Object.assign({}, OPTS, {
