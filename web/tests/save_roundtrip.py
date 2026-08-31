@@ -375,6 +375,57 @@ def main():
     check("checksum invariant holds after the party write",
           sum_words(open(path, "rb").read()) == 0)
 
+    # --- the battle formation (0x3240) ---------------------------------------
+    # The party list alone is the reference's "Type Two" write: for a slot that was empty,
+    # "nothing visible will happen". The formation table is what the game reads to decide how
+    # many members to build, so every party edit has to re-derive it.
+    print("Battle formation:")
+    def form_of(p):
+        return s3save.decode_formation(open(p, "rb").read())
+
+    def party_of(p):
+        return s3save.read_all_s3_saves(p)[0]["party"]
+
+    check("decode exposes the formation",
+          "partyFormation" in s3save.read_all_s3_saves(path)[0])
+    check("formation_is_valid accepts the shapes the game writes",
+          s3save.formation_is_valid([1, 2, 3, 0, 0, 0], [1, 2, 3, 0, 0, 0]) and
+          s3save.formation_is_valid([1, 2, 3, 0, 0, 0], [1, 0, 2, 0, 3, 0]) and
+          s3save.formation_is_valid([1, 2, 3, 0, 0, 0], [1, 3, 2, 0, 0, 0]))
+    check("formation_is_valid rejects a party longer than its formation",
+          not s3save.formation_is_valid([1, 2, 3, 0, 0, 0], [1, 2, 0, 0, 0, 0]))
+
+    # Filling empty slots must extend the formation — the bug that made party edits invisible.
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+                            party_edits={0: 1, 1: 2, 2: 3})
+    check("filling three slots gives a three-member formation",
+          form_of(path) == [1, 2, 3, 0, 0, 0], str(form_of(path)))
+    check("the written formation matches the written party",
+          s3save.formation_is_valid(party_of(path), form_of(path)))
+
+    # A same-size swap leaves a battle order the player set alone.
+    raw = bytearray(open(path, "rb").read())
+    raw[s3save.FORMATION_OFF:s3save.FORMATION_OFF + 3] = bytes([1, 3, 2])
+    open(path, "wb").write(s3save.fix_gamedata_checksum(bytes(raw)))
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False, party_edits={2: 4})
+    check("a same-size swap keeps the player's battle order",
+          form_of(path) == [1, 3, 2, 0, 0, 0], str(form_of(path)))
+
+    # Removing a member from the middle compacts the party list and renumbers the formation.
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False, party_edits={1: 0})
+    check("removing the middle member compacts the party list",
+          party_of(path) == [1, 4, 0, 0, 0, 0], str(party_of(path)))
+    check("...and the formation follows it down",
+          s3save.formation_is_valid(party_of(path), form_of(path)) and
+          sorted(v for v in form_of(path) if v) == [1, 2], str(form_of(path)))
+
+    # Clearing the party clears the table.
+    s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
+                            party_edits={0: 0, 1: 0})
+    check("clearing the party clears the formation", form_of(path) == [0] * 6, str(form_of(path)))
+    check("checksum invariant holds after the formation writes",
+          sum_words(open(path, "rb").read()) == 0)
+
     # --- memory-card ECC helper (used when writing .ps2 cards) ---
     print("Memory-card ECC helper:")
     zero = s3save.ecc_page(bytes(512))
