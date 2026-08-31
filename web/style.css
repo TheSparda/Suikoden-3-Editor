@@ -229,6 +229,10 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .pg-meta { font-variant-numeric:tabular-nums; }
 .bar-fill.err { background:var(--crimson); }
 
+/* "opening a disc" overlay (blocks the loader while an ISO — usually the auto-reopened
+   one — is being read; reuses the save-progress modal's body + bar) */
+.ld-note { margin-top:10px; font-size:12px; }
+
 /* modals (picker + review-changes) */
 .modal-ov { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:flex-end;
   justify-content:center; z-index:100; }

@@ -854,10 +854,65 @@
     return out;
   }
 
+  // ---- blocking "opening a disc" overlay -------------------------------------
+  // Opening a disc is seconds of work (longer on a phone, reading a 4 GB image through a
+  // content:// provider), and with auto-reopen on it starts with no click at all — so the
+  // loader shell must stop looking idle while it runs. Without this the picker underneath
+  // stays live and a second pick races the first, and the only sign anything is happening
+  // is one line of status text nobody is looking at.
+  let LOADBOX = null;
+  // Reuses the open box if there is one, so the auto-reopen can raise it before the file is
+  // even fetched and commitIso then just keeps writing into it.
+  function loadBox(title) {
+    if (LOADBOX) { if (title) LOADBOX.title(title); return LOADBOX; }
+    const ov = document.createElement("div");
+    ov.className = "modal-ov";
+    ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Opening ISO" tabindex="-1" style="max-width:420px">
+        <div class="modal-h"><b id="ldTitle"></b></div>
+        <div class="pg-body" aria-live="polite" aria-busy="true">
+          <div class="muted" id="ldMsg" style="margin-bottom:12px"></div>
+          <div class="bar indet"><div class="bar-fill" id="ldFill" style="width:35%"></div></div>
+          <div class="muted ld-note">Nothing is uploaded — only a ~3.7 MB slice of the disc is read.</div>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const bar = ov.querySelector(".bar"), fill = ov.querySelector("#ldFill");
+    const msgEl = ov.querySelector("#ldMsg"), ttlEl = ov.querySelector("#ldTitle");
+    // The picker under the overlay keeps keyboard focus after its click, so Enter would fire
+    // it a second time straight through the backdrop; take focus into the dialog.
+    const box = ov.querySelector(".modal");
+    try { box.focus(); } catch (e) {}
+    LOADBOX = {
+      title(t) { ttlEl.textContent = t; },
+      phase(msg, pct) {
+        msgEl.innerHTML = `<span class="spinner"></span>${esc2(msg)}`;
+        const indet = pct == null;
+        bar.classList.toggle("indet", indet);
+        if (!indet) fill.style.width = Math.max(2, Math.min(100, pct)) + "%";
+      },
+      close() { ov.remove(); },
+    };
+    LOADBOX.title(title || "Opening ISO…");
+    LOADBOX.phase("Reading the disc…");
+    return LOADBOX;
+  }
+  function closeLoadBox() { if (LOADBOX) { LOADBOX.close(); LOADBOX = null; } }
+  // One progress line, both surfaces: the status strip (which outlives the overlay and is
+  // what a failed load leaves its message in) and the overlay's own text + bar.
+  function loadStep(msg, pct) { setStatus(msg, ""); if (LOADBOX) LOADBOX.phase(msg, pct); }
+
+  // Every ISO load funnels through here, so the overlay is raised and dropped in one place —
+  // including the error paths, which all return out of the loader below.
+  async function commitIso(file, handle) {
+    if (!LOADBOX) loadBox(`Opening ${file.name || "ISO"}…`);
+    try { return await commitIsoLoad(file, handle); }
+    finally { closeLoadBox(); }
+  }
+
   // Read + validate + commit an ISO from a File. Nothing large is held — only the ~3.75 MB
   // editable region is read (via a ranged Blob.slice); the source File is kept for streaming.
-  async function commitIso(file, handle) {
-    setStatus("Reading disc region… (a moment on a large disc)", "");
+  async function commitIsoLoad(file, handle) {
+    loadStep("Reading disc region… (a moment on a large disc)");
     if (file.size < ELF_END) return setStatus(`That file is only ${fmtSize(file.size)} — not a full Suikoden III ISO.`, "err");
     let ab;
     try { ab = await file.slice(ELF_BASE, ELF_END).arrayBuffer(); }
@@ -949,9 +1004,9 @@
       .map(([s, e]) => [s, Math.min(e, file.size)]).filter(([s, e]) => e > s);
     let chunks = [];
     if (fetchRanges.length) {
-      setStatus("Reading enemy data… 0%", "");
+      loadStep("Reading enemy data… 0%", 0);
       chunks = await readRanges(file, fetchRanges, READ_CONC,
-        (n, t) => setStatus(`Reading enemy data… ${Math.round(n * 100 / t)}%`, ""));
+        (n, t) => loadStep(`Reading enemy data… ${Math.round(n * 100 / t)}%`, n * 100 / t));
     }
     // Carve the tight windows out of the wide chunks, then drop the chunks so the bytes
     // bridged between windows stay transient. A tag that loses any window loses all of
@@ -1042,15 +1097,21 @@
     }
     if (BUF) return;                       // a manual pick beat us to it
     setStatus(`Reopening ${rec.name}…`, "");
+    // Nobody clicked for this load, so the overlay goes up before the file is even fetched:
+    // until it does the loader shell looks idle and invites a pick that would race this one.
+    loadBox(`Reopening ${rec.name}…`).phase("Opening the file…");
     try { await loadFromHandle(rec.handle); }
     catch (e) { setStatus("Could not reopen the last ISO — it may have moved. Pick it again.", "warn"); }
+    finally { closeLoadBox(); }            // commitIso closes it too; a second close is a no-op
   }
   async function reopenLastIso(rec) {
     autoReopenDone = true;
     try {
       if (!(await ensureWritable(rec.handle))) return setStatus("Reopen cancelled — write permission denied.", "warn");
+      loadBox(`Reopening ${rec.name}…`).phase("Opening the file…");
       await loadFromHandle(rec.handle);
     } catch (e) { setStatus("Could not reopen — the file may have moved. Pick it again.", "err"); }
+    finally { closeLoadBox(); }
   }
 
   // ---- save (in place) -------------------------------------------------------

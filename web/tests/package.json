@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node validate.mjs && node recruit-logic.mjs && node rename-core.mjs && node guide-core.mjs && node health-core.mjs && node text-core.mjs && node save-roundtrip.mjs && node vcdiff.mjs && node desc-merge.mjs",
     "test:e2e": "node e2e.mjs && node stream-save.mjs",
+    "test:overlay": "node iso-load-overlay.mjs",
     "test:stream": "node stream-save.mjs"
   },
   "devDependencies": {
