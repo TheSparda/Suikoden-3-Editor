@@ -85,6 +85,26 @@ export const AVATAR_SITES = [
 // The story-content switch at vaddr 0x177FEB4: leader id -> team index 0-7. Only the ids
 // below get an index of their own; anything else falls to the default, which is index 0
 // (Hugo). Retiring a case is what hands that character Hugo's events and dialogue.
+// The movement tests that gate a random encounter: IsWalking @0x16F3860 and IsRunning
+// @0x16F38A8. Each entry is [offset, immediate, word-shape] where the shape is the upper
+// half of the instruction (addiu $v0,$a1,imm / sltiu $v0,$v0,imm / sltiu $v1,$v1,imm).
+export const ENCMOVE_SITES = [
+  [0x13B068, 0x02,   0x24A2, true],   // walk range 1 base (stored negated)
+  [0x13B06C, 0x0C,   0x2C42, false],  // walk range 1 length
+  [0x13B074, 0x42,   0x24A2, true],   // walk range 2 base
+  [0x13B078, 0x03,   0x2C42, false],  // walk range 2 length
+  [0x13B08C, 0x64,   0x24A3, true],   // walk kind-2 base
+  [0x13B090, 0x0C,   0x2C63, false],  // walk kind-2 length
+  [0x13B0B0, 0x0E,   0x24A2, true],   // run range 1 base
+  [0x13B0B4, 0x06,   0x2C42, false],  // run range 1 length
+  [0x13B0BC, 0x45,   0x24A2, true],   // run range 2 base  <- repointed at the animal cycle
+  [0x13B0C0, 0x02,   0x2C42, false],  // run range 2 length
+  [0x13B0D4, 0x70,   0x24A3, true],   // run kind-2 base
+  [0x13B0D8, 0x03,   0x2C63, false],  // run kind-2 length
+];
+export const encMoveWord = (imm, opc, negated) =>
+  (((opc << 16) >>> 0) | ((negated ? -imm : imm) & 0xFFFF)) >>> 0;
+
 export const STORY_CASES = [
   [0x1C76DC, 1, 0], [0x1C76CC, 2, 1], [0x1C76F0, 3, 2], [0x1C7740, 0xCB, 3],
   [0x1C7724, 0x3F, 4], [0x1C7738, 0xCA, 4], [0x1C76F8, 0x11, 5],
@@ -301,6 +321,7 @@ export function buildSynthIso() {
   });
   AVATAR_SITES.forEach(([o, imm, kind]) => w32(o, avatarWord(imm, kind)));
   STORY_CASES.forEach(([o, imm]) => w32(o, avatarWord(imm, "eq")));
+  ENCMOVE_SITES.forEach(([o, imm, opc, neg]) => w32(o, encMoveWord(imm, opc, neg)));
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
