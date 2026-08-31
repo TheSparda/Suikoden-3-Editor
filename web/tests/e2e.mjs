@@ -429,16 +429,45 @@ head("Mounts view — rewrite the battle rider/mount pairs");
   await page.click('#isoTabs [data-v="mounts"]');
   await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
   check("all 3 pair cards render", (await page.$$("#mountCards details.char")).length === 3);
-  // the feature ships flagged: the beta banner must survive refactors
+  // the tab must state what has actually been played, and mark every combination it can't vouch for
   { const txt = await page.textContent("#isoView");
-    check("tab is flagged BETA / testing only", /BETA/.test(txt) && /not yet confirmed in-game/i.test(txt)); }
+    check("it names the confirmed re-pairing", /Hugo \+ Bright/.test(txt) && /confirmed in-game/i.test(txt));
+    check("it still says the rig is the open question", /animation rig/i.test(txt));
+    check("the legend lists every confidence tier",
+      ["confirmed", "expected", "untested", "rough", "won't animate"].every((t) => txt.includes(t))); }
+  // per-combination markers: stock + Hugo/Bright are confirmed, a horse-rigged rider on a flyer is not
+  { const cell = async (rider, mount) => {
+      const rows = await page.$$("table.mcftbl tbody tr");
+      for (const tr of rows) {
+        const tds = await tr.$$("td");
+        if ((await tds[0].textContent()).trim().startsWith(rider)) return (await tds[mount].textContent()).trim();
+      }
+      return null; };
+    check("Hugo + Fubar is confirmed", /confirmed/.test(await cell("Hugo", 1)));
+    check("Hugo + Bright is confirmed", /confirmed/.test(await cell("Hugo", 2)));
+    check("Chris + Ruby is expected (horse rig, horse mount)", /expected/.test(await cell("Chris", 3)));
+    check("Chris + Bright is untested (horse rig, flyer mount)", /untested/.test(await cell("Chris", 2)));
+    check("Futch + Fubar is expected (flyer rig, flyer mount)", /expected/.test(await cell("Futch", 1)));
+    check("Futch + Ruby is untested (flyer rig, horse mount)", /untested/.test(await cell("Futch", 3)));
+    check("Sharon reads rough on every mount",
+      /rough/.test(await cell("Sharon", 1)) && /rough/.test(await cell("Sharon", 3))); }
   // stock decode: Hugo(1)+Fubar(8), Futch(31)+Bright(32), Franz(41)+Ruby(42)
   check("pair 1 rider decodes to Hugo", (await page.inputValue('select.mnt-rider[data-i="0"]')) === "1");
   check("pair 1 mount decodes to Fubar", (await page.inputValue('select.mnt-mount[data-i="0"]')) === "8");
   check("pair 2 rider decodes to Futch", (await page.inputValue('select.mnt-rider[data-i="1"]')) === "31");
   check("pair 3 mount decodes to Ruby", (await page.inputValue('select.mnt-mount[data-i="2"]')) === "42");
-  // Geddoe must not be offered — his model has no 3xx mounted animation bank
-  check("Geddoe is not a rider option", (await page.textContent("#mountCards")).includes("Geddoe") === false);
+  // Geddoe is not offered by default — his model has no 3xx mounted animation bank
+  check("Geddoe is not a rider option by default", (await page.textContent("#mountCards")).includes("Geddoe") === false);
+  // ...but the opt-in reveals him, marked won't-animate: that is the issue #14 negative control
+  await page.check("#mntAll");
+  await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
+  { const opts = await page.$$eval('select.mnt-rider[data-i="0"] option', (o) => o.map((x) => x.textContent.trim()));
+    const ged = opts.find((t) => t.startsWith("Geddoe"));
+    check("the opt-in offers Geddoe", !!ged);
+    check("...marked as having no mounted-battle bank", /no mounted-battle bank/.test(ged || ""));
+    check("Geddoe's row reads won't animate", /won.t animate/.test(await page.textContent("table.mcftbl"))); }
+  await page.uncheck("#mntAll");
+  await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
   // repair: Chris rides Bright, and give Hugo a second mount via pair 3
   await page.selectOption('select.mnt-rider[data-i="0"]', "2");     // Chris
   await page.selectOption('select.mnt-mount[data-i="0"]', "32");    // Bright
@@ -490,7 +519,8 @@ head("Reference — Mounts browser, read-only");
   check("the passive horses are described", /b_N_damage/.test(txt));
   check("it lists what can't be exposed", /can't be exposed as fields/.test(txt));
   check("it states residency isn't proof", /asset\s*\n?\s*residency/.test(txt.replace(/\s+/g, " ")) || /residency/.test(txt));
-  check("it says nothing is emulator-confirmed", /confirmed in an emulator/.test(txt));
+  check("it scopes what is emulator-confirmed", /confirmed in an\s+emulator/.test(txt.replace(/\s+/g, " "))
+    && /Hugo\+Bright/.test(txt.replace(/\s+/g, "")));
   check("the browser stages nothing", (await page.$$("#isoView input, #isoView select")).length === 0);
   await page.context().close();
 }
