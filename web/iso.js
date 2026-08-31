@@ -801,6 +801,59 @@
   // Open via a plain <input type=file> (Android/Firefox/Safari — no handle; save streams a copy).
   async function loadFromInputFile(file) { return commitIso(file, null); }
 
+  // ---- ranged disc reads -----------------------------------------------------
+  // Opening a disc needs ~400 small windows scattered over 3.6 GB — enemy and war stat
+  // records, reward blocks, spawn zones, room encounter tables. Issued one at a time they
+  // dominated the load: on a phone the File arrives through a content:// / Files provider,
+  // so every Blob.slice() is an IPC round trip with no readahead benefit (consecutive
+  // windows are hundreds of MB apart), and awaiting each in turn stacked ~400 latencies
+  // end to end. "Reading enemy data…" sat there for tens of seconds.
+  //
+  // Two separate gaps fix that without retaining more memory than before:
+  //   KEEP_GAP    how tightly the windows AUX RETAINS are merged. Unchanged, so AUX still
+  //               holds ~1 MB and the per-tag dirty accounting is byte-for-byte identical.
+  //   FETCH_GAP   how tightly the READS are merged. Much looser: bridging unwanted bytes
+  //               to save a round trip pays off whenever gap/throughput < latency, which
+  //               is ~2.5 MB on a phone and ~250 KB on a desktop. At 512 KB the shipped
+  //               index goes from 395 reads to 46, and merging further buys almost nothing
+  //               (44 reads) for twice the bytes.
+  // The wide chunks are carved into the tight windows and dropped, so the bridged bytes
+  // are transient and never reach AUX.
+  const KEEP_GAP = 0x2000, FETCH_GAP = 0x80000, READ_CONC = 8;
+  // Merge [start, end) ranges lying within `gap` bytes of each other. Input need not be
+  // sorted; the result is sorted and disjoint.
+  function coalesce(ranges, gap) {
+    const out = [];
+    for (const [s, e] of [...ranges].sort((a, b) => a[0] - b[0])) {
+      const last = out[out.length - 1];
+      if (last && s - last[1] <= gap) last[1] = Math.max(last[1], e);
+      else out.push([s, e]);
+    }
+    return out;
+  }
+  // Read every range with at most `conc` requests in flight. Returns an array parallel to
+  // `ranges`; an entry is null where that read threw or came up short, which the caller
+  // turns into "this feature is unavailable" rather than half a table. Errors are not
+  // rethrown — one unreadable region must not cost the whole disc.
+  async function readRanges(file, ranges, conc, onDone) {
+    const out = new Array(ranges.length).fill(null);
+    let next = 0, done = 0;
+    const worker = async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= ranges.length) return;
+        const [s, e] = ranges[i];
+        try {
+          const a = new Uint8Array(await file.slice(s, e).arrayBuffer());
+          if (a.length === e - s) out[i] = a;
+        } catch (err) { /* null entry — the caller drops that tag */ }
+        if (onDone) onDone(++done, ranges.length);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(conc, ranges.length) }, worker));
+    return out;
+  }
+
   // Read + validate + commit an ISO from a File. Nothing large is held — only the ~3.75 MB
   // editable region is read (via a ranged Blob.slice); the source File is kept for streaming.
   async function commitIso(file, handle) {
@@ -817,20 +870,19 @@
       return setStatus(`Not a USA (SLUS-20387) Suikoden III ISO — version word 0x${hex(ver, 8)} ≠ 0x${hex(VERSION_VAL, 8)}. ` +
         `Only the USA release is supported.`, "err");
     }
-    // aux windows (potch-multiplier overlay pair) — optional: an unreadable window just
-    // makes that one control read-only in the Sets view, never blocks the load.
-    let aux = [];
-    try {
-      for (const off of AUX_WINDOWS) {
-        const a = new Uint8Array(await file.slice(off, off + AUX_LEN).arrayBuffer());
-        if (a.length === AUX_LEN) aux.push({ off, len: AUX_LEN, tag: "potch", buf: a, orig: a.slice() });
-      }
-      if (aux.length !== AUX_WINDOWS.length) aux = [];
-    } catch (e) { aux = []; }
-    // enemy windows: coalesced spans over every stat record + reward block listed in
-    // s3_enemy_packs.json (all pack copies). Optional the same way — a pack whose
-    // offsets can't be read (short disc / test fixture) is skipped, and the Enemies
-    // view reports it as unavailable instead of showing wrong data.
+    // ---- window plan ---------------------------------------------------------
+    // Every extra-ELF window this disc needs is planned before a single byte is read,
+    // so the scattered reads can be merged and issued together (see KEEP_GAP/FETCH_GAP
+    // above). A plan entry is a tag plus the tight ranges AUX keeps under it; building
+    // one touches no I/O.
+    const plan = [];
+    // potch overlay pair — optional: an unreadable window just makes that one control
+    // read-only in the Sets view, never blocks the load.
+    plan.push({ tag: "potch", keep: AUX_WINDOWS.map((off) => [off, off + AUX_LEN]) });
+    // enemy windows: spans over every stat record, reward block and spawn zone listed in
+    // s3_enemy_packs.json (all pack copies). Optional the same way — a pack whose offsets
+    // can't be read (short disc / test fixture) is skipped, and the Enemies view reports
+    // it as unavailable instead of showing wrong data.
     let epacks = [], eskipped = 0, wskipped = 0;
     const epsrc0 = (typeof window !== "undefined" && window.S3_TEST_ENEMY_PACKS) || (REF && REF.enemyPacks);
     // war-unit packs (s3_war_units.json) share the exact record layout and ride the
@@ -845,46 +897,26 @@
                packs: [...(base ? base.packs : []), ...(war ? war.packs : [])] };
     })();
     if (epsrc && Array.isArray(epsrc.packs)) {
-      setStatus("Reading enemy data…", "");
       const rl = epsrc.recLayout, al = epsrc.auxLayout;
       const zl = epsrc.zoneLayout || { slotSize: 0x14, partySize: 0x1C };
       const spans = [];
       for (const p of epsrc.packs) {
         const offs = [];
         for (const e of p.enemies) for (const v of e.variants) {
-          for (const o of v.rec) offs.push([o, rl.size]);
-          for (const o of v.aux) offs.push([o, al.size]);
+          for (const o of v.rec) offs.push([o, o + rl.size]);
+          for (const o of v.aux) offs.push([o, o + al.size]);
         }
         for (const z of (p.zones || [])) {
-          for (const s of z.slots) for (const o of s.off) offs.push([o, zl.slotSize]);
+          for (const s of z.slots) for (const o of s.off) offs.push([o, o + zl.slotSize]);
           for (const pa of z.parties) {
-            for (const o of pa.off) offs.push([o, zl.partySize]);
-            for (const o of pa.memOff) offs.push([o, Math.max(pa.members.length, 1)]);
+            for (const o of pa.off) offs.push([o, o + zl.partySize]);
+            for (const o of pa.memOff) offs.push([o, o + Math.max(pa.members.length, 1)]);
           }
         }
-        if (offs.some(([o, n]) => o + n > file.size)) { if (p.war) wskipped++; else eskipped++; continue; }
+        if (offs.some(([, e]) => e > file.size)) { if (p.war) wskipped++; else eskipped++; continue; }
         epacks.push(p); spans.push(...offs);
       }
-      spans.sort((a, b) => a[0] - b[0]);
-      const ranges = [];
-      for (const [o, n] of spans) {
-        if (ranges.length && o - ranges[ranges.length - 1][1] <= 0x2000) {
-          ranges[ranges.length - 1][1] = Math.max(ranges[ranges.length - 1][1], o + n);
-        } else ranges.push([o, o + n]);
-      }
-      try {
-        for (const [s, e] of ranges) {
-          const a = new Uint8Array(await file.slice(s, e).arrayBuffer());
-          if (a.length !== e - s) throw new Error("short read");
-          aux.push({ off: s, len: e - s, tag: "enemy", buf: a, orig: a.slice() });
-        }
-      } catch (err) {
-        // drop every enemy window on any failure — a half-loaded set would lie
-        aux = aux.filter((w) => w.tag !== "enemy");
-        epacks = [];
-        eskipped = epsrc.packs.filter((p) => !p.war).length;
-        wskipped = epsrc.packs.filter((p) => p.war).length;
-      }
+      if (spans.length) plan.push({ tag: "enemy", keep: coalesce(spans, KEEP_GAP) });
     }
     // room windows: the per-area encounter-rate tables from s3_rooms.json. Each room
     // record contributes its 4-byte [grace, rate] pair; a table's records are 0x3C apart
@@ -897,32 +929,53 @@
       const rspans = [];
       for (const a of rsrc.areas) {
         const offs = [];
-        for (const t of a.tables) for (const r of t.rooms) offs.push(r.graceOff);
-        if (offs.some((o) => o + 4 > file.size)) { rskipped++; continue; }
+        for (const t of a.tables) for (const r of t.rooms) offs.push([r.graceOff, r.graceOff + 4]);
+        if (offs.some(([, e]) => e > file.size)) { rskipped++; continue; }
         rareas.push(a); rspans.push(...offs);
       }
-      rspans.sort((x, y) => x - y);
-      const rranges = [];
-      for (const o of rspans) {
-        if (rranges.length && o - rranges[rranges.length - 1][1] <= 0x2000) {
-          rranges[rranges.length - 1][1] = Math.max(rranges[rranges.length - 1][1], o + 4);
-        } else rranges.push([o, o + 4]);
-      }
-      try {
-        for (const [s0, e0] of rranges) {
-          // An enemy window already covering this range can serve the reads/writes
-          // (auxWin searches every window); adding a second overlapping one would split
-          // the dirty tracking, so skip it.
-          if (aux.some((w) => s0 >= w.off && e0 <= w.off + w.len)) continue;
-          const a2 = new Uint8Array(await file.slice(s0, e0).arrayBuffer());
-          if (a2.length !== e0 - s0) throw new Error("short read");
-          aux.push({ off: s0, len: e0 - s0, tag: "room", buf: a2, orig: a2.slice() });
-        }
-      } catch (err) {
-        aux = aux.filter((w) => w.tag !== "room");     // half-loaded would lie
-        rareas = []; rskipped = rsrc.areas.length;
-      }
+      // A window another tag already covers can serve these reads and writes (auxWin
+      // searches every window); a second, overlapping one would split the dirty tracking
+      // in two, so drop it. Nothing overlaps on the shipped index — this guards an
+      // offset table that one day does.
+      const taken = plan.flatMap((p) => p.keep);
+      const keep = coalesce(rspans, KEEP_GAP).filter(([s, e]) => !taken.some(([cs, ce]) => s >= cs && e <= ce));
+      if (keep.length) plan.push({ tag: "room", keep });
     }
+    // ---- one batched pass over the disc --------------------------------------
+    // Ranges are clamped to the file so a window planted past the end of a short disc
+    // (the potch pair on a test fixture) fails only its own tag, instead of short-reading
+    // a chunk that other tags were sharing.
+    const fetchRanges = coalesce(plan.flatMap((p) => p.keep), FETCH_GAP)
+      .map(([s, e]) => [s, Math.min(e, file.size)]).filter(([s, e]) => e > s);
+    let chunks = [];
+    if (fetchRanges.length) {
+      setStatus("Reading enemy data… 0%", "");
+      chunks = await readRanges(file, fetchRanges, READ_CONC,
+        (n, t) => setStatus(`Reading enemy data… ${Math.round(n * 100 / t)}%`, ""));
+    }
+    // Carve the tight windows out of the wide chunks, then drop the chunks so the bytes
+    // bridged between windows stay transient. A tag that loses any window loses all of
+    // them: half a table would show wrong values and write wrong bytes, which is worse
+    // than reporting the feature unavailable.
+    const aux = [];
+    const lost = new Set();
+    for (const p of plan) {
+      const win = [];
+      for (const [s, e] of p.keep) {
+        const i = fetchRanges.findIndex(([cs, ce]) => s >= cs && e <= ce);
+        if (i < 0 || !chunks[i]) { lost.add(p.tag); break; }
+        const b = chunks[i].slice(s - fetchRanges[i][0], e - fetchRanges[i][0]);
+        win.push({ off: s, len: e - s, tag: p.tag, buf: b, orig: b.slice() });
+      }
+      if (!lost.has(p.tag)) aux.push(...win);
+    }
+    chunks = null;
+    if (lost.has("enemy")) {
+      epacks = [];
+      eskipped = epsrc.packs.filter((p) => !p.war).length;
+      wskipped = epsrc.packs.filter((p) => p.war).length;
+    }
+    if (lost.has("room")) { rareas = []; rskipped = rsrc.areas.length; }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     AUX = aux;
