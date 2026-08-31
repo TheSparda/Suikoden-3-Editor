@@ -122,21 +122,36 @@ Object.assign(NAMES, { 202: "Masked Luc", 203: "Grasslands Chris" });
 const AREAS = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_avatar_areas.json"), "utf8"));
 const areaInfo = (id) => { const m = (AREAS.byModel || {})[String(id)];
   return m && Array.isArray(m.areas) ? { areas: m.areas, total: (AREAS.archives || []).length } : null; };
-const avatarList = new Function("REF", "CHAR_LIST", "avatarAreaInfo",
+// STORY_SAFE lives beside avatarList rather than inside it, so it is parsed out of app.js
+// too — restating the four here would let the two drift without a test noticing.
+const safeM = appSrc.match(/const STORY_SAFE = new Set\(\[([^\]]*)\]\)/);
+if (!safeM) { console.error("FAIL: no STORY_SAFE in web/app.js"); process.exit(1); }
+const STORY_SAFE = new Set(safeM[1].split(",").map((t) => Number(t.trim())).filter((n) => !isNaN(n)));
+const avatarList = new Function("REF", "CHAR_LIST", "avatarAreaInfo", "STORY_SAFE",
   appSrc.slice(fnStart, fnEnd + 2) + "\nreturn avatarList;")(
   { fieldAvatars: PY_AVATARS, charById: NAMES },
   PY_PARTY_IDS.map((id) => ({ id, name: NAMES[id] })),
-  areaInfo);
+  areaInfo, STORY_SAFE);
 
 console.log("Save-editor picker labelling:");
 { const list = avatarList(1);
-  const wl = list.filter((r) => r.cat === "engine default").map((r) => r.id);
-  check("the whitelisted eight are grouped as engine defaults", eq(wl, PY_AVATARS), JSON.stringify(wl));
-  check("they are offered first", eq(list.slice(0, 8).map((r) => r.id), PY_AVATARS));
-  const patchNeeded = list.filter((r) => r.cat === "needs ISO patch").map((r) => r.id);
-  check("every other battle character is offered as needs-ISO-patch",
-    eq(patchNeeded, PY_PARTY_IDS.filter((id) => !PY_AVATARS.includes(id))));
-  check("Sarah is offered, marked needs-ISO-patch", patchNeeded.includes(66));
+  // The picker deliberately offers ONLY what the engine ships. Widening the whitelist is an
+  // ISO experiment that hangs scenes, so a regression that re-exposed all 75 here would put
+  // known-broken picks in front of someone editing a save.
+  check("only the shipped avatars are offered", eq(list.map((r) => r.id), PY_AVATARS),
+    JSON.stringify(list.map((r) => r.id)));
+  check("Sarah is NOT offered (she needs the ISO experiment)", !list.some((r) => r.id === 66));
+  check("no unpatched character is offered",
+    !list.some((r) => !PY_AVATARS.includes(r.id)));
+  // Being shipped is not the same as being story-safe — Koroku hangs scenes and is shipped.
+  const prot = list.filter((r) => r.cat === "protagonist").map((r) => r.id);
+  check("STORY_SAFE is exactly the four protagonists",
+    eq([...STORY_SAFE].sort((a, b) => a - b), [1, 2, 3, 29]), JSON.stringify([...STORY_SAFE]));
+  check("the four protagonists are marked as such", eq(prot, [1, 2, 3, 29]), JSON.stringify(prot));
+  check("the rest are marked roaming only",
+    list.filter((r) => r.cat === "roaming only").every((r) => !([1, 2, 3, 29].includes(r.id))));
+  check("Koroku is shipped but not story-safe",
+    (list.find((r) => r.id === 54) || {}).cat === "roaming only");
   check("nobody is listed twice", new Set(list.map((r) => r.id)).size === list.length);
   check("every row carries a note explaining its group", list.every((r) => r.desc && r.cat));
   // The coverage warning has to reach the row the user reads, not just exist in the file.
@@ -144,7 +159,8 @@ console.log("Save-editor picker labelling:");
   check("a row states how many maps ship that field model", /ships in \d+\/28 maps/.test(luc.desc), luc.desc);
   check("...and names them", /ZKTR/.test(luc.desc));
   const thomas = list.find((r) => r.id === 29);
-  check("the most map-limited avatar reports its small count", /ships in 5\/28 maps/.test(thomas.desc), thomas.desc); }
+  check("the most map-limited avatar reports its small count", /ships in 5\/28 maps/.test(thomas.desc), thomas.desc);
+  check("roaming picks say scenes can hang", /scenes can hang/.test(list.find((r) => r.id === 54).desc)); }
 { // A save whose leader the picker does not offer (a dog, a special) must still show what it
   // holds — dropping it would silently rewrite the save on the next Apply.
   const list = avatarList(0xD2);

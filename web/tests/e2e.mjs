@@ -528,7 +528,8 @@ head("Mounted-pair mechanics — HP pooling and the Adrenaline pair-sum");
 
 head("Field character — the whitelist that decides who you can walk around as");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="avatar"]');
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
   await page.waitForSelector("#avWide", { timeout: 3000 });
   // The readout is the only feedback there is that a patch took, so it is the thing under
   // test: it re-runs the game's chain over the bytes on screen. Stock must be the eight the
@@ -545,7 +546,12 @@ head("Field character — the whitelist that decides who you can walk around as"
   { const txt = await page.textContent("#isoView");
     check("it warns everyone beyond the stock eight is untested", /untested/i.test(txt));
     check("it warns story scripts rewrite the leader byte", /chapter transitions/i.test(txt));
-    check("it points at the save editor for the actual pick", /Save Editor/.test(txt)); }
+    check("it warns a scene can hang whoever you pick", /scripted scene can\s+hang/i.test(txt));
+    // Confirmed in play that this control does NOT fix a hanging scene. Saying so is the
+    // whole value — otherwise it reads as the obvious thing to reach for when one hangs.
+    check("it scopes Story content to blank dialogue, not softlocks",
+      /empty dialogue boxes, not for softlocks/i.test(txt));
+    check("...and names the real cause", /evneutral/.test(txt)); }
 
   // Swapping one id: Luc's slot re-pointed at Sarah (66), the one character asked for that
   // the retail chain has no room for.
@@ -579,7 +585,8 @@ head("Field character — the whitelist that decides who you can walk around as"
 
 head("Field character — per-map coverage and the story-content switch");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="avatar"]');
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
   await page.waitForSelector("#avWide", { timeout: 3000 });
   // Coverage rides on the chip, because "is this character even in the map I am on" is the
   // second thing that decides whether a pick works and the user cannot check it themselves.
@@ -651,6 +658,10 @@ head("Encounter movement rules — what counts as moving");
   await page.selectOption("#encRunAlt", "animal");
   await page.waitForSelector("#encRunAlt", { timeout: 3000 });
   check("the note names the trade it makes", /mounted fast-move/.test(await page.textContent("#encMove")));
+  // The tab has to say which settings are played rather than inferred — same convention the
+  // Mounts tab uses. This one is confirmed in play, so it must not read as speculative.
+  check("the animal mode is marked confirmed, not untested",
+    /confirmed/i.test(await page.textContent("#encMove")));
   { const r = await save(page);
     check("the second run range base became -0x11A", (r.u32(0x13B0BC) & 0xFFFF) === ((-0x11A) & 0xFFFF));
     check("...its length became 6 (slots 0x11A-0x11F)", lenOf(r, 0x13B0C0) === 6);
