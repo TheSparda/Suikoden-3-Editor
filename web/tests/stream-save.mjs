@@ -78,6 +78,7 @@ const controlled = await page.evaluate(async () => {
 if (!controlled) { console.log("  (service worker never took control — skipped)"); await browser.close(); srv.close(); process.exit(0); }
 check("service worker controls the page", controlled);
 
+{ const b = await page.$("#bootHide"); if (b) await b.click(); }   // take the boot gate down (Pyodide is aborted here)
 await page.click('.mtab[data-mode="iso"]');
 await page.waitForSelector("#isoFileInput", { state: "attached", timeout: 8000 });   // styled label — the input itself is hidden
 await page.setInputFiles("#isoFileInput", { name: "s3.iso", mimeType: "application/octet-stream", buffer: Buffer.from(src) });

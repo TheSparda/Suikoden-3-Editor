@@ -13,6 +13,30 @@
 <meta name="apple-mobile-web-app-title" content="S3 Save Editor">
 </head>
 <body>
+<!-- Full-screen boot gate. Until Pyodide is up the save editor is inert (the file picker is
+     disabled, no reference tables, no engine), so block the whole screen rather than let
+     someone poke a half-live form and conclude the app is broken. It lives in the markup, not
+     in app.js, so it is up on the FIRST paint — building it from script would flash the dead
+     UI first. app.js drives the steps and takes it down. The ISO editor needs no Python at
+     all, hence the escape hatch: this gate must never be the reason that tab is unreachable. -->
+<div id="bootOv" class="boot-ov" role="dialog" aria-modal="true" aria-labelledby="bootTitle">
+  <div class="boot-card" id="bootCard" tabindex="-1">
+    <h2 id="bootTitle">Starting the Python engine</h2>
+    <div class="boot-msg" id="bootMsg" aria-live="polite" aria-busy="true">
+      <span class="spinner"></span>Downloading Python runtime…</div>
+    <div class="bar"><div class="bar-fill" id="bootFill" style="width:6%"></div></div>
+    <ol class="boot-steps" id="bootSteps">
+      <li data-step="rt">Python runtime <span class="bs-note">~10 MB — cached after the first visit</span></li>
+      <li data-step="mod">Save module <span class="bs-note">s3save.py, run on your device</span></li>
+      <li data-step="ref">Reference tables <span class="bs-note">item, skill and character names</span></li>
+    </ol>
+    <div class="boot-note">Nothing is uploaded — the engine and your save stay in this browser.</div>
+    <div class="boot-acts" id="bootActs">
+      <button type="button" class="chip" id="bootIso">ISO Editor → (no Python needed)</button>
+      <button type="button" class="chip" id="bootHide">Dismiss</button>
+    </div>
+  </div>
+</div>
 <div class="wrap">
   <header>
     <h1>Suikoden III Editor</h1>
@@ -60,7 +84,7 @@
     <button class="tb" data-theme="parchment">Parchment</button>
     <span class="credit">Made by <b>Sparda</b> ·
       <a href="https://github.com/TheSparda/Suikoden-3-Editor" target="_blank" rel="noopener noreferrer">GitHub</a>
-      · v1.58.0 ·
+      · v1.59.0 ·
       <button type="button" id="forceRefreshBtn" class="linklike" title="Clear this site's cached files + service worker and reload the latest version">↻ Force refresh</button></span>
     <span class="note">Save editor: client-side Pyodide port of <code>s3save.py</code> (full parity, works everywhere).
       ISO editor: client-side, in-place edits on Chromium desktop.</span>

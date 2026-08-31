@@ -95,7 +95,11 @@ async function newPage() {
   await page.addInitScript(SPY);
   return page;
 }
-const isoTab = async (page) => { await page.goto(base, { waitUntil: "domcontentloaded" }); await page.click('.mtab[data-mode="iso"]'); };
+const isoTab = async (page) => {
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  const b = await page.$("#bootHide"); if (b) await b.click();   // boot gate covers the tabs (no Pyodide here)
+  await page.click('.mtab[data-mode="iso"]');
+};
 
 console.log("Manual pick:");
 { const page = await newPage();
