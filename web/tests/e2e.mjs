@@ -574,6 +574,46 @@ head("Enemies view — real index unavailable on a small disc");
   await page.context().close();
 }
 
+head("Disc load batches its scattered ranged reads");
+{ const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await page.addInitScript(`window.S3_TEST_WAR_UNITS = ${JSON.stringify(WAR_TEST_UNITS)};`);
+  await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
+  // Count every ranged read the load issues. Reading each window on its own is what made
+  // "Reading enemy data…" take tens of seconds on a phone: the shipped index is ~400 windows
+  // scattered over 3.6 GB, and through a content:// / Files provider every Blob.slice() is an
+  // IPC round trip. The load now plans all the windows first and fetches them in far fewer,
+  // wider chunks, carving the tight windows back out. The tables below still have to decode
+  // byte-for-byte afterwards — a faster load that reads the wrong bytes is worse than a slow one.
+  await page.addInitScript(`window.__slices = [];
+    const _slice = Blob.prototype.slice;
+    Blob.prototype.slice = function (a, b) { window.__slices.push((b || 0) - (a || 0)); return _slice.apply(this, arguments); };`);
+  await loadIso(page);
+  // Everything except the one ~3.75 MB read of the ELF block itself.
+  const reads = await page.evaluate("window.__slices.filter((n) => n > 0 && n < 0x100000).length");
+  // The fixture's enemy, war and room windows sit within a few KB of each other, so one chunk
+  // covers all of them; per-window reads would be four. The bound is loose on purpose — this
+  // guards "batched", not an exact count.
+  check("enemy, war and room windows load in one batched read", reads <= 2, `${reads} ranged read(s)`);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
+  check("...and the enemy record still decodes", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
+  check("...including its reward block", (await page.inputValue('input.en-num[data-f="potch"]')) === "60");
+  await page.click('#isoTabs [data-v="war"]');
+  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="hp"]', { timeout: 3000 });
+  check("...and the war unit, carved from the same chunk", (await page.inputValue('input.en-num[data-f="hp"]')) === "230");
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("details.rarea", { timeout: 3000 });
+  await page.click("details.rarea summary");
+  await page.waitForSelector("input.rm-f", { timeout: 3000 });
+  const rates = await page.$$eval('input.rm-f[data-k="rate"]', (es) => es.map((e) => e.value));
+  check("...and the room table, which keeps its own window", rates.join(",") === "4,0,9,2", rates.join(","));
+  await page.context().close();
+}
 head("Enemies editor — decode, edit, write-through both copies");
 { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
