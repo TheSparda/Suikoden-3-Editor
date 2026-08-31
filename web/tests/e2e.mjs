@@ -431,8 +431,9 @@ head("Mounts view — rewrite the battle rider/mount pairs");
   check("all 3 pair cards render", (await page.$$("#mountCards details.char")).length === 3);
   // the tab must state what has actually been played, and mark every combination it can't vouch for
   { const txt = await page.textContent("#isoView");
-    check("it names the confirmed re-pairing", /Hugo \+ Bright/.test(txt) && /confirmed in-game/i.test(txt));
-    check("it still says the rig is the open question", /animation rig/i.test(txt));
+    check("it names both confirmed re-pairings", /Hugo \+ Bright/.test(txt) && /Chris \+ Bright/.test(txt));
+    check("it names the one direction left unplayed", /flyer-rigged rider \(Hugo, Futch\) on Ruby/.test(txt));
+    check("it warns the menu won't show the pairing", /menu won't tell you it worked/i.test(txt));
     check("the legend lists every confidence tier",
       ["confirmed", "expected", "untested", "rough", "won't animate"].every((t) => txt.includes(t))); }
   // per-combination markers: stock + Hugo/Bright are confirmed, a horse-rigged rider on a flyer is not
@@ -445,10 +446,14 @@ head("Mounts view — rewrite the battle rider/mount pairs");
       return null; };
     check("Hugo + Fubar is confirmed", /confirmed/.test(await cell("Hugo", 1)));
     check("Hugo + Bright is confirmed", /confirmed/.test(await cell("Hugo", 2)));
+    check("Chris + Bright is confirmed (horse rig on a flyer, played)", /confirmed/.test(await cell("Chris", 2)));
     check("Chris + Ruby is expected (horse rig, horse mount)", /expected/.test(await cell("Chris", 3)));
-    check("Chris + Bright is untested (horse rig, flyer mount)", /untested/.test(await cell("Chris", 2)));
+    check("Chris + Fubar is expected (horse→flyer now has a precedent)", /expected/.test(await cell("Chris", 1)));
+    check("Borus + Bright inherits it (same zkum/s2um rig class)", /expected/.test(await cell("Borus", 2)));
     check("Futch + Fubar is expected (flyer rig, flyer mount)", /expected/.test(await cell("Futch", 1)));
+    // flyer→horse is the one direction with no played precedent, and must stay marked as such
     check("Futch + Ruby is untested (flyer rig, horse mount)", /untested/.test(await cell("Futch", 3)));
+    check("Hugo + Ruby is untested (flyer rig, horse mount)", /untested/.test(await cell("Hugo", 3)));
     check("Sharon reads rough on every mount",
       /rough/.test(await cell("Sharon", 1)) && /rough/.test(await cell("Sharon", 3))); }
   // stock decode: Hugo(1)+Fubar(8), Futch(31)+Bright(32), Franz(41)+Ruby(42)
@@ -519,8 +524,9 @@ head("Reference — Mounts browser, read-only");
   check("the passive horses are described", /b_N_damage/.test(txt));
   check("it lists what can't be exposed", /can't be exposed as fields/.test(txt));
   check("it states residency isn't proof", /asset\s*\n?\s*residency/.test(txt.replace(/\s+/g, " ")) || /residency/.test(txt));
-  check("it scopes what is emulator-confirmed", /confirmed in an\s+emulator/.test(txt.replace(/\s+/g, " "))
-    && /Hugo\+Bright/.test(txt.replace(/\s+/g, "")));
+  { const flat = txt.replace(/\s+/g, "");
+    check("it scopes what is emulator-confirmed", /confirmedinanemulator/.test(flat)
+      && /Hugo\+BrightandChris\+Bright/.test(flat)); }
   check("the browser stages nothing", (await page.$$("#isoView input, #isoView select")).length === 0);
   await page.context().close();
 }
