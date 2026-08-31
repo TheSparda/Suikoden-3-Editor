@@ -207,6 +207,90 @@ PARTY_IDS = [
 ]
 PARTY_ROSTER = {pid: ri for ri, pid in enumerate(PARTY_IDS)}
 
+# Battle formation: 6 bytes at 0x3240 ("Current Party Formation" in the herrvillain save-offset
+# map). One byte per formation position, holding the 1-based index of the party-list member
+# standing there; 0 = the position is unused.
+#
+# This is the OTHER half of a party edit, and the half whose absence is silent. The same
+# reference's party codes come in two flavours, and its own note says why:
+#
+#   Type One  ("will add a character to an empty slot")  writes BOTH
+#             0196E621 = 2   (this table, position 2)  and  1196E5F8 = id  (the party list)
+#   Type Two  ("will only replace a character")         writes the party list alone, and
+#             "if a code is entered for slot two and no one is in slot two, nothing visible
+#              will happen."
+#
+# Writing the party list alone is a Type Two write. Dropping a character into a slot that was
+# empty leaves this table still describing the smaller party, so the game builds the old
+# number of members and the new ones never appear — no error, no crash, just an empty slot.
+#
+# Unanimous across the 25-save corpus: the count of nonzero bytes here always equals the count
+# of nonzero party entries, and the nonzero values are always a permutation of 1..n. Most
+# saves are dense from position 0 (`01 02 03 00 00 00` for a trio); the game also produces
+# reordered (`01 03 04 02 06 05`) and spread (`01 00 02 00 03 00`) layouts of its own.
+FORMATION_OFF   = 0x3240
+FORMATION_SLOTS = 6
+
+
+def decode_formation(gamedata):
+    """The 6 battle-formation bytes (0 = position unused)."""
+    return list(gamedata[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS])
+
+
+def formation_is_valid(party, formation):
+    """True when `formation` describes exactly the members `party` holds: its nonzero values
+    are a permutation of 1..n, n being the number of filled party slots. Every real save
+    satisfies this; a save that does not was written by something that set the party list
+    without setting this table."""
+    n = sum(1 for p in party if p)
+    return sorted(v for v in formation if v) == list(range(1, n + 1))
+
+
+def _rebuild_formation(b, old_party):
+    """Re-derive the formation for the party list currently in `b`, and compact that list.
+
+    Called only when a party edit is applied. Members that survive the edit keep their
+    relative order; new members are appended after them; the result is dense from position 0,
+    which is the layout the game itself writes for every party size in the corpus (n=1, 3 and
+    6 all appear). A custom order the player set in the tavern therefore survives a swap, and
+    is flattened only when the party's SIZE changes — which is when this table has to be
+    rewritten anyway.
+    """
+    new_party = [struct.unpack_from("<H", b, PARTY_OFF + k * 2)[0] for k in range(PARTY_SLOTS)]
+    old_ids = [p for p in old_party if p]
+    new_ids = [p for p in new_party if p]
+    # Real saves keep their members in slots 0..n-1; a gap left mid-list is not a shape the
+    # game builds, and it would make "member index" ambiguous. Compact before deriving.
+    for k in range(PARTY_SLOTS):
+        struct.pack_into("<H", b, PARTY_OFF + k * 2, new_ids[k] if k < len(new_ids) else 0)
+    old_form = list(b[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS])
+    if len(old_ids) == len(new_ids) and formation_is_valid(new_party, old_form):
+        return                      # same size, table already consistent -> leave the order alone
+    # old 1-based member index -> new 1-based member index, for the members that survived.
+    # Matched by identity in order of occurrence, so a party holding the same character twice
+    # (which the health check flags, but the file can hold) still pairs up one-to-one.
+    remaining = list(enumerate(new_ids, start=1))
+    survived = {}
+    for i, cid in enumerate(old_ids, start=1):
+        for k, (j, other) in enumerate(remaining):
+            if other == cid:
+                survived[i] = j
+                remaining.pop(k)
+                break
+    order, seen = [], set()
+    for v in old_form:              # walk positions, keeping the surviving members' order
+        j = survived.get(v)
+        if j and j not in seen:
+            order.append(j); seen.add(j)
+    for j in range(1, len(new_ids) + 1):
+        if j not in seen:
+            order.append(j); seen.add(j)
+    form = [0] * FORMATION_SLOTS
+    for pos, j in enumerate(order[:FORMATION_SLOTS]):
+        form[pos] = j
+    b[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS] = bytes(form)
+
+
 # Party ids with no character block of their own, so they can be shown but not edited
 # coherently: the four dogs of Koroku's bonus chapter (list1 76-79, no roster slot) and the
 # "Special Characters" the same reference lists. Real saves carry these — gamedata_u03 holds
@@ -838,6 +922,7 @@ def decode_save(gamedata, meta=None):
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
             "party": decode_party(gamedata),
+            "partyFormation": decode_formation(gamedata),
             "characters": chars,
             "inventory": inv,
             "statNames": list(STAT_NAMES),
@@ -989,10 +1074,15 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
             else:
                 qty = 0                          # one item per slot; the count must be 0
             struct.pack_into("<H", b, off + 2, qty); changed += 1
-    for slot, cid in (party_edits or {}).items():
-        slot = int(slot)
-        if 0 <= slot < PARTY_SLOTS:
-            struct.pack_into("<H", b, PARTY_OFF + slot * 2, _clamp(cid, 2)); changed += 1
+    if party_edits:
+        old_party = decode_party(gamedata)
+        for slot, cid in party_edits.items():
+            slot = int(slot)
+            if 0 <= slot < PARTY_SLOTS:
+                struct.pack_into("<H", b, PARTY_OFF + slot * 2, _clamp(cid, 2)); changed += 1
+        # The party list alone is a "Type Two" write — invisible in-game for a slot that was
+        # empty. Re-derive the formation table so the game builds the party we just wrote.
+        _rebuild_formation(b, old_party)
     if gold is not None:
         struct.pack_into("<I", b, GOLD_OFF, _clamp(gold, 4)); changed += 1
     return fix_gamedata_checksum(bytes(b)), changed

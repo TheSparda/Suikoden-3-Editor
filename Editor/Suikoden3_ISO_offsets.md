@@ -2495,3 +2495,53 @@ offered: they have no recruit word or character block, so the editor cannot make
 coherent, and the reference's support list is missing five roster names (Anne, Kidd, Mike,
 Jefferson, Kathy sit in the `0x7A`–`0x7F` gap, six slots for five names, so the alignment
 there is undetermined). Correct or absent.
+
+---
+
+## The battle formation at 0x3240 — the other half of a party edit (2026-08-30)
+
+The party-id fix above was necessary but not sufficient: with the right ids written, added
+members still did not appear. **`0x3240`–`0x3245` is the "Current Party Formation"** already
+listed in the herrvillain save-offset map, and it is what the game reads to decide *how many*
+party members to build.
+
+**Layout.** Six bytes, one per formation position, each holding the **1-based index of the
+party-list member standing there** (0 = position unused). Unanimous across the 25-save corpus:
+the count of nonzero bytes always equals the count of nonzero entries at `0x3216`, and the
+nonzero values are always a permutation of `1..n`. Three shapes occur, all written by the game
+itself:
+
+| shape | example | where |
+|---|---|---|
+| dense | `01 02 03 00 00 00` | most saves, every n from 1 to 6 |
+| reordered | `01 03 04 02 06 05` | a battle order the player set |
+| spread | `01 00 02 00 03 00` | Chris Ch.1, a 3-member party at positions 0/2/4 |
+
+**Why the editor's party tab was invisible in-game.** The same reference's party codes come in
+two flavours, and its own note is exactly the symptom:
+
+- *Type One* — "will add a character to an empty slot" — writes **both** `0196E621 = 2` (this
+  table) **and** `1196E5F8 = id` (the party list).
+- *Type Two* — "will only replace a character" — writes the party list alone, and: **"if a code
+  is entered for slot two and no one is in slot two, nothing visible will happen."**
+
+`write_save_edits` was doing a Type Two write. Replacing an existing member worked; dropping
+someone into an empty slot left this table still describing the smaller party, so the game
+built the old number of members and the new ones never showed up — no error, no crash, just an
+empty slot. Combined with the wrong id space, a party edit had to clear *both* hurdles to do
+anything, which is why the tab looked completely inert.
+
+**Fix.** `s3save.FORMATION_OFF` / `decode_formation` / `formation_is_valid`, and
+`apply_edits_to_gamedata` re-derives the table whenever party edits are applied: surviving
+members keep their relative order, new members are appended, and the party list is compacted so
+its members sit in slots `0..n-1` (no real save has a gap, and a gap makes "member index"
+ambiguous). A same-size swap leaves an existing custom battle order untouched; only a change in
+party *size* flattens it, which is when the table has to be rewritten anyway. `decode_save`
+exposes `partyFormation`, and the health audit flags a save whose formation and party list
+disagree — which is what saves written by the older build look like — with a Fix that re-derives
+it through the normal write path.
+
+**Scan for a third gate.** Every file offset whose zero/nonzero pattern tracks party-slot
+occupancy across the corpus was enumerated: only `0x3216`–`0x3220` (the party list) and
+`0x3240`–`0x3245` (this table) qualify. There is no separate member count and no third
+structure to satisfy.
