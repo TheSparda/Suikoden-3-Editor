@@ -531,7 +531,11 @@ head("Reference — Mounts browser, read-only");
   await page.click('[data-ref="mountref"]');
   await page.waitForSelector("table.invtbl", { timeout: 3000 });
   const txt = await page.textContent("#isoView");
-  check("Geddoe is listed as field-yes / battle-no", /Geddoe[\s\S]{0,120}970/.test(txt));
+  check("Geddoe is listed as field-yes / battle-no", /Geddoe[\s\S]{0,160}970/.test(txt));
+  // the 311 / 321-322 split: which mount system authored the rider's mounted-battle clips
+  check("riders carry their bank family", /311 family/.test(txt) && /321\/322 family/.test(txt));
+  check("it says the split isn't flyer-vs-horse", /not flyer-vs-horse/.test(txt));
+  check("Roland's 341 anomaly is recorded", /341/.test(txt));
   check("the passive horses are described", /b_N_damage/.test(txt));
   check("it lists what can't be exposed", /can't be exposed as fields/.test(txt));
   check("it states residency isn't proof", /asset\s*\n?\s*residency/.test(txt.replace(/\s+/g, " ")) || /residency/.test(txt));
