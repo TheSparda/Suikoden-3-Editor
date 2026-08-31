@@ -22,6 +22,10 @@ export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [
 // (Balance) alongside the magic runes in the character's slots.
 export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04 };
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
+// War-battle class reference (iso.js CLASS_POOL / CLASS_TBL): a pool of 78 string pointers and
+// a 43x47 table of (type, modifier) pool indices. Indexed [skillA-1][skillB-1]; column == skill id.
+export const CLASS_POOL = { off: 0x3A7C80, count: 78 };
+export const CLASS_TBL = { off: 0x3A7DC0, stride: 94, max: 43 };
 // Shop counters: three parallel arrays of 14 locations x 4 story stages x 0x7C, with 30
 // zero-terminated u16 stock slots at +0 and four 16-byte rarity entries at +0x3C. The fixture
 // stocks location 0 (Vinay del Zexay on the real disc) so the Shops view has something to draw.
@@ -79,6 +83,30 @@ export const MECH = {
   roundMount: { off: 0x226FF8, stock: 0x26100001 },
   adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
 };
+// Status effect strength (iso.js STATUSFX): eleven `addiu $rt,$zero,imm` battle-code sites whose
+// immediates are the percentages a status effect is worth. The fixture plants the stock words so
+// the controls decode, and the e2e checks a write lands in the low half only.
+export const STATUSFX_SITES = [
+  { key: "swFire", off: 0x107470, word: 0x24100014, pct: 20 },
+  { key: "swLightning", off: 0x107480, word: 0x24030014, pct: 20 },
+  { key: "swWind", off: 0x107478, word: 0x2410000F, pct: 15 },
+  { key: "swAny", off: 0x102488, word: 0x2402001E, pct: 30 },
+  { key: "resWeak", off: 0xE3868, word: 0x24040078, pct: 120 },
+  { key: "resWeak", off: 0x24765C, word: 0x24020078, pct: 120 },
+  { key: "resNeutral", off: 0xE3870, word: 0x24040064, pct: 100 },
+  { key: "res1", off: 0xE3878, word: 0x24040050, pct: 80 },
+  { key: "res1", off: 0x247664, word: 0x24020050, pct: 80 },
+  { key: "res2", off: 0xE3880, word: 0x2404003C, pct: 60 },
+  { key: "res2", off: 0x247668, word: 0x2402003C, pct: 60 },
+  { key: "res3", off: 0xE3884, word: 0x24040028, pct: 40 },
+  { key: "res3", off: 0x24768C, word: 0x24040028, pct: 40 },
+  { key: "buffDef", off: 0x104810, word: 0x24020055, pct: 85 },
+  { key: "buffDef", off: 0x1053DC, word: 0x24020055, pct: 85 },
+  { key: "mgcBoost", off: 0x10540C, word: 0x24020096, pct: 150 },
+  { key: "mgcBoost", off: 0x105420, word: 0x24020096, pct: 150 },
+  { key: "mgcBoost", off: 0x1054B8, word: 0x24020096, pct: 150 },
+  { key: "mgcBoost", off: 0x1054CC, word: 0x24020096, pct: 150 },
+]
 export const STOCK_COUNTER = 0x2842001E;   // slti $v0,$v0,30
 export const STOCK_HEAL_BIAS = 0x26220003; // addiu $v0,$s1,3
 export const STOCK_HEAL_SRA = 0x00021083;  // sra $v0,$v0,2
@@ -206,6 +234,10 @@ export function buildSynthIso() {
     const o = SPELL.off + i * SPELL.stride;
     w32(o + 8, put(nm)); w32(o + 0x0C, put("Deals 100DMG")); w32(o + 0x10, 50); w32(o + 0x14, 0x00000A00); w32(o + 0x1C, 100); w16(o + SPELL.elem, 1);
     if (i === 1) w32(o + 0x18, 0x10);   // spell #1 inflicts "unbalance" (flags18 bit4) → tests the Remove-status path
+    // Spell #2 reproduces the Sword/Amulet shape that used to render "custom 0x05" in the Target
+    // dropdown and "undefined" for its element: target byte 0x05 (chanter only) and element 7
+    // (the Sword-of-* / Amulet family, which is not one of the six damage elements).
+    if (i === 2) { w32(o + 0x14, 0x00000500); w32(o + 0x18, 1 << 23); w16(o + SPELL.elem, 7); }
   });
   { const o = UNITE.off; w32(o + 8, put("Test Unite")); w32(o + 0x0C, put("coop")); w32(o + 0x10, 65); w32(o + 0x14, 0x00000200); w32(o + 0x1C, 200); }
   { const o = FOOD.off; w32(o + FOOD.name, put("Medicine")); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100); }
@@ -327,6 +359,57 @@ export function buildSynthIso() {
     const o = RUNE_TBL.off + r.id * RUNE_TBL.stride;
     w32(o + RUNE_TBL.name, put(r.name)); w32(o + RUNE_TBL.desc, put(r.desc));
   }
+  // ---- duplicated description fixture (issue #11) -----------------------------------------
+  // On a real disc 27 descriptions are stored TWICE, at two addresses reached from two
+  // different tables: the 20 attack runes (RUNE_TBL desc + the spell record of the attack they
+  // grant) and the 7 magic scrolls. Editing one copy used to leave the other stale, and the
+  // Text tab listed the two identical rows with nothing to tell them apart. Reproduce that
+  // shape exactly — same text, two separate allocations, one under RUNE_TBL and one under the
+  // spell table — so the mirrored write has something to mirror.
+  const TWIN_TEXT = "DMGx0.4 to foes in area.";
+  const twinRune = catItems("Runes").find((r) => r.name === "Great Hawk") || balance;
+  {
+    const o = RUNE_TBL.off + twinRune.id * RUNE_TBL.stride;
+    w32(o + RUNE_TBL.name, put(twinRune.name));
+    const runeCopy = put(TWIN_TEXT);                    // copy A — what the game's rune menu reads
+    w32(o + RUNE_TBL.desc, runeCopy);
+    const so = SPELL.off + 3 * SPELL.stride;            // spell #3, its own separate allocation
+    const spellCopy = put(TWIN_TEXT);                   // copy B — sorts first in the Text tab
+    w32(so + 0x0C, spellCopy);
+    mapping.twin = { text: TWIN_TEXT, rune: twinRune,
+      runeOff: runeCopy - ELF_VADDR + ELF_BASE, spellOff: spellCopy - ELF_VADDR + ELF_BASE, spellIdx: 3 };
+  }
+  // ---- war-battle class fixture -----------------------------------------------------------
+  // There is no class byte: the game derives a unit's class from the character's own skills
+  // (display fn VA 0x169B5F8 — keep the slots with rank > 0, sort by rank descending, look the
+  // top two skill ids up in a 43x47 table). Plant a word pool and two table cells so the
+  // Classes reference can be tested end to end, using the real shape: cell = (type, modifier),
+  // both indices into the pool, and column index == skill id.
+  {
+    const words = { 1: "Slasher", 2: "Knight", 11: "Shield", 12: "Armored", 37: "Knight" };
+    for (const [i, w] of Object.entries(words)) w32(CLASS_POOL.off + +i * 4, put(w));
+    const cell = (a, b, type, mod) => {
+      const o = CLASS_TBL.off + (a - 1) * CLASS_TBL.stride + (b - 1) * 2;
+      bytes[o] = type; bytes[o + 1] = mod;
+    };
+    // Give list1 record #1 (Hugo) the real disc's own skill loadout: Heavy Damage at rank 2 and
+    // Counter Attack at rank 1. Rank-sorted that is skill 6 then skill 5, which is the pair the
+    // real game resolves to "Slasher" — the anchor this whole derivation was checked against.
+    [[6, 2], [5, 1]].forEach(([id, rk], k) => { bytes[l1rec + 12 + k * 2] = id; bytes[l1rec + 13 + k * 2] = rk; });
+    // Give the pair he resolves to a real label, plus
+    // one two-word label so the "type + modifier" join is covered rather than assumed.
+    cell(6, 5, 1, 0);           // Heavy Damage + Counter Attack -> "Slasher"  (one word)
+    cell(12, 3, 11, 37);        // Shield Protect + Damage      -> "Shield Knight" (two words)
+    // Record #5 (Fred) gets the pair that lands on the two-word cell, so the type+modifier join
+    // is covered by a real row rather than assumed. Both ranks equal, so the stable sort keeps
+    // slot order and the top two are skills 12 then 3 — the same pair the real disc resolves.
+    const l1fred = TABLES.list1[0] + 5 * TABLES.list1[1];
+    [[12, 2], [3, 2]].forEach(([id, rk], k) => { bytes[l1fred + 12 + k * 2] = id; bytes[l1fred + 13 + k * 2] = rk; });
+    mapping.classes = { pool: CLASS_POOL.off, tbl: CLASS_TBL.off,
+      cases: [{ who: "Hugo", label: "Slasher" }, { who: "Fred", label: "Shield Knight" }] };
+  }
+  for (const f of STATUSFX_SITES) w32(f.off, f.word);   // status effect strength code sites
+  mapping.statusfx = STATUSFX_SITES;
   mapping.shops = SHOP_FIXTURE;
   mapping.runes = runeRows;
   mapping.balance = { ...balance, desc: "Maintains balance." };
