@@ -141,8 +141,9 @@ poison* — that edits every spell a rune grants at once, and optional descripti
 that puts the six Zexen Knights on horseback in the field *and* in battle, and the hard-coded
 **three-pair** battle table, stock *Hugo+Fubar / Futch+Bright / Franz+Ruby*, which can be
 re-pointed so **any rider with a mounted-battle animation bank rides Fubar, Bright or Ruby** —
-re-pairing is confirmed in-game (*Hugo+Bright*) and every combination carries its own confidence
-marker: *confirmed / expected / untested / rough / won't animate* — plus the **pair mechanics**,
+re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *Chris+Bright*), and
+every combination carries its own confidence marker: *confirmed / expected / untested / rough /
+won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,

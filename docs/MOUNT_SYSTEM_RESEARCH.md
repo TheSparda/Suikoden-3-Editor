@@ -24,8 +24,9 @@ independent layers, and each layer restricts things differently:
 So: *mechanically* the engine will pair any two objects. What actually stops
 "Chris rides Fubar" is (a) a 24-byte hardcoded pair table for battle, and (b) whether the
 rider's and mount's **models ship the required animation banks**. (a) is an editable set of
-immediates — Hugo+Bright is a confirmed re-pairing — which leaves (b), plus the untested question
-of whether a rider's rig fits a class of mount it was not authored for (§4a).
+immediates — Hugo+Bright and Chris+Bright are both confirmed re-pairings, so **"Chris rides a
+flyer" is answered: she does** — which leaves (b), plus one unplayed direction, a flyer-rigged
+rider on Ruby (§4a).
 
 ---
 
@@ -213,11 +214,22 @@ Riders #2 and #3 each appear **twice** because the compiler hoisted the next com
 constant into a branch delay slot. Change only one of the pair and the check breaks.
 
 This is what the web editor's **Mounts** tab writes (`drawMounts` in `web/iso.js`). Re-pairing is
-**confirmed in-game**: a pair patched to **Hugo (model 1) + Bright (model 32)** mounts correctly
-and plays through. That is the first non-stock combination played through an emulator
-(2026-08-31), and it settles two things that had only been inferred — the eight-site patch
-rewrites the comparison chain cleanly, and a rider's mounted-battle bank drives a mount it was
-**never authored for** (Hugo's clips were built for Fubar, a griffon; Bright is a dragon).
+**confirmed in-game**, twice over (both 2026-08-31):
+
+- **Hugo (1) + Bright (32)** — the first non-stock combination played through an emulator. It
+  settles two things that had only been inferred: the eight-site patch rewrites the comparison
+  chain cleanly, and a rider's mounted-battle bank drives a mount it was **never authored for**
+  (Hugo's clips were built for Fubar, a griffon; Bright is a dragon).
+- **Chris (2) + Bright (32)** — the harder case, and the one §4a was written around: a rider whose
+  mounted clips were authored around a **horse** (`s2um`) driving a **flyer**. It mounts and
+  fights, and it looks right. Crossing rig *classes* therefore works, not just crossing mounts
+  within a class.
+
+**The menu does not surface a re-pairing.** Observed with Chris+Bright: the formation/party menu
+shows no sign of the pair, and the pair mounts in battle regardless. `IsValidRidePair` has menu
+call sites (§4, twelve callers), so the menu's mounted indicator evidently reads a different
+source — that source was not traced. Practical consequence: judge a patched pair at battle entry,
+not in the menu.
 
 The tab offers every model carrying the `3xx` bank against all three battle mounts, marks each
 combination with its own confidence tier (§4a), refuses to edit if any of the eight sites is no
@@ -246,32 +258,48 @@ So each rider carries a **rig class** — the kind of mount their `3xx` clips we
 | Roland, Leo, Percival, Borus | `zkum`, the Zexen-knight horse | horse |
 | Sharon | — (partial bank, `300/301/310/311` only) | unknown |
 
-Crossed against the three battle mounts, with what has actually been played:
+What is claimed for a combination is derived from **which directions have been played** — a
+direction being the rider's rig class against the mount's class:
+
+| direction | precedent |
+|---|---|
+| flyer → flyer | Hugo+Fubar, Futch+Bright (stock), Hugo+Bright (played) |
+| horse → horse | Franz+Ruby (stock) |
+| **horse → flyer** | **Chris+Bright (played)** |
+| flyer → horse | **none** |
+
+Crossed against the three battle mounts:
 
 | rider | Fubar · flyer | Bright · flyer | Ruby · horse |
 |---|---|---|---|
 | **Hugo** · flyer-rigged | ✓ confirmed (stock) | ✓ **confirmed** (2026-08-31) | ? untested |
 | **Futch** · flyer-rigged | • expected | ✓ confirmed (stock) | ? untested |
-| **Franz** · horse-rigged | ? untested | ? untested | ✓ confirmed (stock) |
-| **Chris** · horse-rigged | ? untested | ? untested | • expected |
-| **Roland / Leo / Percival / Borus** · horse-rigged | ? untested | ? untested | • expected |
+| **Franz** · horse-rigged | • expected | • expected | ✓ confirmed (stock) |
+| **Chris** · horse-rigged | • expected | ✓ **confirmed** (2026-08-31) | • expected |
+| **Roland / Leo / Percival / Borus** · horse-rigged | • expected | • expected | • expected |
 | **Sharon** · partial bank | ≈ rough | ≈ rough | ≈ rough |
 | **Geddoe / Thomas / Salome / Juan** · no battle bank | ✗ won't animate | ✗ won't animate | ✗ won't animate |
 
 - **✓ confirmed** — played through an emulator; mounts, animates and fights correctly.
-- **• expected** — rig class matches the mount's class, so the geometry should fit. Not played.
-- **? untested** — accepted by the code, but the clips were authored around the other class of
-  mount. Seat height, angle and scale are unknown. Hugo+Bright shows a cross-*mount* swap works;
-  it does not show a cross-*class* one does, since griffon→dragon stays within "flyer".
+- **• expected** — a rider with this rig class has been played on this class of mount, so the
+  geometry should carry over. This exact pair has not been played.
+- **? untested** — accepted by the code, but no rider with this rig class has been played on this
+  class of mount. As of now that is only **flyer-rigged riders on Ruby**: Hugo or Futch, whose
+  mounted clips were built around a griffon and a dragon, driving a horse.
 - **≈ rough** — only part of the mounted-battle bank exists, so expect missing or wrong clips
   whichever mount is picked.
 - **✗ won't animate** — no `3xx` bank at all: the pair links up and the rider keeps their normal
   battle pose. Predicted from the failing `SetMotion` on slots `0xB8`+, not yet played. The tab
   lists these four behind an opt-in specifically as the negative control.
 
-The still-open matrix is tracked in [issue #14](https://github.com/TheSparda/Suikoden-3-Editor/issues/14):
-the headline case is **Chris + Bright** (horse-rigged rider on a flyer), with **Borus or Percival
-+ Fubar** as the control that separates "Chris-specific" from "horse-rig-on-a-flyer".
+The Zexen knights inherit Chris's result on strong grounds rather than by analogy: `zkum` and
+`s2um` are **the same rig at byte level** — identical variant lists, identical `cha_bytes`
+(1,933,312) — so a horse-rigged knight on a flyer is the case Chris+Bright already played. Franz
+is the weaker "expected": his rig was authored around Ruby, not `zkum`, so only the class matches.
+
+Still open, tracked in [issue #14](https://github.com/TheSparda/Suikoden-3-Editor/issues/14):
+**Hugo + Ruby** or **Futch + Ruby** (the one direction with no precedent), **Sharon** on anything
+(what "partial bank" looks like in play), and the **Geddoe negative control**.
 
 Two constraints come with any re-pairing, both independent of animation:
 
@@ -417,17 +445,19 @@ three `ctx_`) in **HGB1 (Yaza Plain), HNKT (Budehuc Castle) and KRVI (Karaya Vil
 three areas. `kru2` adds `ctx_` entries in KRVI.
 
 **Can someone else ride Fubar / Bright?**
-**Yes — confirmed in-game.** In battle it takes patching the three-pair table at ISO
+**Yes — confirmed in-game, twice.** In battle it takes patching the three-pair table at ISO
 `0x130384`–`0x1303B4` (eight 2-byte immediates, remembering the two duplicated delay-slot
-constants), and **Hugo + Bright has been played through an emulator**: it mounts, animates and
-fights correctly even though Hugo's mounted clips were authored for a griffon. The patch is
-trivial and now evidence-backed; what remains uncertain is the animation. A substituted rider
-only animates at all if their model carries the `3xx` bank — Hugo, Futch, Franz, Chris, Borus,
-Percival, Leo, Roland, `zkk1` and (partially) Sharon. Anyone else pairs up and then silently
-keeps their normal battle pose, because `SetMotion` returns failure on the missing `0xB8`+ clips.
-Within the ten that do carry the bank, the open question is **rig geometry, not permission** — a
-horse-rigged rider on a flyer may sit at the wrong height or scale. See §4a for the per-combination
-grid and what has actually been played.
+constants). **Hugo + Bright** has been played through an emulator, and so has **Chris + Bright** —
+which is the answer to the question this section originally hedged on: a rider whose mounted clips
+were authored around a *horse* drives a *flyer* correctly. So both the patch and the riskiest-looking
+rig crossing are evidence-backed. A substituted rider still only animates at all if their model
+carries the `3xx` bank — Hugo, Futch, Franz, Chris, Borus, Percival, Leo, Roland, `zkk1` and
+(partially) Sharon. Anyone else pairs up and then silently keeps their normal battle pose, because
+`SetMotion` returns failure on the missing `0xB8`+ clips. Within the ten that do carry the bank,
+one direction is still unplayed: a **flyer**-rigged rider on **Ruby**. See §4a for the grid.
+
+Note also that the **formation menu does not show a re-paired pair** — it mounts in battle anyway
+(§4).
 
 On the field there is no pair check at all — an EDS `RideOn` will link any two EOBJs — but the
 mount must be one of the eight whitelisted **horses** to get a correct saddle offset, and
@@ -819,11 +849,14 @@ is not established**.
   setup via a computed offset or a struct copy, but it was not traced.
 - Where the EDS script blobs actually live inside an area archive, which is what a reliable
   "does this scene call RideOn" scan would need (see §9).
-- **Emulator coverage is one data point.** The battle pair patch has been played through
-  (Hugo + Bright, 2026-08-31, §4a); every other claim in this document is still static analysis,
-  including the whole field-ride side and every other rider/mount combination.
-- Whether a rider whose mounted clips were authored around a **horse** sits correctly on a
-  **flyer** (Chris + Bright is the headline case), and whether the mounted attack / magic / bow /
-  damage / knockdown / near-death clips read correctly at that scale. §4a lists the open grid.
+- **Emulator coverage is two data points.** The battle pair patch has been played through
+  (Hugo + Bright and Chris + Bright, 2026-08-31, §4a); every other claim in this document is still
+  static analysis, including the whole field-ride side and the remaining combinations.
+- Whether a **flyer**-rigged rider (Hugo, Futch) sits correctly on **Ruby** — the one direction
+  with no precedent — and whether the full mounted clip set (attack / magic / bow / damage /
+  knockdown / near-death) reads correctly on a cross-class pair. Chris+Bright was judged as
+  "mounts and appears to work" in play, not clip by clip.
+- Why the formation menu shows no sign of a re-paired pair when battle mounting honours it. The
+  menu's mounted indicator reads something other than `IsValidRidePair`; not traced.
 - Whether the HP re-split formula (§13) holds in play as well as in the disassembly — it has not
   been read off an emulator.
