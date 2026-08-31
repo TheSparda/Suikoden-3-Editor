@@ -574,44 +574,180 @@ head("Enemies view — real index unavailable on a small disc");
   await page.context().close();
 }
 
-head("Disc load batches its scattered ranged reads");
-{ const page = await newPage();
+// The enemy / war / room tables are ~45 ranged reads scattered over 3.6 GB of disc. Reading
+// them while opening the ISO is what made "Reading enemy data…" take tens of seconds on a
+// phone, where each Blob.slice() through a content:// / Files provider is an IPC round trip.
+// They now load on first use of the three views that need them. These sections pin down both
+// halves of that: that opening reads nothing, and that everything which resolves an
+// out-of-block offset still works — including the paths with no view to trigger the load.
+const SLICE_SPY = `window.__slices = [];
+  const _slice = Blob.prototype.slice;
+  Blob.prototype.slice = function (a, b) { window.__slices.push((b || 0) - (a || 0)); return _slice.apply(this, arguments); };`;
+// Every ranged read except the one ~3.75 MB read of the ELF block itself.
+const sliceCount = (page) => page.evaluate("window.__slices.filter((n) => n > 0 && n < 0x100000).length");
+const withTables = async (page) => {
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
   await page.addInitScript(`window.S3_TEST_WAR_UNITS = ${JSON.stringify(WAR_TEST_UNITS)};`);
   await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
-  // Count every ranged read the load issues. Reading each window on its own is what made
-  // "Reading enemy data…" take tens of seconds on a phone: the shipped index is ~400 windows
-  // scattered over 3.6 GB, and through a content:// / Files provider every Blob.slice() is an
-  // IPC round trip. The load now plans all the windows first and fetches them in far fewer,
-  // wider chunks, carving the tight windows back out. The tables below still have to decode
-  // byte-for-byte afterwards — a faster load that reads the wrong bytes is worse than a slow one.
-  await page.addInitScript(`window.__slices = [];
-    const _slice = Blob.prototype.slice;
-    Blob.prototype.slice = function (a, b) { window.__slices.push((b || 0) - (a || 0)); return _slice.apply(this, arguments); };`);
+};
+
+head("Disc load defers the area tables to the views that need them");
+{ const page = await newPage();
+  await withTables(page);
+  await page.addInitScript(SLICE_SPY);
   await loadIso(page);
-  // Everything except the one ~3.75 MB read of the ELF block itself.
-  const reads = await page.evaluate("window.__slices.filter((n) => n > 0 && n < 0x100000).length");
-  // The fixture's enemy, war and room windows sit within a few KB of each other, so one chunk
-  // covers all of them; per-window reads would be four. The bound is loose on purpose — this
-  // guards "batched", not an exact count.
-  check("enemy, war and room windows load in one batched read", reads <= 2, `${reads} ranged read(s)`);
+  check("opening the disc reads no area tables at all", (await sliceCount(page)) === 0,
+    `${await sliceCount(page)} ranged read(s)`);
+  // Views that don't need them must not trigger the read either.
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForTimeout(80);
+  await page.click('#isoTabs [data-v="sets"]'); await page.waitForTimeout(80);
+  check("...nor does browsing the views that don't need them", (await sliceCount(page)) === 0);
+  // First visit to Enemies pays for them — batched, and the fixture's enemy, war and room
+  // windows sit within a few KB of each other, so one chunk covers all three.
   await page.click('#isoTabs [data-v="enemies"]');
-  await page.waitForSelector("details.epack", { timeout: 3000 });
+  await page.waitForSelector("details.epack", { timeout: 5000 });
+  const first = await sliceCount(page);
+  check("the first Enemies visit batches them into one read", first === 1, `${first} ranged read(s)`);
   await page.click("details.epack summary");
   await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
-  check("...and the enemy record still decodes", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
+  check("...and the enemy record decodes", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
   check("...including its reward block", (await page.inputValue('input.en-num[data-f="potch"]')) === "60");
+  // War and Encounter ride the same windows — no second read.
   await page.click('#isoTabs [data-v="war"]');
   await page.waitForSelector("details.epack", { timeout: 3000 });
   await page.click("details.epack summary");
   await page.waitForSelector('input.en-num[data-f="hp"]', { timeout: 3000 });
-  check("...and the war unit, carved from the same chunk", (await page.inputValue('input.en-num[data-f="hp"]')) === "230");
+  check("the war unit decodes from the same load", (await page.inputValue('input.en-num[data-f="hp"]')) === "230");
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("details.rarea", { timeout: 3000 });
   await page.click("details.rarea summary");
   await page.waitForSelector("input.rm-f", { timeout: 3000 });
   const rates = await page.$$eval('input.rm-f[data-k="rate"]', (es) => es.map((e) => e.value));
-  check("...and the room table, which keeps its own window", rates.join(",") === "4,0,9,2", rates.join(","));
+  check("the room table decodes from it too", rates.join(",") === "4,0,9,2", rates.join(","));
+  await page.click('#isoTabs [data-v="enemies"]'); await page.waitForTimeout(120);
+  check("War, Encounter and a second Enemies visit re-read nothing", (await sliceCount(page)) === first,
+    `${await sliceCount(page)} vs ${first}`);
+  await page.context().close();
+}
+
+head("Encounter's global scale draws without waiting for the per-area tables");
+{ const page = await newPage();
+  await withTables(page);
+  // Hold the area read open so the half-drawn state is observable rather than a race.
+  await page.addInitScript(`(() => { const _s = Blob.prototype.slice;
+    Blob.prototype.slice = function (a, b) {
+      const blob = _s.apply(this, arguments);
+      if (this.size > 0x400000 && (b || 0) - (a || 0) < 0x100000) {
+        const _ab = blob.arrayBuffer.bind(blob);
+        blob.arrayBuffer = () => new Promise((r) => setTimeout(() => r(_ab()), 1200));
+      }
+      return blob; }; })()`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("#encPct", { timeout: 3000 });
+  check("the global rate control is up immediately", (await page.inputValue("#encPct")) === "100");
+  check("...while the per-area half says it's still reading",
+    /Reading area data/.test(await page.textContent("#encRooms")));
+  await page.waitForSelector("details.rarea", { timeout: 6000 });
+  check("...and fills itself in when the read lands", (await page.locator("details.rarea").count()) > 0);
+  await page.context().close();
+}
+
+head("A recipe reaches enemy data on a disc whose Enemies tab was never opened");
+{ const page = await newPage();
+  await withTables(page);
+  await loadIso(page);
+  // Straight from the loader to the patch button — no view has loaded the enemy windows, so
+  // without a forced load inAux() would not recognise these offsets and importRecipe() would
+  // skip the runs SILENTLY: not applied, not reported as mismatched, just gone.
+  const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
+    patches: [{ off: ENEMY_REC_A + 64, old: "07", new: "2a" },
+              { off: ENEMY_REC_B + 64, old: "07", new: "2a" },
+              { off: ROOM_TABLE_A + 4, old: "0400", new: "0900" }] });
+  const s = await uploadPatch(page, new TextEncoder().encode(recipe), "enemy.s3mod");
+  check("the recipe applies", /applied recipe/i.test(s), s);
+  check("...and counts every byte, none silently skipped", /4 byte\(s\)/.test(s), s);
+  check("...with no run reported as mismatched", !/didn't match/.test(s), s);
+  const r = await save(page);
+  check("enemy copy A written", r.u16(ENEMY_REC_A + 64) === 42);
+  check("enemy copy B written", r.u16(ENEMY_REC_B + 64) === 42);
+  check("room rate written", r.u16(ROOM_TABLE_A + 4) === 9);
+  await page.context().close();
+}
+
+head("An .xdelta touching enemy data loads the tables before judging it out of range");
+if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else { const page = await newPage();
+  await withTables(page);
+  await loadIso(page);
+  // ENEMY_REC_A sits past ELF_END, so this patch is entirely out of block. Un-loaded windows
+  // would make it look like a patch this editor can't stage, and it would be refused whole.
+  const tgt = Uint8Array.from(bytes);
+  tgt.set([0x2a, 0x00], ENEMY_REC_A + 64);
+  tgt.set([0x2a, 0x00], ENEMY_REC_B + 64);
+  const s = await uploadPatch(page, makeXdelta(bytes, tgt), "enemy.xdelta");
+  check("the patch applies rather than being refused as out of range", /applied patch/i.test(s), s);
+  const r = await save(page);
+  check("enemy copy A written", r.u16(ENEMY_REC_A + 64) === 42);
+  check("enemy copy B written", r.u16(ENEMY_REC_B + 64) === 42);
+  await page.context().close();
+}
+
+head("A disc read that fails after open is retryable, not a dead tab");
+{ const page = await newPage();
+  await withTables(page);
+  // Fail every ranged read EXCEPT the big ELF one, so the disc opens and only the deferred
+  // tables break. This is the failure the old eager load could never hit: the file moving or
+  // losing permission between opening the disc and clicking the tab.
+  await page.addInitScript(`window.__failReads = true;
+    const _s = Blob.prototype.slice;
+    Blob.prototype.slice = function (a, b) {
+      const blob = _s.apply(this, arguments);
+      if (window.__failReads && this.size > 0x400000 && (b || 0) - (a || 0) < 0x100000)
+        blob.arrayBuffer = () => Promise.reject(new Error("NotReadableError"));
+      return blob; };`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("#tblRetry", { timeout: 5000 });
+  const txt = await page.textContent("#isoView");
+  check("the view says the read failed, not that the disc lacks the data", /Couldn't read this disc's area tables/.test(txt));
+  check("...and does NOT claim the offsets don't exist", !/none of their offsets exist/.test(txt));
+  // A patch must refuse outright rather than apply half of itself.
+  const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
+    patches: [{ off: ENEMY_REC_A + 64, new: "2a" }] });
+  const ps = await uploadPatch(page, new TextEncoder().encode(recipe), "enemy.s3mod");
+  check("a patch needing those tables is refused whole", /nothing was applied/i.test(ps), ps);
+  check("...and stages nothing", await nothingStaged(page));
+  // Let the disc come back, and Retry must recover in place.
+  await page.evaluate("window.__failReads = false");
+  await page.click("#tblRetry");
+  await page.waitForSelector("details.epack", { timeout: 5000 });
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
+  check("Retry loads the tables and the view comes good", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
+  await page.context().close();
+}
+
+head("Closing a disc drops the deferred tables with it");
+{ const page = await newPage();
+  await withTables(page);
+  await page.addInitScript(SLICE_SPY);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("details.epack", { timeout: 5000 });
+  const afterFirst = await sliceCount(page);
+  await page.click("#isoClose");
+  await page.waitForSelector("#isoPick", { timeout: 3000 });
+  await page.click("#isoPick");
+  await page.waitForSelector("#isoTabs", { timeout: 8000 });
+  check("reopening reads no area tables again on open", (await sliceCount(page)) === afterFirst);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("details.epack", { timeout: 5000 });
+  check("...and the new disc re-reads them for itself", (await sliceCount(page)) > afterFirst,
+    `${await sliceCount(page)} vs ${afterFirst}`);
+  await page.click("details.epack summary");
+  await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
+  check("...decoding correctly the second time too", (await page.inputValue('input.en-num[data-f="lv"]')) === "7");
   await page.context().close();
 }
 head("Enemies editor — decode, edit, write-through both copies");
