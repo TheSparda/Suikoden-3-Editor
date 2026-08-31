@@ -718,6 +718,36 @@ Compared with the three-pair table it is strictly more capable, and it is the me
 - **It reaches Geddoe.** He has the `97x` field bank but no mounted-battle bank, so the pair
   table can never help him — but an assigned horse puts him on horseback outside combat.
 
+### …and the matching limitation: it grants permission, it does not stage a horse
+
+The same property that gives this route its reach takes away its reliability, and the two routes
+fail in exactly opposite ways:
+
+| | pair table (§4) | assigned horse |
+|---|---|---|
+| mount must be a recruited character | **yes** | no |
+| mount holds a battle slot of its own | **yes** | **no** |
+| fires from party membership alone | **yes** | no — the scene must stage the horse |
+| reaches a non-recruitable mount | no | **yes** |
+| reaches a rider with no `3xx` bank | no (pairs, then no animation) | **yes**, on the field |
+
+`Mount(riderSlot, mountSlot)` links two **slots** in the 14-entry battle array, and the pair path
+gets its candidate by walking party members (`0x17dede4`). A recruited mount therefore always has
+somewhere to be, which is why a re-paired Chris+Bright fires in any battle with both deployed and
+needs no scene support at all — that is what the 2026-08-31 test showed.
+
+`zkum`/`s2um` hold no slot. `+0x66` says the character *may* be mounted; something still has to put
+a horse in the scene. That is the `+0x1bc` question in §10 — the per-object assigned mount, which
+no code path writes with a literal offset — and it is why Chris rides in some battles and not
+others despite her record having said 309 the whole time.
+
+**Practical consequence.** Setting `+0x66` on a new character makes them eligible wherever the game
+already stages a horse; it cannot add a horse to a fight that has none. To *force* a horse mount in
+battle from the editor as it stands, the route is **Ruby in the pair table** — she is a Star of
+Destiny with a full battle bank, so she brings her own slot. Whether the `zkum`/`s2um` path could be
+forced at all depends on what populates `+0x1bc`, which is **not established** (see the closing
+list); it is not something a constant rewrite can reach today.
+
 The hard limit is the consumer's own clamp: `(v - 308) < 2` unsigned means **only 308 and 309
 work**. Writing the Karaya horse, Ruby or a flyer here is read and silently discarded, so the
 editor offers exactly three options.
@@ -880,7 +910,11 @@ is not established**.
   past the skill-cap array is still unmapped.
 - What populates `rec->+0x1bc` (a character's assigned mount for the scene). No literal-offset
   writer exists; the two that do write it only clear the field-work global. Presumably scene
-  setup via a computed offset or a struct copy, but it was not traced.
+  setup via a computed offset or a struct copy, but it was not traced. **This is the blocker on
+  forcing an assigned-horse mount in an arbitrary battle** (§11): `+0x66` grants permission, but
+  the horse holds no battle slot of its own, so something has to stage it. Until this is traced,
+  whether that is reachable at all is open — the pair table with Ruby is the only route that can
+  be forced from the editor today.
 - Where the EDS script blobs actually live inside an area archive, which is what a reliable
   "does this scene call RideOn" scan would need (see §9).
 - **Emulator coverage is two data points.** The battle pair patch has been played through

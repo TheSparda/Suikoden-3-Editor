@@ -702,6 +702,11 @@ head("Assigned horse — the per-character list2 field, field + battle");
   // field bank but no battle one, which is exactly the distinction this section exists to make
   check("Geddoe is offered an assigned horse", (await page.$(sel(3))) !== null);
   check("Geddoe is labelled field-only", /Geddoe[\s\S]{0,80}field/.test(await page.textContent("#isoView")));
+  // the card must not imply that setting this alone puts someone on a horse in battle
+  { const txt = await page.textContent("#isoView");
+    check("it says the flag grants permission, not a horse", /does not by itself put\s+anyone on a horse/.test(txt.replace(/\s+/g, " ")));
+    check("it points at Ruby to actually force one", /use <?b?>?Ruby<?\/?b?>?/.test(txt) || /Ruby/.test(txt));
+    check("it explains why Chris rides in some battles only", /some battles\s+and\s+not others/.test(txt.replace(/\s+/g, " "))); }
   // only 308/309 are honoured by the game, so only those may be offered
   const optVals = await page.$$eval(sel(1), (els) => Array.from(els[0].options).map((o) => o.value));
   check("only none/308/309 are offered", JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]),
