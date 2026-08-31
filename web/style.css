@@ -222,6 +222,35 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .bar.indet .bar-fill { width:35% !important; transition:none; animation:indet 1.15s ease-in-out infinite; }
 @keyframes indet { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
 
+/* full-screen boot gate (see index.html #bootOv) — the save editor cannot do anything until
+   Pyodide is up, so cover everything instead of letting the dead form look usable. Sits above
+   the modals so a shared-in save can't raise a dialog behind it. */
+.boot-ov { position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center;
+  padding:20px; background:color-mix(in srgb,var(--bg) 84%,transparent); opacity:1; transition:opacity .22s ease; }
+@supports (backdrop-filter:blur(2px)) { .boot-ov { backdrop-filter:blur(3px); } }
+.boot-ov.gone { opacity:0; pointer-events:none; }
+.boot-card { background:var(--panel); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow);
+  padding:20px; width:100%; max-width:430px; }
+.boot-card:focus { outline:0; }
+.boot-card h2 { margin:0 0 10px; font-family:var(--titlefont); color:var(--acc2); font-size:16px; }
+.boot-msg { color:var(--mut); font-size:13px; margin-bottom:12px; }
+.boot-msg.err { color:var(--warn); }
+.boot-card .bar { max-width:none; height:6px; margin:0; }
+.boot-steps { list-style:none; margin:14px 0 0; padding:0; font-size:12px; color:var(--mut); }
+.boot-steps li { position:relative; padding:4px 0 4px 20px; }
+.boot-steps li::before { content:"○"; position:absolute; left:2px; opacity:.6; }
+.boot-steps li.on { color:var(--ink); }
+.boot-steps li.on::before { content:"◐"; color:var(--acc); opacity:1; }
+.boot-steps li.done::before { content:"✓"; color:var(--acc2); opacity:1; }
+.boot-steps li.bad { color:var(--ink); }
+.boot-steps li.bad::before { content:"✗"; color:var(--crimson); opacity:1; }
+.boot-steps .bs-note { color:var(--mut); opacity:.8; }
+.boot-steps li.on .bs-note { opacity:.9; }
+.boot-note { margin-top:12px; font-size:11px; color:var(--mut); opacity:.85; line-height:1.3; }
+.boot-acts { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.boot-acts button { flex:1 1 auto; }
+@media (prefers-reduced-motion:reduce) { .boot-ov { transition:none; } }
+
 /* save-progress modal */
 .pg-body { padding:16px; }
 .pg-body .bar { max-width:none; height:6px; margin:0; }
