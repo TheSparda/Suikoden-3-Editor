@@ -234,7 +234,72 @@ no branch surgery and nothing else disturbed. The nine case immediates, byte-ver
 
 Writing `0x7FFF` (an id the leader byte cannot hold) into one of these retires that case.
 
-## 8. What shipped (v1.61.0, extended in v1.62.0)
+## 8. Random encounters: the movement gate
+
+Before the encounter rate is used at all, the roll is gated on the **player object's current
+animation**, via two range tests over its motion slot (`obj->+0x0E`) and object kind
+(`obj->+0x02`):
+
+```
+IsWalking(kind, slot)  @ 0x16F3860 : kind==2 ? [0x64,0x6F] : [2,0x0D] or [0x42,0x44]
+IsRunning(kind, slot)  @ 0x16F38A8 : kind==2 ? [0x70,0x72] : [0x0E,0x13] or [0x45,0x46]
+
+walking -> rate = base ; running -> rate = base * (riding ? 150 : 120) / 100
+neither -> rate = 0, and the roll is skipped silently
+```
+
+Every bound is a 16-bit instruction immediate (ISO `0x13B068`–`0x13B0D8`), so the whole gate
+is editable in the same way as everything else here.
+
+### Koroku and Fubar run outside every band
+
+The motion table at `0x1966610` is a **single global slot list** — every model plays clips by
+slot number — so a model can only be classed as running if it plays a clip in the run band.
+Grepping the disc for clip names (they are plain text) and attributing each to its enclosing
+`cha_` record gives every model's locomotion set. Across the 78 models with attributable clips:
+
+| | count |
+|---|---|
+| have the human run band (`run_start_L/R`, `run_stop_L/R`) | **76 / 78** |
+| have the `hasi_*` slope set (slots 20–34) | 3 / 78 |
+| **lack the human run band entirely** | **2 / 78 — Fubar (8) and Koroku (54)** |
+
+Both are animals. Their run cycle is the *unsuffixed* `run_start` / `run_loop` / `run_stop`,
+which live at slots **`0x11A`–`0x11F`** — in the animal block beside `sit_stop` and `naki_*`
+(鳴き, an animal's cry). No band reaches there.
+
+Koroku's full locomotion set is `neutral_loop`, the six `walk_*`, `run_RL`/`run_LR`,
+`run_start`/`run_loop`/`run_stop`, `fastrun_loop`, `fastwalk_RL/LR` — 15 clips against Hugo's
+60. He is missing exactly the four run-band entries `run_start_L/R` and `run_stop_L/R`.
+
+**Confirmed in play (2026-08-31): as Koroku, walking triggers encounters and running does
+not.** That also settles his object kind. If he were kind 2 the run test would check
+`[0x70,0x72]` — clips he *has* (`fastrun_loop`, `fastwalk_*`) — and running would work. It
+doesn't, so he is an ordinary kind and his run falls back to the animal block.
+
+### The fix, and its price
+
+`IsRunning`'s **second** range is `[0x45,0x46]` — the mounted fast-move pair
+(`rdfastrun_loop`, `rdfastwalk`). Repointing it covers the animal cycle exactly:
+
+| ISO offset | stock | animal mode |
+|---|---|---|
+| `0x13B0BC` | `addiu $v0,$a1,-0x45` | `addiu $v0,$a1,-0x11A` |
+| `0x13B0C0` | `sltiu $v0,$v0,2` | `sltiu $v0,$v0,6` |
+
+The human bands are untouched, so nothing that works today changes. The price is that mounted
+fast-movement stops counting as running — no encounters while galloping, in the four areas
+that have a mount. Mounted *walking* still rolls, through `IsWalking`'s own `[0x42,0x44]` range.
+
+### Walking in peace
+
+The same structure gives a QoL setting the rate slider cannot: **zeroing a range's length
+makes its test always fail.** Zero all three walk lengths and walking never rolls while running
+still does — walk anywhere in peace, run when you want to grind. Zeroing the run lengths gives
+the inverse. Both are exposed as plain toggles rather than as a rate of 0, because they are a
+different thing: *when* encounters happen, not *how often*.
+
+## 9. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other
 one is two words.
@@ -257,6 +322,10 @@ what the buttons were supposed to do.
 of the 28 area archives ship each character's field model, before you pick) and a **Story
 content** control in the ISO tab that retires a character's case at the `0x177FEB4` switch so
 it falls through to Hugo's index — the empty-dialogue fix from §7.
+
+**v1.63.0 added** the Encounter tab's **Movement rules** panel from §8: independent
+walking/running toggles and the second-run-range mode switch that makes Koroku and Fubar roll
+encounters when they run.
 
 **Tested by** `web/tests/field-avatar.mjs` (the restated tables against `s3save.py`, the chain
 against both stock and widened immediates, the picker's grouping, and the eight sites against a

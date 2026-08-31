@@ -16,7 +16,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
-  AVATAR_SITES, avatarWord, STORY_CASES } from "./synth-iso.mjs";
+  AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -617,6 +617,54 @@ head("Field character — per-map coverage and the story-content switch");
   { const r = await save(page);
     check("Restore stock returns every story case",
       STORY_CASES.every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
+  await page.context().close();
+}
+
+head("Encounter movement rules — what counts as moving");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("#encWalk", { timeout: 3000 });
+  const lenOf = (r, off) => r.u32(off) & 0xFFFF;
+  const WALK_LEN = [0x13B06C, 0x13B078, 0x13B090], RUN_LEN = [0x13B0B4, 0x13B0D8];
+  check("both movement toggles start on",
+    (await page.isChecked("#encWalk")) && (await page.isChecked("#encRun")));
+  check("the readout lists what currently rolls", /Encounters currently roll while/.test(await page.textContent("#encMove")));
+  check("the second run range decodes as the stock mounted pair",
+    (await page.inputValue("#encRunAlt")) === "stock");
+
+  // The QoL setting: walk in peace, run to fight. Every walk range must go to zero, or the
+  // test still fires on one of them and the setting silently does nothing.
+  await page.uncheck("#encWalk");
+  await page.waitForSelector("#encWalk", { timeout: 3000 });
+  check("turning walking off empties the readout of walk bands",
+    !/walk slots/.test(await page.textContent("#encMove")));
+  { const r = await save(page);
+    check("all three walk ranges are zeroed", WALK_LEN.every((o) => lenOf(r, o) === 0));
+    check("...and the run ranges are untouched",
+      lenOf(r, RUN_LEN[0]) === 6 && lenOf(r, RUN_LEN[1]) === 3);
+    check("...with every opcode half intact",
+      WALK_LEN.every((o) => (r.u32(o) >>> 16) === (o === 0x13B090 ? 0x2C63 : 0x2C42))); }
+
+  // Koroku's fix: point the run test's second range at the animal run cycle.
+  await page.check("#encWalk");
+  await page.waitForSelector("#encRunAlt", { timeout: 3000 });
+  await page.selectOption("#encRunAlt", "animal");
+  await page.waitForSelector("#encRunAlt", { timeout: 3000 });
+  check("the note names the trade it makes", /mounted fast-move/.test(await page.textContent("#encMove")));
+  { const r = await save(page);
+    check("the second run range base became -0x11A", (r.u32(0x13B0BC) & 0xFFFF) === ((-0x11A) & 0xFFFF));
+    check("...its length became 6 (slots 0x11A-0x11F)", lenOf(r, 0x13B0C0) === 6);
+    check("...the opcode halves survived",
+      (r.u32(0x13B0BC) >>> 16) === 0x24A2 && (r.u32(0x13B0C0) >>> 16) === 0x2C42);
+    check("walking was restored", WALK_LEN.every((o, i) => lenOf(r, o) === [0x0C, 0x03, 0x0C][i]));
+    check("the first run range is untouched", lenOf(r, 0x13B0B4) === 6); }
+
+  // Turning running off has to take the second range with it, or it keeps firing.
+  await page.uncheck("#encRun");
+  await page.waitForSelector("#encRun", { timeout: 3000 });
+  { const r = await save(page);
+    check("turning running off zeroes both run ranges and the second one",
+      RUN_LEN.every((o) => lenOf(r, o) === 0) && lenOf(r, 0x13B0C0) === 0); }
   await page.context().close();
 }
 

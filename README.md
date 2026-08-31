@@ -195,6 +195,20 @@ turns "nobody will talk to me as Luc" into "everyone treats me as Hugo".
 > and the byte-verified patch sites are written up in
 > [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md).
 
+**Movement rules — the Encounter tab.** Before the rate below is used at all, the game checks
+which **animation** you're playing: walking and running are separate range tests over the
+player's motion slot, and if neither matches, the roll is skipped entirely. Two things fall out
+of that, both plain toggles:
+
+- **Walking triggers encounters — off.** Walk anywhere in peace and run when you want to fight.
+  This isn't a rate of 0; running still rolls normally. It's *when* encounters happen, not how
+  often.
+- **The second run range → animal run cycle.** **Koroku and Fubar are the only two playable
+  models with no `run_start_L/R` clips** (76 of 78 have them) — their run cycle sits at slots
+  `0x11A–0x11F` in the animal block, outside every band, so running as them never triggered a
+  battle. Confirmed in play, and this fixes it. The trade is named in the tab: that range
+  currently holds the mounted fast-move slots, so you lose encounters while galloping.
+
 **Random encounter rate — the Encounter tab.** One number controls how often random battles
 trigger across the whole game, as a percentage of the stock rate:
 
