@@ -48,7 +48,7 @@ const mkBag = (region, firstSlot, items, capacity) => ({
 
 const mkSave = (over) => Object.assign({
   global: { gold: 1000, storyPhase: 6, merged: true, partyLeader: 1, playtime: "1:00" },
-  names: [], carryover: {}, party: [1, 2, 0, 0, 0, 0],
+  names: [], carryover: {}, party: [1, 2, 0, 0, 0, 0], partyFormation: [1, 2, 0, 0, 0, 0],
   characters: [mkChar(0, "Hugo"), mkChar(1, "Chris")],
   inventory: [mkBag("Party bag", 0, [mkItem(0, 0x01, 3, true), mkItem(1, 0x0a0, 0, false)])],
   statNames: Object.keys(STATS), problems: [], notes: [],
@@ -140,6 +140,29 @@ console.log("party:");
 {
   const f = audit(mkSave({ global: { gold: 10, storyPhase: 6, merged: true, partyLeader: 3 } }));
   check("a leader who isn't in the party is a note", has(f, /^party-leader-absent$/));
+}
+{ // The formation table is the half of a party edit that fails silently: the game builds the
+  // members it lists, so a party list longer than the formation shows empty slots in-game.
+  const s = mkSave({ party: [1, 2, 3, 0, 0, 0], partyFormation: [1, 2, 0, 0, 0, 0],
+                     characters: [mkChar(0, "Hugo"), mkChar(1, "Chris"), mkChar(2, "Geddoe")] });
+  const hit = one(audit(s), /^party-formation$/)[0];
+  check("a formation shorter than the party is an error", !!hit && hit.sev === "error");
+  check("it counts both sides", !!hit && /lists 2 members.*holds 3/.test(hit.title), hit && hit.title);
+  check("its fix clears the finding", !!hit && fixClears(s, hit));
+}
+{ // ...and the shapes the game itself writes are all fine: dense, reordered, and spread.
+  const ok = (form, party) => !has(audit(mkSave({ party, partyFormation: form,
+    characters: [mkChar(0, "Hugo"), mkChar(1, "Chris"), mkChar(2, "Geddoe")] })), /^party-formation$/);
+  check("a dense formation is clean", ok([1, 2, 3, 0, 0, 0], [1, 2, 3, 0, 0, 0]));
+  check("a reordered formation is clean", ok([1, 3, 2, 0, 0, 0], [1, 2, 3, 0, 0, 0]));
+  check("a spread formation is clean", ok([1, 0, 2, 0, 3, 0], [1, 2, 3, 0, 0, 0]));
+  check("an empty party with an empty formation is clean", ok([0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]));
+}
+{ // A staged party edit rebuilds the table at write time, so it must not be pre-flagged.
+  const s = mkSave({ party: [1, 2, 0, 0, 0, 0], partyFormation: [1, 2, 0, 0, 0, 0] });
+  const staged = Object.assign(blank(), { party: { 2: 3 } });
+  check("staging a third member does not flag the formation it is about to rebuild",
+    !has(audit(s, staged), /^party-formation$/));
 }
 { // a party id with no roster record (guest/NPC) must not be reported as unrecruited
   const f = audit(mkSave({ party: [1, 2, 900, 0, 0, 0] }));

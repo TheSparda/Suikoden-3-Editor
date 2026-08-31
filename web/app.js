@@ -486,7 +486,9 @@ function showSub() {
       `Team pills show which protagonist(s) a recruited star is on (a star can be on several at once).`;
     drawStars();
   } else if (SUB === "party") {
-    $("#subhint").innerHTML = `Active battle party (up to 6). Leaving story-required leaders in place avoids soft-locks.`;
+    $("#subhint").innerHTML = `Active battle party (up to 6). Leaving story-required leaders in place avoids soft-locks. ` +
+      `Saving also re-derives the battle formation (the table the game reads to decide who to build), ` +
+      `and closes any gap you leave in the list.`;
     drawParty();
   } else if (SUB === "health") {
     $("#subhint").innerHTML = `A read-through of this save — <b>including your pending edits</b> — for the states ` +
@@ -1130,6 +1132,11 @@ function buildDiff() {
       else if (FIELD_LABEL[k] && v !== c[k]) rows.push({ g: who, t: `${FIELD_LABEL[k]}: ${c[k]} → ${v}` });
     });
   });
+  // The write path re-derives the formation table from the party list on every party edit —
+  // without it, a member dropped into an empty slot never appears in-game. Say so, otherwise
+  // a "Recruit them / rebuild" fix that changes no visible slot looks like it does nothing.
+  if (Object.keys(PARTY).length)
+    rows.push({ g: "Party", t: "Battle formation: re-derived from the party list" });
   Object.entries(RECRUIT).forEach(([ri, v]) => {
     const c = byRi[ri] || byRi[+ri] || {}, who = c.name || `#${ri}`;
     if ("recruited" in v && v.recruited !== !!c.recruited) rows.push({ g: who, t: `Recruited: ${v.recruited ? "yes" : "no"}` });
