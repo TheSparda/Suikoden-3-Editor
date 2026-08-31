@@ -350,11 +350,12 @@
   //    `run_stop_L/R` (checked against every model's clip set on disc: 76 of 78 have them).
   //    Their run cycle is the unsuffixed `run_start`/`run_loop`/`run_stop`, which live at
   //    slots 0x11A-0x11F in the animal block next to `naki_*` (a bark) and `sit_stop` —
-  //    outside every band, so running as them never rolls. Confirmed in play: as Koroku
-  //    walking triggers encounters and running does not. Repointing the run test's SECOND
-  //    range at that block fixes it. The cost is named in the UI: that range currently
-  //    holds the mounted fast-move slots, so trading it means no encounters while
-  //    galloping (mounted *walking* still rolls, via IsWalking's own second range).
+  //    outside every band, so running as them never rolls. Both halves are confirmed in
+  //    play (2026-08-31): as Koroku, stock builds trigger encounters when walking and never
+  //    when running, and with the run test's SECOND range repointed at that block running
+  //    triggers them too. The cost is named in the UI: that range currently holds the
+  //    mounted fast-move slots, so trading it means no encounters while galloping (mounted
+  //    *walking* still rolls, via IsWalking's own second range).
   //
   // Every site below is the 16-bit immediate half of one instruction; `opc` is the other
   // half and is checked before anything is offered, so a non-stock build is refused.
@@ -374,7 +375,7 @@
       len:  { off: 0x13B0C0, opc: 0x2C42 },     // sltiu $v0,$v0,N
       modes: [
         { key: "stock",  base: 0x45,  len: 2, label: "mounted fast-movement (stock)", note: "slots 0x45-0x46 — rdfastrun_loop / rdfastwalk" },
-        { key: "animal", base: 0x11A, len: 6, label: "animal run cycle (Fubar, Koroku)", note: "slots 0x11A-0x11F — run_start / run_loop / run_stop; costs the mounted fast-move slots" },
+        { key: "animal", base: 0x11A, len: 6, label: "animal run cycle (Fubar, Koroku) — confirmed", note: "slots 0x11A-0x11F — run_start / run_loop / run_stop. Confirmed in play: running as Koroku triggers encounters with this set. Costs the mounted fast-move slots, so no encounters while galloping." },
       ],
     },
   };
@@ -2003,9 +2004,9 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["avatar", "Field character"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
-    ["text", "Text"], ["ref", "Reference"]];
+    ["text", "Text"], ["ref", "Reference"], ["test", "Test"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -2086,7 +2087,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
-      avatar: "Who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions.",
+      test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -2111,7 +2112,7 @@
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "mounts") drawMounts(host);
-    else if (VIEW === "avatar") drawAvatar(host);
+    else if (VIEW === "test") drawTest(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "sets") drawSets(host);
     else if (VIEW === "food") drawFood(host);
@@ -3643,6 +3644,31 @@
     });
   }
 
+  // ---- Test: experiments that are not known to work ---------------------------
+  // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
+  // is "the patch does what it says and the game may still hang". Scripted scenes are
+  // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
+  let TESTVIEW = "avatar";
+  const TESTS = [["avatar", "Field character"]];
+  function drawTest(host) {
+    host.innerHTML = `
+      <div class="warnbox" style="margin:0 0 12px">
+        <b>Experimental — expect these not to work.</b> The patches here rewrite game code
+        correctly, but the game was not built for what they enable. Scripted scenes are written
+        for a specific protagonist and the event data lives in packed files no editor can reach,
+        so a scene can simply hang. Confirmed in play with <b>Koroku, Yuber and Lucia</b>.
+        Treat all of it as a roaming toy, keep a backup save, and switch the leader back to
+        Hugo, Chris, Geddoe or Thomas before triggering story. Note too that story scripts
+        rewrite the leader byte themselves at <b>chapter transitions</b>, so a pick holds only
+        until the next scene that sets it.
+      </div>
+      <div class="subtabs" id="testTabs" style="margin-bottom:12px">${TESTS.map(([k, l]) =>
+        `<button class="chip${k === TESTVIEW ? " on" : ""}" data-t="${k}">${l}</button>`).join("")}</div>
+      <div id="testView"></div>`;
+    qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
+    if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
+  }
+
   // ---- Field character --------------------------------------------------------
   function avatarName(id) {
     const ri = AVATAR.PARTY_IDS.indexOf(id);
@@ -3755,10 +3781,10 @@
           or the scripts changes: this only stops the loader from refusing the id.
         </div>
         <div class="warnbox" style="margin:0 0 10px">
-          The stock eight are shipped and played by the game itself. Everyone else is
-          <b>untested</b>: the model has to be resident in the area you are standing in, and story
-          scripts rewrite the leader byte at chapter transitions, so an added character may show up
-          missing or be replaced at the next scene. Keep a backup save.
+          Two things bite beyond the whitelist. The model has to be <b>resident in the area you
+          are standing in</b> — coverage is on each chip below — and a <b>scripted scene can
+          hang</b> whoever you pick, including the eight the game ships: Koroku is one of them and
+          hangs. Being able to load a model is not the same as the game knowing what to do with it.
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
           <button id="avWide" class="chip${isWide ? " on" : ""}">Allow every battle character</button>
@@ -3792,8 +3818,13 @@
         </tbody></table>
         <div class="muted" style="font-size:12px;margin:6px 0 0">
           Only this one switch knows these characters; the other six already send them to
-          Hugo, which is why a single word is enough. Untested in play — it changes which
-          content loads, not whether that content fits the scene you are standing in.
+          Hugo, which is why a single word is enough. It changes which content loads, not
+          whether that content fits the scene you are standing in.
+          <br><b>This is for empty dialogue boxes, not for softlocks.</b> Confirmed in play:
+          switching Koroku to Hugo's content does <i>not</i> fix a scene that hangs — his model
+          is missing the <code>evneutral</code> event-idle clip (the only model on the disc that
+          is), so the script waits on an animation that cannot play. Loading more content that
+          runs makes that likelier, not less.
         </div>
         <details class="note" style="margin:10px 0 0"><summary>The chain, and where each byte lives</summary>
           <pre style="white-space:pre-wrap;font-size:12px">FieldAvatarModelRequest(id)          ; vaddr 0x17B7560
