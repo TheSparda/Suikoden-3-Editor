@@ -65,3 +65,6 @@ jobs:
       - name: Playwright e2e (ISO editor + verified-offset fixture)
         run: node e2e.mjs
         working-directory: web/tests
+      - name: Streaming save (the phone path — real service worker, byte-compared download)
+        run: node stream-save.mjs
+        working-directory: web/tests
