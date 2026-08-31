@@ -57,7 +57,8 @@ Multi-save memory cards show a **slot switcher**. Every write recomputes the sav
 Editable per save:
 
 - **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, chapter,
-  playtime, story phase, party leader, and Suikoden I/II carryover detection — plus a
+  playtime, story phase, the **field character** you run around the map as, and Suikoden I/II
+  carryover detection — plus a
   **JSON snapshot** (⬇ Export / ⬆ Import) of the whole save: a human-readable file you can
   edit or share and re-import, which stages the differences through the normal review-and-Apply
   path rather than writing anything directly.
@@ -145,6 +146,7 @@ re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *C
 every combination carries its own confidence marker: *confirmed / expected / untested / rough /
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
+**Field character** (who you run around the map as — see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
@@ -163,6 +165,23 @@ below).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
+
+**Field character — who you run around the map as.** The on-field avatar is the **party-leader
+byte** in your save, and that byte names a *model*. The engine only ever loads the model of
+**eight hardcoded ids** — Hugo, Chris, Geddoe, Thomas, **Koroku**, **Luc**, and the two
+specials *Masked Luc* and *Grasslands Chris* — which is exactly the set the game hands you
+itself. So six of those seven need **no ISO patch at all**: pick them straight from **Save
+Editor → Overview → Field character**. The ISO tab exists for everyone else: it rewrites the
+whitelist's comparison chain (one button widens it to all 75 battle characters), and shows
+the resulting loadable set read back from the patched bytes rather than from a claim.
+
+> Two caveats, both stated in the tab. The added characters are **untested** — their model
+> still has to be resident in the area you're standing in, and an id the area doesn't carry
+> gets you a missing avatar rather than a swap (it's not a crash: the load request is simply
+> never made). And **story scripts set the leader byte at chapter transitions**, so a pick
+> holds until the next scene that sets it. The mechanism, the disassembled chain and the
+> byte-verified patch sites are written up in
+> [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md).
 
 **Random encounter rate — the Encounter tab.** One number controls how often random battles
 trigger across the whole game, as a percentage of the stock rate:
