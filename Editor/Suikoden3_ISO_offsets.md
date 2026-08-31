@@ -2429,12 +2429,14 @@ the offsets-relevant conclusions:
   everywhere else (save: EXP@+0x00, id@+0x0C, level@+0x0D, skills@+0x10;
   monster: rewards@+0x0C/+0x10, resist bytes@+0x38, level@+0x40). They are two
   serializations of one runtime struct, **not interchangeable bytes**.
-- **Boss characters need no new mechanism**: Luc 57 / Yuber 58 / Sarah 59 etc.
-  are list1 ids with save blocks at `0x33AC + rosterIndex*140` (id = rosterIndex+1
-  for ids 1..75) and recruit words at `0x232 + rosterIndex*2`. The party list at
-  `0x3216` already accepts them. Unproven in-game (per-area model residency,
-  story overwrite of 0x3216, soft-locks) — PCSX2 test required before any UI
-  promotes it.
+- **Boss characters need no new mechanism**: Luc / Yuber / Sarah etc. have save
+  blocks at `0x33AC + rosterIndex*140` and recruit words at `0x232 + rosterIndex*2`,
+  and the party list at `0x3216` accepts them — via `s3save.party_id_of()`, not
+  their list1 ids (see "The party list is a THIRD id space" below; Luc is list1 57
+  but party id 63). What is *proven* is only the write path: putting a roster
+  character into an empty party slot does now work in-game (below). The
+  boss-specific risks — per-area model residency, story overwrite of 0x3216,
+  soft-locks — are still untested; PCSX2 test required before any UI promotes it.
 - **Monster ids cannot be party members** (no save block, no persistent record
   outside the resident pack, no character-table name/portrait/field model). Their
   stats *can* be ported onto a character through existing write paths.
@@ -2545,3 +2547,29 @@ it through the normal write path.
 occupancy across the corpus was enumerated: only `0x3216`–`0x3220` (the party list) and
 `0x3240`–`0x3245` (this table) qualify. There is no separate member count and no third
 structure to satisfy.
+
+---
+
+## Party edits confirmed working in-game (2026-08-30)
+
+The two fixes above (the party id space, then the formation table at 0x3240) were derived from
+the save corpus and the herrvillain reference, not from a running game — the ISO offsets doc's
+usual caveat. **They are now confirmed on real hardware/emulator by the user who reported the
+bug:** with v1.50.0, Bright (party id 32) and Koroku (54) written into previously empty slots
+of a Hugo-led save appear in the party in-game.
+
+That closes both halves at once, and it is the only test that could: each bug alone was enough
+to make a party edit inert, so nothing short of an in-game boot could tell "the ids are wrong"
+from "the formation is wrong" from "there is a third gate we have not found". There is no third
+gate.
+
+**What this does and does not establish.**
+
+- **Established:** a roster battle character, recruited with the right team bits, written into
+  an *empty* party slot with `party_id_of()` + a re-derived formation, is built by the game and
+  is usable. The two tables at `0x3216` and `0x3240` are together sufficient.
+- **Not established:** the same for the **Special Characters** (`0xCA`–`0xD7`) and Koroku's
+  dogs (`0xD2`–`0xD5`), which is why the picker still does not offer them; and nothing about
+  per-area model residency for characters who are not normally party members, which is the
+  open risk in `docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md`. Bright and Koroku are ordinary
+  roster members with field models everywhere — they are not evidence about bosses.
