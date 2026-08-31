@@ -149,7 +149,8 @@
   // opts (every entry optional — a missing one just disables the checks that need it):
   //   item(id)      -> {name, cat} | null      the item table
   //   skillName(id) -> string
-  //   charName(id)  -> string                  char-id (party space) -> display name
+  //   charName(id)  -> string                  party id -> display name
+  //   partyRoster(id) -> rosterIndex | null    party id -> its character block
   //   skillCap(charName, skillId) -> {grade} | null       GuideCore.skillCap
   //   runeSlot(charName, slotKey) -> {state, lv, rune} | null   GuideCore.runeSlot
   function audit(save, staged, opts) {
@@ -171,10 +172,16 @@
       title: "Decode note", detail: t }));
 
     // --- party ---------------------------------------------------------------
-    // Party slots hold char ids, not roster indices; map back through the record id the
-    // roster slot is expected to carry (ROSTER_IDS, via decode_character).
-    const byCharId = {};
-    eff.characters.forEach((c) => { if (typeof c.idExpected === "number") byCharId[c.idExpected] = c; });
+    // Party slots hold ids in s3save.PARTY_IDS — a space of its own, neither the exe list1
+    // ids nor the record id at block +0x0C. Only the caller can map one to a character
+    // block; without partyRoster the per-member checks simply don't run.
+    const byRoster = {};
+    eff.characters.forEach((c) => { byRoster[c.rosterIndex] = c; });
+    const charBlock = (pid) => {
+      if (!opts.partyRoster) return null;
+      const ri = opts.partyRoster(pid);
+      return ri == null ? null : byRoster[ri] || null;
+    };
     const filled = eff.party.filter((id) => id > 0);
     if (!filled.length) {
       add({ id: "party-empty", sev: "info", group: "Party",
@@ -193,7 +200,7 @@
           where: { sub: "party", search: "" },
           fix: { label: `Clear slot ${slot + 1}`, ops: [{ kind: "party", slot, value: 0 }] } });
       } else seen[cid] = slot;
-      const c = byCharId[cid];
+      const c = charBlock(cid);
       if (c && !c.recruited) {
         add({ id: "party-unrecruited-" + slot, sev: "error", group: "Party",
           title: `Party slot ${slot + 1} holds ${c.name}, who is not recruited`,

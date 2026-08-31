@@ -2438,3 +2438,60 @@ the offsets-relevant conclusions:
 - **Monster ids cannot be party members** (no save block, no persistent record
   outside the resident pack, no character-table name/portrait/field model). Their
   stats *can* be ported onto a character through existing write paths.
+
+---
+
+## The party list is a THIRD id space — party edits never reached the game (2026-08-30)
+
+**Symptom, from a user:** add characters to the party in the Save Editor, reload the save in
+the editor and they are there; boot the game and the slots are empty.
+
+**Cause.** `0x3216` (and the leader byte at `0x12`) do **not** hold exe list1 ids. The
+`PARTY COMPOSITION` entry under *Save Editor v7* above says "exe list1 id space" and that is
+wrong. They hold what the herrvillain reference calls **Party Modifier digits**
+(`Cheat files/Cheat info/Suikoden III Cheat Codes.pdf` → *Party Modifier Digits* → *Battle
+Characters*) — a third numbering, alongside list1 and the record id at block `+0x0C`:
+
+| | Roland | Bright | Koroku | Emily |
+|---|---|---|---|---|
+| list1 (what the editor wrote) | 12 | 31 | 48 | 75 |
+| record id at `+0x0C` (`ROSTER_IDS`) | 12 | 73 | 75 | 71 |
+| **party id (what the game reads)** | **13** | **32** | **54** | **82** |
+
+The party space agrees with list1 for `0x01`–`0x0B` (Hugo…Aila) and then diverges, because it
+reserves ids the roster does not: gaps at `0x0C`, `0x21`, `0x25`–`0x27`, `0x2B`, `0x40`. So the
+editor's party tab worked for the first eleven characters and silently loaded *somebody else*
+for the other sixty-four — and because the decoder used the same wrong table, re-opening the
+save showed the pick back, which is exactly why this survived so long.
+
+**Why this reading is right.** Under it every party in the 20-save playthrough corpus + the 5
+extracted `gamedata` blobs decodes to a party the game actually builds; under list1 none of
+them did:
+
+| `0x3216` | party space | list1 (the old, wrong reading) |
+|---|---|---|
+| `2,13,18,20,21,45` | Chris + Roland + Leo + Percival + Borus + Salome — the Zexen knights | Chris, Lilly, Beecham, Borus, Queen, Nash |
+| `3,17,22,24,23,11` | Geddoe + Ace + Queen + Joker + Jacques + Aila — his mercenaries | Geddoe, Leo, Jacques, Duke, Joker, Aila |
+| `2,13,21` (Chris Ch.1) | Chris + Roland + Borus | Chris, Lilly (not recruited in that save), Queen (Geddoe's) |
+| `1,54,210,211,212,213` | Hugo + Koroku + Koichi + Connie + Kosanji + Kogoro — the dog chapter | Hugo, Yumi, and four ids that decode to nothing |
+| `63,66,65` | Luc + Sarah + Yuber | Hallec, Augustine, Twaikin |
+| leader `29` on both phase-4 saves | Thomas — the Thomas chapter | Cecile |
+
+The same table also explains every "guest/NPC" id the editor used to show as a bare number:
+`0xD2`–`0xD5` are Koroku's four dogs (list1 76–79, no roster slot) and `0xCA`–`0xD7` are the
+reference's *Special Characters* — `0xCA` "Masked Luc" leads two corpus saves.
+
+**Fix.** `s3save.PARTY_IDS` (roster index → party id) + `party_name` / `party_roster_index` /
+`party_reference`. The web app's `REF.charById` is now that space, so the picker, the leader
+line, the review-changes diff, the JSON export/import and the health audit all speak it;
+`health-core.audit` takes a `partyRoster(id)` lookup instead of matching on the record id.
+Pinned by `web/tests/save_roundtrip.py` ("Party id space") and by `health-core.mjs`, which
+parses `PARTY_IDS` out of `s3save.py` rather than restating it.
+
+**Not changed, deliberately.** The picker offers the 75 battle characters that have a
+character block. The dogs, the Special Characters and the *Support Characters* digits
+(`0x54`+ — a different field, the support slot at `0x3252`) are named on read but not
+offered: they have no recruit word or character block, so the editor cannot make them
+coherent, and the reference's support list is missing five roster names (Anne, Kidd, Mike,
+Jefferson, Kathy sit in the `0x7A`–`0x7F` gap, six slots for five names, so the alignment
+there is undetermined). Correct or absent.

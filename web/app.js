@@ -18,7 +18,7 @@ const EQ_CATS = HealthCore.SLOT_CATS;
 const RECRUITERS = ["Hugo", "Chris", "Geddoe", "Thomas"];
 
 let pyReady = null, PY = null;   // PY = resolved pyodide (sync access keeps share() in-gesture)
-let REF = { items: [], skills: [], charById: {} };
+let REF = { items: [], skills: [], charById: {}, charRoster: {}, charChoices: [] };
 let ITEM_BY_ID = {}, saves = [], curSlot = 0, origName = "save.bin";
 // File System Access API (desktop Chromium): lets us overwrite the original file in place
 // instead of downloading a copy. Absent on Android/Firefox/Safari → we fall back to download.
@@ -127,17 +127,23 @@ def load_reference():
              for k, v in sorted(ids.items())]
     skills = [{"id": k, "name": v, "desc": _skill_effect_text(sref, k) or sdesc.get(v, "")}
               for k, v in sorted(_skill_ids(open("skills.txt", encoding="latin1").read()).items())]
-    charById = json.load(open("names.json")).get("list1", {})
-    return json.dumps({"items": items, "skills": skills, "charById": charById})
+    # Party slots and the leader byte speak s3save.PARTY_IDS, NOT the exe list1 ids the
+    # rest of the reference data uses (see the PARTY_IDS comment in s3save.py). charById is
+    # read by the party picker, the leader line and the health audit, so it is that space.
+    ref = s3save.party_reference()
+    charById = {str(k): v for k, v in ref["names"].items()}
+    charRoster = {str(k): v for k, v in ref["roster"].items()}
+    return json.dumps({"items": items, "skills": skills, "charById": charById,
+                       "charRoster": charRoster, "charChoices": ref["choices"]})
 
 def load_saves(path):
-    charById = json.load(open("names.json")).get("list1", {})
+    charById = s3save.party_reference()["names"]
     out = []
     for dec in s3save.read_all_s3_saves(path):
         for c in dec["characters"]:
             c.pop("raw", None)                 # drop the 140-byte dump from the payload
         lid = dec["global"].get("partyLeader")
-        dec["leaderName"] = charById.get(str(lid), "")
+        dec["leaderName"] = charById.get(lid, "")
         out.append(dec)
     return json.dumps(out)
 
@@ -156,9 +162,10 @@ def apply_edits(path, folder, payload_json):
   REF = JSON.parse(py.runPython("load_reference()"));
   REF.items.forEach((i) => (ITEM_BY_ID[i.id] = i));
   REF.skills.forEach((s) => (SKILL_BY_ID[s.id] = s));
-  // character picker list (id · name), sorted by id
-  CHAR_LIST = Object.entries(REF.charById).map(([id, nm]) => ({ id: +id, name: nm }))
-    .sort((a, b) => a.id - b.id);
+  // Party picker list (id · name), in roster order. REF.charChoices is the pickable subset —
+  // the battle characters that have a character block — so the named-but-unpickable ids
+  // (Koroku's dogs, the Special Characters) label an existing slot without being offered.
+  CHAR_LIST = REF.charChoices.map((id) => ({ id, name: REF.charById[id] }));
   OPT_RANK = RANK_TIERS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
   PY = py;
   bootProgress(100, "Ready");
@@ -183,7 +190,16 @@ function eqList(slotKey, curId) {
   if (curId && !list.some((i) => i.id === curId) && ITEM_BY_ID[curId]) list = [ITEM_BY_ID[curId], ...list];
   return [{ id: 0, name: "none" }, ...list];
 }
-function charList() { return [{ id: 0, name: "empty" }, ...CHAR_LIST]; }
+// Party-slot options. A slot can legitimately already hold an id with no character block —
+// a guest, one of Koroku's dogs, a Special Character — so the current value is appended when
+// it isn't one of the pickable battle characters, and re-choosing it is a no-op rather than
+// an id the list can't express.
+function charList(curId) {
+  const list = [{ id: 0, name: "empty" }, ...CHAR_LIST];
+  if (curId && !CHAR_LIST.some((c) => c.id === curId))
+    list.push({ id: curId, name: REF.charById[curId] || "id " + curId + " (guest/NPC)" });
+  return list;
+}
 
 // Open the shared picker modal. list=[{id,name,cat?,desc?}]; onPick(id) fires on choose.
 // idFmt formats the id prefix per domain (3-hex items, 2-hex skills, decimal chars).
@@ -823,6 +839,8 @@ function healthOpts() {
     item: (id) => (ITEM_BY_ID[id] ? { name: ITEM_BY_ID[id].name, cat: ITEM_BY_ID[id].cat } : null),
     skillName: (id) => (SKILL_BY_ID[id] && SKILL_BY_ID[id].name) || "#" + id,
     charName: (id) => REF.charById[id] || "id " + id,
+    // party id -> roster slot, so the audit can find the character block behind a slot.
+    partyRoster: (id) => (id in REF.charRoster ? REF.charRoster[id] : null),
     skillCap: (nm, sid) => (GUIDE ? GuideCore.skillCap(GUIDE, nm, sid) : null),
     runeSlot: (nm, key) => (GUIDE ? GuideCore.runeSlot(GUIDE, nm, key) : null),
   };
@@ -944,7 +962,7 @@ function drawParty() {
     `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th></tr></thead><tbody>${rows}</tbody></table>`;
   $$("button.picker[data-partyslot]").forEach((btn) => (btn.onclick = () => {
     const slot = +btn.dataset.partyslot, cur = +btn.dataset.val;
-    openPicker(`Party slot ${slot + 1}`, charList(), cur, (id) => {
+    openPicker(`Party slot ${slot + 1}`, charList(cur), cur, (id) => {
       btn.dataset.val = id; btn.textContent = charLabel(id);
       btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
       PARTY[slot] = id;
