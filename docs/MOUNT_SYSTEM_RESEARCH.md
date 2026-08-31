@@ -651,9 +651,72 @@ to put it and what it can reach.
    existing instruction in place; this is a different class of change.
 2. **It can only reach scenes that already assign a mount.** Both the debug toggle
    (`0x178ccc8`) and the party-warp code (`0x1777b98`) read the assigned mount from `+0x1bc`,
-   and no code path writes a per-object `+0x1bc` with a literal offset — the only two literal
-   writers (`0x1712894`, `0x1713458`) *clear* the field-work global. So it is populated by
-   scene setup, which means precisely the places the game already intends you to ride.
+   and nothing writes it. See §10a — `+0x1bc` holds a **pointer to a live EOBJ**, so there is no
+   constant to write into it, and it is populated by scene setup, which means precisely the
+   places the game already intends you to ride.
+
+### 10a. Why `+0x1bc` cannot be forced on — it is a pointer, not an id
+
+> **Corrects an earlier note.** A previous revision said "the only two literal writers
+> (`0x1712894`, `0x1713458`) clear the field-work global". Those two are on a **different struct
+> that merely shares the offset** and has nothing to do with mounting — see below. The mount
+> `+0x1bc` has no writer at all.
+
+Scanning the whole `PT_LOAD` for a `0x1bc` immediate gives 16 instructions. Discarding `$sp`
+frame slots and the floating-point ops leaves two distinct fields:
+
+**(a) A global callback slot — unrelated.** `0x1712894` and `0x1713458` both store through
+`lui 0x197 / addiu -0x5cf0` = the fixed global **`0x196A310`**, so they touch `0x196A4CC`. What
+lives there is a **function pointer**: `0x17055A0` does `lw $v0, 0x1bc($s0)` immediately followed
+by `jalr $v0`, and `0x1713450` is an unregister (`if (slot == arg) slot = 0`). Nothing to do with
+mounting; the earlier note attributed these to the mount field by offset alone.
+
+**(b) The mount field — on the per-character scene record.** Its base is the record returned by
+`GetSceneCharaRecord` @ **`0x17b5a40`**, the same struct that carries `+0x3c` (the character's
+EOBJ) and `+0x250` (the mount back-pointer of §1). Running the struct mapper over all **186** call
+sites of that accessor:
+
+```
+  +0x3C   {'lw': 79}          <- EOBJ pointer      : 79 reads, 0 writes
+  +0x1BC  {'lw':  1}  @ 0178CD18   <- assigned mount : 1 read,  0 writes
+  +0x250  {'lw':  4}          <- mount back-pointer : 4 reads,  0 writes
+```
+
+**It holds a pointer.** Three independent confirmations:
+
+1. It is `lw` (32-bit), and it is passed straight through as `$a1` to `RideOn` @ `0x179ec68`,
+   which forwards it to `RideLink(riderEobj, mountEobj)` @ `0x16e84c0` and to a flag helper
+   (`0x179ebe0` → `0x16e7b18`) that dereferences it.
+2. In the party-warp reader the zero-fallback is `beql $s0, $zero, …` with `lui $s0, 0x19c` in
+   the delay slot — the substitute value is a global **address**, so the field is address-typed.
+3. The loaded value is then handed to the same two calls (`0x17b6b28`, `0x177da48`) that the
+   surrounding code makes for `$s3`, a known live object.
+
+So there is no immediate that could be written here, or substituted at the read site, that would
+be a valid mount: the value has to be the address of an EOBJ the scene actually allocated, which
+differs every scene and does not exist at all in a scene with no horse. A fabricated pointer is
+dereferenced by `RideLink` on the next instruction — a crash, not a mount. **This closes the
+question as a negative rather than leaving it open: the field is unforceable by constant rewrite,
+which is also why no writer exists — you cannot store a pointer as an immediate.**
+
+### And the field ride path has exactly one live caller
+
+`RideOn` @ `0x179ec68` has **two** callers in the whole ELF:
+
+| caller | what it is |
+|---|---|
+| `0x178cd24` | the **dead** debug-menu Toggle Mount handler (§8) — no caller of its own |
+| `0x179ee4c` | the **EDS `RideOn` opcode** handler |
+
+So on the field, a script opcode is the only thing that ever mounts anybody, which is §3a from the
+other direction. Reviving the debug handler would not help either: it reads `+0x1bc`, so it needs
+the same pointer nobody can supply.
+
+`RideLink` itself has four callers — `0x179ec10` (the field path above) and three inside
+`Mount()`'s region at `0x17de814` / `0x17de9cc` / `0x17deaf0`, the **battle** path. That is the
+asymmetry that matters: battle `Mount()` links two **battle slots**, objects the engine has
+already built for deployed party members, so it needs no scene-supplied pointer. Which is exactly
+why **Ruby in the pair table is forceable and an assigned horse is not** (§11).
 
 Net: such a hook would keep you mounted across scripted dismounts inside the four areas that
 already mount you. It cannot add mounting to a map that has no mount in it — the same wall
@@ -908,13 +971,11 @@ is not established**.
   EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
 - The rest of the `0x84`-byte list2 record — `+0x66` is now known (§11) but most of the row
   past the skill-cap array is still unmapped.
-- What populates `rec->+0x1bc` (a character's assigned mount for the scene). No literal-offset
-  writer exists; the two that do write it only clear the field-work global. Presumably scene
-  setup via a computed offset or a struct copy, but it was not traced. **This is the blocker on
-  forcing an assigned-horse mount in an arbitrary battle** (§11): `+0x66` grants permission, but
-  the horse holds no battle slot of its own, so something has to stage it. Until this is traced,
-  whether that is reachable at all is open — the pair table with Ruby is the only route that can
-  be forced from the editor today.
+- Which scene-setup code writes `rec->+0x1bc`. **No longer open in the way that matters**: §10a
+  establishes the field is an **EOBJ pointer** with no writer anywhere and only one live reader, so
+  it is unforceable by any constant rewrite regardless of who fills it. What remains unknown is
+  merely the identity of the scene code that does — of academic interest now, since knowing it
+  would not make the field patchable.
 - Where the EDS script blobs actually live inside an area archive, which is what a reliable
   "does this scene call RideOn" scan would need (see §9).
 - **Emulator coverage is two data points.** The battle pair patch has been played through

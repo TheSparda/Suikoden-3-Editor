@@ -681,6 +681,9 @@ head("Reference — Mounts browser, read-only");
   check("Roland's 341 anomaly is recorded", /341/.test(txt));
   check("the passive horses are described", /b_N_damage/.test(txt));
   check("it lists what can't be exposed", /can't be exposed as fields/.test(txt));
+  // +0x1bc: the reason an assigned horse can't be forced into an arbitrary battle
+  check("it types the scene's assigned mount as a pointer", /live EOBJ address, not an id/.test(txt));
+  check("it says RideOn has two callers", /RideOn has exactly two callers/.test(txt));
   check("it states residency isn't proof", /asset\s*\n?\s*residency/.test(txt.replace(/\s+/g, " ")) || /residency/.test(txt));
   { const flat = txt.replace(/\s+/g, "");
     check("it scopes what is emulator-confirmed", /confirmedinanemulator/.test(flat)
