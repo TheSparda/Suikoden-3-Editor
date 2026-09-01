@@ -1122,11 +1122,26 @@ function drawParty() {
   const s = saves[curSlot];
   const mem = s.party || [];
   const anyFilled = mem.some((c) => c > 0);
+  // Slot 1 is not just "first". Scene actors are built from this list in order, so actor slot
+  // 0 IS party slot 1, and scripts drive the protagonist as actor slot 0 while the camera
+  // follows the leader byte. Disagree and a scene animates one actor while waiting on
+  // another — the Karaya Village freeze. Worth saying on the row itself.
+  const lead = LEADER !== null ? LEADER : s.global.partyLeader;
+  const eff0 = PARTY[0] !== undefined ? PARTY[0] : mem[0];
   const rows = mem.map((cid, slot) => `<tr>
-      <td class="sl">Slot ${slot + 1}</td>
+      <td class="sl">Slot ${slot + 1}${slot === 0 ? ' <span class="dim">· leader</span>' : ""}</td>
       <td><button type="button" class="picker" data-partyslot="${slot}" data-val="${cid}" data-def="${cid}">${esc(charLabel(cid))}</button></td></tr>`).join("");
+  const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =
     (anyFilled ? "" : `<div class="warnbox">This save's active-party table is empty — common in early chapters where story events set the field party. Assignments here may be overwritten by the next event on a very early save.</div>`) +
+    (mismatch ? `<div class="warnbox">Slot 1 holds ${esc(REF.charById[eff0] || "id " + eff0)} but the
+       <b>field character</b> is ${esc(REF.charById[lead] || "id " + lead)}. Scripted scenes drive the
+       protagonist as party slot 1 while the camera follows the field character — when those disagree
+       a scene animates one and waits on the other, and freezes. Set them to the same character.</div>` : "") +
+    `<div class="muted" style="margin:0 0 8px;font-size:12px">This is the <b>party list</b>
+       (save <code>0x3216</code>) — who is in your party, in order. It is not the <b>battle
+       formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
+       re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
     `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th></tr></thead><tbody>${rows}</tbody></table>`;
   $$("button.picker[data-partyslot]").forEach((btn) => (btn.onclick = () => {
     const slot = +btn.dataset.partyslot, cur = +btn.dataset.val;
@@ -1134,6 +1149,7 @@ function drawParty() {
       btn.dataset.val = id; btn.textContent = charLabel(id);
       btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
       PARTY[slot] = id;
+      drawParty();                       // the slot-1/leader warning depends on what was picked
     }, (id) => String(id).padStart(3, "0"));
   }));
 }
