@@ -244,7 +244,7 @@ function avatarList(curId) {
 // Returns { party: sparse {slot: id} of changes, note: string }.
 function promoteToLead(cur, id, nm) {
   const at = cur.indexOf(id), was = cur[0];
-  if (at === 0) return { party: [], note: "" };
+  if (at === 0) return { party: [], note: "", displaced: 0 };
   const party = [];
   let note;
   if (at > 0) {
@@ -261,7 +261,8 @@ function promoteToLead(cur, id, nm) {
       note = `Put ${nm(id)} in party slot 1 — the party was full, so ${nm(was)} was dropped.`;
     }
   }
-  return { party, note: note + " A leader who isn't in the party freezes scripted scenes." };
+  return { party, displaced: was || 0,
+           note: note + " A leader who isn't in the party freezes scripted scenes." };
 }
 
 // The four the story is authored around. Everything else — even ids the engine ships, like
@@ -407,6 +408,8 @@ async function pickupSharedFile() {
 // ---- top-level editor render ----------------------------------------------
 // Per-slot pending edits (reset when switching slots), mirroring the desktop editor.
 let EDITS, INV, NAMES, PARTY, RECRUIT, GOLD, LEADER, SUB, RECRUITED_ONLY, INVCAT, ADDED, SEARCH;
+// Who slot 1 held before the last field-character pick, so the UI can offer to drop them.
+let DISPLACED = 0;
 // Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
 // flags are whole-save state, not a character field.
 let CARRY;
@@ -590,8 +593,26 @@ function drawSlot() {
         (PARTY[i] !== undefined ? PARTY[i] : v) || 0), id, (x) => REF.charById[x] || "id " + x);
       r.party.forEach((v, i) => { if (v !== undefined) PARTY[i] = v; });
       if (r.note && SUB === "party") showSub();
+      DISPLACED = r.displaced || 0;
       const warn = $("#leaderparty");
-      if (warn) warn.textContent = r.note;
+      if (warn) {
+        // Observed in play and not yet explained: with the displaced protagonist still in the
+        // party a scene can freeze, and removing them entirely made the same scene play. Both
+        // shapes are offered rather than one being guessed at, and the note says which is
+        // which so the choice is informed rather than silent.
+        warn.innerHTML = esc(r.note) + (DISPLACED
+          ? ` <button type="button" id="dropDisplaced" class="linklike">Remove ${esc(REF.charById[DISPLACED] || "id " + DISPLACED)} from the party instead</button>
+             <span class="muted" style="font-size:12px">— reported to be what makes scenes play; keeping them in has been seen to freeze one.</span>`
+          : "");
+        const db = $("#dropDisplaced");
+        if (db) db.onclick = () => {
+          const cur2 = (s.party || []).slice(0, 6).map((v, i) => (PARTY[i] !== undefined ? PARTY[i] : v) || 0);
+          cur2.forEach((v, i) => { if (v === DISPLACED) PARTY[i] = 0; });
+          DISPLACED = 0;
+          warn.textContent = r.note + " Removed from the party.";
+          if (SUB === "party") showSub();
+        };
+      }
       const el = $("#leadercover"), a = avatarAreaInfo(id);
       if (el) el.textContent = a
         ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
@@ -1128,9 +1149,16 @@ function drawParty() {
   // another — the Karaya Village freeze. Worth saying on the row itself.
   const lead = LEADER !== null ? LEADER : s.global.partyLeader;
   const eff0 = PARTY[0] !== undefined ? PARTY[0] : mem[0];
-  const rows = mem.map((cid, slot) => `<tr>
+  // "Remove" was only reachable by opening the picker and choosing the `empty` row, which
+  // nobody finds. An explicit ✕ per occupied slot is the obvious control.
+  const eff = (slot) => (PARTY[slot] !== undefined ? PARTY[slot] : mem[slot]) || 0;
+  const rows = mem.map((cid, slot) => {
+    const now = eff(slot);
+    return `<tr>
       <td class="sl">Slot ${slot + 1}${slot === 0 ? ' <span class="dim">· leader</span>' : ""}</td>
-      <td><button type="button" class="picker" data-partyslot="${slot}" data-val="${cid}" data-def="${cid}">${esc(charLabel(cid))}</button></td></tr>`).join("");
+      <td><button type="button" class="picker" data-partyslot="${slot}" data-val="${now}" data-def="${cid}">${esc(charLabel(now))}</button>${
+        now ? ` <button type="button" class="chip mini" data-partydrop="${slot}" title="Remove from the party">✕</button>` : ""}</td></tr>`;
+  }).join("");
   const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =
     (anyFilled ? "" : `<div class="warnbox">This save's active-party table is empty — common in early chapters where story events set the field party. Assignments here may be overwritten by the next event on a very early save.</div>`) +
@@ -1143,6 +1171,10 @@ function drawParty() {
        formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
        re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
     `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $$("[data-partydrop]").forEach((b) => (b.onclick = () => {
+    PARTY[+b.dataset.partydrop] = 0;
+    drawParty();
+  }));
   $$("button.picker[data-partyslot]").forEach((btn) => (btn.onclick = () => {
     const slot = +btn.dataset.partyslot, cur = +btn.dataset.val;
     openPicker(`Party slot ${slot + 1}`, charList(cur), cur, (id) => {
