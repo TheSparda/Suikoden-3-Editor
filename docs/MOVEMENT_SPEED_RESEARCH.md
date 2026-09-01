@@ -11,6 +11,11 @@
 >
 > That makes this the cheapest lever in the repo: **no instruction rewriting at all.** Three
 > floats per class, one byte per character.
+>
+> **Scope: field only.** The battle unit spawner overwrites both fields at spawn from the
+> character's *loaded battle asset*, which lives in the packed archives rather than the ELF (§6).
+> So this table is what moves the avatar, the party followers, the castle NPCs and cutscene
+> actors — and it is not what moves a unit across a battlefield.
 
 Address convention as elsewhere in this repo: `ISO_offset = vaddr - 0x15B8800`
 (ELF `PT_LOAD` `p_offset 0xA4800 → vaddr 0x165D000`). Every byte quoted below was read back
@@ -74,9 +79,13 @@ small-framed men run 6.0; the adult men run 5.0; the women and the two Vikis run
 beast-people (Dupa/Shiba/Bazba), the big men (Sgt. Joe/Wilder/Rhett), Gau and Augustine each got
 their own row and all ended up at 6.0; the animals and mounts share class 0.
 
-**This is the mechanism behind a long-standing player complaint.** Walking as Chris is the same
-speed as walking as Hugo, but *running* as Chris covers 25 % less ground per second. It was never
-a framerate impression or an animation illusion — it is `4.5` against `6.0`, in the table.
+**Most of these characters are never the field avatar, and that is not a contradiction** — see §6.
+A field object is any character the field module walks around: the eight possible avatars, but also
+every recruit standing about Budehuc Castle and anyone an event script walks through a scene.
+
+Read against the field, the numbers say Chris covers **25 % less ground per second running** than
+Hugo, on the same walk speed. That is the data, not a measurement: it has not been played back
+(§7, *what is not established*).
 
 ## 3. How a model reaches its row
 
@@ -137,9 +146,9 @@ SetRunSpeed(eobj, f)    @ 0x16E8A50
 GetSpeedForMode(eobj, mode) @ 0x16E8980 : mode 3 or 8 -> run ; anything else -> walk
 ```
 
-`SetWalkSpeed` / `SetRunSpeed` have **exactly one caller each** (`0x17DE224` / `0x17DE230`) — an
-object-spawn path that takes the pair from a spawn descriptor instead of the table. Nothing in the
-image references that function's address, so on the shipped disc the table is the only source.
+`SetWalkSpeed` / `SetRunSpeed` have **exactly one caller each** (`0x17DE224` / `0x17DE230`), and
+that caller is the **battle** unit spawner. It overwrites both fields from the character's loaded
+battle asset rather than the table — which is what scopes this whole table to the field. See §6.
 
 ## 4. The per-model override list is empty, and why that matters
 
@@ -176,24 +185,75 @@ The engine already uses it this way: the party-follower catch-up at `0x16F9BF0` 
 `1.3` / `1.2` into `eobj->0x2C` when a follower has fallen behind, and
 `UpdateMoveTimeScale` @ `0x16F6218` pairs a `walk × 1.5` "hurry" state with a rate of `1.2`.
 
-## 6. Where the two speeds are consumed
+## 6. Field, not battle — and why every character still has a class
 
-Every mover reads them through the accessors above, so the two numbers are the whole story for
-field locomotion:
+The table's floats reach **every** EOBJ, field or battle, because they are copied in by the
+generic object builder. What decides the scope is what happens next.
 
-- **Script movement.** The EDS "walk/run object to a point" handler at `0x177EC98` maps script
-  mode `0x11`/`0x14` → walk speed and `0x12`/`0x15` → run speed, then calls the mover at
-  `0x16F6BB0`.
-- **Party following and pathing.** `0x1805A98` (and a near-identical twin at `0x1805B88`) is an
-  18-entry jump table at vaddr `0x19CECD0` keyed by a movement mode, returning either the walk
-  speed or the run speed times one of three hardcoded multipliers: **×1.3** (modes 3, 17), **×1.4**
-  (mode 8) and **×1.2** (modes 9–11), stored as gp-relative floats at vaddr `0x19E5568`,
-  `0x19E556C`, `0x19E5570` (ISO `0x42CD68`, `0x42CD6C`, `0x42CD70`). The twin's own pair sits at
-  `0x19E5574` / `0x19E5578`. **Not exposed** — the mode numbering is not yet pinned to anything a
-  player would recognise.
-- **The object's own movement behaviours** in the EOBJ library (`0x16F6F34`, `0x16F71D0`,
-  `0x16F7FD4`), installed as function pointers in `eobj->0x2AC` / `0x29C` / `0x2B0` and called
-  from `EobjUpdate`. These are the generic per-object movers the field leader runs on.
+**The battle spawner overwrites them.** `0x17DDF70` — called from four sites in the battle
+module, `0x17DEE24`, `0x17DEEFC`, `0x17DEFD4` and `0x17DF08C` — does this:
+
+```
+desc = GetBattleUnitDesc(charId)            ; 0x181AA90, or 0x181AB40 for half of a ride pair
+if (!desc) return                           ; all four call sites bail here
+...
+pair = desc->0x18                           ; -> { float walk, float run }
+SetRunSpeed (unit, pair[1])                 ; 0x17DE224  -> eobj->0x24C
+SetWalkSpeed(unit, pair[0])                 ; 0x17DE230  -> eobj->0x248
+```
+
+`GetBattleUnitDesc` resolves through `0x188BF40`, which scans **loaded resource slots 6–13** for
+one whose `+0x04` matches the character id. So the pair is inside the character's **battle asset**,
+in the packed archives — not in the ELF. There is no null guard on it and no fallback: a battle
+unit never keeps the table's values.
+
+**Nothing overwrites a field object.** Those two setters have no other caller anywhere in the
+image, so for a field object the table's values are the ones that stay.
+
+| path | source of walk / run speed |
+|---|---|
+| **field objects** — the avatar, party followers, castle NPCs, cutscene actors | **this table**, via the movement class |
+| **battle units** | overwritten at spawn from the character's loaded battle asset (outside the ELF) |
+
+### So why does every party character have a movement class?
+
+Because a field object is not the same thing as *the* field avatar. Only eight ids can be the
+character you control ([`FIELD_CHARACTER_RESEARCH.md`](FIELD_CHARACTER_RESEARCH.md) §3) — but
+every recruited character is a field object: they stand and walk around Budehuc Castle, and the
+EDS scripted mover walks any of them through a cutscene. Dupa, Bazba, Sgt. Joe, Gau and Augustine
+are never avatars and still need a walk speed, which is exactly why they are in the table.
+
+It also explains the shape of the classes. They group by **body type** — teenagers, adult men,
+women, beast-people, big men — which is what a *walking-around-town* speed would be keyed on, and
+not something a battle stat would need at all.
+
+## 7. Where the two speeds are consumed
+
+Every mover reads them through the accessors above. Grouped by module, because that is what
+decides whether the *table's* values or the *asset's* values are the ones being read (§6):
+
+- **Field module — the EDS scripted mover.** `0x177EC98` maps script mode `0x11`/`0x14` → walk
+  speed and `0x12`/`0x15` → run speed, then calls the mover at `0x16F6BB0`. This is the field
+  module's only direct read, and it reads **table** values.
+- **Battle module — a movement-mode table.** `0x1805A98` (and a near-identical twin at
+  `0x1805B88`) is an 18-entry jump table at vaddr `0x19CECD0` keyed by a movement mode, returning
+  either the walk speed or the run speed times one of three hardcoded multipliers: **×1.3**
+  (modes 3, 17), **×1.4** (mode 8) and **×1.2** (modes 9–11), stored as gp-relative floats at
+  vaddr `0x19E5568`, `0x19E556C`, `0x19E5570` (ISO `0x42CD68`, `0x42CD6C`, `0x42CD70`); the twin's
+  own pair sits at `0x19E5574` / `0x19E5578`. Eight of the eleven direct reads of `+0x248`/`+0x24C`
+  are here — but on **asset** values, since the spawner already overwrote them, which is why
+  editing the table cannot change battle movement. That this module is character battle (not the
+  war battle) is pinned by its neighbours: it sits between the armor-set counter/heal constants
+  (`0x17FD78C` / `0x17FE5A8`) and the mounted-pair Adrenaline sum (`0x181B4D0`), and `0x1810B10` /
+  `0x1810B68` in it request motion slots `0x88` / `0x8B` = `b_run_LR` / `b_run_loop`.
+  **Not exposed**, for both reasons: wrong source, and the mode numbering is not pinned to
+  anything a player would recognise.
+- **EOBJ library — the generic movers.** Three more `GetSpeedForMode` reads at `0x16F6FF8`,
+  `0x16F7288` and `0x16F8BA0` sit in the shared object-movement code, which serves both modules.
+  Their containing functions have no `jal` call site and are not referenced as data anywhere in
+  the image, so they are reached by tail-call or through a pointer installed at runtime
+  (`EobjUpdate` calls `eobj->0x2AC` / `0x29C` / `0x2B0` that way) and were not traced to an
+  installer.
 
 ### What is *not* established
 
@@ -209,7 +269,12 @@ per-class run values line up exactly with which characters players describe as f
 around as. Treat the class values as confirmed data and the leader's use of them as very likely but
 unplayed.
 
-## 7. What shipped (v1.64.0)
+Also unestablished: **the battle asset's own walk/run pair**. It is reached as
+`resource(slot 6..13 where +0x04 == charId)->0x18->[0 or 1]`, i.e. inside a packed per-character
+battle file, so its values were not read and are not comparable with the table's. If they turn out
+to be the same numbers, the two systems merely agree; nothing here shows that they do.
+
+## 8. What shipped (v1.67.0, corrected in v1.68.0)
 
 A **Movement speed** section on the ISO editor's **Field character** tab — the natural place, since
 that tab already decides *who* you run around the map as.

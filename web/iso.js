@@ -2162,7 +2162,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
-      movement: "How fast every character walks and runs on the field. Unlike most of this editor's field work it is not a code patch \u2014 speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, which is why running as Hugo covers a third more ground than as Chris. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. Untested in play.",
+      movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. Untested in play.",
       test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
@@ -4042,14 +4042,28 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
 
     host.innerHTML = `
       <div class="bag">
-        <div class="bag-h">Movement speed <span class="u">plain data · no code patched · untested in play</span></div>
+        <div class="bag-h">Field movement speed <span class="u">plain data · no code patched · untested in play</span></div>
         <div class="muted" style="margin:0 0 10px">
-          How fast a character walks and runs on the field is a <b>table</b>, not code. Every field
+          How fast a character walks and runs <b>on the field</b> is a <b>table</b>, not code. Every field
           object gets a walk speed and a run speed from one of 14 rows, and which row it reads is a
           <b>movement class</b> stored on the character. Stock, <b>walking is 2.0 for the whole cast</b>
-          and running is <b>6.0</b>, <b>5.0</b> or <b>4.5</b> depending on the class — which is why
-          running around as Hugo (6.0) covers a third more ground than as Chris (4.5). Mounts are
+          and running is <b>6.0</b>, <b>5.0</b> or <b>4.5</b> depending on the class — so running as
+          Hugo (6.0) covers a third more ground than as Chris (4.5). Mounts are
           ordinary field objects with their own class, so a mount's row is the mounted speed.
+        </div>
+        <div class="warnbox" style="margin:0 0 10px">
+          <b>Field only — this does not change battle movement.</b> The table's values reach every
+          object, but the battle unit spawner immediately overwrites both speeds from the character's
+          <b>loaded battle asset</b>, which lives in the packed archives and not in the executable.
+          Nothing overwrites a field object, so on the field these are the values that stay.
+        </div>
+        <div class="muted" style="margin:0 0 10px">
+          Most of the cast here can never be the character you walk around <i>as</i> — that is a
+          separate list of eight ids (see the <b>Test</b> tab). They are in the table because a field
+          object is anyone the field walks around: the recruits standing about Budehuc Castle, and
+          anyone an event script walks through a scene. The classes group by <b>body type</b> —
+          teenagers, adult men, women, beast-people, big men — which is what a walking-around-town
+          speed would be keyed on.
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
           <button id="spdLevel" class="chip">Everyone runs at ${MOVESPD.LEVEL}.0</button>
