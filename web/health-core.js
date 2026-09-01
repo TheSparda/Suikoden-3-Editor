@@ -235,10 +235,22 @@
       }
     }
     if (eff.partyLeader && filled.length && !filled.includes(eff.partyLeader)) {
-      add({ id: "party-leader-absent", sev: "info", group: "Party",
+      // This is a softlock, not a curiosity. A scene's actor records are built from the
+      // PARTY LIST (0x1775DE8 loops 0x16FFD88, which reads 0x3216), and the engine finds
+      // "the player" with FindActorByCharId(leaderByte) — matching a record's character id.
+      // A leader who is not in the party therefore has no actor record, the player lookup
+      // returns null, and any scene that addresses the player hangs at that beat. Every save
+      // the game writes itself has the leader in slot 1.
+      add({ id: "party-leader-absent", sev: "error", group: "Party",
         title: `The party leader (${charName(eff.partyLeader)}) is not in the active party`,
-        detail: "Worth a look if you did not mean it; the game sets the leader itself on story transitions.",
-        where: { sub: "party", search: "" } });
+        detail: "The game builds a scene's actors from the party list and then looks the player " +
+          "up by matching the leader's character id against them. A leader who isn't in the party " +
+          "has no actor, so the player lookup returns nothing and any scripted scene freezes the " +
+          "moment it needs you to act. Every save the game writes itself keeps the leader in " +
+          "slot 1.",
+        where: { sub: "party", search: "" },
+        fix: { label: "Put the leader in party slot 1",
+               ops: [{ kind: "party", slot: 0, value: eff.partyLeader }] } });
     }
 
     // --- characters ----------------------------------------------------------
