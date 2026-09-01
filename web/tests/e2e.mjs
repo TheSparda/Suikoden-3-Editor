@@ -765,6 +765,15 @@ head("Movement speed — the walk/run table and each character's class");
       /does not change battle movement/i.test(txt));
     check("...and says where battle speeds actually come from", /loaded battle asset/i.test(txt));
     check("...and explains why non-avatars are in the table", /Budehuc Castle/.test(txt)); }
+  // Time scale is the one column whose name does not explain itself, and the difference between
+  // it and Run is the thing a user gets wrong. Assert the explanation and both failure modes.
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("time scale is explained as a clock multiplier", /clock multiplier/i.test(txt));
+    check("...covering animation and movement together",
+      /animation clock/i.test(txt) && /cover ground twice as fast/i.test(txt));
+    check("...naming the skate failure mode of raising run alone", /skate/i.test(txt));
+    check("...and warning that the engine overwrites it", /starting.{0,3}clock/i.test(txt));
+    check("the columns carry their units", /units\/sec/.test(txt)); }
 
   // Editing a class row retunes everyone in it.
   await page.fill(runBox(2), "7.5");
