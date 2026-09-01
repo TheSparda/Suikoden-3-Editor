@@ -214,6 +214,39 @@ console.log("Per-map coverage data:");
   check("coverage is partial, not universal (a full list would mean the scan matched junk)",
     Object.values(bm).every((m) => m.areas.length < 28)); }
 
+// ---- keeping the leader in party slot 1, without losing anyone ---------------
+// A leader who is not in the party has no actor record, so scenes freeze when they need the
+// player to act. Fixing that by writing slot 1 outright costs a party member — and if the
+// pick is ALREADY in the party you end up with two of them and one fewer of someone else.
+// That happened in play (Hugo slot 1, Koroku slot 6, pick Koroku, lose Hugo), so every shape
+// is pinned here.
+const pStart = appSrc.indexOf("function promoteToLead(");
+if (pStart < 0) { console.error("FAIL: no promoteToLead() in web/app.js"); process.exit(1); }
+const pEnd = appSrc.indexOf("\n}", pStart);
+const promoteToLead = new Function(appSrc.slice(pStart, pEnd + 2) + "\nreturn promoteToLead;")();
+const NM = (x) => ({ 1: "Hugo", 2: "Chris", 54: "Koroku" })[x] || "id " + x;
+const apply = (cur, id) => { const r = promoteToLead(cur, id, NM);
+  const out = cur.slice(); r.party.forEach((v, i) => { if (v !== undefined) out[i] = v; });
+  return { out, note: r.note }; };
+
+console.log("Leader promotion into party slot 1:");
+{ // the reported regression
+  const { out, note } = apply([1, 2, 0, 0, 0, 54], 54);
+  check("an already-in-party pick SWAPS rather than overwriting", eq(out, [54, 2, 0, 0, 0, 1]),
+    JSON.stringify(out));
+  check("...so nobody is lost", out.filter((x) => x === 1).length === 1 && out.filter((x) => x === 54).length === 1);
+  check("...and it says what it did", /Swapped/.test(note)); }
+{ const { out } = apply([1, 2, 3, 0, 0, 0], 54);
+  check("an outside pick parks slot 1's occupant in a free slot", eq(out, [54, 2, 3, 1, 0, 0]),
+    JSON.stringify(out)); }
+{ const { out, note } = apply([1, 2, 3, 5, 6, 7], 54);
+  check("a full party drops exactly one member", out.length === 6 && out[0] === 54 && !out.includes(1));
+  check("...and says who was dropped", /Hugo was dropped/.test(note), note); }
+{ const { out, note } = apply([54, 2, 3, 0, 0, 0], 54);
+  check("a pick already leading changes nothing", eq(out, [54, 2, 3, 0, 0, 0]) && note === ""); }
+{ const { out } = apply([0, 2, 3, 0, 0, 0], 54);
+  check("an empty slot 1 is just filled", eq(out, [54, 2, 3, 0, 0, 0]), JSON.stringify(out)); }
+
 // ---- the scene-softlock actor fallback ---------------------------------------
 // Two words, and both have to move together: leaving `move $v0,$zero` in place after the
 // jump would put a stray instruction in the delay slot, and leaving `jr $ra` would mean the

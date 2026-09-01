@@ -229,6 +229,41 @@ function avatarList(curId) {
     list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
   return list;
 }
+// Put `id` in party slot 1 without costing anyone their place.
+//
+// A leader who is not in the party has no actor record, so the engine's "find the player"
+// lookup returns nothing and any scripted scene freezes when it needs you to act — confirmed
+// in play, and the reason this runs at all.
+//
+// Getting there naively loses people. Overwriting slot 1 drops whoever was in it, and if the
+// pick was ALREADY in the party you end up holding two of them and one fewer of someone else
+// (which is exactly what happened: Hugo in slot 1, Koroku in slot 6, pick Koroku, lose Hugo).
+// So: swap when they are already in the party, otherwise park slot 1's occupant in a free
+// slot. Only a full party with an outside pick has to drop anyone, and then it says who.
+//
+// Returns { party: sparse {slot: id} of changes, note: string }.
+function promoteToLead(cur, id, nm) {
+  const at = cur.indexOf(id), was = cur[0];
+  if (at === 0) return { party: [], note: "" };
+  const party = [];
+  let note;
+  if (at > 0) {
+    party[0] = id; party[at] = was;
+    note = `Swapped ${nm(id)} into party slot 1 with ${nm(was)} (now slot ${at + 1}).`;
+  } else {
+    const free = cur.findIndex((v, i) => i > 0 && !v);
+    if (!was) { party[0] = id; note = `Put ${nm(id)} in party slot 1.`; }
+    else if (free > 0) {
+      party[0] = id; party[free] = was;
+      note = `Put ${nm(id)} in party slot 1 and moved ${nm(was)} to slot ${free + 1}.`;
+    } else {
+      party[0] = id;
+      note = `Put ${nm(id)} in party slot 1 — the party was full, so ${nm(was)} was dropped.`;
+    }
+  }
+  return { party, note: note + " A leader who isn't in the party freezes scripted scenes." };
+}
+
 // The four the story is authored around. Everything else — even ids the engine ships, like
 // Koroku — has been seen to hang a scripted scene.
 const STORY_SAFE = new Set([1, 2, 3, 29]);
@@ -543,13 +578,20 @@ function drawSlot() {
       LEADER = id;
       // A leader who isn't in the party has no actor record, so the engine's "find the
       // player" lookup returns nothing and any scripted scene freezes when it needs you to
-      // act. Confirmed in play. The game never writes that state, so neither do we: put the
-      // pick in party slot 1 alongside the leader byte, and say so.
-      const inParty = (PARTY[0] !== undefined ? PARTY[0] : (s.party || [])[0]) === id;
-      if (!inParty) { PARTY[0] = id; if (SUB === "party") showSub(); }
+      // act. Confirmed in play. The game never writes that state, so neither do we — the
+      // leader goes into slot 1.
+      //
+      // Getting there must not cost you a party member. Overwriting slot 1 outright loses
+      // whoever was in it, and if the pick was already in the party you end up with two of
+      // them and one fewer of someone else. So: swap when they are already in, and otherwise
+      // park slot 1's occupant in a free slot. Only a full party with an outside pick has to
+      // drop anyone, and then it says who.
+      const r = promoteToLead((s.party || []).slice(0, 6).map((v, i) =>
+        (PARTY[i] !== undefined ? PARTY[i] : v) || 0), id, (x) => REF.charById[x] || "id " + x);
+      r.party.forEach((v, i) => { if (v !== undefined) PARTY[i] = v; });
+      if (r.note && SUB === "party") showSub();
       const warn = $("#leaderparty");
-      if (warn) warn.textContent = inParty ? ""
-        : `Also setting party slot 1 to ${REF.charById[id] || "id " + id} — a leader who isn't in the party freezes scripted scenes.`;
+      if (warn) warn.textContent = r.note;
       const el = $("#leadercover"), a = avatarAreaInfo(id);
       if (el) el.textContent = a
         ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`

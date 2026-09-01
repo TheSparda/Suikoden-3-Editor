@@ -150,9 +150,20 @@ console.log("party:");
   check("...and says it freezes scenes", !!hit && /freezes/.test(hit.detail));
   check("...and offers to put the leader in slot 1", !!hit && !!hit.fix &&
     hit.fix.ops[0].kind === "party" && hit.fix.ops[0].slot === 0 && hit.fix.ops[0].value === 54);
-  // and applying that fix must clear the finding
+  // The fix must not cost a party member: slot 1's occupant is parked in a free slot, not
+  // overwritten. Losing Hugo to gain a leader is the bug this guards.
+  check("...and rehomes slot 1's occupant rather than overwriting", !!hit &&
+    hit.fix.ops.some((o) => o.slot > 0 && o.value === 1), JSON.stringify(hit.fix.ops));
   const after = audit(s, { party: { 0: 54 } });
   check("...and applying it clears the finding", !has(after, /^party-leader-absent$/));
+}
+{ // A full party genuinely has to drop someone — but the label has to say so out loud.
+  const full = mkSave({ party: [1, 2, 3, 5, 6, 7],
+                        global: { gold: 10, storyPhase: 6, merged: true, partyLeader: 54 },
+                        characters: [mkChar(0, "Hugo")] });
+  const hit = one(audit(full), /^party-leader-absent$/)[0];
+  check("a full party's fix names who it drops", !!hit && /drops/i.test(hit.fix.label), hit && hit.fix.label);
+  check("...and does not invent a slot to park them in", !!hit && hit.fix.ops.length === 1);
 }
 { // The formation table is the half of a party edit that fails silently: the game builds the
   // members it lists, so a party list longer than the formation shows empty slots in-game.
