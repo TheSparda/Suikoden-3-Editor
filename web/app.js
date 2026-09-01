@@ -469,7 +469,8 @@ function drawSlot() {
         itself — ${(REF.fieldAvatars || []).map((id) => esc(REF.charById[id] || "id " + id)).join(", ")}.
         Story scripts set this byte at chapter transitions, so a change here holds until the next
         scene that sets it.
-        <div id="leadercover" style="margin:4px 0 0"></div></div>
+        <div id="leadercover" style="margin:4px 0 0"></div>
+        <div id="leaderparty" style="margin:4px 0 0;color:var(--acc2)"></div></div>
       <div class="warnbox" style="margin:8px 0 0">
         <b>Only Hugo, Chris, Geddoe and Thomas are safe for story.</b> The others are roaming
         picks: scripted scenes are written for a specific protagonist, and that data sits in
@@ -540,6 +541,15 @@ function drawSlot() {
       btn.dataset.val = id; btn.textContent = charLabel(id);
       btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
       LEADER = id;
+      // A leader who isn't in the party has no actor record, so the engine's "find the
+      // player" lookup returns nothing and any scripted scene freezes when it needs you to
+      // act. Confirmed in play. The game never writes that state, so neither do we: put the
+      // pick in party slot 1 alongside the leader byte, and say so.
+      const inParty = (PARTY[0] !== undefined ? PARTY[0] : (s.party || [])[0]) === id;
+      if (!inParty) { PARTY[0] = id; if (SUB === "party") showSub(); }
+      const warn = $("#leaderparty");
+      if (warn) warn.textContent = inParty ? ""
+        : `Also setting party slot 1 to ${REF.charById[id] || "id " + id} — a leader who isn't in the party freezes scripted scenes.`;
       const el = $("#leadercover"), a = avatarAreaInfo(id);
       if (el) el.textContent = a
         ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
