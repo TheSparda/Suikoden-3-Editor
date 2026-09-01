@@ -758,8 +758,30 @@ Koroku moved to slot 1 **and** Hugo left the party (the destructive first cut of
 problem is not separately proven. The non-destructive version now ships, so the clean
 experiment — `[Koroku, …, Hugo]`, both present — is one save edit away.
 
-**Confirmed fixed in play (2026-08-31): Karaya Village now plays through, and Koroku walks the
-scene where Hugo would have.**
+**Confirmed fixed in play (2026-08-31): Karaya Village plays through, and Koroku walks — and
+speaks — the scene Hugo would have.**
+
+**But the fix that worked also removed Hugo, and that turns out to matter.** The first cut
+overwrote party slot 1, so Koroku led *and Hugo left the party*. The non-destructive version
+keeps Hugo (`[Koroku, …, Hugo]`) and **the scene freezes again**. Same leader, same slot 1 — the
+only difference is Hugo's presence.
+
+So there are two conditions, not one:
+
+1. the field character must be in **party slot 1** (established), and
+2. at least for these scenes, **the protagonist they are standing in for must not also be in the
+   party**.
+
+The mechanism for (2) is **not established**. Actor slot numbering is not the explanation: the
+record pointer advances in the fill loop's *branch delay slot* (`addiu $s0,$s0,0x40` at
+`0x1775E08`), so it steps on every iteration including empty party slots — actor slot *N* is
+always party position *N+1* regardless of composition. A duplicate-actor conflict is the
+obvious guess, since Karaya's cast tables stage Hugo and he would then exist twice, but that is
+a guess and this document has a poor record with those. It is recorded as an observation.
+
+The editor offers both shapes rather than choosing: the pick swaps by default (nobody lost),
+and the note then offers **"Remove *X* from the party instead"**, saying that is what has been
+seen to make scenes play.
 
 **The fix is a save edit, not a patch.** Put the character in party slot 1 as well as in the
 leader byte. As of this change the editor does both: the Field character picker sets slot 1
