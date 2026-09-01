@@ -631,11 +631,30 @@ So each scene owns a table of **42-byte actor entries with the character id as a
 `+0x06`**. That is the byte that decides Hugo stands in a slot rather than anyone else, and
 changing it is what "recast this scene" would mean.
 
-**Not yet located in the files.** Scanning for the table directly — three or more consecutive
-42-byte entries whose `+0x06` is a valid party id — returns **28,452 candidates**, i.e. it
-matches any region where a small value repeats at 42-byte spacing. Same failure mode as the
-chain scan: the signature is too weak on its own. Locating it properly means anchoring on the
-*scene struct* (count at `+0`, table pointer at `+8`) rather than on the table's contents.
+**LOCATED.** Scanning for the table by its *contents* — consecutive 42-byte entries with a
+valid party id at `+0x06` — returns **28,452 candidates**, because it matches any region where
+a small value repeats at that spacing. Anchoring on the **header** instead, and then
+*validating the header against its own table* (every id must be a real party id), cuts that to
+**386** with visibly coherent casts:
+
+| scene | cast |
+|---|---|
+| LZVI area 0x03 | Elaine, Jacques, Geddoe, Geddoe, Queen, Leo — *Geddoe's mercenaries* |
+| DKVI area 0x04 | Dupa, Hugo ×8 — *Duck Village, Hugo's chapter* |
+| HNKT area 0x0C | Samus, Dupa, Samus, Percival, Hugo |
+| VDZK area 0x01 | Reed, Samus, Leo, Ace, Ace |
+
+`python3 Editor/eds_dis.py scenes [ARCHIVE]` lists them. **The character id of actor *k* is a
+`u16` at `table + k*0x2A + 6`** — that is the byte that casts a role, and changing it is what
+recasting a scene means. The header's stored pointer works directly as a file offset, which is
+what makes the edit reachable without unpacking anything.
+
+**The open question before anyone edits one.** Scripts reference the player through the
+dedicated `PLAYER` handle (`0x1400`, 2% of references), separately from these staged actors.
+So it is not yet established whether a scene's protagonist actor is *staged by id in this
+table* or *resolved as the player at runtime* — and that decides whether recasting Hugo→Koroku
+here changes the character you play as in the scene, or merely puts a Koroku-shaped NPC beside
+you. Worth answering before spending a playtest.
 
 **Also ruled out: renaming the cast list.** Town sub-files carry a string pool of asset names
 (`cha_syu1_101` …) alongside scene ids (`0FAKE004`) and format strings (`item %s`), and
