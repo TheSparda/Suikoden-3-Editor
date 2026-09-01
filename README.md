@@ -146,8 +146,8 @@ re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *C
 every combination carries its own confidence marker: *confirmed / expected / untested / rough /
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
-**Movement** (the walk/run **speed table** — how fast each character moves on the field,
-confirmed in play; battle movement lives in packed asset data and isn't covered; see below), **Test** (experimental patches that are not known to work — currently the **Field
+**Movement** (the walk/run **speed table** — how fast each character moves on the field; battle
+movement lives in packed asset data and isn't covered; see below), **Test** (experimental patches that are not known to work — currently the **Field
 character** whitelist; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
@@ -194,12 +194,14 @@ tells you up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, �
 it's phrased as *ships in* rather than *works in*, because `ETC.BIN` carries every model too
 and a resident one isn't evicted when you change area.
 
-**Whose story you get — the Story content control.** The leader byte is also *which team's
+**Whose story you get — the Story content tab.** The leader byte is also *which team's
 events and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and
 Masked Luc each have their own — so in a town that ships no content for their index you get
 **empty dialogue boxes**. Hugo is index 0, and 0 is also what an unrecognised leader falls to,
-so the ISO tab can hand any of them Hugo's events by retiring one instruction immediate. That
-turns "nobody will talk to me as Luc" into "everyone treats me as Hugo".
+so the **Story content** tab can hand any of them Hugo's events by retiring one instruction
+immediate. That turns "nobody will talk to me as Luc" into "everyone treats me as Hugo", and it
+is **confirmed in play** — blank/broken text boxes render correctly afterwards. It does not fix
+a cutscene that *hangs*; those experiments live under **Test**.
 
 > Remaining caveats, both stated in the tab. Characters beyond the stock eight are **untested**
 > in play, and **story scripts set the leader byte at chapter transitions**, so a pick holds
@@ -269,15 +271,7 @@ uses it the same way — a follower who has fallen behind gets a temporary 1.2�
 state computes it as *current speed ÷ intended speed*, exactly the stride correction. What you set
 is the *starting* clock: those situations write over it while they last.
 
-**Confirmed in play, and linear.** Koroku is class 0, which ships at run `6.0`; set to **12** he
-ran at **2×**, and at **18** at **3×**. So the value is a plain speed in units where the class's
-own stock number is 1× — double it to go twice as fast — and the tab shows the multiple you have
-typed rather than leaving `12` to mean nothing on its own. It also settles that the table really
-is what moves a field object, which until then was an argument from the absence of an overwrite
-rather than a measurement. The walk value, the time scale and the whole battle side are still
-unmeasured.
-
-The table itself, the disassembly and the byte offsets are in
+Untested in play; the table itself, the disassembly and the byte offsets are in
 [`docs/MOVEMENT_SPEED_RESEARCH.md`](docs/MOVEMENT_SPEED_RESEARCH.md).
 
 **Movement rules — the Encounter tab.** Before the rate below is used at all, the game checks

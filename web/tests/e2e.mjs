@@ -550,9 +550,7 @@ head("Field character — the whitelist that decides who you can walk around as"
     check("it warns a scene can hang whoever you pick", /scripted scene can\s+hang/i.test(txt));
     // Confirmed in play that this control does NOT fix a hanging scene. Saying so is the
     // whole value — otherwise it reads as the obvious thing to reach for when one hangs.
-    check("it scopes Story content to blank dialogue, not softlocks",
-      /empty dialogue boxes, not for softlocks/i.test(txt));
-    check("...and names the real cause", /evneutral/.test(txt)); }
+    check("Story content is no longer buried in Test", !/Story content/.test(txt)); }
 
   // Swapping one id: Luc's slot re-pointed at Sarah (66), the one character asked for that
   // the retail chain has no room for.
@@ -584,7 +582,7 @@ head("Field character — the whitelist that decides who you can walk around as"
   await page.context().close();
 }
 
-head("Field character — per-map coverage and the story-content switch");
+head("Field character — per-map coverage; Story content in its own view");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
@@ -596,6 +594,13 @@ head("Field character — per-map coverage and the story-content switch");
     check("Thomas's chip shows his small coverage", /5\/28 maps/.test(txt)); }
 
   // The story-content control: retiring a case must move that character to Hugo's index.
+  // Story content was promoted out of Test once it was confirmed in play, so it is reached
+  // from the top-level tab bar now. Being findable there is part of the contract.
+  await page.click('#isoTabs [data-v="story"]');
+  await page.waitForSelector("#storyStock", { timeout: 3000 });
+  check("Story content has its own top-level view", !!(await page.$("#storyStock")));
+  check("...marked confirmed rather than experimental",
+    /confirmed in play/i.test(await page.textContent("#isoView")));
   const storyRow = async (id) => {
     const rows = await page.$$("#isoView table.invtbl tbody tr");
     for (const tr of rows) {
@@ -608,7 +613,7 @@ head("Field character — per-map coverage and the story-content switch");
     check("...defaulting to his own content", (await r.tds[1].$eval("select", (e) => e.value)) === "own");
     check("...showing his own team index 4", (await r.tds[2].textContent()).trim() === "4"); }
   await page.selectOption('#isoView select.av-story >> nth=3', "hugo");   // Luc's row
-  await page.waitForSelector("#avWide", { timeout: 3000 });
+  await page.waitForSelector("#storyStock", { timeout: 3000 });
   { const r = await storyRow(63);
     check("switching Luc to Hugo's content reports index 0", /0 \(Hugo\)/.test(await r.tds[2].textContent()));
     const other = await storyRow(54);
@@ -619,8 +624,11 @@ head("Field character — per-map coverage and the story-content switch");
     check("every other story case is untouched",
       STORY_CASES.filter(([o]) => o !== 0x1C7724).every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
 
-  // The scene-softlock experiment: both words of the miss-exit must move together, or the
-  // jump lands with a stray delay slot / the toggle silently does nothing.
+  // The scene-softlock experiment stayed behind Test, so go back there for it.
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector("#avActorFb", { timeout: 3000 });
+  // Both words of the miss-exit must move together, or the jump lands with a stray delay
+  // slot / the toggle silently does nothing.
   await page.check("#avActorFb");
   await page.waitForSelector("#avActorFb", { timeout: 3000 });
   { const txt = await page.textContent("#isoView");
@@ -639,13 +647,14 @@ head("Field character — per-map coverage and the story-content switch");
     check("unticking restores both words exactly",
       ACTORFB_SITES.every(([o, stock]) => r.u32(o) === stock)); }
 
-  // Restore-stock has to cover the story cases too, or the button half-reverts.
-  await page.click("#avStock");
-  await page.waitForSelector("#avWide", { timeout: 3000 });
+  // The story view's own Restore stock covers the cases it owns — back to that tab for it.
+  await page.click('#isoTabs [data-v="story"]');
+  await page.waitForSelector("#storyStock", { timeout: 3000 });
+  await page.click("#storyStock");
+  await page.waitForSelector("#storyStock", { timeout: 3000 });
   { const r = await save(page);
     check("Restore stock returns every story case",
-      STORY_CASES.every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq")));
-    check("...and the actor fallback", ACTORFB_SITES.every(([o, stock]) => r.u32(o) === stock)); }
+      STORY_CASES.every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
   await page.context().close();
 }
 
@@ -859,18 +868,6 @@ head("Movement speed — give one character its own speed");
   };
 
   check("the spare-row budget is shown", (await spare()) === "5");
-  // Speed is linear in play (Koroku: run 12 = 2x, 18 = 3x of the 6.0 his class ships with), so
-  // the multiple of stock is the reading that means something. It must measure against what the
-  // character SHIPS with, not against whatever their class currently holds.
-  check("the confirmed-in-play result and its linearity are stated",
-    /Confirmed in play/.test(await view()) && /linear/.test(await view()));
-  { await page.selectOption("#spdQChar", { label: "Chris" }); await settle();
-    await page.fill('input.spd-q[data-col="run"]', "9");
-    await page.dispatchEvent('input.spd-q[data-col="run"]', "input");
-    const m = await page.textContent("#spdQMult");
-    check("the multiplier reads against what the character ships with",
-      /Chris ships with walk 2, run 4.5/.test(m) && /\u00d72\.00 run/.test(m));
-    await page.selectOption("#spdQChar", { label: "Hugo" }); await settle(); }
   check("the boxes start at the stock baseline, not the character's current values",
     (await page.inputValue('input.spd-q[data-col="walk"]')) === "2"
       && (await page.inputValue('input.spd-q[data-col="run"]')) === "6"
