@@ -2112,7 +2112,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"]];
 
@@ -2196,6 +2196,7 @@
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Untested in play.",
+      story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
       test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
@@ -2222,6 +2223,7 @@
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "mounts") drawMounts(host);
     else if (VIEW === "movement") drawMoveSpeed(host);
+    else if (VIEW === "story") drawStory(host);
     else if (VIEW === "test") drawTest(host);
     else if (VIEW === "gear") drawGear(host);
     else if (VIEW === "sets") drawSets(host);
@@ -3754,6 +3756,66 @@
     });
   }
 
+  // ---- Story content: which team's events a leader gets -----------------------
+  // Promoted out of the Test tab once it was confirmed in play (2026-08-31): switching
+  // Koroku to Hugo's content makes previously blank/broken text boxes render correctly.
+  // It is a different thing from the avatar whitelist next door under Test — that changes
+  // who you ARE, this changes whose events and dialogue load for whoever you are.
+  function drawStory(host) {
+    const bad = AVATAR.STORY.cases.some((c) => !inBlk(c.off, 2) || r16(c.off + 2) !== 0x2402);
+    if (bad) {
+      host.innerHTML = `<div class="warnbox">The story-content switch isn't where this build
+        expects it \u2014 no edits offered.</div>`;
+      return;
+    }
+    host.innerHTML = `<div class="bag">
+        <div class="bag-h">Story content <span class="u">confirmed in play \u00b7 patches game code</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          The leader byte is also <b>whose story this is</b>. One switch turns it into a team
+          index that picks which variant of a town's events and dialogue loads. Hugo is index
+          <b>0</b>, and <b>0 is also what an unrecognised leader gets</b> — so switching a
+          character to <i>Hugo's</i> here just retires its own case and lets it fall through.
+          That is the fix for empty dialogue boxes: a town with no entry for Luc's index has
+          one for Hugo's.
+        </div>
+        <table class="invtbl"><thead><tr><th>Character</th><th>Story content</th><th>Team index</th></tr></thead><tbody>
+        ${AVATAR.STORY.cases.filter((c) => !c.fixed).map((c, i) => {
+          const live = r16(c.off) === c.id;
+          return `<tr><td>${esc2(avatarName(c.id) || "id " + c.id)} <span class="dim">#${c.id}</span></td>
+            <td><select class="av-story" data-i="${i}">
+              <option value="own"${live ? " selected" : ""}>its own (stock)</option>
+              <option value="hugo"${live ? "" : " selected"}>Hugo's</option></select></td>
+            <td class="dim">${live ? c.idx : "0 (Hugo)"}</td></tr>`;
+        }).join("")}
+        </tbody></table>
+        <div class="muted" style="font-size:12px;margin:6px 0 0">
+          Only this one switch knows these characters; the other six already send them to
+          Hugo, which is why a single word is enough. It changes which content loads, not
+          whether that content fits the scene you are standing in.
+          <br><b>Confirmed in play:</b> switching Koroku to Hugo's content makes text boxes that
+          were blank or broken render correctly. It does <i>not</i> fix a cutscene that hangs —
+          that is a separate problem, and the experiments for it live under <b>Test</b>.
+        </div>
+        <div class="row" style="gap:8px;margin:10px 0 0"><button class="chip" id="storyStock">Restore stock</button></div>
+      </div>`;
+    { const editable = AVATAR.STORY.cases.filter((c) => !c.fixed);
+      qa("select.av-story", host).forEach((sel) => {
+        const c = editable[+sel.dataset.i];
+        sel.onchange = () => {
+          writeW(c.off, 2, sel.value === "own" ? c.id : AVATAR.STORY.OFF);
+          reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
+          drawView();
+        };
+        markField(sel, c.off, 2, "num");
+      }); }
+    q("#storyStock", host).onclick = () => {
+      AVATAR.STORY.cases.forEach((c) => {
+        writeW(c.off, 2, c.id); reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
+      });
+      drawView();
+    };
+  }
+
   // ---- Test: experiments that are not known to work ---------------------------
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
@@ -3934,35 +3996,6 @@
           enough for a jump, not for a guard — so there is nowhere to put the check. Try it on a
           save you can throw away.
         </div>
-        <div class="bag-h" style="margin:16px 0 8px">Story content <span class="u">which team's events and dialogue a leader gets</span></div>
-        <div class="muted" style="margin:0 0 10px">
-          The leader byte is also <b>whose story this is</b>. One switch turns it into a team
-          index that picks which variant of a town's events and dialogue loads. Hugo is index
-          <b>0</b>, and <b>0 is also what an unrecognised leader gets</b> — so switching a
-          character to <i>Hugo's</i> here just retires its own case and lets it fall through.
-          That is the fix for empty dialogue boxes: a town with no entry for Luc's index has
-          one for Hugo's.
-        </div>
-        <table class="invtbl"><thead><tr><th>Character</th><th>Story content</th><th>Team index</th></tr></thead><tbody>
-        ${AVATAR.STORY.cases.filter((c) => !c.fixed).map((c, i) => {
-          const live = r16(c.off) === c.id;
-          return `<tr><td>${esc2(avatarName(c.id) || "id " + c.id)} <span class="dim">#${c.id}</span></td>
-            <td><select class="av-story" data-i="${i}">
-              <option value="own"${live ? " selected" : ""}>its own (stock)</option>
-              <option value="hugo"${live ? "" : " selected"}>Hugo's</option></select></td>
-            <td class="dim">${live ? c.idx : "0 (Hugo)"}</td></tr>`;
-        }).join("")}
-        </tbody></table>
-        <div class="muted" style="font-size:12px;margin:6px 0 0">
-          Only this one switch knows these characters; the other six already send them to
-          Hugo, which is why a single word is enough. It changes which content loads, not
-          whether that content fits the scene you are standing in.
-          <br><b>This is for empty dialogue boxes, not for softlocks.</b> Confirmed in play:
-          switching Koroku to Hugo's content does <i>not</i> fix a scene that hangs — his model
-          is missing the <code>evneutral</code> event-idle clip (the only model on the disc that
-          is), so the script waits on an animation that cannot play. Loading more content that
-          runs makes that likelier, not less.
-        </div>
         <details class="note" style="margin:10px 0 0"><summary>The chain, and where each byte lives</summary>
           <pre style="white-space:pre-wrap;font-size:12px">FieldAvatarModelRequest(id)          ; vaddr 0x17B7560
     if (id == slot1)         LOAD      ; ISO 0x1FED64
@@ -4012,24 +4045,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         };
         cb.classList.toggle("dirty", fbSites.some((f) => isDirty(f.off, 4)));
       } }
-    { const editable = AVATAR.STORY.cases.filter((c) => !c.fixed);
-      qa("select.av-story", host).forEach((sel) => {
-        const c = editable[+sel.dataset.i];
-        sel.onchange = () => {
-          writeW(c.off, 2, sel.value === "own" ? c.id : AVATAR.STORY.OFF);
-          reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
-          drawView();
-        };
-        markField(sel, c.off, 2, "num");
-      }); }
+    // Story content moved to its own view once it was confirmed working, so this button
+    // restores only what this tab still owns — touching the story cases from here would
+    // silently undo a setting the user made somewhere else.
     q("#avStock", host).onclick = () => {
       AVATAR.gates.concat(AVATAR.slots).forEach((sIt) => {
         writeW(sIt.off, 2, sIt.stock); reg(sIt.off, 2, "num", "Field character", sIt.label);
-      });
-      // "stock" means the whole section, story cases included — otherwise the button half
-      // reverts and the readout disagrees with the label.
-      AVATAR.STORY.cases.forEach((c) => {
-        writeW(c.off, 2, c.id); reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
       });
       AVATAR.ACTORFB.sites.forEach((f) => {
         writeW(f.off, 4, f.stock); reg(f.off, 4, "num", "Scene softlocks", "actor fallback");
