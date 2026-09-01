@@ -394,7 +394,7 @@ against the handler table at `0x19828F8`. It also distinguishes *stuck* from *ru
 negative result — the wait is somewhere other than the script interpreter — is a real answer
 rather than a shrug. Reads only.
 
-### CONFIRMED: scripts name actors two ways, and one of them returns null
+### Scripts name actors two ways, and one of them can return null
 
 The mechanism is no longer a guess. Script actor handles are **packed**: bits 10–13 select a
 namespace, the low 10 bits an index. The decoder is `0x17B5A40`, used at **186 call sites** —
@@ -420,17 +420,24 @@ FindActorByCharId(charId, fixedCount)          ; 0x17B59D0
     return 0                                   ; 0x17B5A38 — no match
 ```
 
-**That is the softlock.** A scene addressing the player as `0x1400` works for any avatar — which
-is why Koroku walks in, and why ordinary NPC dialogue is fine, since dialogue never asks for a
-character who isn't present. But a Hugo-chapter scene addressing Hugo as `0x400|1` scans for a
-record whose `+0x06` is `1`, finds only the player's record carrying `54`, and **gets null** —
-so the beat that would have made Hugo speak has no actor. The hang lands exactly on the
-protagonist's line, which is what was observed.
+**What is confirmed** is the code above: the two namespaces exist, and `0x400|N` returns null
+for a character who is not in the scene. A scene addressing the player as `0x1400` resolves
+through the leader byte and works for any avatar — which is consistent with Koroku walking in
+and with NPC dialogue being fine.
 
-This also corrects an earlier claim in this document: lines are *not* uniformly addressed to
-"the player". Scenes name protagonists by id.
+**What is NOT confirmed is that this is the softlock.** The fallback patch below was built on
+exactly that inference and **tested in play on 2026-08-31: the scene still hangs.** So either
+scenes address protagonists some other way — the plain namespace and `0x800`/`0xC00` index
+`ctx->0x58` and `ctx->0x64` **by slot**, in which case the lookup returns a real record holding
+the wrong character and never goes near the null path — or the null is consumed harmlessly and
+the wait is somewhere else entirely.
 
-### The patch, and why it ships as an experiment
+This does still correct an earlier claim in this document: lines are not *uniformly* addressed
+to "the player", since a by-character-id namespace exists. But which namespace a real scene
+uses for a protagonist's speaking beat is unknown, and cannot be settled from the ELF alone —
+the scripts are in the packed event files.
+
+### The patch — built, shipped as opt-in, and it does not work
 
 The miss-exit is two instructions, and `FindActorByCharId` keeps **no stack frame**, so it can
 tail-jump to the player lookup instead of returning null — "an actor nobody can find is you":
@@ -444,8 +451,18 @@ tail-jump to the player lookup instead of returning null — "an actor nobody ca
 the leader byte, so in a scene whose actor table has no record for *your* leader, the fallback
 recurses forever — a worse hang than the one it fixes. Two instructions is not enough room for
 a guard: the exit can hold `j; nop` or `jr $ra; move`, but not a conditional with both paths.
-And while the null return is confirmed, that the *consumer* of that null is what spins is still
-inference. So it ships behind the Test tab as an opt-in experiment with both facts stated.
+**Result: tested in play 2026-08-31 — the scene still softlocks.** It stays in the Test tab,
+labelled as tried and ineffective, because knowing a patch was built and did not help is worth
+as much as the ones that did. Most likely it never fires: if scenes reach protagonists by slot
+rather than by character id, `FindActorByCharId` never returns null and this exit is never
+taken.
+
+That makes four failed predictions about this hang — the per-team story index, the `evneutral`
+clip, "lines belong to the scene", and now the actor fallback. The pattern is consistent: the
+ELF says what the engine *can* do, and the scripts that decide what it *does* are in packed
+event files outside it. Further patches are guesses at increasingly long odds; the honest next
+step is [`tools/pcsx2/edsprobe.py`](../tools/pcsx2/edsprobe.py) on a machine that can run the
+emulator, or accepting that non-protagonist avatars are roaming-only.
 
 ### The one patchable idea, unexplored
 
