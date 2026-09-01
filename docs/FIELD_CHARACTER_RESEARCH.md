@@ -441,10 +441,12 @@ scenes address protagonists some other way — the plain namespace and `0x800`/`
 the wrong character and never goes near the null path — or the null is consumed harmlessly and
 the wait is somewhere else entirely.
 
-This does still correct an earlier claim in this document: lines are not *uniformly* addressed
-to "the player", since a by-character-id namespace exists. But which namespace a real scene
-uses for a protagonist's speaking beat is unknown, and cannot be settled from the ELF alone —
-the scripts are in the packed event files.
+**Retracted — this retraction was itself wrong.** At the time I withdrew the earlier claim that
+"lines belong to the scene, whoever is the player says them", on the grounds that a
+by-character-id namespace exists. The script census later showed that namespace is used **zero
+times**, and play then confirmed the original claim outright: with Koroku in party slot 1, he
+delivers Hugo's lines in scene after scene. The scene owns the lines; the actor in slot 0
+speaks them. The hang was never about line ownership — see "SOLVED" below.
 
 ### The patch — built, shipped as opt-in, and it does not work
 
@@ -467,7 +469,8 @@ rather than by character id, `FindActorByCharId` never returns null and this exi
 taken.
 
 That makes four failed predictions about this hang — the per-team story index, the `evneutral`
-clip, "lines belong to the scene", and now the actor fallback. The pattern is consistent: the
+clip, the retraction of "lines belong to the scene" (which was correct all along), and now the
+actor fallback. The pattern is consistent: the
 ELF says what the engine *can* do, and the scripts that decide what it *does* are in packed
 event files outside it. Further patches are guesses at increasingly long odds; the honest next
 step is [`tools/pcsx2/edsprobe.py`](../tools/pcsx2/edsprobe.py) on a machine that can run the
@@ -777,9 +780,21 @@ Koroku produced two Korokus and no Hugo. `promoteToLead()` now handles all four 
 
 The Health fix does the same, and its label says *"(drops X)"* when the party is full.
 
-This also retires, with a cause, the four failed explanations recorded above — the per-team
-story index, the `evneutral` clip, "lines belong to the scene", and the actor fallback. None of
-them were the problem; a broken save invariant was.
+This also retires, with a cause, the failed explanations recorded above — the per-team story
+index, the `evneutral` clip, and the actor fallback. None of them was the problem; a broken save
+invariant was.
+
+**And it vindicates the one claim I wrongly withdrew.** "Lines belong to the scene — whoever is
+the player says them" was right. Scripts address the protagonist as **actor slot 0**, which is
+party slot 1, so the character standing there delivers the protagonist's lines regardless of who
+they are. **Confirmed in play (2026-08-31): with Koroku in party slot 1 he appears in scene after
+scene and speaks Hugo's lines.** I retracted that claim when the hang persisted, but the hang had
+a different cause; the retraction was reasoning from a coincidence.
+
+That also answers the original request in this thread — *"is it possible to change it so Koroku
+says Hugo's lines instead in scenes?"* — **yes, and it needs no ISO patch at all**: set the field
+character and keep them in party slot 1. Both are save edits, and the editor now does both from
+one pick.
 
 ### The one patchable idea, unexplored
 

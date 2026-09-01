@@ -175,11 +175,15 @@ byte** in your save, and that byte names a *model*. The engine only ever loads t
 specials *Masked Luc* and *Grasslands Chris*. Pick any of them from **Save Editor → Overview →
 Field character**; the picker offers exactly that set and nothing else.
 
-> **Only Hugo, Chris, Geddoe and Thomas are safe for story.** Scripted scenes are written for a
-> specific protagonist, and that event data lives in packed files no editor can reach — so a
-> scene can simply hang. Confirmed in play with **Koroku, Yuber and Lucia**; being one of the
-> eight the engine ships is *not* a safeguard, since Koroku is one of them and hangs. Treat the
-> rest as roaming picks, switch back before triggering story, and keep a backup save.
+> **Keep your pick in party slot 1.** Scripted scenes drive the protagonist as **actor slot 0**,
+> which *is* party slot 1, while the camera follows the field character — so if those two are
+> different people a scene animates one and waits on the other, and freezes. The picker now puts
+> your pick in slot 1 automatically (swapping, never dropping anyone), and the Health tab flags
+> the state with a one-click fix.
+>
+> With that held, it just works: **confirmed in play, Koroku appears in scene after scene and
+> speaks Hugo's lines.** Earlier builds of this editor let the invariant break, which is what
+> produced the freezes reported for Koroku, Yuber and Lucia.
 
 Widening that whitelist to the other 67 battle characters is possible and lives in the ISO
 Editor under **Test → Field character**, flagged experimental. It rewrites the comparison chain
