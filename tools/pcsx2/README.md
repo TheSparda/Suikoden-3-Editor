@@ -10,7 +10,7 @@ Why it exists and what it's for is in [`docs/PCSX2_AUTOMATION.md`](../../docs/PC
 
 ```bash
 python3 -m tools.pcsx2.cli doctor      # what's present, what's missing, what each unlocks
-python3 tools/pcsx2/selftest.py        # 112 offline checks; needs no emulator
+python3 tools/pcsx2/selftest.py        # 147 offline checks; needs no emulator
 ```
 
 Run everything from the repo root — the package import expects it.
@@ -51,7 +51,36 @@ Optional environment: `S3_ISO`, `PINE_SOCKET`, `PCSX2_STATES_DIR`, `PCSX2_SNAPS_
 | `pngdiff.py` | PNG decode + 64-bit perceptual hash, so "did the picture change" is answerable without Pillow. |
 | `harness.py` | Launches and tears down PCSX2; Xvfb wrapping, boot waiting, snapshots, screenshots. |
 | `cli.py` | The commands above. |
+| `spdprobe.py` | Field-vs-battle movement speed: scans EE RAM for objects and diffs them against the ISO's table. |
 | `selftest.py` | Offline tests for all of it. |
+
+## `spdprobe.py` — does a live object's speed match the ISO's table?
+
+Written for the open question in [`docs/MOVEMENT_SPEED_RESEARCH.md`](../../docs/MOVEMENT_SPEED_RESEARCH.md):
+the walk/run speed table at ISO `0x3B0BE0` is copied into every object at creation, but the
+**battle** unit spawner overwrites both speeds from the character's *loaded battle asset* —
+compressed archive data no tool here can read. So the field side is an argument rather than a
+measurement, and the battle side is simply unknown.
+
+Both are one memory read away in a live game. The probe finds every EOBJ-shaped record in EE
+RAM and compares its walk/run/time-scale to what the ISO says that model should have.
+
+```bash
+python3 -m tools.pcsx2.spdprobe                 # attach, snapshot, scan
+python3 -m tools.pcsx2.spdprobe --dump ram.bin  # scan an image from `cli snapshot`
+```
+
+**Stand in a field map, run it; then start a battle and run it again.** All-MATCH in the field
+confirms the table is what moves field objects. DIFFERS in battle proves the asset carries its
+own numbers; all-MATCH in battle would mean the two systems agree and the table describes battle
+movement too.
+
+There is no signature word for an EOBJ, so the scan is a conjunction of range checks
+(model id, kind, motion slot, three positions, two speeds, the time scale, the ride pointer).
+On a real 32 MB image that leaves **two** false positives, both static tables inside the boot
+ELF's own image; those are labelled and left out of the verdict rather than filtered, so a real
+object can never be hidden by the filter. Every hit is printed with its address and raw values.
+Nothing is written.
 
 ## `edsprobe.py` — what is the event script waiting on?
 

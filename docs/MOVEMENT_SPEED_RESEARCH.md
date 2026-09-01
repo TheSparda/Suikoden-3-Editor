@@ -271,8 +271,31 @@ unplayed.
 
 Also unestablished: **the battle asset's own walk/run pair**. It is reached as
 `resource(slot 6..13 where +0x04 == charId)->0x18->[0 or 1]`, i.e. inside a packed per-character
-battle file, so its values were not read and are not comparable with the table's. If they turn out
-to be the same numbers, the two systems merely agree; nothing here shows that they do.
+battle file. Those payloads are compressed ~17–20:1 and the codec is not identified
+([`ETC_BIN_MODEL_RESEARCH.md`](ETC_BIN_MODEL_RESEARCH.md) §"identify the compression"), so the
+values cannot be read off the disc. One thing that *can* be said statically: sweeping the whole
+3.75 MB ELF for any array of `{float walk, float run}` pairs in plausible ranges (walk 0.5–4,
+run 2–12, run > walk, 8+ consecutive entries, strides 8/16/20/32) returns **exactly one hit —
+this table**. There is no second, per-character speed table in the executable, which is
+consistent with the pair living in the asset.
+
+### How to settle both, in one command
+
+[`tools/pcsx2/spdprobe.py`](../tools/pcsx2/spdprobe.py) reads it out of a live game: it finds
+every EOBJ-shaped record in EE RAM and diffs its walk/run/time-scale against what this table
+says that model should have.
+
+```bash
+python3 -m tools.pcsx2.spdprobe        # in a field map, then again in a battle
+```
+
+- **field pass all MATCH** → the table is what moves field objects (settles §6's first gap).
+- **battle pass DIFFERS** → the asset carries its own numbers; battle movement is genuinely not
+  editable from here.
+- **battle pass also all MATCH** → the two systems agree, and the numbers describe battle
+  movement too. In that case the editor's field-only warning should be softened.
+
+Needs PCSX2 with PINE enabled and a BIOS, which is why it was not run here.
 
 ## 8. What shipped (v1.67.0, corrected in v1.68.0)
 
