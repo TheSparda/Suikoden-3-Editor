@@ -502,9 +502,37 @@ climbing in lockstep (`op 238, op 240, op 241 … 0xEF, 0xF2, 0xF6`) — the giv
 does the same, since opcode 0 is a valid 6-byte instruction; an opcode-diversity score kills
 that case but not the ascending tables.
 
-**So: the reader works, the locator does not.** Finding the scripts almost certainly needs
-their container identified *structurally* — a `FSECT` sub-file kind or a header — rather than
-by scanning raw bytes for something that looks like code.
+**So: the reader works, the locator does not.** Finding the scripts needs their container
+identified *structurally*, which is the next section.
+
+### The FSECT sub-file kinds, and what each container looks like
+
+`DATA/FSECT.BIN` classifies all **4403 sub-files** into four kinds, and the split is very
+uneven:
+
+| kind | files | bytes | header shape |
+|---|---|---|---|
+| `map` | 2551 | **2.11 GB** | word 2 ≈ the file size, a recurring `0x00000310` marker, and **`PS2\0`** (`0x00325350`) — present in **166 of 200** sampled, and in *no* other kind |
+| `data` | 1434 | 607 MB | `0x80000020` / `0x80000030` tag, counts, then ASCII asset names (`moa_tgms_101`) |
+| `battle` | 285 | 8.7 MB | three pointers, then an ASCII name (`akmt_101`) |
+| `town` | 133 | 15.8 MB | 4-word header, then records at a **`0x3C` stride** |
+
+**`town` is ruled out.** Its `0x3C` record stride is exactly the room-record size already
+documented for the per-area encounter rates, and the records visibly march (`…0x112`, `0x212`,
+…). It is area/room data, not scripts — which is worth knowing, because "town" was the obvious
+guess.
+
+**`map` is where to look.** It is the only kind carrying a magic, that magic is `PS2\0`, and it
+holds 2.11 GB across 2551 files — the bulk of the disc, and the natural home for per-scene
+data. Decoding its chunk container (the `PS2\0` magic plus the recurring `0x310` marker) would
+enumerate sections and let [`eds_dis.py`](../Editor/eds_dis.py) be pointed at the right one
+instead of sweeping raw bytes.
+
+**One dead end worth recording:** the script pointer `ctx->0x0C` is *not* reachable by a
+peephole scan. There are 1533 stores to some `+0x0C` in the ELF, 515 of them the interpreter's
+own ip advance, and none of the rest resolve through the `*(0x196A4D0) + 0x150` chain — the
+context is carried in a saved register across scene setup. Finding the loader means following
+that function, not pattern-matching.
 
 *(Aside worth keeping: the scans that appeared to take ten minutes were a bug in the chunked
 read loop, which advanced by `len(chunk) - overlap` and therefore stopped advancing on the
