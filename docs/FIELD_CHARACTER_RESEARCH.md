@@ -737,6 +737,13 @@ forever. Which is precisely the reported beat.
 corpus (§4). The editor let that invariant be broken, and this whole thread of hangs followed
 from it. Yuber and Lucia hung for the same reason.
 
+*The editor cannot produce a formation/list mismatch.* It has one party control, and that
+control writes the **party list** at `0x3216`; the **formation** at `0x3240` is re-derived from
+that list on every Apply (`_rebuild_formation`) and is never edited directly. So a character
+added through the Party tab really is in the party list — "in the formation but not the party"
+is not a state this editor can create. The Party tab now says which table it is, and marks
+slot 1 as the leader slot with a warning when it disagrees with the field character.
+
 *Not to be confused with battle formation.* The order you set in-game is the **formation table
 at `0x3240`**, which is a different table from the party list at `0x3216`. Reordering the
 formation does not move anyone out of party-list slot 1, which is why the protagonist can look
