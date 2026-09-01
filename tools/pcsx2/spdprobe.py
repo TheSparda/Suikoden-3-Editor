@@ -7,9 +7,11 @@ Written for one open question left by `docs/MOVEMENT_SPEED_RESEARCH.md`. The tab
 compressed archive data that cannot be read off the disc without a codec nobody here has.
 So two things are unverified on paper:
 
-  1. that a **field** object really does carry the table's values (nothing overwrites it, but
-     that is an argument, not a measurement), and
-  2. whether the battle asset happens to hold the **same** numbers or different ones.
+  1. ~~that a **field** object really does carry the table's values~~ — **answered in play on
+     2026-08-31**: Koroku (class 0, stock run 6.0) ran at 2x when set to 12 and 3x at 18, so the
+     table is live for field movement and the value is linear in ground speed; and
+  2. whether the battle asset happens to hold the **same** numbers or different ones — still open,
+     and now the only reason to run this.
 
 Both are one memory read away in a live game, which is what this does. It finds every object
 in EE RAM that looks like an EOBJ, reads its walk/run/time-scale, and compares them to what
@@ -19,10 +21,10 @@ the ISO's table says that model should have.
     python3 -m tools.pcsx2.spdprobe --dump ram.bin     # scan an EE RAM image already on disk
     python3 -m tools.pcsx2.spdprobe --iso /path/to.iso # where to read the expected table from
 
-**Stand in a field map and run it, then start a battle and run it again.** The field pass
-should report every object MATCHES; if the battle pass reports DIFFERS, the asset carries its
-own numbers and battle movement is genuinely not editable from the table. If the battle pass
-also matches, the two systems agree and the table's numbers describe battle movement too.
+**Start a battle and run it.** If it reports DIFFERS, the asset carries its own numbers and
+battle movement is genuinely not editable from the table. If it reports MATCHES, the two systems
+agree and the table's numbers describe battle movement too. Running it in a field map first is
+still worth a moment as a control: everything there should MATCH.
 
 Nothing is written; every access is a read.
 

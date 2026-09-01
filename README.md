@@ -146,8 +146,8 @@ re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *C
 every combination carries its own confidence marker: *confirmed / expected / untested / rough /
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
-**Movement** (the walk/run **speed table** — how fast each character moves on the field; battle
-movement lives in packed asset data and isn't covered; see below), **Test** (experimental patches that are not known to work — currently the **Field
+**Movement** (the walk/run **speed table** — how fast each character moves on the field,
+confirmed in play; battle movement lives in packed asset data and isn't covered; see below), **Test** (experimental patches that are not known to work — currently the **Field
 character** whitelist; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
@@ -269,7 +269,15 @@ uses it the same way — a follower who has fallen behind gets a temporary 1.2�
 state computes it as *current speed ÷ intended speed*, exactly the stride correction. What you set
 is the *starting* clock: those situations write over it while they last.
 
-Untested in play; the table itself, the disassembly and the byte offsets are in
+**Confirmed in play, and linear.** Koroku is class 0, which ships at run `6.0`; set to **12** he
+ran at **2×**, and at **18** at **3×**. So the value is a plain speed in units where the class's
+own stock number is 1× — double it to go twice as fast — and the tab shows the multiple you have
+typed rather than leaving `12` to mean nothing on its own. It also settles that the table really
+is what moves a field object, which until then was an argument from the absence of an overwrite
+rather than a measurement. The walk value, the time scale and the whole battle side are still
+unmeasured.
+
+The table itself, the disassembly and the byte offsets are in
 [`docs/MOVEMENT_SPEED_RESEARCH.md`](docs/MOVEMENT_SPEED_RESEARCH.md).
 
 **Movement rules — the Encounter tab.** Before the rate below is used at all, the game checks
