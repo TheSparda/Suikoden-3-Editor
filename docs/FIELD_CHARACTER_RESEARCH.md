@@ -346,8 +346,9 @@ scene can only be relied on to work for the protagonist it was written for.** Th
 in the packed event files outside the boot ELF — the region neither editor can reach — so there
 is no flag, table or constant that makes a script accept a substitute actor.
 
-Note that being on the engine's own whitelist is *not* a safety guarantee: Koroku is one of the
-stock eight and still hangs. The safe set for story purposes is the four protagonists.
+**Superseded — see "SOLVED" below.** The hangs were not about which character you picked; they
+were about the leader not being in the party, which leaves the engine's player lookup with
+nothing to find.
 
 ### The practical rule, and what the editor now does about it
 
@@ -697,6 +698,40 @@ that function, not pattern-matching.
 *(Aside worth keeping: the scans that appeared to take ten minutes were a bug in the chunked
 read loop, which advanced by `len(chunk) - overlap` and therefore stopped advancing on the
 final short chunk. Fixed; the same scan now covers 2.74 GB in 2.2 s.)*
+
+## SOLVED: the scene softlock is a broken invariant, not a missing feature
+
+**Reported (2026-08-31):** party contains Hugo; leader byte set to Koroku via the editor;
+in Karaya Village, Sgt. Joe appears and speaks, Koroku is on screen, and the game freezes at
+what should be the protagonist's reply.
+
+That is fully explained by the two facts established above:
+
+1. A scene's actor records are built **from the party list** — `0x1775DE8` loops
+   `0x16FFD88(slot)`, which reads `*(u16)(0x196E5F4 + slot*2)`, i.e. save `0x3216`.
+2. The engine finds *the player* with `GetPlayerObj` → `0x17B5CC8` →
+   **`FindActorByCharId(leaderByte, 1)`** — matching the leader's character id against those
+   records.
+
+So a leader who is **not in the party** has no actor record. `FindActorByCharId` walks the
+array, matches nothing, and returns null. Walking around still works (the avatar's model is
+requested from the leader byte independently) and ordinary dialogue still works (it never asks
+for the player actor) — but the instant a scene addresses the player, it has no actor and waits
+forever. Which is precisely the reported beat.
+
+**Every save the game writes itself keeps the leader in party slot 1** — all five blobs in the
+corpus (§4). The editor let that invariant be broken, and this whole thread of hangs followed
+from it. Yuber and Lucia hung for the same reason.
+
+**The fix is a save edit, not a patch.** Put the character in party slot 1 as well as in the
+leader byte. As of this change the editor does both: the Field character picker sets slot 1
+alongside the leader and says so, and the Health tab's `party-leader-absent` finding is
+upgraded from an *info* note to an **error** with a one-click *"Put the leader in party slot
+1"* fix.
+
+This also retires, with a cause, the four failed explanations recorded above — the per-team
+story index, the `evneutral` clip, "lines belong to the scene", and the actor fallback. None of
+them were the problem; a broken save invariant was.
 
 ### The one patchable idea, unexplored
 
