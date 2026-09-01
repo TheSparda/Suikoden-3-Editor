@@ -12,6 +12,10 @@
 > That makes this the cheapest lever in the repo: **no instruction rewriting at all.** Three
 > floats per class, one byte per character.
 >
+> **Confirmed in play (2026-08-31).** Koroku is class 0, which ships at run `6.0`; set to `12` he
+> ran at **2×** and at `18` at **3×**. So the table really is what moves a field object, and the
+> number is **linear in ground speed**.
+>
 > **Scope: field only.** The battle unit spawner overwrites both fields at spawn from the
 > character's *loaded battle asset*, which lives in the packed archives rather than the ELF (§6).
 > So this table is what moves the avatar, the party followers, the castle NPCs and cutscene
@@ -84,8 +88,9 @@ A field object is any character the field module walks around: the eight possibl
 every recruit standing about Budehuc Castle and anyone an event script walks through a scene.
 
 Read against the field, the numbers say Chris covers **25 % less ground per second running** than
-Hugo, on the same walk speed. That is the data, not a measurement: it has not been played back
-(§7, *what is not established*).
+Hugo, on the same walk speed. That is now an inference from a *measured* law rather than a reading
+of the data: the run value was confirmed linear in play (§7a), so a class at `4.5` against one at
+`6.0` is a real 1.33× span.
 
 ## 3. How a model reaches its row
 
@@ -240,6 +245,34 @@ It also explains the shape of the classes. They group by **body type** — teena
 women, beast-people, big men — which is what a *walking-around-town* speed would be keyed on, and
 not something a battle stat would need at all.
 
+## 7a. Confirmed in play — and linear
+
+Reported from a field map on 2026-08-31, editing class 0's run speed and playing as **Koroku**
+(model 54, `list2` record 48, class 0, ships at run `6.0`):
+
+| run value | observed |
+|---|---|
+| `6.0` (stock) | 1× |
+| `12` | **2×** |
+| `18` | **3×** |
+
+Two results, not one:
+
+1. **The table is live for field movement.** §6 argued this from the absence of an overwrite;
+   it is now measured. The first gap in *what is not established* is closed.
+2. **The value is linear in ground speed.** `12/6 = 2` and `18/6 = 3` both landed, so the field
+   is a plain speed in units where the class's own stock value is 1×. That is what makes the
+   editor able to say "×2.00 run" instead of leaving the user to guess what `12` means, and it
+   is why the stock spread `6.0 / 5.0 / 4.5` can be read directly as a 1.33× span.
+
+Koroku is a good subject by accident: he and Fubar are the only two playable models with **no
+human run band** ([`FIELD_CHARACTER_RESEARCH.md`](FIELD_CHARACTER_RESEARCH.md) §8), so his run
+plays out of the animal block — and the speed field still scaled it. The number is not tied to a
+particular clip set.
+
+Still unmeasured: the **walk** value (only run was moved), the **time scale**, and everything on
+the battle side.
+
 ## 7. Where the two speeds are consumed
 
 Every mover reads them through the accessors above. Grouped by module, because that is what
@@ -270,6 +303,10 @@ decides whether the *table's* values or the *asset's* values are the ones being 
 
 ### What is *not* established
 
+**Closed by §7a:** that the field leader's movement comes from these fields at all. It does — the
+run value scaled Koroku's field speed linearly. What follows is the static case that was made
+before the play-test, kept because it is still the only account of *how* the leader reaches them.
+
 The pad-driven path for the field leader specifically — the code that turns stick deflection into
 "walk" or "run" — is reached through those function pointers, so it has no `jal` call site to
 follow and was not traced end to end. The evidence that it lands on the same two fields is strong
@@ -279,8 +316,7 @@ or `6.0`, and its handful of speed-shaped `lui`+`mtc1` immediates are distance t
 parameters (the `2.0` at `0x17A1470`, for instance, is compared against a vec3 length). Meanwhile
 every EOBJ is given `+0x248` / `+0x24C` at creation whether or not a script ever moves it, and the
 per-class run values line up exactly with which characters players describe as fast or slow to run
-around as. Treat the class values as confirmed data and the leader's use of them as very likely but
-unplayed.
+around as. The play-test in §7a confirms the conclusion; the mechanism is still inferred.
 
 Also unestablished: **the battle asset's own walk/run pair**. It is reached as
 `resource(slot 6..13 where +0x04 == charId)->0x18->[0 or 1]`, i.e. inside a packed per-character
@@ -310,7 +346,7 @@ python3 -m tools.pcsx2.spdprobe        # in a field map, then again in a battle
 
 Needs PCSX2 with PINE enabled and a BIOS, which is why it was not run here.
 
-## 8. What shipped (v1.67.0, corrected in v1.68.0)
+## 8. What shipped (v1.67.0; scoped in v1.68.0, quick-set in v1.72.0, confirmed in v1.73.0)
 
 A **Movement speed** section on the ISO editor's **Field character** tab — the natural place, since
 that tab already decides *who* you run around the map as.
