@@ -243,9 +243,20 @@ Two levers, both plain data writes:
   Chris from class 2 to class 3 makes her run as fast as Hugo.
 
 The members of each class are read live off the disc, so a reassignment shows up in the table
-immediately. **Time scale** is the object's whole clock, animation and movement together —
-raising *run* alone makes a character skate, so nudging it up alongside keeps the stride in
-sync. Untested in play; the table itself, the disassembly and the byte offsets are in
+immediately.
+
+**Time scale**, the third column, is that object's **clock multiplier** — not an animation-only
+setting. Each frame the engine multiplies the elapsed time by it and hands the result both to the
+character's animation clock and to the step that moves them, so `2.0` animates *and* travels at
+double rate while `0.5` is slow motion for one character. That makes it a different lever from
+run speed: **run** changes stride length only, so raising it alone makes a character *skate*;
+**time scale** speeds up the whole character so the feet keep up, but also speeds up idle fidgets
+and the wind-up at each end of a walk. A small rise in both beats a big rise in either. The engine
+uses it the same way — a follower who has fallen behind gets a temporary 1.2–1.3, and one movement
+state computes it as *current speed ÷ intended speed*, exactly the stride correction. What you set
+is the *starting* clock: those situations write over it while they last.
+
+Untested in play; the table itself, the disassembly and the byte offsets are in
 [`docs/MOVEMENT_SPEED_RESEARCH.md`](docs/MOVEMENT_SPEED_RESEARCH.md).
 
 **Movement rules — the Encounter tab.** Before the rate below is used at all, the game checks

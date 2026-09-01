@@ -168,10 +168,23 @@ wants.
 ## 5. `animRate` is a per-object time scale, not just animation
 
 `+0x0C` of the record lands in `eobj->0x2C`, and `EobjUpdate(eobj, dt)` @ `0x16F4E60` multiplies
-`dt` by it before handing the result to **every** subsystem — the animation clock
-(`eobj->0x30 += dt * rate`), the physics/collision step (`0x16FCA68`), and four more behaviour
-updates at `0x16F5684`–`0x16F56B0`. A mounted pair inherits it: the same function calls itself on
-`eobj->0x250` (the ride partner) with the *rider's* `dt`.
+`dt` by it before handing the result to **every** subsystem:
+
+| gets `dt × rate` | what it is |
+|---|---|
+| `0x16D7CE0` + `eobj->0x30 += dt*rate` | the animation clock (`+0x34` keeps the previous value) |
+| **`0x16FCA68`** | **the step that advances the object's position** — it reads and writes the `+0x4C`/`+0x50`/`+0x54` triple |
+| `0x16EBAB8`, `0x16F4C80`, `0x16EE318`, `0x16EE2C0` | four more per-frame behaviour updates |
+
+That second row is the one that makes the field worth its name: the time scale is **not
+animation-only**. Both the clip clock and the translation step are driven by the same scaled
+delta, so `2.0` animates *and* travels at double rate. A mounted pair does not inherit it — the
+same function calls itself on `eobj->0x250` with the rider's raw `dt`, so the mount applies its
+own rate.
+
+`+0x21C`, which `SetEobjTimeScale` writes alongside `+0x2C`, is **written at four sites and read
+at none** — a write-only shadow copy. Nothing restores `+0x2C` from it, so the table's value is
+simply the object's starting clock and whatever writes `+0x2C` last wins.
 
 So `animRate` is honestly "how fast time runs for this object". It ships at `1.0` for every class.
 Two consequences worth knowing before turning it:

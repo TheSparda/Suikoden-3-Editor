@@ -435,9 +435,9 @@
   const MOVESPD = {
     tbl: 0x3B0BE0, rows: 14, stride: 16,
     cols: [
-      { key: "walk", off: 0x04, label: "Walk", stock: 2 },
-      { key: "run", off: 0x08, label: "Run", stock: 6 },
-      { key: "rate", off: 0x0C, label: "Time scale", stock: 1 },
+      { key: "walk", off: 0x04, label: "Walk", hint: "units/sec", stock: 2 },
+      { key: "run", off: 0x08, label: "Run", hint: "units/sec", stock: 6 },
+      { key: "rate", off: 0x0C, label: "Time scale", hint: "\u00d71.0 = normal", stock: 1 },
     ],
     classOff: 0x78,          // u8, in the list2 record
     MAXCLASS: 13,            // the last row; classes 9-13 have no stock member
@@ -2193,7 +2193,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
-      movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. Untested in play.",
+      movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Untested in play.",
       test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
@@ -4089,7 +4089,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     for (let c = 0; c < MOVESPD.rows; c++) (memberOf(c).length ? used : unused).push(c);
 
     const head = `<thead><tr><th>Class</th>${MOVESPD.cols.map((c) =>
-      `<th>${c.label}</th>`).join("")}<th>Characters in this class</th></tr></thead>`;
+      `<th>${c.label}${c.hint ? `<br><span class="dim" style="font-weight:400">${esc2(c.hint)}</span>` : ""}</th>`
+      ).join("")}<th>Characters in this class</th></tr></thead>`;
 
     // Per-character class picker: one row per named list2 record.
     const charRows = [];
@@ -4140,12 +4141,34 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
             <i>and</i> the class assignments to the bytes this ISO was opened with.</span>
         </div>
         <table class="invtbl">${head}<tbody>${used.map(classRow).join("")}</tbody></table>
-        <div class="muted" style="font-size:12px;margin:8px 0 0">
-          <b>Time scale</b> is the object's whole clock — animation and movement together. Raising
-          <i>run</i> on its own makes a character skate: more ground per stride, legs unchanged.
-          Nudging time scale up with it keeps the stride in sync, at the cost of speeding up that
-          character's idle animations too.
-        </div>
+        <details class="note" style="margin:10px 0 0"><summary>What &ldquo;time scale&rdquo; means, and when to touch it</summary>
+          <p style="margin:8px 0">It is that object's <b>clock multiplier</b> &mdash; not an
+          animation-only setting. Once per frame the engine takes how much real time has passed,
+          multiplies it by this number, and hands the result both to the character's animation
+          clock <i>and</i> to the step that moves them. So <b>2.0</b> means &ldquo;this character
+          experiences two seconds for every one that passes&rdquo;: they animate twice as fast and
+          cover ground twice as fast. <b>0.5</b> is slow motion for that one character while
+          everything around them carries on normally.</p>
+          <p style="margin:8px 0">That makes it a different lever from the <b>Run</b> column beside
+          it, and the two fix different problems:</p>
+          <ul style="margin:8px 0 8px 18px;padding:0">
+            <li><b>Run</b> changes how far a stride carries you and nothing else. Raise it alone and
+              the character <b>skates</b> &mdash; gliding along with their legs still cycling at the
+              old rate.</li>
+            <li><b>Time scale</b> speeds up the whole character, so the feet keep up &mdash; but it
+              also speeds up everything you might not want faster: idle fidgets, turning on the
+              spot, and the wind-up and stop at each end of a walk.</li>
+          </ul>
+          <p style="margin:8px 0">So a small rise in both usually looks better than a big rise in
+          either. The engine agrees, which is the best evidence for what the field is for: a party
+          member who has fallen behind is given a temporary <b>1.2</b> or <b>1.3</b> to hurry them
+          along, and one movement state computes it as <i>current speed &divide; intended speed</i>
+          &mdash; exactly the correction that keeps a stride matching the ground.</p>
+          <p style="margin:8px 0"><b>One caveat.</b> What you set here is the character's
+          <i>starting</i> clock. The situations above write over it while they last, so a party
+          follower or anyone mid-way through a scripted walk may not keep your value. The engine
+          clamps it at 10000, and every class ships at 1.0.</p>
+        </details>
         <details class="note" style="margin:10px 0 0"><summary>Rows nobody uses (classes ${unused.join(", ")})</summary>
           <table class="invtbl">${head}<tbody>${unused.map(classRow).join("")}</tbody></table>
           <div class="muted" style="font-size:12px">No character ships in these. They only matter if you
