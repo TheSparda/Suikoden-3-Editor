@@ -16,7 +16,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
-  AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord,
+  AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
   MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -619,12 +619,31 @@ head("Field character — per-map coverage and the story-content switch");
     check("every other story case is untouched",
       STORY_CASES.filter(([o]) => o !== 0x1C7724).every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
 
+  // The scene-softlock experiment: both words of the miss-exit must move together, or the
+  // jump lands with a stray delay slot / the toggle silently does nothing.
+  await page.check("#avActorFb");
+  await page.waitForSelector("#avActorFb", { timeout: 3000 });
+  { const txt = await page.textContent("#isoView");
+    check("the fallback names its recursion risk", /recurses forever/i.test(txt));
+    check("...and says it is untested", /Untested/i.test(txt)); }
+  { const r = await save(page);
+    check("the exit became a jump to the player lookup", r.u32(ACTORFB_SITES[0][0]) === ACTORFB_SITES[0][2]);
+    check("...with a nop in the delay slot", r.u32(ACTORFB_SITES[1][0]) === 0);
+    check("...and the jump decodes back to 0x17B5CC8",
+      ((r.u32(ACTORFB_SITES[0][0]) & 0x03FFFFFF) << 2) === 0x17B5CC8); }
+  await page.uncheck("#avActorFb");
+  await page.waitForSelector("#avActorFb", { timeout: 3000 });
+  { const r = await save(page);
+    check("unticking restores both words exactly",
+      ACTORFB_SITES.every(([o, stock]) => r.u32(o) === stock)); }
+
   // Restore-stock has to cover the story cases too, or the button half-reverts.
   await page.click("#avStock");
   await page.waitForSelector("#avWide", { timeout: 3000 });
   { const r = await save(page);
     check("Restore stock returns every story case",
-      STORY_CASES.every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
+      STORY_CASES.every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq")));
+    check("...and the actor fallback", ACTORFB_SITES.every(([o, stock]) => r.u32(o) === stock)); }
   await page.context().close();
 }
 

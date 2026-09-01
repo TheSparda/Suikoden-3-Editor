@@ -297,6 +297,37 @@
     // Named ids with no roster slot, so the readout can label them (s3save.PARTY_EXTRA_NAMES).
     EXTRA: { 202: "Masked Luc", 203: "Grasslands Chris", 204: "Masked Kidd" },
 
+    // ---- the scene softlock, and the one place it can be attacked -------------
+    // Script actor handles are packed: bits 10-13 pick a namespace, the low 10 bits an
+    // index (decoder at 0x17B5A40, 186 call sites). Two namespaces matter here:
+    //
+    //   0x1400        "the player"        -> 0x17B5CC8 -> FindActorByCharId(leaderByte, 1)
+    //   0x400 | N     "the character N"   -> FindActorByCharId(N, 1)
+    //
+    // FindActorByCharId @ 0x17B59D0 walks the scene's actor records (ctx->0x58, stride
+    // 0x40, character id at +0x06) and RETURNS NULL when nobody matches. So a Hugo-chapter
+    // scene that addresses Hugo as `0x400|1` gets null the moment your avatar is anyone
+    // else, and the beat that was going to make him speak has no actor. That is why the
+    // hang lands exactly on the protagonist's line while ordinary NPC dialogue is fine —
+    // dialogue never asks for a character who isn't there.
+    //
+    // The miss-exit is two instructions and the function keeps no stack frame, so it can
+    // tail-jump to the player lookup instead of returning null: "an actor nobody can find
+    // is you". That is as close as this gets to Koroku delivering Hugo's lines.
+    //
+    // The risk is stated in the UI rather than hidden: 0x17B5CC8 calls back into this same
+    // function with the leader byte, so if a scene's actor table has no record for YOUR
+    // leader, the fallback recurses forever. Two instructions is not enough room for a
+    // guard — the exit can hold `j; nop` or `jr $ra; move`, but not a conditional with both
+    // paths — so this ships as an opt-in experiment, not a fix.
+    ACTORFB: {
+      sites: [
+        { off: 0x1FD238, stock: 0x03E00008, alt: 0x085ED732 },   // jr $ra   -> j 0x17B5CC8
+        { off: 0x1FD23C, stock: 0x0000102D, alt: 0x00000000 },   // move v0,0 -> nop
+      ],
+      target: 0x17B5CC8,
+    },
+
     // ---- which story content a leader gets -----------------------------------
     // The leader byte is also "whose story is this". Seven sites switch on it; six carry
     // the four protagonists (+ 0xCB) and route everything else to a default. The seventh,
@@ -3813,6 +3844,9 @@
     }
 
     const allowed = avatarAllowedIds();
+    const fbSites = AVATAR.ACTORFB.sites;
+    const fbBad = fbSites.some((f) => !inBlk(f.off, 4) || (r32(f.off) !== f.stock && r32(f.off) !== f.alt));
+    const actorFbOn = !fbBad && fbSites.every((f) => r32(f.off) === f.alt);
     const stock = new Set(AVATAR.STOCK_SET);
     const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
     const nArch = avatarAreaCount();
@@ -3873,6 +3907,26 @@
           <b>Currently loadable as the field character</b>
           <span class="muted">· ${allowed.length} id${allowed.length === 1 ? "" : "s"}, read back from the patched bytes</span>
           <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
+        </div>
+        <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup · untested</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          Scripts name an actor two ways. <b>"The player"</b> resolves through the leader byte and
+          works for anyone — which is why your avatar walks into the scene, and why talking to
+          NPCs is fine. <b>"The character whose id is N"</b> scans the scene's actor records for
+          that id and <b>returns nothing when they are absent</b>. A Hugo-chapter scene asking for
+          Hugo gets nothing the moment you are somebody else, and the beat that would have made
+          him speak has no actor — which is exactly where the game stops.
+        </div>
+        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 6px">
+          <input type="checkbox" id="avActorFb"${actorFbOn ? " checked" : ""}>
+          <b>An actor nobody can find falls back to the player</b>
+          <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
+        <div class="warnbox" style="margin:0 0 10px">
+          <b>Untested, and it can hang the game harder than it already does.</b> The fallback
+          re-enters the same lookup with your leader's id, so in a scene whose actor table has no
+          record for <i>your</i> character it recurses forever. The exit is two instructions —
+          enough for a jump, not for a guard — so there is nowhere to put the check. Try it on a
+          save you can throw away.
         </div>
         <div class="bag-h" style="margin:16px 0 8px">Story content <span class="u">which team's events and dialogue a leader gets</span></div>
         <div class="muted" style="margin:0 0 10px">
@@ -3942,6 +3996,16 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       AVATAR.gates.forEach((g) => { writeW(g.off, 2, AVATAR.WIDE); reg(g.off, 2, "num", "Field character", g.label); });
       drawView();
     };
+    { const cb = q("#avActorFb", host);
+      if (cb) {
+        if (fbBad) { cb.disabled = true; cb.title = "these instructions aren't stock — not offered"; }
+        cb.onchange = () => {
+          fbSites.forEach((f) => { writeW(f.off, 4, cb.checked ? f.alt : f.stock);
+            reg(f.off, 4, "num", "Scene softlocks", "actor fallback"); });
+          drawView();
+        };
+        cb.classList.toggle("dirty", fbSites.some((f) => isDirty(f.off, 4)));
+      } }
     { const editable = AVATAR.STORY.cases.filter((c) => !c.fixed);
       qa("select.av-story", host).forEach((sel) => {
         const c = editable[+sel.dataset.i];
@@ -3960,6 +4024,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       // reverts and the readout disagrees with the label.
       AVATAR.STORY.cases.forEach((c) => {
         writeW(c.off, 2, c.id); reg(c.off, 2, "num", "Story content", avatarName(c.id) || ("id " + c.id));
+      });
+      AVATAR.ACTORFB.sites.forEach((f) => {
+        writeW(f.off, 4, f.stock); reg(f.off, 4, "num", "Scene softlocks", "actor fallback");
       });
       drawView();
     };
