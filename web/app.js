@@ -1156,8 +1156,10 @@ function drawParty() {
     const now = eff(slot);
     return `<tr>
       <td class="sl">Slot ${slot + 1}${slot === 0 ? ' <span class="dim">· leader</span>' : ""}</td>
-      <td><button type="button" class="picker" data-partyslot="${slot}" data-val="${now}" data-def="${cid}">${esc(charLabel(now))}</button>${
-        now ? ` <button type="button" class="chip mini" data-partydrop="${slot}" title="Remove from the party">✕</button>` : ""}</td></tr>`;
+      <td><div class="party-row">
+        <button type="button" class="picker" data-partyslot="${slot}" data-val="${now}" data-def="${cid}">${esc(charLabel(now))}</button>${
+        now ? `<button type="button" class="chip mini party-x" data-partydrop="${slot}" title="Remove from the party" aria-label="Remove from the party">✕</button>` : ""}
+      </div></td></tr>`;
   }).join("");
   const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =

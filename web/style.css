@@ -204,6 +204,11 @@ button.picker { width:100%; text-align:left; background:var(--input-bg); color:v
   background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);
   background-position:calc(100% - 15px) 15px,calc(100% - 10px) 15px; background-size:5px 5px,5px 5px; background-repeat:no-repeat; }
 button.picker:hover:not(:disabled) { border-color:var(--acc); }
+/* Party rows: the picker is width:100%, so a sibling button wraps to its own line. Flex the
+   picker and pin the remove control beside it instead. */
+.party-row { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; }
+.party-row > button.picker { flex:1 1 auto; min-width:0; }
+.party-row > .party-x { flex:0 0 auto; }
 button.picker.dirty { color:var(--warn); border-color:var(--warnbd); background-color:var(--changed-bg); }
 
 /* per-field "restore original" affordance (shown only when a field differs from the ISO) */
