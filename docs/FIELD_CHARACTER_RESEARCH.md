@@ -561,6 +561,53 @@ zero**:
 clean-looking split does not get mistaken for a cause later. (53 of the 78 party models have
 none, so it is not a general requirement for appearing in a scene either.)
 
+### FOUND: the event scripts are in the `town` sub-files
+
+Chaining with a diversity filter over the 133 `town` sub-files (15.8 MB) finds **99 script
+blobs, 4646 instructions**. They are code, not tables, and three independent things say so:
+
+1. **`0x1400` — the PLAYER actor handle**, derived from the ELF's decoder at `0x17B5A40`
+   *before* any of this — appears as an opcode parameter in the data.
+2. **`op 22 RideOnSetS ['0x17','0x18','0xb']`** decodes as rider EOBJ, mount EOBJ, param
+   record — exactly the shape [`MOUNT_SYSTEM_RESEARCH.md`](MOUNT_SYSTEM_RESEARCH.md) §9
+   describes, in a file that document never managed to locate.
+3. A repeating **per-actor staging block** (`112, 111, 157, 114, 127, 120, 129`) run over
+   consecutive handles `0x800`–`0x805` with round coordinates (1200, 1000, 800, 500).
+
+`python3 Editor/eds_dis.py towns` reproduces all of it.
+
+### How scenes actually address actors — and what that retires
+
+Only **57 of the 359 opcodes** pass a parameter to the actor lookup, so only those parameters
+are handles. That distinction matters: decoding every parameter as a handle makes the
+coordinate `0x4B0` (1200) read as "charId 176", inventing references that are not there.
+
+Restricted properly, over **12,055 handles** from every town script on the disc:
+
+| namespace | count | share |
+|---|---|---|
+| **slot (plain index)** | 8612 | **71.4 %** |
+| `sceneObj 0x800` | 2375 | 19.7 % |
+| `indirect 0x1000` | 553 | 4.6 % |
+| `PLAYER 0x1400` | 240 | 2.0 % |
+| none (`0x8000`) | 222 | 1.8 % |
+| `partyPos 0x1800` | 33 | 0.3 % |
+| **`charId 0x400\|N`** | **0** | **0 %** |
+
+**Scenes never name a character by id.** They address actors by *slot* — an index into the
+scene's own actor array.
+
+That **retires the actor fallback** shipped under `Test`. It patched the null return of
+`FindActorByCharId`, and the `0x400|N` namespace that reaches it is used **zero** times in any
+town script. The patch could never have fired, which is exactly what playtesting found; now
+there is a reason rather than a suspicion. It also retires the reasoning in §9 that led to it.
+
+**Where this points instead.** The plain-slot path bounds-checks against `ctx->0x03` and
+returns null for an out-of-range slot (`0x17B5B8C`). So the candidate is: a scene stages N
+actors by slot, scene setup places fewer than N because the avatar is not the character the
+scene was built around, and an opcode acting on the missing slot gets null. Still a
+hypothesis — but a slot-shaped one, which is where the evidence actually points.
+
 **One dead end worth recording:** the script pointer `ctx->0x0C` is *not* reachable by a
 peephole scan. There are 1533 stores to some `+0x0C` in the ELF, 515 of them the interpreter's
 own ip advance, and none of the rest resolve through the `*(0x196A4D0) + 0x150` chain — the
