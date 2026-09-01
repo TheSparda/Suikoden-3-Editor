@@ -660,9 +660,116 @@ def test_edsprobe():
           "the opcode that sets the avatar is labelled")
 
 
+
+def test_spdprobe():
+    """The movement-speed probe: expected-value derivation, the EOBJ scan, the verdict.
+
+    The scan is a conjunction of range checks with no signature word, so the failure worth
+    testing is a *confident wrong answer*: a planted object that should be found and is not,
+    or noise that should be rejected and is not. Both directions are checked against a
+    synthetic RAM buffer and a synthetic ISO built here.
+    """
+    print("\nspdprobe: expected-value derivation, EOBJ scan, verdict wording")
+    from tools.pcsx2 import spdprobe
+
+    # ---- a synthetic disc: 14 speed rows, an index byte table, 80 list2 records ----
+    size = spdprobe.LIST2 + 80 * spdprobe.LIST2_STRIDE
+    iso = bytearray(size)
+    runs = [6.0, 5.0, 4.5, 6.0, 5.0] + [6.0] * 9        # the disc's real run speeds
+    for c, run in enumerate(runs):
+        o = spdprobe.SPD_TABLE + c * spdprobe.SPD_STRIDE
+        struct.pack_into("<Ifff", iso, o, 0, 2.0, run, 1.0)
+    # model 1 (Hugo) -> list2 record 1 -> class 3 ; model 2 (Chris) -> record 2 -> class 2
+    iso[spdprobe.MODEL_INDEX + 1] = 1
+    iso[spdprobe.MODEL_INDEX + 2] = 2
+    iso[spdprobe.LIST2 + 1 * spdprobe.LIST2_STRIDE + spdprobe.CLASS_OFF] = 3
+    iso[spdprobe.LIST2 + 2 * spdprobe.LIST2_STRIDE + spdprobe.CLASS_OFF] = 2
+    with tempfile.NamedTemporaryFile(suffix=".iso", delete=False) as f:
+        f.write(iso); iso_path = f.name
+    try:
+        exp = spdprobe.Expected(iso_path)
+        check(exp.klass(1) == 3 and exp.klass(2) == 2, "the class byte is read per model id")
+        check(exp.speeds(1) == (2.0, 6.0, 1.0), "Hugo's model resolves to walk 2 / run 6")
+        check(exp.speeds(2) == (2.0, 4.5, 1.0), "Chris's model resolves to walk 2 / run 4.5")
+        # Ids with no record must fall to class 0 rather than indexing off the end.
+        check(exp.klass(0x60) == 0, "a townsperson id with no record falls to class 0")
+        check(exp.klass(0xD3) == exp.list2[(0xD3 - 0x86) * spdprobe.LIST2_STRIDE
+                                           + spdprobe.CLASS_OFF],
+              "ids 0xD2-0xD5 bypass the index table and hit records 76-79")
+        check(exp.speeds(0x3E8) == exp.rows[0], "an id outside the table's domain gets class 0")
+
+        # ---- a synthetic RAM: one matching object, one overwritten, one noise ----
+        def plant(ram, base, model, walk, run, rate=1.0, partner=0, slot=2, kind=2):
+            struct.pack_into("<HH", ram, base, model, kind)
+            struct.pack_into("<H", ram, base + spdprobe.O_SLOT, slot)
+            struct.pack_into("<f", ram, base + spdprobe.O_RATE, rate)
+            for i in range(3):
+                struct.pack_into("<f", ram, base + spdprobe.O_POS + i * 4, 100.0 + i)
+            struct.pack_into("<f", ram, base + spdprobe.O_WALK, walk)
+            struct.pack_into("<f", ram, base + spdprobe.O_RUN, run)
+            struct.pack_into("<I", ram, base + spdprobe.O_PARTNER, partner)
+
+        ram = bytearray(0x8000)
+        plant(ram, 0x1000, 1, 2.0, 6.0)                      # field Hugo: matches
+        plant(ram, 0x2000, 2, 3.5, 9.0)                      # battle Chris: overwritten
+        plant(ram, 0x3000, 1, 2.0, 6.0, partner=0x00200000)  # mounted, still matching
+        hits = spdprobe.scan(bytes(ram), exp)
+        found = {h["addr"]: h for h in hits}
+        check(0x1000 in found and found[0x1000]["match"], "a matching object is found and matches")
+        check(0x2000 in found and not found[0x2000]["match"],
+              "an overwritten object is found and flagged DIFFERS")
+        check(0x3000 in found and found[0x3000]["mounted"],
+              "a ride partner is read as mounted, not rejected")
+
+        # Each range check must actually reject. Plant a valid object, break one field, rescan.
+        for label, off, raw in (
+            ("a NaN walk speed", spdprobe.O_WALK, b"\x00\x00\xc0\x7f"),
+            ("a zero walk speed", spdprobe.O_WALK, struct.pack("<f", 0.0)),
+            ("an absurd run speed", spdprobe.O_RUN, struct.pack("<f", 5000.0)),
+            ("a time scale past the engine's clamp", spdprobe.O_RATE, struct.pack("<f", 1e9)),
+            ("an infinite position", spdprobe.O_POS, b"\x00\x00\x80\x7f"),
+            ("a misaligned ride partner", spdprobe.O_PARTNER, struct.pack("<I", 0x00200001)),
+        ):
+            r = bytearray(0x8000)
+            plant(r, 0x1000, 1, 2.0, 6.0)
+            r[0x1000 + off:0x1000 + off + len(raw)] = raw
+            check(0x1000 not in {h["addr"] for h in spdprobe.scan(bytes(r), exp)},
+                  "%s is rejected" % label)
+        r = bytearray(0x8000)
+        plant(r, 0x1000, 1, 2.0, 6.0, slot=0x200)
+        check(0x1000 not in {h["addr"] for h in spdprobe.scan(bytes(r), exp)},
+              "a motion slot past the table's 0x13B entries is rejected")
+
+        # A static table inside the ELF's own image must not be counted as a live object —
+        # two real ones match the range checks, and counting them would dilute the verdict.
+        r = bytearray(spdprobe.ELF_IMAGE_LO + 0x1000 + spdprobe.EOBJ_MIN + 4)
+        plant(r, spdprobe.ELF_IMAGE_LO + 0x1000, 1, 3.0, 9.0)
+        st = spdprobe.scan(bytes(r), exp)
+        check(len(st) == 1 and st[0]["static"], "a hit inside the ELF image is marked static")
+        check(spdprobe.live(st) == [], "static hits are excluded from the live set")
+        check("no objects found" in spdprobe.verdict(st)[0],
+              "a scan of nothing but static hits does not claim a mismatch")
+
+        # ---- the verdict wording is the output people will paste back ----
+        allmatch = spdprobe.scan(bytes(ram), exp)
+        allmatch = [h for h in allmatch if h["addr"] != 0x2000]
+        msg, m, d = spdprobe.verdict(allmatch)
+        check(d == 0 and "table is live here" in msg, "all-match reads as the table being live")
+        only_bad = [h for h in spdprobe.scan(bytes(ram), exp) if h["addr"] == 0x2000]
+        msg, m, d = spdprobe.verdict(only_bad)
+        check(m == 0 and "battle asset" in msg,
+              "all-differ names the battle asset as the likely source")
+        msg, m, d = spdprobe.verdict(spdprobe.scan(bytes(ram), exp))
+        check("mixed" in msg, "a mixed result says so instead of picking a side")
+        check("no objects found" in spdprobe.verdict([])[0],
+              "an empty scan says nothing was loaded, rather than claiming a match")
+    finally:
+        os.unlink(iso_path)
+
+
 def main():
     for fn in (test_pine, test_savestate, test_ramscan, test_eemap, test_pngdiff, test_harness,
-               test_edsprobe):
+               test_edsprobe, test_spdprobe):
         fn()
     print("\n%d checks, %d failure(s)" % (CHECKS[0], len(FAILURES)))
     for f in FAILURES:
