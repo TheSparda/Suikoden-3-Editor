@@ -249,8 +249,18 @@
           "moment it needs you to act. Every save the game writes itself keeps the leader in " +
           "slot 1.",
         where: { sub: "party", search: "" },
-        fix: { label: "Put the leader in party slot 1",
-               ops: [{ kind: "party", slot: 0, value: eff.partyLeader }] } });
+        // The finding only fires when the leader is absent, so there is nobody to swap with —
+        // but slot 1's current occupant must not just be overwritten. Park them in a free
+        // slot when there is one; only a full party costs someone their place.
+        fix: (() => {
+          const free = eff.party.findIndex((v, i) => i > 0 && !v);
+          const ops = [{ kind: "party", slot: 0, value: eff.partyLeader }];
+          if (eff.party[0] && free > 0) ops.push({ kind: "party", slot: free, value: eff.party[0] });
+          return { label: free > 0 || !eff.party[0]
+                     ? "Put the leader in party slot 1"
+                     : `Put the leader in party slot 1 (drops ${charName(eff.party[0])})`,
+                   ops };
+        })() });
     }
 
     // --- characters ----------------------------------------------------------
