@@ -635,7 +635,10 @@ head("Field character — per-map coverage; Story content in its own view");
     check("the fallback names its recursion risk", /recurses forever/i.test(txt));
     // It was tried in play and did not help. Saying so is the point of keeping it: a toggle
     // that reads as promising would send the next person down the same dead end.
-    check("...and says it was tried and did not work", /did not fix the hang/i.test(txt)); }
+    check("...and says it was tried and did not work", /did not fix the hang/i.test(txt));
+    // Now demonstrated rather than suspected: the namespace it patches is used zero times
+    // in any town script, so the tab should state that, not hedge.
+    check("...and gives the measured reason", /exactly zero times/i.test(txt)); }
   { const r = await save(page);
     check("the exit became a jump to the player lookup", r.u32(ACTORFB_SITES[0][0]) === ACTORFB_SITES[0][2]);
     check("...with a nop in the delay slot", r.u32(ACTORFB_SITES[1][0]) === 0);
