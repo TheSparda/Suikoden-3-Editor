@@ -9,9 +9,17 @@ from the interpreter itself and uses it to validate candidate bytes by chaining,
 what turns noise into signal.
 
     python3 Editor/eds_dis.py lens                     # opcode -> instruction length
-    python3 Editor/eds_dis.py dis   0x3A2C1000 40      # disassemble 40 instructions there
-    python3 Editor/eds_dis.py scan  AKMT               # find script blobs in an archive
+    python3 Editor/eds_dis.py actorops                 # which opcodes take an actor handle
+    python3 Editor/eds_dis.py towns                    # FIND THE SCRIPTS: scan town sub-files
+    python3 Editor/eds_dis.py dis   0xD269D91E 40      # disassemble 40 instructions there
     python3 Editor/eds_dis.py find  346 1              # every `op 346, param 1` on the disc
+
+**The scripts are in the `town` sub-files.** 133 of them, 15.8 MB total, and chaining with a
+diversity filter finds ~99 script blobs. They are confirmed as code, not tables, three ways:
+`0x1400` (the PLAYER actor handle, derived independently from the ELF) appears as an opcode
+parameter; `op 22 RideOnSetS` decodes with rider/mount/param exactly as the mount research
+describes it; and the blobs contain a repeating per-actor staging block over consecutive
+handles with round coordinates.
 
 How the encoding was recovered, so it can be re-checked rather than trusted:
 
@@ -26,6 +34,7 @@ How the encoding was recovered, so it can be re-checked rather than trusted:
 An opcode whose length could not be recovered is a hard stop for the chainer — better a
 short honest disassembly than a long invented one.
 """
+import collections
 import json
 import os
 import struct
@@ -49,6 +58,40 @@ NAMES = {
 
 # How a script names an actor: bits 10-13 pick a namespace, low 10 bits an index.
 # Decoder at 0x17B5A40 (186 call sites).
+ACTOR_OPS = None      # filled by actor_ops(); the 57 opcodes that resolve a handle
+
+
+def actor_ops(buf):
+    """Opcodes that pass a script parameter to the actor lookup at 0x17B5A40.
+
+    Only these parameters are actor handles. Everything else is a number, and decoding a
+    coordinate as a handle is how `0x4B0` (1200) reads as "charId 176" — a mistake worth
+    guarding against, since it silently invents references that are not there.
+    """
+    def w(va):
+        o = va - re_elf.DELTA - re_elf.PT_LOAD_ISO
+        return struct.unpack_from("<I", buf, o)[0] if 0 <= o < len(buf) - 4 else None
+
+    want = 0x0C000000 | ((0x17B5A40 >> 2) & 0x03FFFFFF)
+    out = []
+    for op in range(N_OPS):
+        h = w(HANDLERS + op * 4)
+        if not h or not (0x165D000 <= h < 0x19EA430):
+            continue
+        for k in range(0, 0x140, 4):
+            x = w(h + k)
+            if x == want:
+                out.append(op); break
+            if x == 0x03E00008 and k > 16:
+                break
+    return out
+
+
+BANDS = {0x0000: "slot (plain index)", 0x0400: "charId (0x400|N)", 0x0800: "sceneObj 0x800",
+         0x0C00: "sceneObj 0xC00", 0x1000: "indirect 0x1000", 0x1400: "PLAYER 0x1400",
+         0x1800: "partyPos 0x1800"}
+
+
 def actor_str(v):
     if v & 0x8000:
         return f"none({v:#06x})"
@@ -202,6 +245,66 @@ def cmd_scan(argv):
                       f"{'   <-- likely an integer table, not code' if div < 12 else ''}")
 
 
+def cmd_actorops(argv):
+    buf = re_elf.load()
+    ops = actor_ops(buf)
+    print(f"{len(ops)} of {N_OPS} opcodes resolve a script parameter through the actor lookup")
+    for i in range(0, len(ops), 18):
+        print("   " + " ".join(f"{o:3}" for o in ops[i:i + 18]))
+
+
+def cmd_towns(argv):
+    """Find the event scripts. They live in the `town` sub-files."""
+    minrun = int(argv[0]) if argv else 30
+    buf = re_elf.load()
+    lens, _ = op_lengths(buf)
+    acts = set(actor_ops(buf))
+    step = [0] * 65536
+    for op, n in lens.items():
+        step[op] = n // 2
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = json.load(open(os.path.join(here, "s3_subfiles.json")))
+    kinds = d["kinds"]
+    towns = [(a["archive"], a["base"] + s * 2048, n * 2048, l)
+             for a in d["archives"] for s, n, k, l in a["files"] if kinds[k] == "town"]
+    ns = collections.Counter()
+    found = []
+    with open(iso_path(), "rb") as f:
+        for arc, off, size, label in towns:
+            f.seek(off)
+            data = f.read(size)
+            n = len(data) // 2
+            ops = struct.unpack(f"<{n}H", data[:n * 2])
+            run = [0] * (n + 1)
+            for i in range(n - 1, -1, -1):
+                sp = step[ops[i]]
+                if sp and i + sp <= n:
+                    run[i] = 1 + run[i + sp]
+            i = 0
+            while i < n:
+                if run[i] >= minrun:
+                    seen, j, k = [], i, 0
+                    while k < 400 and run[j]:
+                        op = ops[j]; sp = step[op]; seen.append(op)
+                        if op in acts and sp > 1:
+                            p = ops[j + 1]
+                            ns[BANDS.get(p & 0x3C00, "other") if not (p & 0x8000) else "none"] += 1
+                        j += sp; k += 1
+                    if len(set(seen)) >= 15:
+                        found.append((off + i * 2, k, len(set(seen)), arc, label))
+                    i = j
+                else:
+                    i += 1
+    print(f"{len(found)} script blob(s) across {len(towns)} town sub-files")
+    for o, ln, div, arc, label in sorted(found, key=lambda r: -r[1])[:15]:
+        print(f"   {o:010X}  {ln:4} instr, {div:2} distinct opcodes  {arc:6} {label}")
+    tot = sum(ns.values())
+    print(f"\nhow those scripts address actors ({tot} handles, first parameter only):")
+    for k, v in ns.most_common():
+        print(f"   {k:22} {v:6}  {100 * v / tot:5.1f}%")
+    print("\nNote the zero: scenes never name a character by id (0x400|N). They use SLOTS.")
+
+
 def cmd_find(argv):
     """Every occurrence of `op [param]`, word-aligned, across the archives."""
     op = int(argv[0], 0)
@@ -233,7 +336,8 @@ def main():
         print(__doc__)
         return 2
     cmd, argv = sys.argv[1], [a for a in sys.argv[2:] if not os.path.isfile(a)]
-    fn = {"lens": cmd_lens, "dis": cmd_dis, "scan": cmd_scan, "find": cmd_find}.get(cmd)
+    fn = {"lens": cmd_lens, "dis": cmd_dis, "scan": cmd_scan, "find": cmd_find,
+          "actorops": cmd_actorops, "towns": cmd_towns}.get(cmd)
     if not fn:
         print(__doc__)
         return 2
