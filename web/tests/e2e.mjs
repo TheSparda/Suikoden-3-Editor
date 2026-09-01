@@ -750,9 +750,16 @@ head("Encounter multipliers — walking / running / mounted, apart");
 head("Movement speed — the walk/run table and each character's class");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="movement"]');
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
   const f32 = (r, off) => { const b = Buffer.alloc(4); b.writeUInt32LE(r.u32(off) >>> 0, 0); return b.readFloatLE(0); };
   const runBox = (cls) => `input.spd-f[data-cls="${cls}"][data-col="run"]`;
+  const openAdv = async () => {
+    await page.waitForSelector("#spdQApply", { timeout: 3000 });
+    if (!(await page.$("#spdAdvanced[open]"))) await page.click("#spdAdvanced > summary");
+    await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  };
+  await openAdv();
+  check("the manual class table is collapsed until asked for, with the card above it first",
+    (await page.$("#spdQApply")) !== null && (await page.$("#spdAdvanced")) !== null);
   check("the classes with members are listed",
     (await page.$$("#isoView table.invtbl >> nth=0 >> tbody tr")).length === 9);
   check("Hugo's class shows 6 and Chris's 4.5",
@@ -780,7 +787,7 @@ head("Movement speed — the walk/run table and each character's class");
   // Editing a class row retunes everyone in it.
   await page.fill(runBox(2), "7.5");
   await page.dispatchEvent(runBox(2), "change");
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   { const r = await save(page);
     check("class 2's run speed was written as a float", f32(r, spdAddr(2, MOVESPD.run)) === 7.5);
     check("...its walk speed is untouched", f32(r, spdAddr(2, MOVESPD.walk)) === 2);
@@ -789,11 +796,12 @@ head("Movement speed — the walk/run table and each character's class");
     check("...and no other class moved", f32(r, spdAddr(3, MOVESPD.run)) === 6); }
 
   // The other lever: move one character to another class, leaving the table alone.
+  await openAdv();
   await page.click("#spdStock");
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   await page.click("#spdChars > summary");                                  // the pickers are collapsed
   await page.selectOption('#isoView select.spd-cls[data-rec="2"]', "3");     // Chris -> Hugo's class
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   check("Chris now appears in Hugo's class row",
     /class 3[\s\S]{0,400}Chris/.test(await page.textContent("#isoView"))
       || /Hugo, Chris/.test(await page.textContent("#isoView"))
@@ -806,8 +814,9 @@ head("Movement speed — the walk/run table and each character's class");
       MOVESPD_RUN.every((v, c) => f32(r, spdAddr(c, MOVESPD.run)) === v)); }
 
   // "Everyone runs at 6" levels every row, including the ones nobody is in.
+  await openAdv();
   await page.click("#spdLevel");
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   { const r = await save(page);
     check("every class run speed became 6",
       MOVESPD_RUN.every((_, c) => f32(r, spdAddr(c, MOVESPD.run)) === 6));
@@ -817,22 +826,153 @@ head("Movement speed — the walk/run table and each character's class");
   await page.context().close();
 }
 
+// The quick-set card is where the class indirection is supposed to disappear. Its allocator has
+// four paths and the wrong one being taken is silent — it would look like it worked and quietly
+// retune a shared row, or burn a spare row it did not need to. Each path is exercised.
+//
+// Asserted through the DOM rather than through saves: a save rebases what "as loaded" means, so
+// a byte check after the second save compares against the first save's output instead of the
+// disc. The byte-level verification is the block after this one, on a page that saves once.
+head("Movement speed — give one character its own speed");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="movement"]');
+  await page.waitForSelector("#spdQApply", { timeout: 3000 });
+  const settle = () => page.waitForSelector("#spdQApply", { timeout: 3000 });
+  const pick = async (name) => { await page.selectOption("#spdQChar", { label: name }); await settle(); };
+  const setRun = (v) => page.fill('input.spd-q[data-col="run"]', String(v));
+  const give = async () => { await page.click("#spdQApply"); await settle(); };
+  const spare = () => page.textContent("#spdSpare");
+  const view = () => page.textContent("#isoView");
+  const now = () => page.textContent("#spdQNow");
+  // The per-character pickers are the independent read-back: they show the class byte.
+  const openAdvanced = async () => {
+    if (!(await page.$("#spdAdvanced[open]"))) await page.click("#spdAdvanced > summary");
+  };
+  const classOf = async (rec) => {
+    await openAdvanced();
+    if (!(await page.$("#spdChars[open]"))) await page.click("#spdChars > summary");
+    return +(await page.inputValue(`#isoView select.spd-cls[data-rec="${rec}"]`));
+  };
+  const rowRun = async (cls) => {
+    await openAdvanced();
+    return page.inputValue(`input.spd-f[data-cls="${cls}"][data-col="run"]`);
+  };
+
+  check("the spare-row budget is shown", (await spare()) === "5");
+  check("the boxes start at the stock baseline, not the character's current values",
+    (await page.inputValue('input.spd-q[data-col="walk"]')) === "2"
+      && (await page.inputValue('input.spd-q[data-col="run"]')) === "6"
+      && (await page.inputValue('input.spd-q[data-col="rate"]')) === "1");
+
+  // Path 4 — Chris shares class 2 with twelve others, so she needs a row of her own.
+  await pick("Chris");
+  check("a shared class warns that editing the row moves others too",
+    /Shared with 12 others/.test(await now()));
+  // Hugo's row is also referenced by the unnamed default record, which must be counted (or the
+  // line would promise a free in-place retune the allocator then refuses) but never named.
+  { await pick("Hugo");
+    const t = await now();
+    check("an unnamed sharer is counted but not named by number",
+      /Shared with 5 others/.test(t) && /1 unnamed/.test(t) && !/record 0/.test(t));
+    await pick("Chris"); }
+  await setRun(7.25); await give();
+  check("...so she is given her own row", /own row \(class 9\)/.test(await view()));
+  check("...the budget drops", (await spare()) === "4");
+  check("...her class byte points at it", (await classOf(2)) === 9);
+  check("...the new row holds the speed asked for", (await rowRun(9)) === "7.25");
+  check("...and class 2 still reads 4.5, so the other twelve did not move",
+    (await rowRun(2)) === "4.5");
+  check("...none of whom moved class",
+    (await classOf(4)) === MOVESPD_CLASS[4] && (await classOf(13)) === MOVESPD_CLASS[13]);
+
+  // Path 3 — a second character wanting the SAME speed joins that row instead of spending one.
+  await pick("Lucia");
+  await setRun(7.25); await give();
+  check("a character wanting an existing speed joins that row", /already holds that speed/.test(await view()));
+  check("...spending no extra row", (await spare()) === "4");
+  check("...both now point at the same row",
+    (await classOf(2)) === 9 && (await classOf(4)) === 9);
+
+  // Path 2 — Augustine is class 5's only occupant, so his row is retuned in place.
+  await pick("Augustine");
+  check("a sole occupant is reported as retunable at no cost", /Nobody else is in that class/.test(await now()));
+  await setRun(3.5); await give();
+  check("...and is retuned in place", /only character in class 5/.test(await view()));
+  check("...still spending no row", (await spare()) === "4");
+  check("...his class byte did not change", (await classOf(66)) === 5);
+  check("...and class 5 now reads the new speed", (await rowRun(5)) === "3.5");
+
+  // Path 1 — asking for what a character already has must be a no-op. The boxes reset to the
+  // stock baseline on every render, so the value has to be typed again to ask the same question.
+  await setRun(3.5); await give();
+  check("re-applying the same speed says nothing was staged", /already has that speed/.test(await view()));
+
+  // Reset returns the character; the row stays while anyone is still using it.
+  await pick("Chris");
+  await page.click("#spdQReset"); await settle();
+  check("reset reports putting the character back", /put back in the class the disc gives/.test(await view()));
+  check("...she is in her stock class again", (await classOf(2)) === MOVESPD_CLASS[2]);
+  check("...and the row survives because Lucia still uses it",
+    (await rowRun(9)) === "7.25" && (await classOf(4)) === 9);
+
+  // The last character leaving frees the row AND its bytes are put back, not left staged.
+  await pick("Lucia");
+  await page.click("#spdQReset"); await settle();
+  check("the last character leaving frees the row again", (await spare()) === "5");
+  check("...and the orphaned row's edit was restored", /orphaned/.test(await view()));
+  check("...so the row reads its disc value once more", (await rowRun(9)) === "6");
+  await page.context().close();
+}
+
+// The same feature at the byte level, saving exactly once so "as loaded" still means the disc.
+head("Movement speed — quick-set writes the right bytes");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="movement"]');
+  await page.waitForSelector("#spdQApply", { timeout: 3000 });
+  const f32 = (r, off) => { const b = Buffer.alloc(4); b.writeUInt32LE(r.u32(off) >>> 0, 0); return b.readFloatLE(0); };
+  const near = (a2, b2) => Math.abs(a2 - b2) < 1e-4;   // 1.2 has no exact f32 form
+  await page.selectOption("#spdQChar", { label: "Chris" });
+  await page.waitForSelector("#spdQApply", { timeout: 3000 });
+  await page.fill('input.spd-q[data-col="run"]', "7.25");
+  await page.fill('input.spd-q[data-col="rate"]', "1.2");
+  await page.click("#spdQApply");
+  await page.waitForSelector("#spdQApply", { timeout: 3000 });
+  const r = await save(page);
+  check("the spare row took the run speed", f32(r, spdAddr(9, MOVESPD.run)) === 7.25);
+  check("...and the time scale", near(f32(r, spdAddr(9, MOVESPD.rate)), 1.2));
+  check("...and the walk speed shown in the box", f32(r, spdAddr(9, MOVESPD.walk)) === 2);
+  check("...with the row's id field left at zero (override list stays terminated)",
+    r.u32(spdAddr(9, 0)) === 0);
+  check("Chris's class byte points at the new row", r.u8(spdClassAddr(2)) === 9);
+  check("her old class row is untouched", f32(r, spdAddr(2, MOVESPD.run)) === 4.5);
+  check("nobody else's class byte moved",
+    [1, 3, 4, 13, 66].every((rec) => r.u8(spdClassAddr(rec)) === MOVESPD_CLASS[rec]));
+  check("and no other row's floats moved",
+    MOVESPD_RUN.every((v, c) => c === 9 || f32(r, spdAddr(c, MOVESPD.run)) === v));
+  await page.context().close();
+}
+
 // Restore has to take the class assignments with it, or the members column disagrees with
 // the speeds beside it. On its own page, because a save rebases what "as loaded" means.
 head("Movement speed — restore covers speeds and classes together");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="movement"]');
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
   const runBox = (cls) => `input.spd-f[data-cls="${cls}"][data-col="run"]`;
+  const openAdv = async () => {
+    await page.waitForSelector("#spdQApply", { timeout: 3000 });
+    if (!(await page.$("#spdAdvanced[open]"))) await page.click("#spdAdvanced > summary");
+    await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  };
+  await openAdv();
   await page.fill(runBox(2), "9");
   await page.dispatchEvent(runBox(2), "change");
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   await page.click("#spdChars > summary");
   await page.selectOption('#isoView select.spd-cls[data-rec="2"]', "3");     // Chris -> Hugo's class
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   check("both kinds of edit stage", await somethingStaged(page));
   await page.click("#spdStock");
-  await page.waitForSelector("#isoView input.spd-f", { timeout: 3000 });
+  await openAdv();
   check("restore leaves nothing staged", await nothingStaged(page));
   check("...the table reads as the disc again", (await page.inputValue(runBox(2))) === "4.5");
   await page.click("#spdChars > summary");

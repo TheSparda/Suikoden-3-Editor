@@ -235,12 +235,25 @@ mount's row *is* the mounted speed.
 > around — the recruits standing about Budehuc Castle, and anyone an event script walks through a
 > scene. Hence the grouping by body type rather than by anything a battle stat would need.
 
-Two levers, both plain data writes:
+**Pick a character, type a speed.** The engine has no per-character speed — a character points at
+a shared class row — so the tab does the bookkeeping for you. Choose someone, set walk / run /
+time scale, press *Give this speed*, and it takes the cheapest of four routes:
 
-- **Edit a class row** — walk, run and the object's time scale — to retune everyone in it at once.
-  *Everyone runs at 6.0* levels all three run values in one click.
-- **Change a character's class** to give them someone else's speed without touching anyone else.
-  Chris from class 2 to class 3 makes her run as fast as Hugo.
+| | what it does | cost |
+|---|---|---|
+| already that speed | nothing | — |
+| nobody else in their class | retunes that row in place | free |
+| another row already holds it | points them at that row | free |
+| otherwise | takes a row nobody uses, writes it, points them there | 1 row |
+
+So the budget is **distinct speeds, not characters**: give four characters the same speed and it
+costs one row. There are 14 rows and 9 are in stock use, so you start with 5 spare, and the count
+is shown live. *Reset this character* puts them back — and when the last character leaves a row the
+editor restores that row's bytes too, so nothing orphaned stays staged.
+
+Under that, collapsed, is **manual class editing** for when you do want the raw thing: retune a
+whole class at once (everyone in it moves together), see which row each character points at, or
+reach the rows nobody is in.
 
 The members of each class are read live off the disc, so a reassignment shows up in the table
 immediately.
