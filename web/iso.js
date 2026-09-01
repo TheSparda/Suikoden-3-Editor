@@ -838,6 +838,8 @@
   let REF = null;                           // { items:{id:name}, cats:{id:cat}, idesc:{id:desc}, skills:{id:name}, names:{...}, shops:{...} }
   let VIEW = "chars", SEARCH = "";
   let spDescOn = true, unDescOn = true, gearDescOn = true, foodDescOn = true;   // "also rewrite description" toggles
+  let spdQuickRec = null;                   // Movement tab: character selected in the quick-set card
+  let spdQuickMsg = null;                   // ...and the result line from its last apply, {rec, msg, kind}
   let mntAllRiders = false;                 // Mounts tab: also offer riders with no mounted-battle
                                             // bank (they pair, then keep their normal pose)
   let spSplitOpen = false, spReskinOpen = false;   // Spells-tab tool cards: collapsed until asked for,
@@ -4068,6 +4070,101 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return out;
   }
 
+  // ---- giving one character its own speed ------------------------------------
+  // The engine has no per-character speed: a character points at a shared class row. So
+  // "give Chris her own speed" means finding a row that can hold it. Four cases, cheapest
+  // first, and only the last one spends a row:
+  //
+  //   1. the character's row already holds exactly this  -> nothing to do
+  //   2. the character is the ONLY thing pointing at its row -> edit that row in place
+  //   3. some other row already holds exactly this -> point the character at it (free: rows
+  //      are shared, so two characters wanting the same speed cost one row between them)
+  //   4. otherwise -> take a row nobody points at, write it, point the character there
+  //
+  // The budget is therefore *distinct speeds*, not characters. Class 0 is never a candidate
+  // for 2 or 4: every model with no list2 record falls back to it (GetModelClass returns 0),
+  // so editing it would change every townsperson and enemy too.
+  const SPD_EPS = 1e-4;
+  const spdRowVals = (cls) => MOVESPD.cols.map((c) => rF32(spdAddr(cls, c)));
+  const spdRowOrig = (cls) => MOVESPD.cols.map((c) => oF32(spdAddr(cls, c)));
+  const spdSame = (a2, b2) => a2.every((v, i) => Math.abs(v - b2[i]) < SPD_EPS);
+
+  // Membership over ALL 80 records, not just the named ones: record 0 is the unnamed default
+  // several model ids resolve to, and a row it points at is not free.
+  function spdRefCount() {
+    const live = {}, orig = {};
+    for (let rec = 0; rec < LIST_COUNT.list2; rec++) {
+      const off = spdClassAddr(rec);
+      if (!inBlk(off, 1)) continue;
+      live[r8(off)] = (live[r8(off)] || 0) + 1;
+      orig[o8(off)] = (orig[o8(off)] || 0) + 1;
+    }
+    return { live, orig };
+  }
+  const spdSpareRows = (ref) => {
+    const out = [];
+    for (let c = 1; c < MOVESPD.rows; c++) if (!ref.live[c]) out.push(c);
+    return out;
+  };
+  function spdWriteRow(cls, vals) {
+    MOVESPD.cols.forEach((col, i) => {
+      const off = spdAddr(cls, col);
+      writeF32(off, vals[i]);
+      reg(off, 4, "f32", "Movement speed", `class ${cls} ${col.label.toLowerCase()}`);
+    });
+  }
+  // A row nothing points at, that nothing pointed at on the pristine disc either, cannot
+  // affect the game — so restore its bytes rather than leaving an orphaned edit staged.
+  function spdCollectGarbage() {
+    const ref = spdRefCount();
+    let n = 0;
+    for (let c = 1; c < MOVESPD.rows; c++) {
+      if (ref.live[c] || ref.orig[c]) continue;
+      if (spdSame(spdRowVals(c), spdRowOrig(c))) continue;
+      MOVESPD.cols.forEach((col) => revertRange(spdAddr(c, col), 4));
+      n++;
+    }
+    return n;
+  }
+  // -> { ok, msg } ; writes nothing when it cannot honour the request.
+  function spdAssign(rec, vals) {
+    const off = spdClassAddr(rec);
+    if (!inBlk(off, 1)) return { ok: false, msg: "that character's record is outside the block." };
+    const ref = spdRefCount(), cur = r8(off);
+    const name = ((REF && REF.names && REF.names.list2) || {})[String(rec)] || `record ${rec}`;
+    const setClass = (c) => { writeW(off, 1, c); reg(off, 1, "num", "Speed class", name); };
+
+    if (cur < MOVESPD.rows && spdSame(spdRowVals(cur), vals))
+      return { ok: true, msg: `${name} already has that speed (class ${cur}) — nothing staged.` };
+
+    if (cur !== 0 && cur < MOVESPD.rows && ref.live[cur] === 1) {
+      spdWriteRow(cur, vals);
+      const gc = spdCollectGarbage();
+      return { ok: true, msg: `${name} is the only character in class ${cur}, so that row was `
+        + `retuned in place — no spare row spent.` + (gc ? ` ${gc} orphaned row(s) restored.` : "") };
+    }
+
+    for (let c = 0; c < MOVESPD.rows; c++) {
+      if (c === cur || !spdSame(spdRowVals(c), vals)) continue;
+      setClass(c);
+      const gc = spdCollectGarbage();
+      return { ok: true, msg: `${name} moved to class ${c}, which already holds that speed — `
+        + `no spare row spent.` + (gc ? ` ${gc} orphaned row(s) restored.` : "") };
+    }
+
+    const spare = spdSpareRows(ref).filter((c) => c !== cur);
+    if (!spare.length)
+      return { ok: false, msg: "every row is in use. Give a character a speed another character "
+        + "already has, or move a row's last character out to free it." };
+    const c = spare[0];
+    spdWriteRow(c, vals);
+    setClass(c);
+    const gc = spdCollectGarbage();
+    const left = spdSpareRows(spdRefCount()).length;
+    return { ok: true, msg: `${name} given its own row (class ${c}). ${left} spare row(s) left.`
+      + (gc ? ` ${gc} orphaned row(s) restored.` : "") };
+  }
+
   function drawMoveSpeed(host) {
     if (!host) return;
     if (!moveSpdOk()) {
@@ -4091,6 +4188,39 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     };
     const used = [], unused = [];
     for (let c = 0; c < MOVESPD.rows; c++) (memberOf(c).length ? used : unused).push(c);
+
+    // ---- quick-set card state ----
+    const named = [];
+    for (let rec = 0; rec < LIST_COUNT.list2; rec++) {
+      const nm = names[String(rec)];
+      if (nm && inBlk(spdClassAddr(rec), 1)) named.push({ rec, name: nm });
+    }
+    if (spdQuickRec === null || !named.some((x) => x.rec === spdQuickRec))
+      spdQuickRec = named.length ? named[0].rec : null;
+    const spare = spdSpareRows(spdRefCount());
+    const quickOpts = named.map((x) =>
+      `<option value="${x.rec}"${x.rec === spdQuickRec ? " selected" : ""}>${esc2(x.name)}</option>`).join("");
+    const qCls = spdQuickRec === null ? 0 : r8(spdClassAddr(spdQuickRec));
+    const qVals = qCls < MOVESPD.rows ? spdRowVals(qCls) : MOVESPD.cols.map((c) => c.stock);
+    // The count has to come from the reference count over ALL 80 records, not just the named
+    // ones, or this line would promise a free in-place retune that the allocator then refuses
+    // because an unnamed record (record 0, the default several model ids resolve to) shares
+    // the row. Names are listed from the named members only — "record 0" means nothing to a user.
+    const qRefs = spdRefCount().live[qCls] || 0;
+    const qOthers = Math.max(0, qRefs - 1);
+    const qNamed = memberOf(qCls).filter((m) => m.rec !== spdQuickRec);
+    const qHidden = Math.max(0, qOthers - qNamed.length);
+    const qWho = qNamed.slice(0, 4).map((m) => m.name)
+      .concat(qNamed.length > 4 ? ["…"] : [])
+      .concat(qHidden ? [`${qHidden} unnamed`] : []).join(", ");
+    const qNowText = spdQuickRec === null ? ""
+      : `Currently class ${qCls} — walk ${spdFmt(qVals[0])}, run ${spdFmt(qVals[1])}, time scale `
+        + `${spdFmt(qVals[2])}. ` + (qOthers
+          ? `Shared with ${qOthers} other${qOthers === 1 ? "" : "s"}`
+            + (qWho ? ` (${qWho})` : "") + `, so editing the row directly would move them too.`
+          : "Nobody else is in that class, so it can be retuned in place at no cost.");
+    const qMsg = spdQuickMsg && spdQuickMsg.rec === spdQuickRec ? spdQuickMsg.msg : null;
+    const qMsgKind = spdQuickMsg && spdQuickMsg.kind === "bad" ? "warnbox" : "note";
 
     const head = `<thead><tr><th>Class</th>${MOVESPD.cols.map((c) =>
       `<th>${c.label}${c.hint ? `<br><span class="dim" style="font-weight:400">${esc2(c.hint)}</span>` : ""}</th>`
@@ -4137,12 +4267,47 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           teenagers, adult men, women, beast-people, big men — which is what a walking-around-town
           speed would be keyed on.
         </div>
+        <div class="bag-h" style="margin:0 0 8px">Give one character its own speed
+          <span class="u">picks a spare row for you</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          Speed is stored per <i>class</i>, not per character, so a character can only have its
+          own speed if a row is free to hold it. Set a number here and the editor sorts that out:
+          it retunes the row in place when nobody else is in it, points you at an existing row
+          that already holds the same speed, and only spends a spare row when it has to. The
+          budget is therefore <b>distinct speeds</b>, not characters &mdash;
+          <b id="spdSpare">${spare.length}</b> spare row${spare.length === 1 ? "" : "s"} right now.
+          The boxes always start at the stock baseline
+          (${MOVESPD.cols.map((c) => `${c.label.toLowerCase()} ${c.stock}`).join(", ")}); the line
+          under them is what the character has <i>now</i>.
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0 0 6px">
+          <label class="field" style="min-width:190px;flex:0 1 220px"><span>Character</span>
+            <select id="spdQChar">${quickOpts}</select></label>
+          ${MOVESPD.cols.map((c) => `<label class="field" style="max-width:120px"><span>${c.label}
+            <span class="dim">${esc2(c.hint || "")}</span></span>
+            <input type="number" class="spd-q" data-col="${c.key}" min="0" max="${MOVESPD.MAX}"
+              step="0.1" value="${spdFmt(c.stock)}"></label>`).join("")}
+          <button class="primary" id="spdQApply">Give this speed</button>
+          <button class="chip" id="spdQReset">Reset this character</button>
+        </div>
+        <div class="muted" style="font-size:12px;margin:0 0 4px" id="spdQNow">${esc2(qNowText)}</div>
+        ${qMsg ? `<div class="${qMsgKind}" style="margin:6px 0 0">${esc2(qMsg)}</div>` : ""}
+        <details class="note" id="spdAdvanced" style="margin:16px 0 0">
+        <summary>Class rows and manual assignment <span class="dim">&mdash; you should not need this</span></summary>
+        <div class="muted" style="margin:8px 0 10px">
+          The card above allocates and frees rows for you. Open this to do it by hand: retune a
+          whole class at once (every character in it moves together), see exactly which row each
+          character points at, or reach the rows nobody is in.
+        </div>
+        <div class="bag-h" style="margin:12px 0 8px">The class rows
+          <span class="u">editing one retunes everyone in it</span></div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
           <button id="spdLevel" class="chip">Everyone runs at ${MOVESPD.LEVEL}.0</button>
           <button id="spdStock" class="chip">Restore as loaded</button>
           <span class="muted" style="font-size:12px">The first sets every run speed to the fastest
-            stock value and leaves walk and time scale alone. The second restores the speeds
-            <i>and</i> the class assignments to the bytes this ISO was opened with.</span>
+            stock value and leaves walk and time scale alone. The second restores the whole
+            section &mdash; speeds <i>and</i> class assignments, including anything the card
+            above staged &mdash; to the bytes this ISO was opened with.</span>
         </div>
         <table class="invtbl">${head}<tbody>${used.map(classRow).join("")}</tbody></table>
         <details class="note" style="margin:10px 0 0"><summary>What &ldquo;time scale&rdquo; means, and when to touch it</summary>
@@ -4187,7 +4352,37 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         </div>
         <details class="note" id="spdChars"><summary>Show all ${charRows.length} characters</summary>
           <div class="grid" style="margin-top:8px">${charRows.join("")}</div></details>
+        </details>
       </div>`;
+
+    // ---- quick-set handlers ----
+    {
+      const sel = q("#spdQChar", host);
+      if (sel) sel.onchange = () => { spdQuickRec = +sel.value; spdQuickMsg = null; drawView(); };
+      const readVals = () => MOVESPD.cols.map((c) => {
+        const el = q(`input.spd-q[data-col="${c.key}"]`, host);
+        return Math.max(0, Math.min(MOVESPD.MAX, +(el ? el.value : c.stock) || 0));
+      });
+      const apply = q("#spdQApply", host);
+      if (apply) apply.onclick = () => {
+        if (spdQuickRec === null) return;
+        const res = spdAssign(spdQuickRec, readVals());
+        spdQuickMsg = { rec: spdQuickRec, msg: res.msg, kind: res.ok ? "ok" : "bad" };
+        setStatus(res.msg, res.ok ? "ok" : "warn");
+        drawView();
+      };
+      const rst = q("#spdQReset", host);
+      if (rst) rst.onclick = () => {
+        if (spdQuickRec === null) return;
+        revertRange(spdClassAddr(spdQuickRec), 1);
+        const gc = spdCollectGarbage();
+        const nm = names[String(spdQuickRec)] || `record ${spdQuickRec}`;
+        spdQuickMsg = { rec: spdQuickRec, kind: "ok",
+          msg: `${nm} put back in the class the disc gives them.`
+               + (gc ? ` ${gc} row(s) it had left orphaned were restored.` : "") };
+        drawView();
+      };
+    }
 
     qa("input.spd-f", host).forEach((el) => {
       const cls = +el.dataset.cls, col = MOVESPD.cols.find((c) => c.key === el.dataset.col);
