@@ -608,6 +608,42 @@ actors by slot, scene setup places fewer than N because the avatar is not the ch
 scene was built around, and an opcode acting on the missing slot gets null. Still a
 hypothesis — but a slot-shaped one, which is where the evidence actually points.
 
+### Where a scene decides who stands in each slot
+
+Since scenes address actors by **slot**, the slot-to-character binding has to come from
+somewhere, and it is not the script: of the 359 opcodes only three touch the character/model
+tables, and the two that take an actor handle (`171`, `216`) *read* `rec->0x06` rather than
+setting it. The binding is scene-setup data.
+
+The filler is at **`0x1775E00`**:
+
+```
+count = *(u8)(scene)          ptr = *(u32)(scene + 8)
+for i in 0..count-1:
+    rec->0x02 = 0x13                       ; record kind
+    rec->0x01 = *(u8)(ptr + 1)
+    rec->0x06 = *(u16)(ptr + 6)            ; <-- the CHARACTER ID
+    ptr += 0x2A                            ; source stride: 42 bytes
+    rec += 0x40                            ; actor-record stride
+```
+
+So each scene owns a table of **42-byte actor entries with the character id as a `u16` at
+`+0x06`**. That is the byte that decides Hugo stands in a slot rather than anyone else, and
+changing it is what "recast this scene" would mean.
+
+**Not yet located in the files.** Scanning for the table directly — three or more consecutive
+42-byte entries whose `+0x06` is a valid party id — returns **28,452 candidates**, i.e. it
+matches any region where a small value repeats at 42-byte spacing. Same failure mode as the
+chain scan: the signature is too weak on its own. Locating it properly means anchoring on the
+*scene struct* (count at `+0`, table pointer at `+8`) rather than on the table's contents.
+
+**Also ruled out: renaming the cast list.** Town sub-files carry a string pool of asset names
+(`cha_syu1_101` …) alongside scene ids (`0FAKE004`) and format strings (`item %s`), and
+`syu1`→`kork` is conveniently the same length. But the engine composes asset names from a model
+id through `GetModelCode` (`0x1711AC8`), so the pool is a preload manifest and the id is the
+real key — consistent with `ETC_BIN_MODEL_RESEARCH.md` §Test 1, where renaming records changed
+nothing. Only 15 of Hugo's 50 staged variants have a Koroku equivalent anyway.
+
 **One dead end worth recording:** the script pointer `ctx->0x0C` is *not* reachable by a
 peephole scan. There are 1533 stores to some `+0x0C` in the ELF, 515 of them the interpreter's
 own ip advance, and none of the rest resolve through the `*(0x196A4D0) + 0x150` chain — the
