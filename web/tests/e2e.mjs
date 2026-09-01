@@ -868,6 +868,18 @@ head("Movement speed — give one character its own speed");
   };
 
   check("the spare-row budget is shown", (await spare()) === "5");
+  // Speed is linear in play (Koroku: run 12 = 2x, 18 = 3x of the 6.0 his class ships with), so
+  // the multiple of stock is the reading that means something. It must measure against what the
+  // character SHIPS with, not against whatever their class currently holds.
+  check("the confirmed-in-play result and its linearity are stated",
+    /Confirmed in play/.test(await view()) && /linear/.test(await view()));
+  { await page.selectOption("#spdQChar", { label: "Chris" }); await settle();
+    await page.fill('input.spd-q[data-col="run"]', "9");
+    await page.dispatchEvent('input.spd-q[data-col="run"]', "input");
+    const m = await page.textContent("#spdQMult");
+    check("the multiplier reads against what the character ships with",
+      /Chris ships with walk 2, run 4.5/.test(m) && /\u00d72\.00 run/.test(m));
+    await page.selectOption("#spdQChar", { label: "Hugo" }); await settle(); }
   check("the boxes start at the stock baseline, not the character's current values",
     (await page.inputValue('input.spd-q[data-col="walk"]')) === "2"
       && (await page.inputValue('input.spd-q[data-col="run"]')) === "6"
