@@ -146,8 +146,8 @@ re-pairing is confirmed in-game, including across mount types (*Hugo+Bright*, *C
 every combination carries its own confidence marker: *confirmed / expected / untested / rough /
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
-**Movement** (the walk/run **speed table** — how fast each character moves on the field; see
-below), **Test** (experimental patches that are not known to work — currently the **Field
+**Movement** (the walk/run **speed table** — how fast each character moves on the field; battle
+movement lives in packed asset data and isn't covered; see below), **Test** (experimental patches that are not known to work — currently the **Field
 character** whitelist; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
@@ -207,7 +207,7 @@ turns "nobody will talk to me as Luc" into "everyone treats me as Hugo".
 > and the byte-verified patch sites are written up in
 > [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md).
 
-**Movement speed — the Movement tab.** Its own tab, and *not* a code patch: field
+**Movement speed — the Movement tab.** Its own tab, and *not* a code patch: **field**
 movement speed is a **table**. Every field object is handed a walk speed and a run speed from
 one of 14 rows, and which row it reads is a **movement class** stored on the character. Stock,
 **walking is 2.0 for the entire cast** and running is **6.0**, **5.0** or **4.5** by class:
@@ -221,10 +221,19 @@ one of 14 rows, and which row it reads is a **movement class** stored on the cha
 | **5.0** | 4 | Rico, Aila, Cecile, Belle, Viki (Young), Emily, … (10) |
 | **4.5** | 2 | Chris, Lucia, Lilly, Ayame, Sarah, Nei, Estella, … (13) |
 
-That is the mechanism behind a complaint as old as the game: **running around as Chris covers a
-third less ground than as Hugo**. It was never an animation illusion — it is `4.5` against
-`6.0`, in the data. Mounts are ordinary field objects with their own class, so a mount's row
-*is* the mounted speed.
+So the data says **running as Chris covers a third less ground than as Hugo** — `4.5` against
+`6.0`, on the same walk speed. Mounts are ordinary field objects with their own class, so a
+mount's row *is* the mounted speed.
+
+> **Field only.** The table's values reach every object, but the **battle** unit spawner
+> immediately overwrites both speeds from the character's *loaded battle asset* — packed archive
+> data, not executable — so this cannot change how fast a unit crosses a battlefield. Nothing
+> overwrites a field object, so on the field these are the values that stay.
+>
+> Most of the cast in the table can never be the character you walk around *as*; that is a
+> separate list of eight ids. They are there because a field object is anyone the field walks
+> around — the recruits standing about Budehuc Castle, and anyone an event script walks through a
+> scene. Hence the grouping by body type rather than by anything a battle stat would need.
 
 Two levers, both plain data writes:
 
