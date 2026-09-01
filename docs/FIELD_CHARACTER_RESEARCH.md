@@ -394,6 +394,59 @@ against the handler table at `0x19828F8`. It also distinguishes *stuck* from *ru
 negative result — the wait is somewhere other than the script interpreter — is a real answer
 rather than a shrug. Reads only.
 
+### CONFIRMED: scripts name actors two ways, and one of them returns null
+
+The mechanism is no longer a guess. Script actor handles are **packed**: bits 10–13 select a
+namespace, the low 10 bits an index. The decoder is `0x17B5A40`, used at **186 call sites** —
+this is the whole script actor system.
+
+| namespace | meaning | resolves via |
+|---|---|---|
+| `0x1400` | **the player** | `0x17B5CC8` → `FindActorByCharId(leader byte, 1)` |
+| `0x400 \| N` | **the character whose id is N** | `FindActorByCharId(N, 1)` |
+| `0x1800` | by party position | `0x16FFAD8` then the record array |
+| `0x800` / `0xC00` | scene object arrays at `ctx->0x64` | — |
+| `& 0x8000` | explicit "none" | returns 0 |
+
+```
+FindActorByCharId(charId, fixedCount)          ; 0x17B59D0
+    ctx = *(0x196A4D0) + 0x150                 ; the scene's actor context
+    n   = fixedCount ? 0x0F : ctx->0x03
+    rec = ctx->0x58                            ; actor records, stride 0x40
+    if (!rec) return 0
+    for (i = 0; i < n; i++, rec += 0x40)
+        if (i - 6 <u 6) continue               ; slots 6..11 skipped
+        if (rec->0x06 == charId) return rec    ; the character id lives at rec+0x06
+    return 0                                   ; 0x17B5A38 — no match
+```
+
+**That is the softlock.** A scene addressing the player as `0x1400` works for any avatar — which
+is why Koroku walks in, and why ordinary NPC dialogue is fine, since dialogue never asks for a
+character who isn't present. But a Hugo-chapter scene addressing Hugo as `0x400|1` scans for a
+record whose `+0x06` is `1`, finds only the player's record carrying `54`, and **gets null** —
+so the beat that would have made Hugo speak has no actor. The hang lands exactly on the
+protagonist's line, which is what was observed.
+
+This also corrects an earlier claim in this document: lines are *not* uniformly addressed to
+"the player". Scenes name protagonists by id.
+
+### The patch, and why it ships as an experiment
+
+The miss-exit is two instructions, and `FindActorByCharId` keeps **no stack frame**, so it can
+tail-jump to the player lookup instead of returning null — "an actor nobody can find is you":
+
+| ISO offset | stock | patched |
+|---|---|---|
+| `0x1FD238` | `03E00008` `jr $ra` | `085ED732` `j 0x17B5CC8` |
+| `0x1FD23C` | `0000102D` `move $v0,$zero` | `00000000` `nop` |
+
+**The risk is structural, not incidental.** `0x17B5CC8` calls back into this same function with
+the leader byte, so in a scene whose actor table has no record for *your* leader, the fallback
+recurses forever — a worse hang than the one it fixes. Two instructions is not enough room for
+a guard: the exit can hold `j; nop` or `jr $ra; move`, but not a conditional with both paths.
+And while the null return is confirmed, that the *consumer* of that null is what spins is still
+inference. So it ships behind the Test tab as an opt-in experiment with both facts stated.
+
 ### The one patchable idea, unexplored
 
 Make a motion-wait give up when `SetMotion` reports failure instead of waiting forever, leaving

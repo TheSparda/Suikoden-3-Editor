@@ -214,6 +214,23 @@ console.log("Per-map coverage data:");
   check("coverage is partial, not universal (a full list would mean the scan matched junk)",
     Object.values(bm).every((m) => m.areas.length < 28)); }
 
+// ---- the scene-softlock actor fallback ---------------------------------------
+// Two words, and both have to move together: leaving `move $v0,$zero` in place after the
+// jump would put a stray instruction in the delay slot, and leaving `jr $ra` would mean the
+// toggle silently does nothing. The jump target is decoded back out of the J-type word so a
+// mistyped constant cannot pass as "points at the player lookup".
+console.log("Scene-softlock actor fallback:");
+{ const fb = AVATAR.ACTORFB;
+  check("both instructions of the exit are covered", fb.sites.length === 2);
+  check("the stock exit is jr $ra + a move", fb.sites[0].stock === 0x03E00008
+    && (fb.sites[1].stock & 0xFFFF) === 0x102D, fb.sites.map((f) => f.stock.toString(16)).join(" "));
+  const j = fb.sites[0].alt;
+  check("the replacement is a J-type jump", (j >>> 26) === 2, (j >>> 26));
+  check("...whose target is the player lookup", ((j & 0x03FFFFFF) << 2) === fb.target,
+    "0x" + (((j & 0x03FFFFFF) << 2) >>> 0).toString(16).toUpperCase());
+  check("the delay slot becomes a nop", fb.sites[1].alt === 0);
+  check("stock and patched differ at both sites", fb.sites.every((f) => f.stock !== f.alt)); }
+
 // ---- movement rules: what counts as walking / running ------------------------
 // These decide whether a random encounter is even rolled. Getting a length wrong turns a
 // setting into "no encounters ever" without any error, so the immediates and the two
@@ -355,6 +372,11 @@ if (!iso) {
     check(`0x${s.off.toString(16).toUpperCase()} is addiu with immediate ${s.stock}`,
       b[2] === AVATAR.eqSig[0] && b[3] === AVATAR.eqSig[1] && b.readUInt16LE(0) === s.stock,
       b.toString("hex"));
+  }
+  for (const f of AVATAR.ACTORFB.sites) {
+    const b = word(f.off);
+    check(`actor-fallback site 0x${f.off.toString(16).toUpperCase()} is stock on disc`,
+      b.readUInt32LE(0) === f.stock, b.toString("hex"));
   }
   for (const c of AVATAR.STORY.cases) {
     const b = word(c.off);
