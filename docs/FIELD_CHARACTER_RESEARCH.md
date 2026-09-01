@@ -358,6 +358,42 @@ As of v1.64.0 the editor is shaped around that rather than just warning about it
 The patch doing what it says and the game coping with it are different claims, and the second
 one is false often enough that the UI should not imply otherwise.
 
+### The clip evidence is exhausted
+
+A third observation narrows it usefully: **ordinary NPC dialogue works fine as Koroku** — he
+talks to people with no trouble — and only *event scenes* hang. So the script interpreter, the
+text path and the player-actor plumbing are all healthy; whatever is stuck is specific to a
+scene.
+
+That points at the `ev*` animation set (`evwalk_*`, `evneutral`) which is what scenes use to
+stage actors, and the clip scan looked like it agreed. It does not survive contact:
+
+| avatar | model in N archives | `ev*` clips found in |
+|---|---|---|
+| Hugo | 15 | **2** (DKVI, LAST) |
+| Chris | 12 | 3 |
+| Geddoe | 15 | 2 |
+| Koroku | 6 | 1 |
+| Luc | 9 | **0** |
+
+**Hugo has `ev*` clips in 2 of his 15 archives and works in scenes everywhere**, so those clips
+plainly come from `ETC.BIN` for most areas — which is compressed, and therefore invisible to a
+text scan. Absence is not evidence here, and that retroactively weakens the "Koroku is the only
+model lacking `evneutral`" observation too: it may simply be in `ETC.BIN`.
+
+So this line is done. The clip inventory can say what a model *has*; it cannot say what it
+lacks, which is the half we need.
+
+### Reading the hang instead of inferring it
+
+[`tools/pcsx2/edsprobe.py`](../tools/pcsx2/edsprobe.py) samples the EDS interpreter while the
+game is stuck and reports the opcode it is spinning on, via
+`*(0x196A4D0)` → `+0x150` (the script context, as both interpreter entry points `0x1778768`
+and `0x1778D78` compute it) → `+0x0C` (the stream pointer every handler reads through), mapped
+against the handler table at `0x19828F8`. It also distinguishes *stuck* from *running*, so a
+negative result — the wait is somewhere other than the script interpreter — is a real answer
+rather than a shrug. Reads only.
+
 ### The one patchable idea, unexplored
 
 Make a motion-wait give up when `SetMotion` reports failure instead of waiting forever, leaving

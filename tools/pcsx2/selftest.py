@@ -29,7 +29,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from tools.pcsx2 import eemap, harness, pine, pngdiff, ramscan, savestate  # noqa: E402
+from tools.pcsx2 import edsprobe, eemap, harness, pine, pngdiff, ramscan, savestate  # noqa: E402
 
 FAILURES = []
 CHECKS = [0]
@@ -600,8 +600,69 @@ def test_harness():
     check(any(label == "pcsx2 binary" for label, _, _ in rows), "doctor checks for the binary")
 
 
+def test_edsprobe():
+    """The event-script probe, against a fake client.
+
+    It reads a pointer chain and reports whether the script pointer is moving. Both verdicts
+    matter equally: calling a running scene "stuck" would send someone disassembling a handler
+    that is fine, and calling a hung one "running" hides the only evidence there is. Neither
+    needs an emulator to test.
+    """
+    print("\nedsprobe: pointer chain and stuck/running verdict")
+    class Fake:
+        """Enough of pine.Client to drive sample(): a flat address -> value map."""
+        def __init__(self, mem):
+            self.mem = mem
+
+        def read(self, addr, width=4):
+            return self.mem.get(addr, 0)
+
+        def read_bytes(self, addr, length):
+            # only ever used for the handler table
+            out = bytearray()
+            for i in range(length // 4):
+                out += (self.mem.get(addr + i * 4, 0)).to_bytes(4, "little")
+            return bytes(out)
+
+    WORK, IP = 0x1900000, 0x1A00000
+    table_mem = {edsprobe.HANDLERS + i * 4: 0x1790000 + i * 4 for i in range(edsprobe.N_HANDLERS)}
+    base = dict(table_mem)
+    base[edsprobe.WORK_PTR] = WORK
+    base[edsprobe.LEADER] = 54
+    base[WORK + edsprobe.CTX_OFF + edsprobe.IP_OFF] = IP
+    base[WORK + edsprobe.CTX_OFF + edsprobe.STATE_OFF] = 3
+    base[IP] = 40
+    base[IP - 2] = 345
+
+    cl = Fake(base)
+    table = edsprobe._handlers(cl)
+    check(len(table) == edsprobe.N_HANDLERS, "handler table read at full length")
+    check(edsprobe._opcode_of(table[345], table) == 345, "handler address maps back to its opcode")
+    check(edsprobe._opcode_of(0xDEADBEEF, table) is None, "an unknown handler yields no opcode")
+
+    s = edsprobe.sample(cl, table)
+    check(s["ip"] == IP and s["ctx"] == WORK + edsprobe.CTX_OFF, "chain resolves work -> ctx -> ip")
+    check(s["leader"] == 54, "the leader byte rides along for context")
+    check(s["op_behind"] == 345 and s.get("name_behind"), "the opcode behind the pointer is named")
+    check("error" not in s, "a healthy chain reports no error")
+
+    # A zero work pointer means we are not in a field scene; that has to be said, not crashed on.
+    bad = dict(base); bad[edsprobe.WORK_PTR] = 0
+    check("error" in edsprobe.sample(Fake(bad), table), "no work struct is reported, not crashed on")
+    bad2 = dict(base); bad2[WORK + edsprobe.CTX_OFF + edsprobe.IP_OFF] = 0
+    check("error" in edsprobe.sample(Fake(bad2), table), "an insane script pointer is reported")
+
+    # Formatting must survive the error case, since that is what a confused user will paste back.
+    check("not in a field scene" in edsprobe._fmt(edsprobe.sample(Fake(bad), table)),
+          "the error case still formats")
+    check("op@ip" in edsprobe._fmt(s), "the healthy case shows both opcode readings")
+    check(edsprobe.KNOWN.get(346, "").startswith("set field avatar"),
+          "the opcode that sets the avatar is labelled")
+
+
 def main():
-    for fn in (test_pine, test_savestate, test_ramscan, test_eemap, test_pngdiff, test_harness):
+    for fn in (test_pine, test_savestate, test_ramscan, test_eemap, test_pngdiff, test_harness,
+               test_edsprobe):
         fn()
     print("\n%d checks, %d failure(s)" % (CHECKS[0], len(FAILURES)))
     for f in FAILURES:

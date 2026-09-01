@@ -53,6 +53,35 @@ Optional environment: `S3_ISO`, `PINE_SOCKET`, `PCSX2_STATES_DIR`, `PCSX2_SNAPS_
 | `cli.py` | The commands above. |
 | `selftest.py` | Offline tests for all of it. |
 
+## `edsprobe.py` — what is the event script waiting on?
+
+Written for one open question: a scripted scene **hangs** when the field avatar is not one of
+the four protagonists (seen with Koroku, Yuber and Lucia), while ordinary NPC dialogue works
+fine for all of them. Guessing has already produced two wrong answers, so this reads the state
+instead of inferring it.
+
+While the game is stuck, the EDS interpreter is parked on one opcode. Sampling the script
+pointer twice says whether it is spinning; the opcode number says on what.
+
+```bash
+python3 -m tools.pcsx2.edsprobe --watch 20     # while the game is hung
+```
+
+It prints `STUCK` with the opcode and its handler address, or `RUNNING` if the pointer moves —
+in which case the wait is not in the script interpreter at all, which is just as useful to
+know. Reads only; nothing is written.
+
+The pointer chain, so it can be re-checked rather than trusted: `*(0x196A4D0)` is the
+field/scene work struct; both interpreter entry points (`0x1778768`, `0x1778D78`) compute the
+script context as `work + 0x150`; every opcode handler reads its operands through
+`ctx + 0x0C`; and `0x19828F8` is the 359-entry handler table, so
+`opcode = (handler - table) / 4`. Handlers advance past the opcode word before reading
+operands, so the probe prints the value at the pointer *and* the one behind it — a
+mis-derivation shows up rather than passing silently.
+
+Covered by `selftest.py` against a fake client: the chain resolution, the opcode round-trip,
+both verdicts, and the two "not in a scene" error paths.
+
 ## What the tests do and don't cover
 
 `selftest.py` runs with no emulator, ISO or BIOS. It drives the PINE client against a
