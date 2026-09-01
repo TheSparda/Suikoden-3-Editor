@@ -3992,10 +3992,11 @@
           <b>An actor nobody can find falls back to the player</b>
           <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
         <div class="warnbox" style="margin:0 0 10px">
-          <b>Tried in play, and it did not fix the hang.</b> Kept here because a patch that was
-          built and did not help is worth recording. Most likely it never fires: if scenes reach
-          protagonists by actor <i>slot</i> rather than by character id, the lookup never returns
-          null and this exit is never taken. It can also hang the game harder than it already does —
+          <b>Tried in play, and it did not fix the hang \u2014 and now we know why.</b> The event
+          scripts have since been located and disassembled: across <b>12,055 actor references in
+          every town script on the disc, the by-character-id namespace this patch fixes is used
+          exactly zero times</b>. Scenes address actors by <i>slot</i>. This exit is never taken,
+          so the toggle cannot help. Kept only as a record. It can also hang the game harder than it already does —
           the fallback
           re-enters the same lookup with your leader's id, so in a scene whose actor table has no
           record for <i>your</i> character it recurses forever. The exit is two instructions —
