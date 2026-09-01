@@ -472,6 +472,44 @@ event files outside it. Further patches are guesses at increasingly long odds; t
 step is [`tools/pcsx2/edsprobe.py`](../tools/pcsx2/edsprobe.py) on a machine that can run the
 emulator, or accepting that non-protagonist avatars are roaming-only.
 
+### Reading the event scripts: encoding recovered, scripts not yet located
+
+The area archives are **not compressed** — that is how clip and asset names were grepped out
+of them — so the event scripts are plain bytes on the disc. What was missing was the
+*encoding*, which is why the raw opcode search in
+[`MOUNT_SYSTEM_RESEARCH.md`](MOUNT_SYSTEM_RESEARCH.md) §9 returned pure noise.
+
+**The encoding is now recovered** ([`Editor/eds_dis.py`](../Editor/eds_dis.py)). Every opcode
+handler advances the script pointer by a constant — `lw rX,0xc(rY)` … `addiu rZ,rX,N` …
+`sw rZ,0xc(rY)` — and that constant is the instruction length. **240 of the 359 opcodes give
+one up, and every recovered length is even**, which is the check that says the reading is right
+rather than merely plausible.
+
+**Two negative results, recorded so they are not repeated.**
+
+*The anchor search finds something, but not code.* Searching for `op 346` (set field avatar,
+4 bytes) with a protagonist id finds **3055 word-aligned hits, distributed Hugo 1630 / Chris
+1034 / Geddoe 364 / Koroku 9 / Masked Luc 8 / Luc 6** — protagonist-weighted, which is far too
+structured for a random 4-byte pattern (expected ~1 per 4 GB). But chaining from those anchors
+dies after 1–5 instructions, so they are more likely a `(0x015A, charId)` table field than
+script text.
+
+*Chain-scanning cannot tell scripts from integer tables.* A backward linear pass finds runs of
+validly-chaining instructions across an archive in well under a second. It is useless as it
+stands: **any `u16 < 359` with a known length chains**, so a table of small ascending integers
+scores as a long instruction run. The top hits decode with their opcodes and parameters
+climbing in lockstep (`op 238, op 240, op 241 … 0xEF, 0xF2, 0xF6`) — the giveaway. Zero-fill
+does the same, since opcode 0 is a valid 6-byte instruction; an opcode-diversity score kills
+that case but not the ascending tables.
+
+**So: the reader works, the locator does not.** Finding the scripts almost certainly needs
+their container identified *structurally* — a `FSECT` sub-file kind or a header — rather than
+by scanning raw bytes for something that looks like code.
+
+*(Aside worth keeping: the scans that appeared to take ten minutes were a bug in the chunked
+read loop, which advanced by `len(chunk) - overlap` and therefore stopped advancing on the
+final short chunk. Fixed; the same scan now covers 2.74 GB in 2.2 s.)*
+
 ### The one patchable idea, unexplored
 
 Make a motion-wait give up when `SetMotion` reports failure instead of waiting forever, leaving
