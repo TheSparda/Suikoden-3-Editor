@@ -62,13 +62,17 @@ The name lists in the UI are just `NNN Label` lines; the editor parses the first
   Salome = 308 (`zkum`, the Zexen-knight horse); every other record is 0. The consumer at
   `0x16c76e4` tests `(value - 308) < 2` unsigned, so **only 308 and 309 are honoured** — any
   other mount id is read and silently discarded. See `docs/MOUNT_SYSTEM_RESEARCH.md` §11.
-- **`+120` (0x78) u8 — MOVEMENT CLASS.** Picks the character's row in the field walk/run speed
+- **`+120` (0x78) u8 — MOVEMENT CLASS.** Picks the character's row in the **field** walk/run speed
   table at **ISO `0x3B0BE0`** (14 records of `{u32 modelId, f32 walk, f32 run, f32 timeScale}`).
   `GetModelClass` @ `0x16c7310` reads it; `0x16f3e20` copies the row's floats into the field
   object at `+0x248` / `+0x24C` / `+0x2C` when it is built. Stock, **walk is 2.0 for every
   record** and run is 6.0 (classes 0, 3, 5–8), 5.0 (classes 1, 4) or 4.5 (class 2) — Hugo is
   class 3, Geddoe class 1, Chris class 2, which is why running as Chris is visibly slower.
-  Classes 9–13 have no member. See `docs/MOVEMENT_SPEED_RESEARCH.md`.
+  Classes 9–13 have no member. **Field only:** the battle unit spawner (`0x17ddf70`, four call
+  sites at `0x17dee24`/`0x17deefc`/`0x17defd4`/`0x17df08c`) overwrites both speeds from the
+  character's loaded battle asset, so battle movement does not come from this table. Most of the
+  cast is in it because every recruit is a field NPC, not because they can be the avatar. See
+  `docs/MOVEMENT_SPEED_RESEARCH.md`.
 - `+12` u8 (unknown; values like 5/9/17/18/34/81/98). `+80..+96` 17×u8 (list2_60…76, fixed-skills
   block); `+100..+101` 2×u8 (list2_80,81, starting level + relative flag).
 

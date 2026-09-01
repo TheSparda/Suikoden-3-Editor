@@ -738,6 +738,14 @@ head("Movement speed — the walk/run table and each character's class");
     (await page.inputValue(runBox(3))) === "6" && (await page.inputValue(runBox(2))) === "4.5");
   check("the members column names who is in a class",
     /Chris/.test(await page.textContent("#isoView")) && /Hugo/.test(await page.textContent("#isoView")));
+  // The scope caveat is the whole reason this tab is honest: the table reaches every object, but
+  // the battle spawner overwrites both speeds from packed asset data. Losing this line would turn
+  // a correct feature into a wrong claim, so it is asserted rather than left to review.
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("the tab says it does not change battle movement",
+      /does not change battle movement/i.test(txt));
+    check("...and says where battle speeds actually come from", /loaded battle asset/i.test(txt));
+    check("...and explains why non-avatars are in the table", /Budehuc Castle/.test(txt)); }
 
   // Editing a class row retunes everyone in it.
   await page.fill(runBox(2), "7.5");
