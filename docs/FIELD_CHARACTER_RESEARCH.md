@@ -528,6 +528,39 @@ data. Decoding its chunk container (the `PS2\0` magic plus the recurring `0x310`
 enumerate sections and let [`eds_dis.py`](../Editor/eds_dis.py) be pointed at the right one
 instead of sweeping raw bytes.
 
+### Every named record on the disc — and why the scripts are not among them
+
+The `map` container turned out to hold **named records**, same shape as `ETC.BIN`
+(`btx_ochi_000` sits at word 19 of the header). Grepping the whole disc for that name shape
+gives **167,390 records across 25 prefixes** — effectively a map of what the disc is made of:
+
+| | | | |
+|---|---|---|---|
+| `btx` 58036 | `ctx` 39881 | `cha` 30013 | `mtx` 13010 |
+| `chm` 7384 | `moa` 5299 | `imf` 4780 | `mom` 1677 |
+| `bca` 1572 | `bgp` 1009 | `bgo` 887 | `img` 749 |
+| `btc` 657 | `bgs` 626 | `bgb` 443 | `pri` 412 |
+| **`eva` 363** | `rmp` 342 | `etx` 87 | `chf` 28 |
+| `emd` 27 | `trin` 24 | `bms` 24 | … |
+
+**There is no script prefix.** No `eds_`, `scr_`, `evt_`, `msg_` — every prefix is an asset
+type (textures, models, motions). So the event scripts are **not stored as named records**,
+which is why enumerating names cannot find them and why the earlier anchor and chain searches
+had nothing to lock onto. They are unnamed data inside the chunks.
+
+**`eva_` is event *animation*, not events.** `eva_<charcode>_<nnn>` sits in the name tables
+directly beside `cha_<same code>_<nnn>`, so it is a per-character asset. It looked briefly like
+the softlock answer, because among the eight shipped avatars **Koroku is the only one with
+zero**:
+
+| Hugo | Chris | Geddoe | Thomas | Luc | Masked Luc | Grassl. Chris | **Koroku** |
+|---|---|---|---|---|---|---|---|
+| 10 | 8 | 3 | 2 | 3 | 1 | 1 | **0** |
+
+**It is not the answer.** Yuber has 1 and Lucia has 4, and both hang anyway. Recorded so the
+clean-looking split does not get mistaken for a cause later. (53 of the 78 party models have
+none, so it is not a general requirement for appearing in a scene either.)
+
 **One dead end worth recording:** the script pointer `ctx->0x0C` is *not* reachable by a
 peephole scan. There are 1533 stores to some `+0x0C` in the ELF, 515 of them the interpreter's
 own ip advance, and none of the rest resolve through the `*(0x196A4D0) + 0x150` chain — the
