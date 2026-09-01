@@ -713,8 +713,22 @@ That is fully explained by the two facts established above:
    **`FindActorByCharId(leaderByte, 1)`** — matching the leader's character id against those
    records.
 
-So a leader who is **not in the party** has no actor record. `FindActorByCharId` walks the
-array, matches nothing, and returns null. Walking around still works (the avatar's model is
+So a leader with no matching actor record has no player object: `FindActorByCharId` walks the
+array, matches nothing, and returns null.
+
+**Note what the lookup does *not* require.** It scans every record (up to 15, skipping 6–11),
+so being in *any* party slot satisfies it — the leader does not have to be first for the player
+object to resolve. Yet the reported hang had Koroku in party slot 6 and still froze, and moving
+him to slot 1 fixed it. So the binding constraint is stronger than the lookup:
+
+**actor slot 0 is party position 1** (the filler loops `GetPartyMemberId(1..15)` into records
+0..14), and scripts address the protagonist as a **plain slot** — 71% of all actor references.
+A scene that drives "slot 0" drives whoever is first in your party list, while camera and
+control follow the *leader byte*. Put a different character in each and the two disagree: the
+script animates one actor and waits on another.
+
+So the invariant is the one every save the game writes obeys — **leader == party slot 1** — and
+it is stricter than "the player lookup succeeds". Walking around still works (the avatar's model is
 requested from the leader byte independently) and ordinary dialogue still works (it never asks
 for the player actor) — but the instant a scene addresses the player, it has no actor and waits
 forever. Which is precisely the reported beat.
@@ -723,11 +737,38 @@ forever. Which is precisely the reported beat.
 corpus (§4). The editor let that invariant be broken, and this whole thread of hangs followed
 from it. Yuber and Lucia hung for the same reason.
 
+*Not to be confused with battle formation.* The order you set in-game is the **formation table
+at `0x3240`**, which is a different table from the party list at `0x3216`. Reordering the
+formation does not move anyone out of party-list slot 1, which is why the protagonist can look
+like they are not "first" in play while the invariant still holds.
+
+*One thing the confirmation does not isolate.* The successful test changed two things at once —
+Koroku moved to slot 1 **and** Hugo left the party (the destructive first cut of the fix). So
+"leader in slot 1" is established as sufficient; whether Hugo's presence was also part of the
+problem is not separately proven. The non-destructive version now ships, so the clean
+experiment — `[Koroku, …, Hugo]`, both present — is one save edit away.
+
+**Confirmed fixed in play (2026-08-31): Karaya Village now plays through, and Koroku walks the
+scene where Hugo would have.**
+
 **The fix is a save edit, not a patch.** Put the character in party slot 1 as well as in the
 leader byte. As of this change the editor does both: the Field character picker sets slot 1
 alongside the leader and says so, and the Health tab's `party-leader-absent` finding is
-upgraded from an *info* note to an **error** with a one-click *"Put the leader in party slot
-1"* fix.
+upgraded from an *info* note to an **error** with a one-click fix.
+
+**Doing it without costing a party member.** The first cut of this wrote slot 1 outright, which
+loses whoever was there — and when the pick is *already* in the party you end up holding two of
+them and one fewer of someone else. That happened: Hugo in slot 1, Koroku in slot 6, picking
+Koroku produced two Korokus and no Hugo. `promoteToLead()` now handles all four shapes:
+
+| party before | pick | after | |
+|---|---|---|---|
+| `[Hugo, Chris, –, –, –, Koroku]` | Koroku | `[Koroku, Chris, –, –, –, Hugo]` | **swap** — nobody lost |
+| `[Hugo, Chris, Geddoe, –, –, –]` | Koroku | `[Koroku, Chris, Geddoe, Hugo, –, –]` | occupant parked in a free slot |
+| `[–, Chris, Geddoe, –, –, –]` | Koroku | `[Koroku, Chris, Geddoe, –, –, –]` | slot was empty |
+| full, pick from outside | Koroku | slot 1 replaced | the only case that drops anyone, and it names them |
+
+The Health fix does the same, and its label says *"(drops X)"* when the party is full.
 
 This also retires, with a cause, the four failed explanations recorded above — the per-team
 story index, the `evneutral` clip, "lines belong to the scene", and the actor fallback. None of
