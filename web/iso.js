@@ -439,6 +439,12 @@
       { key: "run", off: 0x08, label: "Run", hint: "units/sec", stock: 6 },
       { key: "rate", off: 0x0C, label: "Time scale", hint: "\u00d71.0 = normal", stock: 1 },
     ],
+    // CONFIRMED IN PLAY (2026-08-31, Koroku, field map): the run value scales field movement
+    // LINEARLY. Koroku is class 0, which ships at run 6.0; set to 12 he moved at 2x, at 18 at 3x.
+    // That settles two things the static trace could not: the table really is what moves a field
+    // object, and the number is directly proportional to ground speed — so the stock spread
+    // 6.0 / 5.0 / 4.5 is a real 1.33x span between the fastest and slowest classes.
+    CONFIRMED: { who: "Koroku", cls: 0, stock: 6, points: [[12, 2], [18, 3]] },
     classOff: 0x78,          // u8, in the list2 record
     MAXCLASS: 13,            // the last row; classes 9-13 have no stock member
     MAX: 200,                // editor-side sanity clamp on a speed
@@ -2195,7 +2201,7 @@
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
-      movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Untested in play.",
+      movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
       test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
@@ -4240,6 +4246,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           ? `Shared with ${qOthers} other${qOthers === 1 ? "" : "s"}`
             + (qWho ? ` (${qWho})` : "") + `, so editing the row directly would move them too.`
           : "Nobody else is in that class, so it can be retuned in place at no cost.");
+    // "×N of stock" must measure against what the character SHIPS with, not against whatever
+    // its class currently holds — otherwise reassigning them would silently move the goalposts.
+    const qShipCls = spdQuickRec === null ? 0 : o8(spdClassAddr(spdQuickRec));
+    const qShip = qShipCls < MOVESPD.rows ? spdRowOrig(qShipCls) : MOVESPD.cols.map((c) => c.stock);
     const qMsg = spdQuickMsg && spdQuickMsg.rec === spdQuickRec ? spdQuickMsg.msg : null;
     const qMsgKind = spdQuickMsg && spdQuickMsg.kind === "bad" ? "warnbox" : "note";
 
@@ -4265,7 +4275,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
 
     host.innerHTML = `
       <div class="bag">
-        <div class="bag-h">Field movement speed <span class="u">plain data · no code patched · untested in play</span></div>
+        <div class="bag-h">Field movement speed <span class="u">plain data · no code patched · confirmed in play</span></div>
         <div class="muted" style="margin:0 0 10px">
           How fast a character walks and runs <b>on the field</b> is a <b>table</b>, not code. Every field
           object gets a walk speed and a run speed from one of 14 rows, and which row it reads is a
@@ -4273,6 +4283,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           and running is <b>6.0</b>, <b>5.0</b> or <b>4.5</b> depending on the class — so running as
           Hugo (6.0) covers a third more ground than as Chris (4.5). Mounts are
           ordinary field objects with their own class, so a mount's row is the mounted speed.
+        </div>
+        <div class="note" style="margin:0 0 10px">
+          <b>Confirmed in play.</b> Koroku is class 0, which ships at run <b>${MOVESPD.CONFIRMED.stock}.0</b>;
+          set to <b>12</b> he ran at <b>2&times;</b> and at <b>18</b> at <b>3&times;</b>. The number is
+          <b>linear</b> — double it to go twice as fast — so you can work in multiples of whatever the
+          character's class ships with, and the line under the boxes says which multiple you have typed.
         </div>
         <div class="warnbox" style="margin:0 0 10px">
           <b>Field only — this does not change battle movement.</b> The table's values reach every
@@ -4311,6 +4327,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <button class="primary" id="spdQApply">Give this speed</button>
           <button class="chip" id="spdQReset">Reset this character</button>
         </div>
+        <div class="muted" style="font-size:12px;margin:0 0 2px" id="spdQMult"></div>
         <div class="muted" style="font-size:12px;margin:0 0 4px" id="spdQNow">${esc2(qNowText)}</div>
         ${qMsg ? `<div class="${qMsgKind}" style="margin:6px 0 0">${esc2(qMsg)}</div>` : ""}
         <details class="note" id="spdAdvanced" style="margin:16px 0 0">
@@ -4384,6 +4401,22 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         const el = q(`input.spd-q[data-col="${c.key}"]`, host);
         return Math.max(0, Math.min(MOVESPD.MAX, +(el ? el.value : c.stock) || 0));
       });
+      const multEl = q("#spdQMult", host);
+      // Speed is linear (confirmed in play), so the multiple of stock is the useful reading —
+      // "run 12" means nothing on its own, "×2.00" is the thing the player will feel.
+      const syncMult = () => {
+        if (!multEl || spdQuickRec === null) return;
+        const nm = names[String(spdQuickRec)] || `record ${spdQuickRec}`;
+        const ships = MOVESPD.cols.map((c, i) => `${c.label.toLowerCase()} ${spdFmt(qShip[i])}`).join(", ");
+        const mult = MOVESPD.cols.map((c, i) => {
+          const el = q(`input.spd-q[data-col="${c.key}"]`, host);
+          const v = +(el ? el.value : c.stock) || 0, base = qShip[i];
+          return base > 0 ? `\u00d7${(v / base).toFixed(2)} ${c.label.toLowerCase()}` : null;
+        }).filter(Boolean).join(", ");
+        multEl.textContent = `${nm} ships with ${ships} — you have typed ${mult}.`;
+      };
+      qa("input.spd-q", host).forEach((el) => (el.oninput = syncMult));
+      syncMult();
       const apply = q("#spdQApply", host);
       if (apply) apply.onclick = () => {
         if (spdQuickRec === null) return;
