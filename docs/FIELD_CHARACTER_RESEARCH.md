@@ -649,12 +649,37 @@ a small value repeats at that spacing. Anchoring on the **header** instead, and 
 recasting a scene means. The header's stored pointer works directly as a file offset, which is
 what makes the edit reachable without unpacking anything.
 
-**The open question before anyone edits one.** Scripts reference the player through the
-dedicated `PLAYER` handle (`0x1400`, 2% of references), separately from these staged actors.
-So it is not yet established whether a scene's protagonist actor is *staged by id in this
-table* or *resolved as the player at runtime* — and that decides whether recasting Hugo→Koroku
-here changes the character you play as in the scene, or merely puts a Koroku-shaped NPC beside
-you. Worth answering before spending a playtest.
+**Answered: the actor array is your party, then the scene's cast.** The other record filler,
+`MakeActorRecord(rec, charId)` @ `0x1775AA0`, takes the id as an *argument*, and its caller at
+`0x1775DE8` loops calling `0x16FFD88(slot)` — which returns `*(u16)(0x196E5F4 + slot*2)`, the
+**party list at save `0x3216`**. So:
+
+| actor slots | filled from |
+|---|---|
+| 0–5 | **your party**, slot 1 first — so slot 0 is your leader, i.e. your avatar |
+| 6–11 | reserved — and exactly the range `FindActorByCharId` skips (`i - 6 <u 6`) |
+| 12+ | the scene's own cast table |
+
+That skip is the independent confirmation: the engine's own lookup declines to search the
+range between the party block and the staged cast.
+
+So recasting a cast-table entry changes a **staged NPC**, not the character you play — your
+avatar arrives via the party list. Which also means a scene that stages Hugo *as cast* while
+you play as Koroku ends up with both.
+
+**Karaya Village (`KRVI`), where the hang was reported**, stages Hugo in three tables — the
+character id of actor *k* is a `u16` at `table + k*0x2A + 6`:
+
+| table | cast | Hugo's id byte |
+|---|---|---|
+| `0x4E6BB000` | Hugo, Gau | **ISO `0x4E6BB006`** |
+| `0x4E6DDFFC` | Rico, Hugo | **ISO `0x4E6DE02C`** |
+| `0x4E6DE804` | Fred, Hugo | **ISO `0x4E6DE834`** |
+
+Writing `36 00` (54, Koroku) over `01 00` recasts that role. **Caveat:** several KRVI
+candidates overlap in the file (`0x4E6DE002`, `0x4E6DE01A`, `0x4E6DE022` are within `0x20` of
+each other), so some of that cluster are false positives — overlapping tables cannot all be
+real. The two clean ones are `0x4E6BB000` and `0x4E6DE804`.
 
 **Also ruled out: renaming the cast list.** Town sub-files carry a string pool of asset names
 (`cha_syu1_101` …) alongside scene ids (`0FAKE004`) and format strings (`item %s`), and
