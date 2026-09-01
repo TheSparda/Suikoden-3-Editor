@@ -11,6 +11,25 @@ const dec = (b) => String.fromCharCode(...b);
 
 console.log("rename-core:");
 
+// The scoped list is the safety boundary. A name that occurs inside a longer word cannot be
+// global-replaced at the same length without corrupting that word, so the list is asserted
+// rather than left to drift — and Koroku is checked to be in it, since the whole point of
+// adding him was the field-character work.
+{
+  check("the scoped list is the four distinctive originals",
+    JSON.stringify(RN.RENAMEABLE) === JSON.stringify(["Hugo", "Chris", "Geddoe", "Koroku"]));
+  check("Koroku is renameable", RN.RENAMEABLE.includes("Koroku"));
+  check("no scoped name is a substring of another (same-length replace would collide)",
+    RN.RENAMEABLE.every((a) => RN.RENAMEABLE.every((b) => a === b || !b.includes(a))));
+  const { list } = RN.buildRenames({ Koroku: "Rover" });
+  check("Koroku→Rover staged and padded to 6", list.length === 1 && dec(list[0].new) === "Rover ");
+  check("Koroku→a 7-char name is rejected", RN.buildRenames({ Koroku: "Rovering" }).list.length === 0);
+  // and it actually replaces in a buffer
+  const buf = enc("the dog Koroku barks");
+  RN.applyAll(buf, RN.buildRenames({ Koroku: "Rover" }).list);
+  check("Koroku is replaced in place at the same length", dec(buf) === "the dog Rover  barks");
+}
+
 // buildRenames: same-length rule, padding, too-long rejection
 {
   const { list, warnings } = RN.buildRenames({ Hugo: "Rex", Chris: "Chriss", Geddoe: "Gideon" });

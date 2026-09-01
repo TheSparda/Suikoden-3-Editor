@@ -5,7 +5,12 @@
 //
 // Scope is intentionally the distinctive main-cast names (no substring false-matches).
 (function (root) {
-  const RENAMEABLE = ["Hugo", "Chris", "Geddoe"];   // originals; distinctive → safe to global-replace
+  // Originals that are distinctive enough to global-replace. The test for adding one is that
+  // it never occurs inside a longer word anywhere on the disc, or a same-length replace would
+  // corrupt that word too. Checked on a pristine SLUS-20387: Koroku appears 139 times and
+  // every one is the bare name (`grep -aoE '[A-Za-z]{0,6}Koroku[A-Za-z]{0,6}'` returns only
+  // "Koroku"). Names like Luc fail that test — "Lucia", "Luck" — and are deliberately absent.
+  const RENAMEABLE = ["Hugo", "Chris", "Geddoe", "Koroku"];
 
   const enc = (s) => { const o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) o[i] = s.charCodeAt(i) & 0xFF; return o; };
 
