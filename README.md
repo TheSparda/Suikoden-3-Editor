@@ -130,9 +130,11 @@ file. How edits are saved depends on the browser:
   downloads that you swap in, or **export a recipe / `.xdelta`** to apply elsewhere.
 
 Views: **Characters** (starting stats, equipment — rune Head/Right/Left, skills + ranks, and
-an experimental **disc-wide rename** for the playable cast — the new name replaces the old
-everywhere on the disc, menus, battle and dialogue alike, so it's same-length only and needs
-the streaming *save patched copy* path, which the in-place write can't reach),
+an experimental **disc-wide rename** for **Hugo, Chris, Geddoe and Koroku** — the new name
+replaces the old everywhere on the disc, menus, battle and dialogue alike, so it's same-length
+only and needs the streaming *save patched copy* path, which the in-place write can't reach.
+The list is limited to names that never occur inside a longer word, since a same-length replace
+would corrupt those too — which is why *Luc* isn't offered: "Lucia", "Luck"),
 **Growth** (stat-growth rates, fixed skills, and the 43-skill maximum-level caps with
 one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
