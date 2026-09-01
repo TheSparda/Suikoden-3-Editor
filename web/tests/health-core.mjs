@@ -137,9 +137,22 @@ console.log("party:");
   check("an empty party is a note, not a problem", has(f, /^party-empty$/) &&
     one(f, /^party-empty$/)[0].sev === "info");
 }
-{
-  const f = audit(mkSave({ global: { gold: 10, storyPhase: 6, merged: true, partyLeader: 3 } }));
-  check("a leader who isn't in the party is a note", has(f, /^party-leader-absent$/));
+{ // A leader who is not in the party is a SOFTLOCK, not a curiosity: scene actors are built
+  // from the party list and the engine finds "the player" by matching the leader's character
+  // id against them, so a leader with no actor record freezes any scene that needs the player
+  // to act. Confirmed in play — Koroku as leader with Hugo in the party hangs Karaya Village
+  // at the protagonist's line. The severity and the fix are what make that recoverable.
+  const s = mkSave({ party: [1, 0, 0, 0, 0, 0],
+                     global: { gold: 10, storyPhase: 6, merged: true, partyLeader: 54 },
+                     characters: [mkChar(0, "Hugo")] });
+  const hit = one(audit(s), /^party-leader-absent$/)[0];
+  check("a leader who isn't in the party is an ERROR, not a note", !!hit && hit.sev === "error");
+  check("...and says it freezes scenes", !!hit && /freezes/.test(hit.detail));
+  check("...and offers to put the leader in slot 1", !!hit && !!hit.fix &&
+    hit.fix.ops[0].kind === "party" && hit.fix.ops[0].slot === 0 && hit.fix.ops[0].value === 54);
+  // and applying that fix must clear the finding
+  const after = audit(s, { party: { 0: 54 } });
+  check("...and applying it clears the finding", !has(after, /^party-leader-absent$/));
 }
 { // The formation table is the half of a party edit that fails silently: the game builds the
   // members it lists, so a party list longer than the formation shows empty slots in-game.
