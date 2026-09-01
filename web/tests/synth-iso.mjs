@@ -105,6 +105,11 @@ export const ENCMOVE_SITES = [
 export const encMoveWord = (imm, opc, negated) =>
   (((opc << 16) >>> 0) | ((negated ? -imm : imm) & 0xFFFF)) >>> 0;
 
+// FindActorByCharId's miss-exit (vaddr 0x17B5A38): `jr $ra` + `move $v0,$zero`. The Test
+// tab can rewrite it to tail-jump at the player lookup so an actor nobody can find resolves
+// to you — the scene-softlock experiment.
+export const ACTORFB_SITES = [[0x1FD238, 0x03E00008, 0x085ED732], [0x1FD23C, 0x0000102D, 0x00000000]];
+
 export const STORY_CASES = [
   [0x1C76DC, 1, 0], [0x1C76CC, 2, 1], [0x1C76F0, 3, 2], [0x1C7740, 0xCB, 3],
   [0x1C7724, 0x3F, 4], [0x1C7738, 0xCA, 4], [0x1C76F8, 0x11, 5],
@@ -347,6 +352,7 @@ export function buildSynthIso() {
   AVATAR_SITES.forEach(([o, imm, kind]) => w32(o, avatarWord(imm, kind)));
   STORY_CASES.forEach(([o, imm]) => w32(o, avatarWord(imm, "eq")));
   ENCMOVE_SITES.forEach(([o, imm, opc, neg]) => w32(o, encMoveWord(imm, opc, neg)));
+  ACTORFB_SITES.forEach(([o, stock]) => w32(o, stock));
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
