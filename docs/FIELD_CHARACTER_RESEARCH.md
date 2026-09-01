@@ -213,6 +213,14 @@ missing row, not a failed lookup**: as Luc the switch correctly asks for index 4
 that ships no index-4 content has nothing to show. Sarah has an index here even though she is
 absent from the model whitelist — the engine knows more leaders than it will draw.
 
+### Confirmed in play
+
+**2026-08-31: switching Koroku to Hugo's story content makes text boxes that were blank or
+broken render correctly.** This is the one avatar-related patch in this document that is
+confirmed to do what it claims, so it has been promoted out of the ISO Editor's `Test` tab into
+a **Story content** view of its own. It fixes *empty dialogue*; it does not fix a cutscene that
+hangs, which is a separate problem tracked in §9.
+
 ### Why the fix is one word
 
 `s0` is zeroed on entry to that switch; the default path only calls the (stubbed) debug printf

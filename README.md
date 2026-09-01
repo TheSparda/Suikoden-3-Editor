@@ -194,12 +194,14 @@ tells you up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, �
 it's phrased as *ships in* rather than *works in*, because `ETC.BIN` carries every model too
 and a resident one isn't evicted when you change area.
 
-**Whose story you get — the Story content control.** The leader byte is also *which team's
+**Whose story you get — the Story content tab.** The leader byte is also *which team's
 events and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and
 Masked Luc each have their own — so in a town that ships no content for their index you get
 **empty dialogue boxes**. Hugo is index 0, and 0 is also what an unrecognised leader falls to,
-so the ISO tab can hand any of them Hugo's events by retiring one instruction immediate. That
-turns "nobody will talk to me as Luc" into "everyone treats me as Hugo".
+so the **Story content** tab can hand any of them Hugo's events by retiring one instruction
+immediate. That turns "nobody will talk to me as Luc" into "everyone treats me as Hugo", and it
+is **confirmed in play** — blank/broken text boxes render correctly afterwards. It does not fix
+a cutscene that *hangs*; those experiments live under **Test**.
 
 > Remaining caveats, both stated in the tab. Characters beyond the stock eight are **untested**
 > in play, and **story scripts set the leader byte at chapter transitions**, so a pick holds
