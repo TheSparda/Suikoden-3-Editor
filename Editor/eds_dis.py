@@ -147,37 +147,59 @@ def cmd_dis(argv):
 
 
 def cmd_scan(argv):
-    """Find runs of validly-chaining instructions inside an archive."""
+    """Find runs of validly-chaining instructions in an archive — and see why that is not enough.
+
+    Linear: a backward pass computes, for every even offset, how many instructions chain from
+    it (`run[i] = 1 + run[i + len(op@i)]`). That is O(n) instead of the obvious quadratic
+    retry-at-every-offset, which is what made the first version unusable.
+
+    **It does not currently find scripts.** Any `u16 < 359` with a recovered length chains, so
+    a table of small ascending integers chains beautifully and scores as a long "instruction
+    run" — that is what the top hits are, and their decoded opcodes and parameters climb in
+    lockstep (`op 238, op 240, op 241 ... 0xEF, 0xF2, 0xF6`), which is the giveaway. Runs of
+    zero-fill do the same, because opcode 0 is a valid 6-byte instruction.
+
+    The diversity score below (distinct opcodes in the first 80 instructions) knocks out the
+    zero-fill but not the ascending tables. Left in, with this warning, because the linear pass
+    is the reusable half and the false-positive shape is worth recording so it is not
+    rediscovered. Locating scripts almost certainly needs their container found structurally —
+    a sub-file kind or header — rather than a scan over raw bytes.
+    """
     want = argv[0] if argv else None
-    minrun = int(argv[1]) if len(argv) > 1 else 60
+    minrun = int(argv[1]) if len(argv) > 1 else 40
     buf = re_elf.load()
     lens, _ = op_lengths(buf)
+    step = [0] * 65536
+    for op, n in lens.items():
+        step[op] = n // 2
     with open(iso_path(), "rb") as f:
         for a in archives():
             if want and a["archive"] != want:
                 continue
-            print(f"{a['archive']}: {a['size'] / 1e6:.1f} MB")
-            base, size, best = a["base"], a["size"], []
-            step = 1 << 22
-            pos = 0
-            while pos < size:
-                f.seek(base + pos)
-                data = f.read(min(step, size - pos))
-                if not data:
-                    break
-                i = 0
-                while i < len(data) - 2:
-                    ins = chain(data, i, lens, 400)
-                    if len(ins) >= minrun:
-                        best.append((base + pos + i, len(ins), ins[-1][0] + 8))
-                        i = ins[-1][0] + 8
-                    else:
-                        i += 2
-                pos += len(data) - 64
-            best.sort(key=lambda r: -r[1])
-            for o, n, _e in best[:20]:
-                print(f"    {o:010X}  {n} instructions")
-            print(f"    ({len(best)} run(s) >= {minrun})")
+            f.seek(a["base"])
+            data = f.read(a["size"])
+            n = len(data) // 2
+            ops = struct.unpack(f"<{n}H", data[:n * 2])
+            run = [0] * (n + 1)
+            for i in range(n - 1, -1, -1):
+                sp = step[ops[i]]
+                if sp and i + sp <= n:
+                    run[i] = 1 + run[i + sp]
+            cands, i = [], 0
+            while i < n:
+                if run[i] >= minrun:
+                    seen, j, k = set(), i, 0
+                    while k < 80 and run[j]:
+                        seen.add(ops[j]); j += step[ops[j]]; k += 1
+                    cands.append((len(seen), run[i], i))
+                    i = j
+                else:
+                    i += 1
+            cands.sort(reverse=True)
+            print(f"{a['archive']}: {len(cands)} chain(s) >= {minrun} instructions")
+            for div, ln, i in cands[:5]:
+                print(f"    {a['base'] + i * 2:010X}  {ln} instr, {div} distinct opcodes"
+                      f"{'   <-- likely an integer table, not code' if div < 12 else ''}")
 
 
 def cmd_find(argv):
