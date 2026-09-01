@@ -3922,7 +3922,11 @@
           <b>An actor nobody can find falls back to the player</b>
           <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
         <div class="warnbox" style="margin:0 0 10px">
-          <b>Untested, and it can hang the game harder than it already does.</b> The fallback
+          <b>Tried in play, and it did not fix the hang.</b> Kept here because a patch that was
+          built and did not help is worth recording. Most likely it never fires: if scenes reach
+          protagonists by actor <i>slot</i> rather than by character id, the lookup never returns
+          null and this exit is never taken. It can also hang the game harder than it already does —
+          the fallback
           re-enters the same lookup with your leader's id, so in a scene whose actor table has no
           record for <i>your</i> character it recurses forever. The exit is two instructions —
           enough for a jump, not for a guard — so there is nowhere to put the check. Try it on a
