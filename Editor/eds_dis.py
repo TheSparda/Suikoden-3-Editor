@@ -11,6 +11,7 @@ what turns noise into signal.
     python3 Editor/eds_dis.py lens                     # opcode -> instruction length
     python3 Editor/eds_dis.py actorops                 # which opcodes take an actor handle
     python3 Editor/eds_dis.py towns                    # FIND THE SCRIPTS: scan town sub-files
+    python3 Editor/eds_dis.py scenes                   # FIND THE CASTS: who each scene stages
     python3 Editor/eds_dis.py dis   0xD269D91E 40      # disassemble 40 instructions there
     python3 Editor/eds_dis.py find  346 1              # every `op 346, param 1` on the disc
 
@@ -305,6 +306,55 @@ def cmd_towns(argv):
     print("\nNote the zero: scenes never name a character by id (0x400|N). They use SLOTS.")
 
 
+def cmd_scenes(argv):
+    """List every scene's cast, and the exact byte that casts each role.
+
+    A scene's slot-to-character binding is data, not script. The filler at `0x1775E00` reads a
+    header — counts at `+0`/`+1`/`+2`, table pointers at `+8`/`+0x0C` — and copies
+    `*(u16)(ptr + k*0x2A + 6)` into each actor record's `+0x06`. So **the character id is a
+    `u16` at `table + k*0x2A + 6`**, and that is the byte to change to recast a role.
+
+    Finding the table by its contents alone over-matches badly (28,452 candidates: any region
+    where a small value repeats at 42-byte spacing). Anchoring on the header instead — and
+    then *validating it against its own table*, requiring every id to be a real party id —
+    cuts that to a few hundred with visibly coherent casts.
+    """
+    want = argv[0].upper() if argv else None
+    buf = re_elf.load()                      # not used for decoding; keeps the ISO check honest
+    del buf
+    import s3save                            # noqa: E402 - optional, only for names
+    valid = set(s3save.PARTY_IDS) | {202, 203, 204, 210, 211, 212, 213}
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = json.load(open(os.path.join(here, "s3_subfiles.json")))
+    kinds = d["kinds"]
+    towns = [(a["archive"], a["base"] + s * 2048, n * 2048, l)
+             for a in d["archives"] for s, n, k, l in a["files"] if kinds[k] == "town"]
+    total = 0
+    with open(iso_path(), "rb") as f:
+        for arc, off, size, label in towns:
+            if want and arc != want:
+                continue
+            f.seek(off)
+            data = f.read(size)
+            rows = []
+            for i in range(0, len(data) - 16, 4):
+                cnt = data[i]
+                if not (1 <= cnt <= 48):
+                    continue
+                ptr = struct.unpack_from("<I", data, i + 8)[0]
+                if not (0 < ptr < len(data) - cnt * 0x2A):
+                    continue
+                ids = [struct.unpack_from("<H", data, ptr + k * 0x2A + 6)[0] for k in range(cnt)]
+                if all(x in valid for x in ids) and len(set(ids)) > 1:
+                    rows.append((off + i, off + ptr, ids))
+            for hoff, toff, ids in rows:
+                names = ", ".join(s3save.party_name(x) or str(x) for x in ids)
+                print(f"  hdr {hoff:010X} -> tbl {toff:010X} {len(ids):2} actors  {arc:6} {label[:22]:22} {names}")
+            total += len(rows)
+    print(f"\n{total} scene cast table(s). The character id of actor k is a u16 at "
+          f"tbl + k*0x2A + 6 — change that to recast the role.")
+
+
 def cmd_find(argv):
     """Every occurrence of `op [param]`, word-aligned, across the archives."""
     op = int(argv[0], 0)
@@ -337,7 +387,7 @@ def main():
         return 2
     cmd, argv = sys.argv[1], [a for a in sys.argv[2:] if not os.path.isfile(a)]
     fn = {"lens": cmd_lens, "dis": cmd_dis, "scan": cmd_scan, "find": cmd_find,
-          "actorops": cmd_actorops, "towns": cmd_towns}.get(cmd)
+          "actorops": cmd_actorops, "towns": cmd_towns, "scenes": cmd_scenes}.get(cmd)
     if not fn:
         print(__doc__)
         return 2
