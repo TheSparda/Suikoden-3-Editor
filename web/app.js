@@ -229,40 +229,41 @@ function avatarList(curId) {
     list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
   return list;
 }
-// Put `id` in party slot 1 without costing anyone their place.
+// Put `id` in party slot 1, and by default remove whoever they are standing in for.
 //
-// A leader who is not in the party has no actor record, so the engine's "find the player"
-// lookup returns nothing and any scripted scene freezes when it needs you to act — confirmed
-// in play, and the reason this runs at all.
+// Two conditions, both confirmed in play (2026-08-31), and the second one is the surprise:
 //
-// Getting there naively loses people. Overwriting slot 1 drops whoever was in it, and if the
-// pick was ALREADY in the party you end up holding two of them and one fewer of someone else
-// (which is exactly what happened: Hugo in slot 1, Koroku in slot 6, pick Koroku, lose Hugo).
-// So: swap when they are already in the party, otherwise park slot 1's occupant in a free
-// slot. Only a full party with an outside pick has to drop anyone, and then it says who.
+//   1. the field character must be in **party slot 1** — actor slot 0 is party position 1,
+//      and scripts drive the protagonist as that slot while the camera follows the leader
+//      byte, so if they disagree a scene animates one actor and waits on another; and
+//   2. the character being stood in for must **not also be in the party**. Keeping them
+//      anywhere in the party freezes the scene; removing them makes it play. Tested both
+//      ways round: [Koroku, ..., Hugo] freezes, [Koroku, ...] plays.
 //
-// Returns { party: sparse {slot: id} of changes, note: string }.
-function promoteToLead(cur, id, nm) {
+// So `remove` is the default, because it is the configuration that works. `keep` preserves
+// the old swap for anyone who wants their party intact and will accept the freeze.
+//
+// Returns { party: sparse {slot: id} of changes, note, displaced }.
+function promoteToLead(cur, id, nm, keep) {
   const at = cur.indexOf(id), was = cur[0];
   if (at === 0) return { party: [], note: "", displaced: 0 };
   const party = [];
+  party[0] = id;
+  if (at > 0) party[at] = keep ? was : 0;            // vacate where the pick came from
   let note;
-  if (at > 0) {
-    party[0] = id; party[at] = was;
-    note = `Swapped ${nm(id)} into party slot 1 with ${nm(was)} (now slot ${at + 1}).`;
-  } else {
+  if (!was) {
+    note = `Put ${nm(id)} in party slot 1.`;
+  } else if (keep) {
     const free = cur.findIndex((v, i) => i > 0 && !v);
-    if (!was) { party[0] = id; note = `Put ${nm(id)} in party slot 1.`; }
-    else if (free > 0) {
-      party[0] = id; party[free] = was;
-      note = `Put ${nm(id)} in party slot 1 and moved ${nm(was)} to slot ${free + 1}.`;
-    } else {
-      party[0] = id;
-      note = `Put ${nm(id)} in party slot 1 — the party was full, so ${nm(was)} was dropped.`;
-    }
+    if (at > 0) note = `Swapped ${nm(id)} into party slot 1 with ${nm(was)} (now slot ${at + 1}).`;
+    else if (free > 0) { party[free] = was; note = `Put ${nm(id)} in party slot 1 and moved ${nm(was)} to slot ${free + 1}.`; }
+    else note = `Put ${nm(id)} in party slot 1 — the party was full, so ${nm(was)} was dropped.`;
+    note += ` ${nm(was)} is still in the party, which has been seen to FREEZE scripted scenes.`;
+  } else {
+    note = `Put ${nm(id)} in party slot 1 and removed ${nm(was)} from the party — `
+         + `keeping them in freezes scripted scenes.`;
   }
-  return { party, displaced: was || 0,
-           note: note + " A leader who isn't in the party freezes scripted scenes." };
+  return { party, displaced: was || 0, note };
 }
 
 // The four the story is authored around. Everything else — even ids the engine ships, like
@@ -589,29 +590,31 @@ function drawSlot() {
       // them and one fewer of someone else. So: swap when they are already in, and otherwise
       // park slot 1's occupant in a free slot. Only a full party with an outside pick has to
       // drop anyone, and then it says who.
-      const r = promoteToLead((s.party || []).slice(0, 6).map((v, i) =>
-        (PARTY[i] !== undefined ? PARTY[i] : v) || 0), id, (x) => REF.charById[x] || "id " + x);
-      r.party.forEach((v, i) => { if (v !== undefined) PARTY[i] = v; });
-      if (r.note && SUB === "party") showSub();
+      const nm = (x) => REF.charById[x] || "id " + x;
+      // Snapshot the party edits as they stood BEFORE this pick, so offering the other
+      // variant re-stages from the same starting point instead of wiping edits the user
+      // made by hand.
+      const snap = Object.assign({}, PARTY);
+      const before = (s.party || []).slice(0, 6).map((v, i) => (PARTY[i] !== undefined ? PARTY[i] : v) || 0);
+      const stage = (keep) => {
+        Object.keys(PARTY).forEach((k) => delete PARTY[k]);
+        Object.assign(PARTY, snap);
+        const r = promoteToLead(before, id, nm, keep);
+        r.party.forEach((v, i) => { if (v !== undefined) PARTY[i] = v; });
+        if (SUB === "party") showSub();
+        return r;
+      };
+      const r = stage(false);            // remove by default — the configuration that works
       DISPLACED = r.displaced || 0;
       const warn = $("#leaderparty");
       if (warn) {
-        // Observed in play and not yet explained: with the displaced protagonist still in the
-        // party a scene can freeze, and removing them entirely made the same scene play. Both
-        // shapes are offered rather than one being guessed at, and the note says which is
-        // which so the choice is informed rather than silent.
+        // Removal is the default because it is the confirmed-working configuration. Keeping
+        // them is still offered, labelled with what it does, rather than silently withheld.
         warn.innerHTML = esc(r.note) + (DISPLACED
-          ? ` <button type="button" id="dropDisplaced" class="linklike">Remove ${esc(REF.charById[DISPLACED] || "id " + DISPLACED)} from the party instead</button>
-             <span class="muted" style="font-size:12px">— reported to be what makes scenes play; keeping them in has been seen to freeze one.</span>`
+          ? ` <button type="button" id="keepDisplaced" class="linklike">Keep ${esc(nm(DISPLACED))} in the party instead</button>`
           : "");
-        const db = $("#dropDisplaced");
-        if (db) db.onclick = () => {
-          const cur2 = (s.party || []).slice(0, 6).map((v, i) => (PARTY[i] !== undefined ? PARTY[i] : v) || 0);
-          cur2.forEach((v, i) => { if (v === DISPLACED) PARTY[i] = 0; });
-          DISPLACED = 0;
-          warn.textContent = r.note + " Removed from the party.";
-          if (SUB === "party") showSub();
-        };
+        const kb = $("#keepDisplaced");
+        if (kb) kb.onclick = () => { const r2 = stage(true); DISPLACED = 0; warn.textContent = r2.note; };
       }
       const el = $("#leadercover"), a = avatarAreaInfo(id);
       if (el) el.textContent = a
