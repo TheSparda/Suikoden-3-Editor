@@ -761,6 +761,17 @@ experiment — `[Koroku, …, Hugo]`, both present — is one save edit away.
 **Confirmed fixed in play (2026-08-31): Karaya Village plays through, and Koroku walks — and
 speaks — the scene Hugo would have.**
 
+**CONFIRMED, both directions (2026-08-31).** Keeping the stand-in in the party freezes the
+scene; removing them makes it play. Tested each way round on the same save and the same scene:
+
+| party | leader | Karaya Village |
+|---|---|---|
+| `[Koroku, Chris, …, Hugo]` | Koroku | **freezes** at the protagonist's line |
+| `[Koroku, Chris, …]` | Koroku | **plays**, and Koroku speaks Hugo's lines |
+
+So the recipe is two conditions, and the editor now defaults to producing it: **put the field
+character in party slot 1, and remove the character they are standing in for.**
+
 **But the fix that worked also removed Hugo, and that turns out to matter.** The first cut
 overwrote party slot 1, so Koroku led *and Hugo left the party*. The non-destructive version
 keeps Hugo (`[Koroku, …, Hugo]`) and **the scene freezes again**. Same leader, same slot 1 — the
@@ -779,9 +790,15 @@ always party position *N+1* regardless of composition. A duplicate-actor conflic
 obvious guess, since Karaya's cast tables stage Hugo and he would then exist twice, but that is
 a guess and this document has a poor record with those. It is recorded as an observation.
 
-The editor offers both shapes rather than choosing: the pick swaps by default (nobody lost),
-and the note then offers **"Remove *X* from the party instead"**, saying that is what has been
-seen to make scenes play.
+**The editor now defaults to the configuration that works.** Picking a field character puts
+them in slot 1 and **removes** whoever they are standing in for, saying so. The old swap is
+still available behind *"Keep X in the party instead"*, labelled with the fact that it has been
+seen to freeze scenes — offered rather than withheld, but no longer the default. The Health
+fix does the same and names who it removes.
+
+Getting this backwards was a real cost: the swap shipped as the default for two versions
+because "don't lose a party member" sounded obviously right, and it silently produced the
+broken configuration.
 
 **The fix is a save edit, not a patch.** Put the character in party slot 1 as well as in the
 leader byte. As of this change the editor does both: the Field character picker sets slot 1
