@@ -251,8 +251,11 @@
         where: { sub: "party", search: "" },
         // Slot 1's occupant is REMOVED, not relocated. Confirmed in play both ways round:
         // keeping the character the leader stands in for anywhere in the party freezes the
-        // scene; removing them makes it play. A fix that parked them elsewhere would look
-        // considerate and leave the save broken.
+        // scene; removing them makes it play. The reason is that a scene which also stages
+        // them as cast ends up with two actor records bound to their single character
+        // resource slot (0x1775AE8 -> 0x1775A40, slots 14-22, first match wins, and neither
+        // filler dedups). A fix that parked them elsewhere would look considerate and leave
+        // the save broken.
         fix: { label: eff.party[0]
                  ? `Put the leader in party slot 1 (removes ${charName(eff.party[0])})`
                  : "Put the leader in party slot 1",

@@ -783,7 +783,52 @@ So there are two conditions, not one:
 2. at least for these scenes, **the protagonist they are standing in for must not also be in the
    party**.
 
-The mechanism for (2) is **not established**. Actor slot numbering is not the explanation: the
+### Why the stand-in has to go: two actors, one model slot
+
+Every actor record is bound to a **character resource slot** when it is created. `0x1775AE8`,
+which runs for each party actor right after `MakeActorRecord`:
+
+```
+idx = (rec - fieldwork->0x1A8) >> 6        ; 0x17B5C78 — the record's own index
+if (idx < 0x0C)                            ; the party block only
+    rec->0x03 = f(charId)                  ; 0x1700110
+rec->0x04 = FindResourceSlotFor(charId)    ; 0x1775A40
+```
+
+and `FindResourceSlotFor` (`0x1775A40`) walks **resource slots 14–22** — nine of them — asking
+the resource manager (`0x188BEF0` → `0x188A7E8` / `0x188B5C0`) for each, and returns the
+**first** whose `+0x04` equals the character id. No match returns **0**.
+
+Three things follow, and together they are the answer:
+
+1. **A character maps to one model instance.** The lookup returns the first matching slot, so
+   two actor records for the same character are bound to *the same* loaded model.
+2. **Neither filler dedups.** The party loop (`0x1775DCC`) writes records 0–14 from the party
+   list; the cast loop (`0x1775E0C`) writes records 15+ from the scene's table. Neither checks
+   whether the other already staged that character.
+3. **The two blocks are not equivalent.** Only records with index `< 0x0C` — the party block —
+   get the extra `rec->0x03` field. A cast record never does.
+
+So putting Hugo in the party while a Karaya scene *also* stages Hugo as cast produces two actor
+records, in two differently-initialised blocks, pointing at one model instance. The script
+drives the cast actor; the party actor is the same object. That is a state the game never
+produces for itself, because it owns both sides — which is exactly the shape of the other bug
+in this document, where we broke the leader/slot-1 invariant the game always maintains.
+
+**Not proven.** The bindings, the shared slot and the absent dedup are all read from the code.
+That this specific collision is what stalls the wait is inference — the last step would need
+the hang caught in the act. It is, however, the first explanation here that survives every
+observation: it predicts the freeze with Hugo in the party, the play-through without him, that
+walking and NPC dialogue are unaffected (neither needs a scene-staged duplicate), and that
+slot 1 matters separately (that is the leader/actor-slot-0 agreement, a different constraint).
+
+It also explains the **slot-count red herring**: removing Hugo from the party does *not* free a
+resource slot, because the cast still needs him. The distinct-character count is identical
+either way, so exhaustion is ruled out — what changes is the number of *records* bound to that
+one slot, from two to one.
+
+The mechanism for (2) was **not established** at the time of writing, and is now the section
+above. Actor slot numbering is not the explanation: the
 record pointer advances in the fill loop's *branch delay slot* (`addiu $s0,$s0,0x40` at
 `0x1775E08`), so it steps on every iteration including empty party slots — actor slot *N* is
 always party position *N+1* regardless of composition. A duplicate-actor conflict is the
