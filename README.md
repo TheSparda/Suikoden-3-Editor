@@ -177,15 +177,15 @@ byte** in your save, and that byte names a *model*. The engine only ever loads t
 specials *Masked Luc* and *Grasslands Chris*. Pick any of them from **Save Editor → Overview →
 Field character**; the picker offers exactly that set and nothing else.
 
-> **Keep your pick in party slot 1.** Scripted scenes drive the protagonist as **actor slot 0**,
-> which *is* party slot 1, while the camera follows the field character — so if those two are
-> different people a scene animates one and waits on the other, and freezes. The picker now puts
-> your pick in slot 1 automatically (swapping, never dropping anyone), and the Health tab flags
-> the state with a one-click fix.
+> **Two conditions, and the editor now produces both for you.** Your pick must be in **party
+> slot 1** (scripted scenes drive the protagonist as actor slot 0, which *is* party slot 1,
+> while the camera follows the field character — if those disagree a scene animates one and
+> waits on the other), **and the character they're standing in for must not be in the party at
+> all**. Keeping them in freezes the scene; removing them makes it play. Both confirmed in play,
+> each way round.
 >
-> With that held, it just works: **confirmed in play, Koroku appears in scene after scene and
-> speaks Hugo's lines.** Earlier builds of this editor let the invariant break, which is what
-> produced the freezes reported for Koroku, Yuber and Lucia.
+> Picking a field character does both: slot 1, and the stand-in removed. With that held it just
+> works — **Koroku appears in scene after scene and speaks Hugo's lines.**
 
 Widening that whitelist to the other 67 battle characters is possible and lives in the ISO
 Editor under **Test → Field character**, flagged experimental. It rewrites the comparison chain
