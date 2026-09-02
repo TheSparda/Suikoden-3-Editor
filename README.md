@@ -149,8 +149,11 @@ every combination carries its own confidence marker: *confirmed / expected / unt
 won't animate* — plus the **pair mechanics**,
 including the HP pooling that re-splits a pair's HP proportionally the moment they mount),
 **Movement** (the walk/run **speed table** — how fast each character moves on the field,
-confirmed in play; battle movement lives in packed asset data and isn't covered; see below), **Test** (experimental patches that are not known to work — currently the **Field
-character** whitelist; see below),
+confirmed in play; battle movement lives in packed asset data and isn't covered; see below),
+**Story content** (which team's events and dialogue a leader gets — the fix for empty dialogue
+boxes when you play as someone the game didn't plan for; see below),
+**Test** (experimental patches that are not known to work — currently the **Field character**
+whitelist and the scene-actor fallback; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
@@ -171,48 +174,56 @@ below).
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
 
-**Field character — who you run around the map as.** The on-field avatar is the **party-leader
-byte** in your save, and that byte names a *model*. The engine only ever loads the model of
-**eight hardcoded ids** — Hugo, Chris, Geddoe, Thomas, **Koroku**, **Luc**, and the two
-specials *Masked Luc* and *Grasslands Chris*. Pick any of them from **Save Editor → Overview →
-Field character**; the picker offers exactly that set and nothing else.
+**Field character — run around the map as someone else.** The on-field avatar is the
+**party-leader byte** in your save, and that byte names a *model*.
+The engine loads the model of **eight hardcoded ids** and no others — Hugo, Chris, Geddoe,
+Thomas, **Koroku**, **Luc**, and the two specials *Masked Luc* and *Grasslands Chris*. That is
+exactly the set the game hands you itself across its chapters and bonus scenarios.
 
-> **Two conditions, and the editor now produces both for you.** Your pick must be in **party
-> slot 1** (scripted scenes drive the protagonist as actor slot 0, which *is* party slot 1,
-> while the camera follows the field character — if those disagree a scene animates one and
-> waits on the other), **and the character they're standing in for must not be in the party at
-> all**. Keeping them in freezes the scene; removing them makes it play. Both confirmed in play,
-> each way round.
->
-> Picking a field character does both: slot 1, and the stand-in removed. With that held it just
-> works — **Koroku appears in scene after scene and speaks Hugo's lines.**
+Pick one from **Save Editor → Overview → Field character**. It's a save edit — no ISO patch, no
+new game. Played through and confirmed: **Koroku walks the map, triggers battles, appears in
+cutscenes and speaks the protagonist's lines.**
 
-Widening that whitelist to the other 67 battle characters is possible and lives in the ISO
-Editor under **Test → Field character**, flagged experimental. It rewrites the comparison chain
-(one button opens it to all 75) and shows the resulting loadable set read back from the patched
-bytes rather than from a claim — but the patch working is not the same as the game coping, which
-is why it is behind a Test tab rather than offered in the save editor.
+**Two conditions have to hold, and the picker sets both for you:**
+
+| | why |
+|---|---|
+| your pick is in **party slot 1** | scenes drive the protagonist as *actor slot 0*, which **is** party slot 1, while the camera follows the leader byte — if those are different people a scene animates one and waits on the other |
+| the character they stand in for is **removed from the party** | a scene that also stages them as cast ends up with two actor records bound to their single character model, and stalls |
+
+Both were established by playing it each way round. So picking a field character puts them in
+slot 1 **and removes the stand-in**, and says what it did. The alternative — keeping them —
+is still one click away, labelled with the fact that it freezes scenes. The **Health** tab
+flags a save that's already in the broken state, with the same one-click fix.
 
 **Which maps carry which character.** A field model has to be in the area you're standing in,
-and the per-area sets are small — a median of **4 of the 28** area archives. So the picker
-tells you up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, …"*. Thomas is in
-5, Koroku in 6. This is measured from the disc (archives store asset names as plain text), and
-it's phrased as *ships in* rather than *works in*, because `ETC.BIN` carries every model too
-and a resident one isn't evicted when you change area.
+and the per-area sets are small — a median of **4 of the 28** area archives. The picker says so
+up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, …"*. Thomas is in 5, Koroku
+in 6. Measured from the disc, and phrased as *ships in* rather than *works in*, because
+`ETC.BIN` carries every model too and a resident one isn't evicted when you change area.
 
-**Whose story you get — the Story content tab.** The leader byte is also *which team's
-events and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and
-Masked Luc each have their own — so in a town that ships no content for their index you get
-**empty dialogue boxes**. Hugo is index 0, and 0 is also what an unrecognised leader falls to,
-so the **Story content** tab can hand any of them Hugo's events by retiring one instruction
-immediate. That turns "nobody will talk to me as Luc" into "everyone treats me as Hugo", and it
-is **confirmed in play** — blank/broken text boxes render correctly afterwards. It does not fix
-a cutscene that *hangs*; those experiments live under **Test**.
+**Whose story you get — the Story content tab.** The leader byte is also *which team's events
+and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and Masked Luc
+each have their own — so in a town that ships nothing for their index you get **empty dialogue
+boxes**. Hugo is index 0, and 0 is also where an unrecognised leader falls, so **Story content**
+can hand any of them Hugo's events by retiring a single instruction immediate. Confirmed in
+play: blank text boxes render correctly afterwards. It fixes *empty* dialogue, not a scene that
+*hangs* — that's the party condition above.
 
-> Remaining caveats, both stated in the tab. Characters beyond the stock eight are **untested**
-> in play, and **story scripts set the leader byte at chapter transitions**, so a pick holds
-> until the next scene that sets it. The mechanism, the disassembled chains, the per-map scan
-> and the byte-verified patch sites are written up in
+**Beyond the eight — ISO Editor → Test.** Widening the whitelist to all 75 battle characters is
+two instruction immediates, and lives under **Test** because the patch working is not the same
+as the game coping. Everyone past the stock eight is untested in play. The tab shows the
+resulting loadable set by re-running the engine's own comparison chain over the patched bytes,
+rather than restating what the buttons were meant to do.
+
+Two things elsewhere in the editor exist because of this feature: **Koroku had no random
+encounters** until the run-cycle gate under **Movement rules** was repointed (confirmed in play,
+below), and the disc-wide **rename** covers him alongside Hugo, Chris and Geddoe.
+
+> One caveat that applies throughout: **story scripts set the leader byte at chapter
+> transitions**, so a pick holds until the next scene that sets it. The mechanism — the
+> disassembled chains, the per-map scan, the byte-verified patch sites, and the four
+> explanations that turned out to be wrong along the way — is written up in
 > [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md).
 
 **Movement speed — the Movement tab.** Its own tab, and *not* a code patch: **field**
