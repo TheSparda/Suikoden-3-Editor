@@ -225,27 +225,34 @@ if (pStart < 0) { console.error("FAIL: no promoteToLead() in web/app.js"); proce
 const pEnd = appSrc.indexOf("\n}", pStart);
 const promoteToLead = new Function(appSrc.slice(pStart, pEnd + 2) + "\nreturn promoteToLead;")();
 const NM = (x) => ({ 1: "Hugo", 2: "Chris", 54: "Koroku" })[x] || "id " + x;
-const apply = (cur, id) => { const r = promoteToLead(cur, id, NM);
+const apply = (cur, id, keep) => { const r = promoteToLead(cur, id, NM, keep);
   const out = cur.slice(); r.party.forEach((v, i) => { if (v !== undefined) out[i] = v; });
   return { out, note: r.note }; };
 
-console.log("Leader promotion into party slot 1:");
-{ // the reported regression
+console.log("Leader promotion into party slot 1 (default: remove the stand-in):");
+{ // The confirmed-working recipe, both directions tested in play: [Koroku, ..., Hugo] freezes
+  // scenes, [Koroku, ...] plays. So the DEFAULT must remove Hugo, not relocate him.
   const { out, note } = apply([1, 2, 0, 0, 0, 54], 54);
-  check("an already-in-party pick SWAPS rather than overwriting", eq(out, [54, 2, 0, 0, 0, 1]),
+  check("the pick leads and the character it stands in for is REMOVED", eq(out, [54, 2, 0, 0, 0, 0]),
     JSON.stringify(out));
-  check("...so nobody is lost", out.filter((x) => x === 1).length === 1 && out.filter((x) => x === 54).length === 1);
-  check("...and it says what it did", /Swapped/.test(note)); }
+  check("...Hugo is gone entirely, not moved", !out.includes(1));
+  check("...and the note says why", /removed/i.test(note) && /freeze/i.test(note), note); }
 { const { out } = apply([1, 2, 3, 0, 0, 0], 54);
-  check("an outside pick parks slot 1's occupant in a free slot", eq(out, [54, 2, 3, 1, 0, 0]),
+  check("an outside pick also removes slot 1's occupant", eq(out, [54, 2, 3, 0, 0, 0]),
     JSON.stringify(out)); }
-{ const { out, note } = apply([1, 2, 3, 5, 6, 7], 54);
-  check("a full party drops exactly one member", out.length === 6 && out[0] === 54 && !out.includes(1));
-  check("...and says who was dropped", /Hugo was dropped/.test(note), note); }
-{ const { out, note } = apply([54, 2, 3, 0, 0, 0], 54);
-  check("a pick already leading changes nothing", eq(out, [54, 2, 3, 0, 0, 0]) && note === ""); }
+{ const { out } = apply([54, 2, 3, 0, 0, 0], 54);
+  check("a pick already leading changes nothing", eq(out, [54, 2, 3, 0, 0, 0])); }
 { const { out } = apply([0, 2, 3, 0, 0, 0], 54);
-  check("an empty slot 1 is just filled", eq(out, [54, 2, 3, 0, 0, 0]), JSON.stringify(out)); }
+  check("an empty slot 1 is just filled, nobody removed", eq(out, [54, 2, 3, 0, 0, 0]), JSON.stringify(out)); }
+// The opt-in `keep` variant is still the old swap, and must warn that it freezes scenes.
+{ const { out, note } = apply([1, 2, 0, 0, 0, 54], 54, true);
+  check("keep=true still swaps and loses nobody", eq(out, [54, 2, 0, 0, 0, 1]), JSON.stringify(out));
+  check("...and warns that it freezes scenes", /FREEZE/.test(note), note); }
+{ const { out } = apply([1, 2, 3, 0, 0, 0], 54, true);
+  check("keep=true parks an outside pick's occupant in a free slot", eq(out, [54, 2, 3, 1, 0, 0]),
+    JSON.stringify(out)); }
+{ const { note } = apply([1, 2, 3, 5, 6, 7], 54, true);
+  check("keep=true on a full party still names who was dropped", /Hugo was dropped/.test(note), note); }
 
 // ---- the scene-softlock actor fallback ---------------------------------------
 // Two words, and both have to move together: leaving `move $v0,$zero` in place after the
