@@ -261,7 +261,8 @@ function promoteToLead(cur, id, nm, keep) {
     note += ` ${nm(was)} is still in the party, which has been seen to FREEZE scripted scenes.`;
   } else {
     note = `Put ${nm(id)} in party slot 1 and removed ${nm(was)} from the party — `
-         + `keeping them in freezes scripted scenes.`;
+         + `a scene that stages them as well would bind two actors to their one model, `
+         + `which freezes it.`;
   }
   return { party, displaced: was || 0, note };
 }
