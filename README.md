@@ -57,8 +57,7 @@ Multi-save memory cards show a **slot switcher**. Every write recomputes the sav
 Editable per save:
 
 - **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, chapter,
-  playtime, story phase, the **field character** you run around the map as, and Suikoden I/II
-  carryover detection — plus a
+  playtime, story phase and Suikoden I/II carryover detection — plus a
   **JSON snapshot** (⬇ Export / ⬆ Import) of the whole save: a human-readable file you can
   edit or share and re-import, which stages the differences through the normal review-and-Apply
   path rather than writing anything directly.
@@ -69,6 +68,9 @@ Editable per save:
   range, Max HP the HP row, Level the level that character joins at, each rune slot whether
   it's innate or **opens at Lv N**, and each skill slot that character's **maximum grade**
   (or a note that they can't learn it at all).
+- **Field character** — who you run around the map as, with the whole mechanism written out
+  on the tab: what the leader byte does, why the pick has to sit in party slot 1, and why the
+  character being stood in for has to leave the party. Picking someone stages both.
 - **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
   (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
   characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
@@ -180,8 +182,8 @@ The engine loads the model of **eight hardcoded ids** and no others — Hugo, Ch
 Thomas, **Koroku**, **Luc**, and the two specials *Masked Luc* and *Grasslands Chris*. That is
 exactly the set the game hands you itself across its chapters and bonus scenarios.
 
-Pick one from **Save Editor → Overview → Field character**. It's a save edit — no ISO patch, no
-new game. Played through and confirmed: **Koroku walks the map, triggers battles, appears in
+Pick one from the **Save Editor → Field character** tab, which also explains the mechanism in
+full. It's a save edit — no ISO patch, no new game. Played through and confirmed: **Koroku walks the map, triggers battles, appears in
 cutscenes and speaks the protagonist's lines.**
 
 **Two conditions have to hold, and the picker sets both for you:**
