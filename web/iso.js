@@ -3774,15 +3774,18 @@
         expects it \u2014 no edits offered.</div>`;
       return;
     }
+    // Which characters the switch does NOT know — they already fall through to index 0, so
+    // there is nothing to change for them. Naming them stops "why isn't Thomas listed?".
+    const known = new Set(AVATAR.STORY.cases.map((c) => c.id));
+    const fallsThrough = AVATAR.STOCK_SET.filter((id) => !known.has(id));
     host.innerHTML = `<div class="bag">
-        <div class="bag-h">Story content <span class="u">confirmed in play \u00b7 patches game code</span></div>
+        <div class="bag-h">Story content <span class="u">confirmed in play · patches game code</span></div>
         <div class="muted" style="margin:0 0 10px">
-          The leader byte is also <b>whose story this is</b>. One switch turns it into a team
-          index that picks which variant of a town's events and dialogue loads. Hugo is index
-          <b>0</b>, and <b>0 is also what an unrecognised leader gets</b> — so switching a
-          character to <i>Hugo's</i> here just retires its own case and lets it fall through.
-          That is the fix for empty dialogue boxes: a town with no entry for Luc's index has
-          one for Hugo's.
+          <b>The fix for empty dialogue boxes when you play as someone the game didn't plan for.</b>
+          The party-leader byte does two jobs: it names your field model, and it selects
+          <i>whose</i> events and dialogue a town loads. Change who you walk around as and you
+          change both — so a town that ships nothing for your character's story index gives you
+          text boxes with nothing in them.
         </div>
         <table class="invtbl"><thead><tr><th>Character</th><th>Story content</th><th>Team index</th></tr></thead><tbody>
         ${AVATAR.STORY.cases.filter((c) => !c.fixed).map((c, i) => {
@@ -3794,15 +3797,52 @@
             <td class="dim">${live ? c.idx : "0 (Hugo)"}</td></tr>`;
         }).join("")}
         </tbody></table>
-        <div class="muted" style="font-size:12px;margin:6px 0 0">
-          Only this one switch knows these characters; the other six already send them to
-          Hugo, which is why a single word is enough. It changes which content loads, not
-          whether that content fits the scene you are standing in.
-          <br><b>Confirmed in play:</b> switching Koroku to Hugo's content makes text boxes that
-          were blank or broken render correctly. It does <i>not</i> fix a cutscene that hangs —
-          that is a separate problem, and the experiments for it live under <b>Test</b>.
-        </div>
         <div class="row" style="gap:8px;margin:10px 0 0"><button class="chip" id="storyStock">Restore stock</button></div>
+
+        <div class="bag-h" style="margin:16px 0 0">Setting it up</div>
+        <div class="muted" style="font-size:12px">
+          <p style="margin:0 0 6px">Two edits in two different places, and they are edits to two
+          different files. Do both, in this order:</p>
+          <p style="margin:0 0 4px"><b>1 · Here, on the disc.</b> Set the character you intend
+          to play as to <b>Hugo's</b> in the table above, then <b>Apply &amp; save</b>. This is an
+          ISO patch — it changes the game, not your save, and it survives every save you load
+          afterwards. Doing it for a character you never play as costs nothing.</p>
+          <p style="margin:0 0 4px"><b>2 · Then in the Save Editor, on your save.</b>
+          <b>Save Editor → Field character</b> is where you actually choose them. That tab also
+          puts them in <b>party slot 1</b> and takes the character they stand in for <b>out of the
+          party</b>, which is what stops scenes from freezing — a separate problem from blank
+          text, with a separate cause.</p>
+          <p style="margin:0"><b>3 · Load the patched ISO with the edited save.</b> Boxes that
+          were empty now carry Hugo's lines. Confirmed in play.</p>
+        </div>
+
+        <div class="bag-h" style="margin:16px 0 0">How it works</div>
+        <div class="muted" style="font-size:12px">
+          <p style="margin:0 0 4px"><b>One switch turns the id into an index.</b> A single function
+          (<code>0x${AVATAR.STORY.switchVa.toString(16).toUpperCase()}</code>) compares the leader
+          byte against a short list of ids and returns a <b>team index</b> — 0–7. That index
+          is what a town's content is keyed on. Besides Hugo,
+          ${AVATAR.STORY.cases.filter((c) => !c.fixed).length} characters have a case of their
+          own here.</p>
+          <p style="margin:0 0 4px"><b>Hugo is index 0 — and so is everyone the switch has never
+          heard of.</b> An id with no case is not an error: it simply falls off the end and gets 0.
+          That is the whole trick. Setting a character to <i>Hugo's</i> does not point them at some
+          new table; it <b>retires their own case</b> by comparing against an id the leader byte can
+          never hold, so they fall through to the fallback like an unknown id would.
+          ${fallsThrough.length ? `Of the ids the engine will load a field model for, ` +
+            `${fallsThrough.map((id) => esc2(avatarName(id) || "id " + id)).join(", ")} ` +
+            `${fallsThrough.length > 1 ? "have" : "has"} no case here at all — already index 0, ` +
+            `nothing to change.` : ""}</p>
+          <p style="margin:0 0 4px"><b>Why that fixes blank boxes.</b> Index 0 is the one that is
+          filled in everywhere; the further-out indexes frequently have nothing for a given town,
+          so as Luc or Koroku you walk up to a villager and get an empty frame. Sending them to
+          index 0 means every town that has something for Hugo now has something for them.</p>
+          <p style="margin:0"><b>What it changes, and what it doesn't.</b> It changes <i>which</i>
+          content loads — not whether that content makes sense where you are standing, and not
+          who the game thinks you are anywhere else. It is also <b>not</b> the fix for a cutscene
+          that <i>hangs</i>: that is the party-slot and stand-in problem, handled in the Save
+          Editor's <b>Field character</b> tab. Blank box → this tab. Frozen scene → that one.</p>
+        </div>
       </div>`;
     { const editable = AVATAR.STORY.cases.filter((c) => !c.fixed);
       qa("select.av-story", host).forEach((sel) => {
