@@ -499,24 +499,6 @@ function drawSlot() {
       </div>
       <h3 class="sec">Names</h3>
       <div class="grid" id="names">${names}</div>
-      <h3 class="sec">Field character</h3>
-      <label class="field" style="max-width:320px"><span>Who you walk around the map as</span>
-        <button type="button" class="picker" id="leaderfld" data-val="${s.global.partyLeader}"
-                data-def="${s.global.partyLeader}">${esc(charLabel(s.global.partyLeader))}</button></label>
-      <div class="muted" style="font-size:12px;margin:6px 0 0">
-        This is the party-leader byte at <b>0x12</b>, and the engine loads the field model it
-        names. The picker offers the ${(REF.fieldAvatars || []).length} the game hands you
-        itself — ${(REF.fieldAvatars || []).map((id) => esc(REF.charById[id] || "id " + id)).join(", ")}.
-        Story scripts set this byte at chapter transitions, so a change here holds until the next
-        scene that sets it.
-        <div id="leadercover" style="margin:4px 0 0"></div>
-        <div id="leaderparty" style="margin:4px 0 0;color:var(--acc2)"></div></div>
-      <div class="warnbox" style="margin:8px 0 0">
-        <b>Only Hugo, Chris, Geddoe and Thomas are safe for story.</b> The others are roaming
-        picks: scripted scenes are written for a specific protagonist, and that data sits in
-        packed event files no editor can reach. Confirmed in play — Koroku hangs a scene even
-        though the engine ships him as an avatar. Switch back to a protagonist before triggering
-        story, and keep a backup save.</div>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"
@@ -535,6 +517,7 @@ function drawSlot() {
         <button class="chip" data-sub="recruit">Recruit</button>
         <button class="chip" data-sub="stars">108 Stars</button>
         <button class="chip" data-sub="party">Party</button>
+        <button class="chip" data-sub="field">Field character</button>
         <button class="chip" data-sub="items">Inventory (${invCount})</button>
         <button class="chip" data-sub="health" id="healthTab">Health</button>
       </div>
@@ -568,61 +551,6 @@ function drawSlot() {
     cb.classList.toggle("dirty", cb.checked !== was);
   }));
   const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
-  loadAvatarAreas().then(() => {
-    const el = $("#leadercover"); if (!el) return;
-    const a = avatarAreaInfo(+$("#leaderfld").dataset.val);
-    el.textContent = a
-      ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
-      : "";
-  });
-  $("#leaderfld").onclick = () => {
-    const btn = $("#leaderfld"), cur = +btn.dataset.val;
-    openPicker("Field character", avatarList(cur), cur, (id) => {
-      btn.dataset.val = id; btn.textContent = charLabel(id);
-      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
-      LEADER = id;
-      // A leader who isn't in the party has no actor record, so the engine's "find the
-      // player" lookup returns nothing and any scripted scene freezes when it needs you to
-      // act. Confirmed in play. The game never writes that state, so neither do we — the
-      // leader goes into slot 1.
-      //
-      // Getting there must not cost you a party member. Overwriting slot 1 outright loses
-      // whoever was in it, and if the pick was already in the party you end up with two of
-      // them and one fewer of someone else. So: swap when they are already in, and otherwise
-      // park slot 1's occupant in a free slot. Only a full party with an outside pick has to
-      // drop anyone, and then it says who.
-      const nm = (x) => REF.charById[x] || "id " + x;
-      // Snapshot the party edits as they stood BEFORE this pick, so offering the other
-      // variant re-stages from the same starting point instead of wiping edits the user
-      // made by hand.
-      const snap = Object.assign({}, PARTY);
-      const before = (s.party || []).slice(0, 6).map((v, i) => (PARTY[i] !== undefined ? PARTY[i] : v) || 0);
-      const stage = (keep) => {
-        Object.keys(PARTY).forEach((k) => delete PARTY[k]);
-        Object.assign(PARTY, snap);
-        const r = promoteToLead(before, id, nm, keep);
-        r.party.forEach((v, i) => { if (v !== undefined) PARTY[i] = v; });
-        if (SUB === "party") showSub();
-        return r;
-      };
-      const r = stage(false);            // remove by default — the configuration that works
-      DISPLACED = r.displaced || 0;
-      const warn = $("#leaderparty");
-      if (warn) {
-        // Removal is the default because it is the confirmed-working configuration. Keeping
-        // them is still offered, labelled with what it does, rather than silently withheld.
-        warn.innerHTML = esc(r.note) + (DISPLACED
-          ? ` <button type="button" id="keepDisplaced" class="linklike">Keep ${esc(nm(DISPLACED))} in the party instead</button>`
-          : "");
-        const kb = $("#keepDisplaced");
-        if (kb) kb.onclick = () => { const r2 = stage(true); DISPLACED = 0; warn.textContent = r2.note; };
-      }
-      const el = $("#leadercover"), a = avatarAreaInfo(id);
-      if (el) el.textContent = a
-        ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
-        : "";
-    }, (id) => String(id).padStart(3, "0"));
-  };
   $("#goldfld").oninput = (e) => {
     e.target.classList.toggle("dirty", e.target.value !== e.target.dataset.def);
     GOLD = +e.target.value;
@@ -644,6 +572,7 @@ function drawSlot() {
 
 function showSub() {
   $$("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === SUB));
+  { const sq = $("#sq"); if (sq) sq.hidden = SUB === "field"; }   // nothing to filter there
   if (SUB === "chars") {
     $("#subhint").innerHTML = `Stats, equipped runes/armor, and skill slots per character, with the ` +
       `<b>guide's</b> skill caps, Lv-99 growth ranges and rune-slot unlock levels shown under each field. ` +
@@ -666,6 +595,12 @@ function showSub() {
       `Saving also re-derives the battle formation (the table the game reads to decide who to build), ` +
       `and closes any gap you leave in the list.`;
     drawParty();
+  } else if (SUB === "field") {
+    $("#subhint").innerHTML = `Who you <b>run around the map as</b> — the party-leader byte at ` +
+      `<code>0x12</code>, which names the field model the engine loads. Picking someone also puts ` +
+      `them in <b>party slot 1</b> and takes the character they stand in for <b>out of the party</b>; ` +
+      `both are needed for cutscenes not to freeze, and both are confirmed in play.`;
+    drawField();
   } else if (SUB === "health") {
     $("#subhint").innerHTML = `A read-through of this save — <b>including your pending edits</b> — for the states ` +
       `the game never writes itself: a party member who isn't recruited, a rune carrying a stack count, ` +
@@ -1143,6 +1078,136 @@ function applyFixOps(ops) {
 }
 
 // ---- Party -----------------------------------------------------------------
+// ---- Field character -------------------------------------------------------
+// Who you run around the map as is the party-leader byte at 0x12, and the engine loads the
+// field model it names. It used to sit on the Overview card, but it is not a one-field
+// property: picking someone rewrites the party, and two conditions have to hold for scenes
+// not to freeze. Its own tab is where that fits, next to the Party tab it acts on.
+function drawField() {
+  const s = saves[curSlot];
+  const stock = s.global.partyLeader;
+  const lead = LEADER !== null ? LEADER : stock;
+  const mem = s.party || [];
+  const eff0 = (PARTY[0] !== undefined ? PARTY[0] : mem[0]) || 0;
+  const ship = (REF.fieldAvatars || []);
+  $("#subview").innerHTML = `
+    <label class="field" style="max-width:320px"><span>Who you walk around the map as</span>
+      <button type="button" class="picker" id="leaderfld" data-val="${lead}"
+              data-def="${stock}">${esc(charLabel(lead))}</button></label>
+    <div class="muted" style="font-size:12px;margin:6px 0 0">
+      This is the party-leader byte at <b>0x12</b>. The picker offers the ${ship.length} the
+      game hands you itself — ${ship.map((id) => esc(REF.charById[id] || "id " + id)).join(", ")}
+      — because those are the only ids whose field model the engine will load.
+      <div id="leadercover" style="margin:4px 0 0"></div>
+      <div id="leaderparty" style="margin:4px 0 0;color:var(--acc2)"></div></div>
+    <h3 class="sec">How it works</h3>
+    <div class="muted" style="font-size:12px">
+      <p style="margin:0 0 8px">Everything below was worked out by disassembling the boot ELF and
+      then confirming it in play, each way round. The short version: <b>you can play as a
+      stand-in, but the character they are standing in for has to leave the party.</b></p>
+
+      <p style="margin:0 0 4px"><b>1 · The byte names a model.</b> Save offset <code>0x12</code>
+      is the party leader, and the engine feeds it to a hardcoded comparison chain that decides
+      which field model to request. Eight ids get a hit; anything else is not an error — the
+      request is simply never made, and you keep whatever model was already resident. That is
+      why the picker offers eight and not the full roster.</p>
+
+      <p style="margin:0 0 4px"><b>2 · Cutscenes drive party slot 1, not the leader byte.</b>
+      Scene actors are built from the party list in order, so <i>actor slot 0 is party slot
+      1</i>. Scripts move and speak as actor slot 0, while the camera follows the leader byte.
+      If those are two different people, a scene animates one of them and then waits forever
+      on the other — the freeze that looks like the game hanging on a line of dialogue. So the
+      pick goes into slot 1.</p>
+
+      <p style="margin:0 0 4px"><b>3 · The real character cannot also be in the party.</b>
+      This is the one that is easy to miss. Each actor record is bound to a <i>character
+      resource slot</i> by a lookup that walks the loaded slots and returns the <b>first</b>
+      match for that character id. The party filler and the cast filler both run, and neither
+      checks what the other did — so if a scene stages Hugo as cast <i>while Hugo is also in
+      your party</i>, you get two actor records pointing at one model instance, and the scene
+      never completes. Taking him out of the party is what makes it work: with only one record
+      for him, your stand-in walks and talks through the scene in his place.
+      <br>Removing him does <b>not</b> free a resource slot — the scene still loads him as cast.
+      What it frees is the second claim on it.</p>
+
+      <p style="margin:0 0 4px"><b>4 · What this tab does for you.</b> Picking someone stages
+      both conditions in one go: it puts them in party slot 1 and takes the displaced character
+      out of the party, and it tells you who it removed. If you would rather keep that character,
+      the note offers a one-click swap instead — labelled with the fact that it is the
+      configuration that freezes scenes. Nothing is written until <b>Apply</b>, and the battle
+      formation is re-derived from the party list on save, so the two can never disagree.</p>
+
+      <p style="margin:0 0 4px"><b>5 · The model still has to be in the area.</b> Field models
+      ship per area archive, and most characters are in only a handful of them — the line under
+      the picker says how many. A character whose model is not loaded where you are standing
+      will not appear correctly.</p>
+
+      <p style="margin:0"><b>6 · Blank dialogue is a different problem.</b> The leader byte also
+      selects <i>whose</i> events and dialogue a town loads. Luc, Koroku, Sarah and Masked Luc
+      each have their own index, and a town that ships nothing for that index gives you empty
+      text boxes. That is fixed on the disc, not in the save — <b>ISO Editor → Story content</b>
+      hands them Hugo's events instead. It fixes <i>empty</i> dialogue; a scene that
+      <i>hangs</i> is the party conditions above.</p>
+    </div>
+    ${eff0 && lead && eff0 !== lead ? `<div class="warnbox" style="margin:8px 0 0">
+      Party slot 1 holds ${esc(charLabel(eff0))} but the field character is
+      ${esc(charLabel(lead))}. Scenes drive slot 1 and the camera follows the field character —
+      while those disagree, a scene will freeze. Re-pick above to put them in step, or fix it
+      on the <b>Party</b> tab.</div>` : ""}
+    <div class="warnbox" style="margin:8px 0 0">
+      <b>Hugo, Chris, Geddoe and Thomas are the story-safe picks.</b> The rest work — Koroku
+      has been played through scene after scene, speaking the protagonist's lines — but they
+      are stand-ins, and a scene written around something only the real protagonist has can
+      still go wrong. Story scripts also set this byte at chapter transitions, so a change here
+      holds until the next scene that sets it. Keep a backup save.</div>`;
+  const cover = (id) => {
+    const el = $("#leadercover"); if (!el) return;
+    const a = avatarAreaInfo(id);
+    el.textContent = a
+      ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
+      : "";
+  };
+  loadAvatarAreas().then(() => { if (SUB === "field") cover(+$("#leaderfld").dataset.val); });
+  $("#leaderfld").onclick = () => {
+    const btn = $("#leaderfld"), cur = +btn.dataset.val;
+    openPicker("Field character", avatarList(cur), cur, (id) => {
+      btn.dataset.val = id; btn.textContent = charLabel(id);
+      btn.classList.toggle("dirty", String(id) !== btn.dataset.def);
+      LEADER = id;
+      // A leader who isn't in the party has no actor record, so the engine's "find the
+      // player" lookup returns nothing and any scripted scene freezes when it needs you to
+      // act. Confirmed in play. The game never writes that state, so neither do we — the
+      // leader goes into slot 1, and the character being stood in for comes out.
+      const nm = (x) => REF.charById[x] || "id " + x;
+      // Snapshot the party edits as they stood BEFORE this pick, so offering the other
+      // variant re-stages from the same starting point instead of wiping edits the user
+      // made by hand.
+      const snap = Object.assign({}, PARTY);
+      const before = (s.party || []).slice(0, 6).map((v, i) => (PARTY[i] !== undefined ? PARTY[i] : v) || 0);
+      const stage = (keep) => {
+        Object.keys(PARTY).forEach((k) => delete PARTY[k]);
+        Object.assign(PARTY, snap);
+        const r = promoteToLead(before, id, nm, keep);
+        r.party.forEach((v, i) => { if (v !== undefined) PARTY[i] = v; });
+        return r;
+      };
+      const r = stage(false);            // remove by default — the configuration that works
+      DISPLACED = r.displaced || 0;
+      const warn = $("#leaderparty");
+      if (warn) {
+        // Removal is the default because it is the confirmed-working configuration. Keeping
+        // them is still offered, labelled with what it does, rather than silently withheld.
+        warn.innerHTML = esc(r.note) + (DISPLACED
+          ? ` <button type="button" id="keepDisplaced" class="linklike" style="text-decoration:underline">Keep ${esc(nm(DISPLACED))} in the party instead</button>`
+          : "");
+        const kb = $("#keepDisplaced");
+        if (kb) kb.onclick = () => { const r2 = stage(true); DISPLACED = 0; warn.textContent = r2.note; };
+      }
+      cover(id);
+    }, (id) => String(id).padStart(3, "0"));
+  };
+}
+
 function drawParty() {
   const s = saves[curSlot];
   const mem = s.party || [];

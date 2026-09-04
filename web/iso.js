@@ -3958,7 +3958,7 @@
           The character you run around the map as is the <b>party-leader byte at save 0x12</b>, and
           that byte names a <b>model</b>. One function decides whether that model is ever requested,
           and it is a hardcoded list of eight ids. Widen it here, then pick the character on the
-          <b>Save Editor → Overview → Field character</b> field. Nothing about the party, the story
+          <b>Save Editor → Field character</b> tab. Nothing about the party, the story
           or the scripts changes: this only stops the loader from refusing the id.
         </div>
         <div class="warnbox" style="margin:0 0 10px">
