@@ -3002,6 +3002,93 @@ head("Save editor — health check panel");
   await page.context().close();
 }
 
+// A save with Hugo leading and Koroku already in the party — the shape the field-character
+// picker has to reason about (the pick is in the party, but not in slot 1). Shared so the
+// narrow-screen pass renders the identical tab.
+async function seedFieldCharacterSave(page) {
+  await page.evaluate(async () => {
+    const mk = (rosterIndex, name) => ({
+      rosterIndex, name, id: rosterIndex + 1, idExpected: rosterIndex + 1,
+      level: 30, weaponLv: 5, curHP: 200, maxHP: 200, expToNext: 100,
+      stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, MDF: 1, SPD: 1, LUK: 1 },
+      equip: { headRune: 0, rightRune: 0, leftRune: 0, helm: 0, armor: 0, shield: 0, boots: 0, gloves: 0, accessory: 0 },
+      skills: [{ slot: 0, id: 0, rank: 0 }],
+      recruited: true, recruitWord: 0x1d, recruiter: "", recruiters: [], hasData: true,
+    });
+    // The eight ids the engine will actually load a field model for (s3save.FIELD_AVATAR_IDS).
+    REF = { items: [], skills: [],
+            charById: { 1: "Hugo", 2: "Chris", 3: "Geddoe", 29: "Thomas", 54: "Koroku", 63: "Luc", 202: "Masked Luc", 203: "Grasslands Chris" },
+            charRoster: { 1: 0, 2: 1, 54: 2 }, charChoices: [1, 2, 54],
+            fieldAvatars: [1, 2, 3, 29, 54, 63, 202, 203] };
+    ITEM_BY_ID = {}; OPT_RANK = ""; GUIDE = { caps: {}, growth: {}, slots: {} }; RECRUIT_META = {};
+    saves = [{
+      label: "slot", folder: "BASLUS-20387", checksumWord: 0, meta: {}, names: [],
+      global: { gold: 100, storyPhase: 6, merged: true, partyLeader: 1, playtime: "1:00" },
+      party: [1, 2, 54, 0, 0, 0],          // Hugo leads; Koroku is already in the party, in slot 3
+      characters: [mk(0, "Hugo"), mk(1, "Chris"), mk(2, "Koroku")],
+      inventory: [], statNames: ["PWR", "SKL", "MAG", "REP", "MDF", "SPD", "LUK"], problems: [], notes: [],
+    }];
+    curSlot = 0;
+    renderEditor();
+  });
+}
+
+head("Save editor — Field character tab");
+{ const page = await newPage();
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
+  await seedFieldCharacterSave(page);
+  const r = await page.evaluate(async () => {
+    const onOverview = !!document.querySelector("#leaderfld");   // must have LEFT the Overview card
+    document.querySelector('[data-sub="field"]').click();
+    const shown = document.querySelector("#leaderfld").textContent;
+    // the whitelist is the whole point of the picker — assert the exact set
+    document.querySelector("#leaderfld").click();
+    const rows = [...document.querySelectorAll(".picker-row")].map((b) => +b.dataset.id);
+    document.querySelector('.picker-row[data-id="54"]').click();
+    const staged = JSON.parse(JSON.stringify(PARTY));
+    const note = document.querySelector("#leaderparty").textContent;
+    const canKeep = !!document.querySelector("#keepDisplaced");
+    document.querySelector("#keepDisplaced").click();
+    const kept = JSON.parse(JSON.stringify(PARTY));
+    return { onOverview, shown, rows, staged, note, canKeep, kept, leader: LEADER,
+             diff: buildDiff().map((d) => d.g + ": " + d.t) };
+  });
+  check("the picker is no longer on the Overview card", r.onOverview === false);
+  check("its own tab shows the current field character", /Hugo/.test(r.shown), r.shown);
+  check("the picker offers exactly the eight the engine will load",
+    JSON.stringify(r.rows) === JSON.stringify([1, 2, 3, 29, 54, 63, 202, 203]), JSON.stringify(r.rows));
+  check("picking Koroku puts him in party slot 1", r.staged[0] === 54, JSON.stringify(r.staged));
+  check("…and vacates the slot he came from", r.staged[2] === 0, JSON.stringify(r.staged));
+  check("…and removes the character he stands in for", !Object.values(r.staged).includes(1),
+    JSON.stringify(r.staged));
+  check("the note says who was removed", /removed Hugo/.test(r.note), r.note);
+  check("keeping them instead is offered, not forced", r.canKeep === true);
+  check("…and swaps rather than removes", r.kept[0] === 54 && r.kept[2] === 1, JSON.stringify(r.kept));
+  check("the pick is staged for review", r.diff.some((d) => /Field character: .*Hugo .*Koroku/.test(d)),
+    r.diff.join(" | "));
+  await page.context().close();
+}
+
+// This tab carries more prose than any other save-editor view, so it is the one most likely
+// to push the layout wide. Measured on a real 320px viewport, not a resized element.
+head("Save editor — Field character tab at 320px");
+{ const page = await newPage({ width: 320, height: 480 });
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
+  await seedFieldCharacterSave(page);
+  const r = await page.evaluate(() => {
+    document.querySelector('[data-sub="field"]').click();
+    const de = document.documentElement;
+    const wide = [...document.querySelectorAll("#subview *")]
+      .filter((el) => el.getBoundingClientRect().right > de.clientWidth + 1)
+      .map((el) => el.tagName + "." + (el.className || "")).slice(0, 5);
+    return { scrollW: de.scrollWidth, clientW: de.clientWidth, wide };
+  });
+  check("no horizontal overflow at 320px", r.scrollW <= r.clientW,
+    `${r.scrollW}px content in ${r.clientW}px` + (r.wide.length ? " — " + r.wide.join(", ") : ""));
+}
+
 for (const [w, h] of [[360, 640], [320, 480]]) {
   head(`Mobile ${w}px — no horizontal overflow`);
   const page = await newPage({ width: w, height: h });
