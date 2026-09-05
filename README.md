@@ -234,15 +234,13 @@ looting a skeleton freezes: the same *walk up, press X, get an item* interaction
 It plays a motion his model has no clip for — his animal rig carries **15 clips against Hugo's
 60**, which is also why his running needed its own fix. As **Luc** the same objects pick up
 fine, which is what proves it's the clip set rather than the field-character feature.
-**Two approaches live under ISO Editor → Test → Missing animations.** The second one names the
-actual gap: the engine's motion table is `char name[16]; u32 flags`, slots 46–59 are the
-`check_*` and `pickup_*` motions, and scanning the disc shows **Koroku's model carries none of
-those fourteen clips** while carrying `neutral_L`/`neutral_R`. Luc's carries them — which is
-precisely the difference between the model that loots a skeleton and the one that hangs.
-Renaming those slots points them at a clip he *does* have, so he stands still instead of being
-asked for an animation that doesn't exist. It's global (Hugo stops crouching too), opt-in, and
-unproven in play. The first approach — make a missing clip behave as one that finished
-instantly — was built, played, and did not help. The disproof is in the research doc: the engine functions that test the
+**No fix — the search was closed off.** Three mechanisms were tried and played, and none of
+them helped; the attempts have been removed rather than left in the editor pretending. What did
+come out of it is worth keeping, and it's all in the research doc: the engine's motion table is
+decoded (`char name[16]; u32 flags`, with `check_*` at slots 46–51 and `pickup_*` at 52–59), and
+**Koroku's model provably carries none of those fourteen clips** while Luc's carries them. So the
+asymmetry is understood; making the game act on it is what's unsolved. Play as Koroku and walk
+past the herbs. The disproof is in the research doc: the engine functions that test the
 *motion finished* flag turn out not to be reachable from any of the 359 event-script opcode
 handlers, so a script never blocks on it. The patch is kept, relabelled and off by default,
 because the engine change itself is sound; the search has moved to the blocking opcode.
