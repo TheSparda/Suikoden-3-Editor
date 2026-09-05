@@ -1057,6 +1057,52 @@ the `evneutral` clip, the motion-finished flag, and the missing-clip wait. Each 
 and each was wrong, which is a reasonable prior for the next one. The next patch should follow
 a script that is known to run for a herb, not a mechanism that merely could.
 
+### The motion table decoded — and the missing clips named
+
+The table at vaddr `0x1966610` (ISO `0x3ADE10`) is **317 entries of `char name[16]; u32 flags`**.
+The name is plain ASCII and is what a model's own clip list is searched for; the flags belong to
+the *slot*, not the clip. Decoding it validates every band this document has been quoting from
+the ELF side:
+
+| slots | contents |
+|---|---|
+| 0–1 | `neutral_L` / `neutral_R` |
+| 2–13 | `walk_*` — the walk band `[2,0x0D]` the encounter gate tests |
+| 14–19 | `run_*` — the run band `[0x0E,0x13]` |
+| 20–34 | `hasi_up_*` — the slope set |
+| **46–51** | **`check_*`** — examine |
+| **52–59** | **`pickup_*`** — pick an item up |
+| 276–287 | `sit_*`, `naki_*`, and the unsuffixed `run_start/loop/stop` at `0x11A`–`0x11F` |
+
+That last row is the independent confirmation of §8: Koroku's run cycle really does sit in the
+animal block, at exactly the slots quoted there.
+
+**And it names what Koroku is missing.** Scanning every `cha_*` model record on the disc for
+names that appear in this table, Koroku's records carry **none of the fourteen `check_*` /
+`pickup_*` slots** — while carrying `neutral_L` and `neutral_R`. Luc's carry the pickup clips.
+So the difference between the model that loots a skeleton and the model that hangs is now a
+measured fact about the data, not an inference from a hang.
+
+### Shipped (v1.90.0): point the slot at a clip the model has
+
+Renaming a slot redirects it to different animation data while keeping that slot's own timing —
+so slots 46–59 can be pointed at `neutral_L` / `neutral_R` (L to L, R to R, so facing stays
+consistent). Koroku then stands still through an examine or a pickup instead of being asked for
+an animation that does not exist.
+
+This is a different *kind* of fix from everything above it: not "make the engine tolerate the
+gap" but "remove the gap". It needs no new asset data, because it reuses a clip every model
+already ships.
+
+**The cost is real and global.** The table is shared, so every character's examine and pick-up
+motion becomes their own idle — Hugo stops crouching for a herb too. Cosmetic, opt-in, off by
+default, and the panel says so.
+
+**Still unproven in play.** Three theories have been killed here by evidence already; this one
+has better evidence behind it than any of them — the missing clips are named, not guessed — but
+"the clip now resolves" is not the same as "the interaction completes", and only playing it
+settles that.
+
 ## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other
