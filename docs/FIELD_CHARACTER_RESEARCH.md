@@ -941,8 +941,38 @@ fire **only** when a model is asked for a clip it does not own — which stock p
 never does, since 76 of 78 models carry the full human set and the game never hands you Koroku
 on the field. Koroku would stand still instead of crouching, and the interaction would continue.
 
-**Built (v1.87.0), and it is one instruction.** The second lever turned out simpler than the
-table suggests, because the give-up is a single branch:
+**v1.87.0 patched one branch, and it did not fix the hang.** Recorded because the reason is the
+useful part: that site only stops `SetMotion` *reporting* failure. Nothing in the game reads
+that return value to decide it is done waiting.
+
+**What the interaction actually waits on is a flag.** Object flags live at `obj+0x04`, and bit
+`0x80000000` means *motion finished* — starting a motion clears it, the animation code sets it
+when the clip ends, and waiters poll it. Across the executable: **3 sites set it, 6 read it, 2
+clear it.** With no clip, nothing ever sets it, so the wait never ends. The give-up branch that
+matters is therefore not the one that returns a flag, but the one that skips the code that
+*sets* it.
+
+**Built (v1.88.0): all four give-up branches.** Enumerating every "apply a clip, then branch on
+the result" site gives a closed set of four:
+
+| ISO offset | vaddr | stock | what its success path does |
+|---|---|---|---|
+| `0x136D70` | `0x16EF570` | `beq $v0,$zero,0x16EF634` | `SetMotion`, main motion table |
+| `0x136DF8` | `0x16EF5F8` | `beq $v0,$zero,0x16EF624` | `SetMotion`, 13-entry special table |
+| `0x137070` | `0x16EF870` | `beq $v0,$zero,0x16EF974` | **sets `0x80000000`**, writes the slot to `obj+0x0E` |
+| `0x1370F0` | `0x16EF8F0` | `beq $v0,$zero,0x16EF974` | same, second entry point |
+
+The last two are the ones a wait depends on. All four become `nop`; every delay slot holds an
+instruction the fall-through needs anyway (`move $a0,$s1` / `move $a0,$s0`), so retiring the
+branch is clean.
+
+**The null-safety, checked rather than assumed.** Both installer paths converge at `0x16EF914`,
+where the resolved clip — null, in this case — is passed to `0x16D7440` and would then be
+dereferenced by `lw $a2,0x18($s0)` at `0x16EF948`. It is not reached: `0x16D7440` null-checks at
+its first instruction and returns 0, so `beqz $v0` at `0x16EF934` jumps to `0x16EF96C`, which is
+`addiu $v0,$zero,1` — success, with the dereference skipped.
+
+The earlier one-instruction framing, for the record:
 
 | ISO offset | stock | "carry on" |
 |---|---|---|

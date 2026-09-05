@@ -234,10 +234,11 @@ looting a skeleton freezes: the same *walk up, press X, get an item* interaction
 It plays a motion his model has no clip for — his animal rig carries **15 clips against Hugo's
 60**, which is also why his running needed its own fix. As **Luc** the same objects pick up
 fine, which is what proves it's the clip set rather than the field-character feature.
-**ISO Editor → Test → Missing animations** retires the engine's "give up when the model lacks
-the clip" branch, so the pickup stops waiting on a motion that will never play and Koroku
-simply stands there. One instruction, reverted just as easily. It's under Test because it's
-built but not yet play-tested.
+**ISO Editor → Test → Missing animations** makes a missing clip behave as a motion that
+finished instantly. What the interaction waits on is a *flag* — bit `0x80000000` on the object,
+meaning *motion finished* — which nothing sets if no clip ever plays; retiring the four
+"give up" branches lets it take the success path that sets it. Four instructions, reverted just
+as easily. Under Test because it's built but not yet play-tested.
 
 > One caveat that applies throughout: **story scripts set the leader byte at chapter
 > transitions**, so a pick holds until the next scene that sets it. The mechanism — the

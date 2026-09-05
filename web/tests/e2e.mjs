@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, MOTIONFB_SITE,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, MOTIONFB_SITES,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -596,18 +596,24 @@ head("Missing animations — the field-pickup fix");
   check("it has its own Test sub-tab", !!(await page.$("#mfbSel")));
   check("...naming the symptom, not the opcode", /herb/i.test(txt) && /skeleton/i.test(txt), "");
   check("...and the evidence that it is the clip set", /Luc/.test(txt));
-  check("...and that 50 of 251 callers read the flag", /50 of its 251 callers/.test(txt));
+  check("...and that 50 of 251 callers read the result", /50 of its 251 callers/.test(txt));
+  check("...and that the wait is on a flag, not a return value", /0x80000000/.test(txt));
   check("it defaults to stock", (await page.$eval("#mfbSel", (e) => e.value)) === "stock");
   await page.selectOption("#mfbSel", "alt");
   await page.waitForSelector("#mfbSel", { timeout: 3000 });
   { const r = await save(page);
-    check("choosing 'carry on' nops the give-up branch", r.u32(MOTIONFB_SITE[0]) === MOTIONFB_SITE[2],
-      "0x" + (r.u32(MOTIONFB_SITE[0]) >>> 0).toString(16)); }
+    // all four, not just the first — v1.87.0 patched one site and did not fix the hang
+    check("choosing 'finished instantly' retires every give-up branch",
+      MOTIONFB_SITES.every(([o, , alt]) => r.u32(o) === alt),
+      MOTIONFB_SITES.map(([o]) => "0x" + (r.u32(o) >>> 0).toString(16)).join(" "));
+    check("...including the two that mark the motion finished",
+      r.u32(0x137070) === 0 && r.u32(0x1370F0) === 0); }
   await page.selectOption("#mfbSel", "stock");
   await page.waitForSelector("#mfbSel", { timeout: 3000 });
   { const r = await save(page);
-    check("...and switching back restores the branch exactly", r.u32(MOTIONFB_SITE[0]) === MOTIONFB_SITE[1],
-      "0x" + (r.u32(MOTIONFB_SITE[0]) >>> 0).toString(16)); }
+    check("...and switching back restores all four words exactly",
+      MOTIONFB_SITES.every(([o, stock]) => r.u32(o) === stock),
+      MOTIONFB_SITES.map(([o]) => "0x" + (r.u32(o) >>> 0).toString(16)).join(" ")); }
   await page.context().close();
 }
 
