@@ -3939,14 +3939,20 @@
     }
     const on = sites.every((f) => r32(f.off) === f.alt);
     host.innerHTML = `<div class="bag">
-        <div class="bag-h">Missing animations <span class="u">built, not yet play-tested</span></div>
+        <div class="bag-h">Missing animations <span class="u">does NOT fix the pickup freeze</span></div>
+        <div class="warnbox" style="margin:0 0 10px">
+          <b>Tried against the field-pickup hang, twice, and it does not fix it.</b> Kept because
+          the engine change is real and correct, and because the negative result is worth
+          keeping — but do not enable this expecting Koroku to loot a skeleton. He still hangs.
+        </div>
         <div class="muted" style="margin:0 0 10px">
-          <b>The fix for field pickups freezing as Koroku.</b> Walking up to a herb, or looting
-          a skeleton, hangs — both are the same "press X, play a short motion, receive an item"
-          interaction. His model is animal-rigged and carries <b>15 animation clips against
-          Hugo's 60</b>, so the pickup asks for a clip he does not have. <b>Confirmed
-          model-specific in play:</b> Luc picks the same objects up without trouble, and he goes
-          through identical avatar machinery.
+          The theory was that the interaction waits for a motion to finish, and that Koroku —
+          animal-rigged, <b>15 animation clips against Hugo's 60</b> — is asked for a clip he
+          does not have, so the wait never ends. The clip gap is real, and it is real that
+          <b>Luc loots the same skeleton fine</b>. The wait is what was wrong: the two engine
+          functions that test the <i>motion finished</i> flag are <b>not reachable from any of
+          the 359 event-script opcode handlers</b>, so whatever a script waits on, it is not
+          this. Patching it changes nothing about the hang.
         </div>
         <label class="field" style="max-width:460px"><span>When a model lacks the requested clip</span>
           <select id="mfbSel">
@@ -3954,13 +3960,12 @@
             <option value="alt"${on ? " selected" : ""}>treat it as finished instantly</option>
           </select></label>
         <div class="muted" style="font-size:12px;margin:8px 0 0">
-          <b>What it is actually waiting on.</b> Not a return value — a flag. Object flags live
-          at <code>obj+0x04</code>, and bit <code>0x80000000</code> means <i>motion finished</i>.
-          Starting a motion clears it, the animation code sets it when the clip ends, and the
-          interaction polls it. With no clip, nothing ever sets it, so the wait never ends.
-          Retiring the four give-up branches makes a missing clip take the normal success path:
-          the flag is set, the motion slot is recorded, and the interaction carries on. Koroku
-          keeps the pose he is already in — standing, for a pickup you have just walked up to.
+          <b>What it does.</b> Object flags live at <code>obj+0x04</code>, and bit
+          <code>0x80000000</code> means <i>motion finished</i>. Retiring the four give-up
+          branches makes a missing clip take the normal success path: the flag is set, the
+          motion slot is recorded, and the model keeps the pose it is already in instead of the
+          motion silently never starting. That is a sane thing for the engine to do — it is
+          simply not what the field pickup is blocked on.
           <br><br><b>Why it should not crash.</b> The one place the absent clip would have been
           dereferenced is skipped: with nothing resolved, the call at <code>0x16EF92C</code> gets
           null, returns zero because it null-checks at its first instruction, and the branch
