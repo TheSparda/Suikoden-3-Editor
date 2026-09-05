@@ -966,23 +966,32 @@ The last two are the ones a wait depends on. All four become `nop`; every delay 
 instruction the fall-through needs anyway (`move $a0,$s1` / `move $a0,$s0`), so retiring the
 branch is clean.
 
-**The null-safety, checked rather than assumed.** Both installer paths converge at `0x16EF914`,
-where the resolved clip — null, in this case — is passed to `0x16D7440` and would then be
-dereferenced by `lw $a2,0x18($s0)` at `0x16EF948`. It is not reached: `0x16D7440` null-checks at
-its first instruction and returns 0, so `beqz $v0` at `0x16EF934` jumps to `0x16EF96C`, which is
-`addiu $v0,$zero,1` — success, with the dereference skipped.
+**Played, and it does not fix the hang either (2026-09-05).** Both versions were tried; Koroku
+still freezes looting a skeleton. The theory is wrong, and here is the proof rather than another
+guess:
 
-The earlier one-instruction framing, for the record:
+> The two engine functions that test the *motion finished* bit — `0x16E9848` (five test sites)
+> and `0x16EF080` (one) — have **3 and 2 callers respectively, and not one of them lies inside
+> any of the 359 EDS opcode handlers** (table `0x19828F8`, bodies `0x178FE10`–`0x17B1F60`).
+> Whatever a script blocks on, it is not this flag. The flag is engine-internal.
 
-| ISO offset | stock | "carry on" |
-|---|---|---|
-| `0x136D70` (vaddr `0x16EF570`) | `beq $v0,$zero,0x16EF634` — clip missing, give up | `nop` — fall through to the success path |
+So the motion-clip line of attack is closed. What survives it:
 
-Nothing dereferences the absent clip. The applier at `0x16D8508` null-checks both the model and
-the clip and returns quietly (`beqz $s0` at `0x16D8540`), so the *only* thing the failure
-produces is the flag. Retiring the branch lets the call reach its normal success path: the
-motion slot is recorded, whatever was waiting stops waiting, and the model keeps the clip it is
-already playing — which, for a pickup you have just walked up to, is its standing loop.
+- **The clip gap is real** — Koroku has 15 clips against Hugo's 60 — but it is not what the
+  pickup is waiting for.
+- **Luc looting the same skeleton is still the key fact.** It is model-specific, so the
+  difference lies somewhere in the model or its object, not in the field-character feature.
+- The next place to look is the **blocking opcode itself**: an EDS handler that declines to
+  advance the instruction pointer at `ctx+0x0C` until some condition holds. Find the handler
+  the pickup uses and the condition is right there. `eds_dis.py` already recovers which opcodes
+  advance the IP by a constant; the blocking ones are precisely those that do it conditionally.
+
+Recorded as a dead end, with its disproof, so it is not re-derived — the same treatment §9 gave
+the team index, the `evneutral` clip and the actor fallback.
+
+**The patch itself is kept and relabelled**, not reverted: the engine change is correct and
+null-safe, it is opt-in and off by default, and the panel now says plainly that it does not fix
+the pickup freeze.
 
 **One correction to §9's framing.** It said `SetMotion` "returns the flag and the caller ignores
 it". That is not true: scanning all call sites, **50 of 251 branch on `$v0`**. What actually

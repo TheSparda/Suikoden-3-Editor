@@ -234,11 +234,12 @@ looting a skeleton freezes: the same *walk up, press X, get an item* interaction
 It plays a motion his model has no clip for — his animal rig carries **15 clips against Hugo's
 60**, which is also why his running needed its own fix. As **Luc** the same objects pick up
 fine, which is what proves it's the clip set rather than the field-character feature.
-**ISO Editor → Test → Missing animations** makes a missing clip behave as a motion that
-finished instantly. What the interaction waits on is a *flag* — bit `0x80000000` on the object,
-meaning *motion finished* — which nothing sets if no clip ever plays; retiring the four
-"give up" branches lets it take the success path that sets it. Four instructions, reverted just
-as easily. Under Test because it's built but not yet play-tested.
+**There is no fix yet.** Two attempts under **ISO Editor → Test → Missing animations** — make a
+missing animation clip behave as one that finished instantly — were built and played, and
+neither helped. The disproof is in the research doc: the engine functions that test the
+*motion finished* flag turn out not to be reachable from any of the 359 event-script opcode
+handlers, so a script never blocks on it. The patch is kept, relabelled and off by default,
+because the engine change itself is sound; the search has moved to the blocking opcode.
 
 > One caveat that applies throughout: **story scripts set the leader byte at chapter
 > transitions**, so a pick holds until the next scene that sets it. The mechanism — the
