@@ -129,11 +129,16 @@ const areaInfo = (id) => { const m = (AREAS.byModel || {})[String(id)];
 const safeM = appSrc.match(/const STORY_SAFE = new Set\(\[([^\]]*)\]\)/);
 if (!safeM) { console.error("FAIL: no STORY_SAFE in web/app.js"); process.exit(1); }
 const STORY_SAFE = new Set(safeM[1].split(",").map((t) => Number(t.trim())).filter((n) => !isNaN(n)));
-const avatarList = new Function("REF", "CHAR_LIST", "avatarAreaInfo", "STORY_SAFE",
+// AVATAR_NOTES is parsed out for the same reason as STORY_SAFE: the picker's row text is
+// driven by it, so a verdict added there must show up here rather than in a stale copy.
+const notesM = appSrc.match(/const AVATAR_NOTES = \{[\s\S]*?\n\};/);
+if (!notesM) { console.error("FAIL: no AVATAR_NOTES in web/app.js"); process.exit(1); }
+const AVATAR_NOTES = new Function(notesM[0] + "\nreturn AVATAR_NOTES;")();
+const avatarList = new Function("REF", "CHAR_LIST", "avatarAreaInfo", "STORY_SAFE", "AVATAR_NOTES",
   appSrc.slice(fnStart, fnEnd + 2) + "\nreturn avatarList;")(
   { fieldAvatars: PY_AVATARS, charById: NAMES },
   PY_PARTY_IDS.map((id) => ({ id, name: NAMES[id] })),
-  areaInfo, STORY_SAFE);
+  areaInfo, STORY_SAFE, AVATAR_NOTES);
 
 console.log("Save-editor picker labelling:");
 { const list = avatarList(1);
@@ -143,17 +148,28 @@ console.log("Save-editor picker labelling:");
   check("only the shipped avatars are offered", eq(list.map((r) => r.id), PY_AVATARS),
     JSON.stringify(list.map((r) => r.id)));
   check("Sarah is NOT offered (she needs the ISO experiment)", !list.some((r) => r.id === 66));
+  // Koroku freezes on field pickups and no patch fixed it (three were built and played), so
+  // the picker row has to carry that verdict rather than the generic "roaming" blurb.
+  { const k = list.find((r) => r.id === 54), l = list.find((r) => r.id === 63);
+    check("Koroku's row is flagged as having a known problem", k.cat === "has a known problem", k.cat);
+    check("...and says what breaks", /pick-up clips|pickup/i.test(k.desc), k.desc.slice(0, 70));
+    check("...naming the cause", /animal-rigged/.test(k.desc));
+    check("Luc's row records that he was confirmed working",
+      /no problems/i.test(l.desc), l.desc.slice(0, 70));
+    check("a character with no verdict keeps the generic blurb",
+      !/animal-rigged|no problems/.test(list.find((r) => r.id === 29).desc)); }
   check("no unpatched character is offered",
     !list.some((r) => !PY_AVATARS.includes(r.id)));
-  // Being shipped is not the same as being story-safe — Koroku hangs scenes and is shipped.
+  // Being shipped is not the same as being trouble-free. Koroku is shipped by the game and
+  // still freezes field pickups, so his row must not read as an ordinary roaming pick.
   const prot = list.filter((r) => r.cat === "protagonist").map((r) => r.id);
   check("STORY_SAFE is exactly the four protagonists",
     eq([...STORY_SAFE].sort((a, b) => a - b), [1, 2, 3, 29]), JSON.stringify([...STORY_SAFE]));
   check("the four protagonists are marked as such", eq(prot, [1, 2, 3, 29]), JSON.stringify(prot));
   check("the rest are marked roaming only",
     list.filter((r) => r.cat === "roaming only").every((r) => !([1, 2, 3, 29].includes(r.id))));
-  check("Koroku is shipped but not story-safe",
-    (list.find((r) => r.id === 54) || {}).cat === "roaming only");
+  check("Koroku is shipped, not story-safe, and not merely 'roaming'",
+    !STORY_SAFE.has(54) && (list.find((r) => r.id === 54) || {}).cat === "has a known problem");
   check("nobody is listed twice", new Set(list.map((r) => r.id)).size === list.length);
   check("every row carries a note explaining its group", list.every((r) => r.desc && r.cat));
   // The coverage warning has to reach the row the user reads, not just exist in the file.
@@ -162,7 +178,11 @@ console.log("Save-editor picker labelling:");
   check("...and names them", /ZKTR/.test(luc.desc));
   const thomas = list.find((r) => r.id === 29);
   check("the most map-limited avatar reports its small count", /ships in 5\/28 maps/.test(thomas.desc), thomas.desc);
-  check("roaming picks say scenes can hang", /scenes can hang/.test(list.find((r) => r.id === 54).desc)); }
+  // A roaming pick with no known problem should describe the two party conditions, since that
+  // is what actually decides whether scenes work for it.
+  check("a roaming pick with no verdict explains the party conditions",
+    /party slot 1/.test(list.find((r) => r.id === 202).desc),
+    list.find((r) => r.id === 202).desc.slice(0, 80)); }
 { // A save whose leader the picker does not offer (a dog, a special) must still show what it
   // holds — dropping it would silently rewrite the save on the next Apply.
   const list = avatarList(0xD2);
