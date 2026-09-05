@@ -920,14 +920,11 @@ this disc so far has been diagnosed by playing it, because there is no emulator 
 development machine (§ *Reading the hang instead of inferring it*). A repeatable one-minute
 repro is worth more than a cutscene for exactly that reason.
 
-**The discriminating experiment, not yet run.** Try a herb pickup as **Luc or Thomas** —
-humanoid models with full clip sets.
-
-- They pick it up fine → it is Koroku's clip poverty, and the fallback below is the right lever.
-- They hang too → it is not clips, and this belongs with the avatar machinery instead.
-
-Until that is run, the mechanism above is a hypothesis with good circumstantial support, not a
-finding.
+**The discriminating experiment, run — and it settles it.** As **Luc**, the same objects pick
+up perfectly (confirmed in play 2026-09-05). Luc is a humanoid model with a full clip set, and
+the avatar machinery he goes through is identical to Koroku's. So the hang is **the clip set**,
+not the avatar feature. That promotes the mechanism above from hypothesis to diagnosis and
+picks the lever: the failure is a model asking for a clip it does not own.
 
 **Fix candidates, and what each would cost.**
 
@@ -944,9 +941,29 @@ fire **only** when a model is asked for a clip it does not own — which stock p
 never does, since 76 of 78 models carry the full human set and the game never hands you Koroku
 on the field. Koroku would stand still instead of crouching, and the interaction would continue.
 
-Neither is built. Both are shared-path patches that cannot be validated here, so they stay
-research until someone can play-test them — the same bar §8's run-cycle fix had to clear before
-it shipped.
+**Built (v1.87.0), and it is one instruction.** The second lever turned out simpler than the
+table suggests, because the give-up is a single branch:
+
+| ISO offset | stock | "carry on" |
+|---|---|---|
+| `0x136D70` (vaddr `0x16EF570`) | `beq $v0,$zero,0x16EF634` — clip missing, give up | `nop` — fall through to the success path |
+
+Nothing dereferences the absent clip. The applier at `0x16D8508` null-checks both the model and
+the clip and returns quietly (`beqz $s0` at `0x16D8540`), so the *only* thing the failure
+produces is the flag. Retiring the branch lets the call reach its normal success path: the
+motion slot is recorded, whatever was waiting stops waiting, and the model keeps the clip it is
+already playing — which, for a pickup you have just walked up to, is its standing loop.
+
+**One correction to §9's framing.** It said `SetMotion` "returns the flag and the caller ignores
+it". That is not true: scanning all call sites, **50 of 251 branch on `$v0`**. What actually
+bounds the risk is different — 76 of 78 models carry the full human clip set and the game never
+hands you Koroku on the field, so the failure path is essentially unreachable in stock play and
+those 50 branches already take the success side every time. That is an argument, not a
+play-test, which is why it shipped under **Test**.
+
+Scope: the main motion table (ids < `0x13D`). The 13-entry second table keeps its own give-up
+branch at `0x16EF5F8`, because that failure path also clears `obj+0x24` and skipping it would
+strand a record pointer.
 
 ## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
