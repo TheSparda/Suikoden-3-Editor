@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, MOTIONFB_SITES, CLIPFB_BASE, CLIPFB_SLOTS,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -579,70 +579,6 @@ head("Field character — the whitelist that decides who you can walk around as"
     check("the read-only second-half bounds were left alone",
       r.u32(0x1FEDA0) === avatarWord(0x3F, "lt") && r.u32(0x1FEDAC) === avatarWord(0xCC, "lt")
       && r.u32(0x1FEDB4) === avatarWord(0xCA, "lt")); }
-  await page.context().close();
-}
-
-// The field-pickup fix: one instruction retires SetMotion's "model has no such clip -> give
-// up" branch, so whatever was waiting on that motion stops waiting. Confirmed model-specific
-// in play (Koroku hangs on a herb, Luc does not); the patch itself is not play-tested yet,
-// which is why it lives under Test.
-head("Missing animations — kept, but labelled as not fixing the freeze");
-{ const page = await newPage();
-  await loadIso(page);
-  await page.click('#isoTabs [data-v="test"]');
-  await page.click('#testTabs [data-t="motion"]');
-  await page.waitForSelector("#mfbSel", { timeout: 3000 });
-  const txt = await page.textContent("#isoView");
-  check("it has its own Test sub-tab", !!(await page.$("#mfbSel")));
-  // It was shipped twice as "the field-pickup fix" and is not. A panel that still claimed to
-  // fix it would be the worst outcome of this whole thread, so the retraction is asserted.
-  check("...saying plainly that it does NOT fix the pickup freeze",
-    /does not fix it/i.test(txt) && /skeleton/i.test(txt));
-  check("...keeping the fact that makes it model-specific", /Luc/.test(txt));
-  check("...and the disproof: no opcode handler reaches that flag",
-    /not reachable from any/i.test(txt) && /359/.test(txt));
-  check("...while still stating the blast radius", /50 of its 251 callers/.test(txt));
-  check("it defaults to stock", (await page.$eval("#mfbSel", (e) => e.value)) === "stock");
-  await page.selectOption("#mfbSel", "alt");
-  await page.waitForSelector("#mfbSel", { timeout: 3000 });
-  { const r = await save(page);
-    // all four, not just the first — v1.87.0 patched one site and did not fix the hang
-    check("choosing 'finished instantly' retires every give-up branch",
-      MOTIONFB_SITES.every(([o, , alt]) => r.u32(o) === alt),
-      MOTIONFB_SITES.map(([o]) => "0x" + (r.u32(o) >>> 0).toString(16)).join(" "));
-    check("...including the two that mark the motion finished",
-      r.u32(0x137070) === 0 && r.u32(0x1370F0) === 0); }
-  await page.selectOption("#mfbSel", "stock");
-  await page.waitForSelector("#mfbSel", { timeout: 3000 });
-  { const r = await save(page);
-    check("...and switching back restores all four words exactly",
-      MOTIONFB_SITES.every(([o, stock]) => r.u32(o) === stock),
-      MOTIONFB_SITES.map(([o]) => "0x" + (r.u32(o) >>> 0).toString(16)).join(" ")); }
-
-  // The other approach on the same tab: rename the slot instead of patching the engine.
-  // Koroku's model has no check_*/pickup_* clip but does have neutral_L/R, so pointing the
-  // fourteen slots at neutral gives him an animation that exists.
-  const nameAt = (r, i) => { let o = ""; for (let k = 0; k < 16; k++) {
-    const c = r.u8(CLIPFB_BASE + 20 * i + k); if (!c) break; o += String.fromCharCode(c); } return o; };
-  check("the clip-redirect control is on the same tab", !!(await page.$("#cfbSel")));
-  check("...and says the cost is global", /Hugo stops crouching/.test(await page.textContent("#isoView")));
-  await page.selectOption("#cfbSel", "alt");
-  await page.waitForSelector("#cfbSel", { timeout: 3000 });
-  { const r = await save(page);
-    check("every examine/pick-up slot now names a neutral clip",
-      CLIPFB_SLOTS.every(([i]) => /^neutral_[LR]$/.test(nameAt(r, i))),
-      CLIPFB_SLOTS.map(([i]) => nameAt(r, i)).join(" "));
-    check("...preserving L/R handedness",
-      CLIPFB_SLOTS.every(([i, stock]) => nameAt(r, i) === (/L$|_L$/.test(stock) ? "neutral_L" : "neutral_R")),
-      CLIPFB_SLOTS.map(([i, st]) => st + "->" + nameAt(r, i)).join(" "));
-    check("...and the slot's own flags are untouched", r.u32(CLIPFB_BASE + 20 * 52 + 16) === 0x00000101,
-      "0x" + (r.u32(CLIPFB_BASE + 20 * 52 + 16) >>> 0).toString(16)); }
-  await page.selectOption("#cfbSel", "stock");
-  await page.waitForSelector("#cfbSel", { timeout: 3000 });
-  { const r = await save(page);
-    check("...and reverting restores every original name",
-      CLIPFB_SLOTS.every(([i, stock]) => nameAt(r, i) === stock),
-      CLIPFB_SLOTS.map(([i]) => nameAt(r, i)).join(" ")); }
   await page.context().close();
 }
 
