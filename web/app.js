@@ -1159,7 +1159,13 @@ function drawField() {
       has been played through scene after scene, speaking the protagonist's lines — but they
       are stand-ins, and a scene written around something only the real protagonist has can
       still go wrong. Story scripts also set this byte at chapter transitions, so a change here
-      holds until the next scene that sets it. Keep a backup save.</div>`;
+      holds until the next scene that sets it. Keep a backup save.
+      <br><br><b>Known as Koroku: field pickups hang.</b> Picking up a herb, or looting a
+      skeleton, freezes — both are the same "walk up, press X, get an item" interaction, and it
+      plays a motion his model has no clip for (his animal rig carries 15 clips against Hugo's
+      60, which is also why his running needed a separate fix). Conversation, battles and
+      scenes are unaffected. There is no fix yet; walk past them, or switch back to a
+      protagonist to collect. This is why a backup save matters.</div>`;
   const cover = (id) => {
     const el = $("#leadercover"); if (!el) return;
     const a = avatarAreaInfo(id);
