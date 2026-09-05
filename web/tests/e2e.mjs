@@ -586,7 +586,7 @@ head("Field character — the whitelist that decides who you can walk around as"
 // up" branch, so whatever was waiting on that motion stops waiting. Confirmed model-specific
 // in play (Koroku hangs on a herb, Luc does not); the patch itself is not play-tested yet,
 // which is why it lives under Test.
-head("Missing animations — the field-pickup fix");
+head("Missing animations — kept, but labelled as not fixing the freeze");
 { const page = await newPage();
   await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
@@ -594,10 +594,14 @@ head("Missing animations — the field-pickup fix");
   await page.waitForSelector("#mfbSel", { timeout: 3000 });
   const txt = await page.textContent("#isoView");
   check("it has its own Test sub-tab", !!(await page.$("#mfbSel")));
-  check("...naming the symptom, not the opcode", /herb/i.test(txt) && /skeleton/i.test(txt), "");
-  check("...and the evidence that it is the clip set", /Luc/.test(txt));
-  check("...and that 50 of 251 callers read the result", /50 of its 251 callers/.test(txt));
-  check("...and that the wait is on a flag, not a return value", /0x80000000/.test(txt));
+  // It was shipped twice as "the field-pickup fix" and is not. A panel that still claimed to
+  // fix it would be the worst outcome of this whole thread, so the retraction is asserted.
+  check("...saying plainly that it does NOT fix the pickup freeze",
+    /does not fix it/i.test(txt) && /skeleton/i.test(txt));
+  check("...keeping the fact that makes it model-specific", /Luc/.test(txt));
+  check("...and the disproof: no opcode handler reaches that flag",
+    /not reachable from any/i.test(txt) && /359/.test(txt));
+  check("...while still stating the blast radius", /50 of its 251 callers/.test(txt));
   check("it defaults to stock", (await page.$eval("#mfbSel", (e) => e.value)) === "stock");
   await page.selectOption("#mfbSel", "alt");
   await page.waitForSelector("#mfbSel", { timeout: 3000 });
