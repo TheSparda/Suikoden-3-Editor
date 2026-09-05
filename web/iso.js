@@ -361,6 +361,34 @@
     },
   };
 
+  // ---- missing-animation fallback ---------------------------------------------
+  // SetMotion (vaddr 0x16EF4F0) asks the model for the requested clip and, when the model does
+  // not own it, reports failure WITHOUT touching the object's motion state. Anything that then
+  // waits for that motion to finish waits forever. That is the field-pickup freeze: picking up
+  // a herb or looting a skeleton hangs as Koroku, whose animal rig carries 15 clips against
+  // Hugo's 60. Confirmed model-specific in play (2026-09-05) — Luc picks the same objects up
+  // perfectly, so it is the clip set, not the avatar machinery.
+  //
+  // Nothing dereferences the absent clip: the applier at 0x16D8508 null-checks both the model
+  // and the clip and returns quietly (`beqz $s0` at 0x16D8540). The only casualty is the
+  // "did it play" flag. Retiring the give-up branch lets the call fall through to its success
+  // path — the motion slot is recorded, the caller stops waiting, and the model simply keeps
+  // the clip it is already playing, which for a pickup you have just walked up to is its
+  // standing loop.
+  //
+  // Two things bound the blast radius honestly. This is the MAIN motion table (ids < 0x13D);
+  // the 13-entry second table has its own give-up branch at 0x16EF5F8, left alone because its
+  // failure path also clears obj+0x24 and skipping that would strand a record pointer. And
+  // 50 of SetMotion's 251 callers do branch on the flag — so this is not "nobody reads it".
+  // What makes it tolerable is that 76 of 78 models carry the full human clip set, so in
+  // stock play the failure path is essentially never reached and those 50 branches already
+  // always take the success side.
+  const MOTIONFB = {
+    off: 0x136D70,          // vaddr 0x16EF570
+    stock: 0x10400030,      // beq $v0,$zero,0x16EF634 — clip missing, give up
+    alt: 0x00000000,        // nop — fall through, keep the current pose
+  };
+
   // ---- what counts as "moving" for a random encounter -------------------------
   // Before the rate is even computed, the roll is gated on the PLAYER OBJECT's current
   // motion slot (`obj->+0x0E`) and object kind (`obj->+0x02`):
@@ -3867,24 +3895,79 @@
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "avatar";
-  const TESTS = [["avatar", "Field character"]];
+  const TESTS = [["avatar", "Field character"], ["motion", "Missing animations"]];
   function drawTest(host) {
     host.innerHTML = `
       <div class="warnbox" style="margin:0 0 12px">
-        <b>Experimental — expect these not to work.</b> The patches here rewrite game code
-        correctly, but the game was not built for what they enable. Scripted scenes are written
-        for a specific protagonist and the event data lives in packed files no editor can reach,
-        so a scene can simply hang. Confirmed in play with <b>Koroku, Yuber and Lucia</b>.
-        Treat all of it as a roaming toy, keep a backup save, and switch the leader back to
-        Hugo, Chris, Geddoe or Thomas before triggering story. Note too that story scripts
-        rewrite the leader byte themselves at <b>chapter transitions</b>, so a pick holds only
-        until the next scene that sets it.
+        <b>Experimental — these rewrite game code and are not confirmed in play.</b> They are
+        not all the same shape, so read each one's own note. <b>Field character</b> widens the
+        model whitelist past the stock eight, and everyone beyond it is untested — Yuber and
+        Lucia were both seen to hang a scene, though that was before the scene freeze was traced
+        to the party and fixed, so their status is simply unknown now. <b>Missing animations</b>
+        is a targeted fix for a confirmed, reproducible bug with a confirmed cause; it is here
+        because it has been built but not yet played.
+        <br>Keep a backup save. Note too that story scripts rewrite the leader byte themselves
+        at <b>chapter transitions</b>, so a pick holds only until the next scene that sets it.
       </div>
       <div class="subtabs" id="testTabs" style="margin-bottom:12px">${TESTS.map(([k, l]) =>
         `<button class="chip${k === TESTVIEW ? " on" : ""}" data-t="${k}">${l}</button>`).join("")}</div>
       <div id="testView"></div>`;
     qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
     if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
+    else if (TESTVIEW === "motion") drawMotionFb(q("#testView", host));
+  }
+
+  // ---- Missing animations -----------------------------------------------------
+  function drawMotionFb(host) {
+    const cur = inBlk(MOTIONFB.off, 4) ? r32(MOTIONFB.off) : null;
+    if (cur === null || (cur !== MOTIONFB.stock && cur !== MOTIONFB.alt)) {
+      host.innerHTML = `<div class="warnbox">The motion-set branch isn't where this build
+        expects it — no edits offered.</div>`;
+      return;
+    }
+    const on = cur === MOTIONFB.alt;
+    host.innerHTML = `<div class="bag">
+        <div class="bag-h">Missing animations <span class="u">built, not yet play-tested</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          <b>The fix for field pickups freezing as Koroku.</b> Walking up to a herb, or looting a
+          skeleton, hangs — both are the same "press X, play a short motion, receive an item"
+          interaction. His model is animal-rigged and carries <b>15 animation clips against
+          Hugo's 60</b>, so the pickup asks for a clip he does not have. The engine reports that
+          the motion failed and leaves his pose alone, and whatever was waiting for that motion
+          to end waits forever. <b>Confirmed model-specific in play:</b> Luc picks the same
+          objects up without trouble.
+        </div>
+        <label class="field" style="max-width:420px"><span>When a model lacks the requested clip</span>
+          <select id="mfbSel">
+            <option value="stock"${on ? "" : " selected"}>give up — the motion never plays (stock)</option>
+            <option value="alt"${on ? " selected" : ""}>carry on — keep the pose it is already in</option>
+          </select></label>
+        <div class="muted" style="font-size:12px;margin:8px 0 0">
+          <b>What "carry on" does.</b> One instruction retires the give-up branch, so the call
+          falls through to its normal success path: the motion is recorded as set, whatever was
+          waiting stops waiting, and the model keeps the clip it is already playing. Walk up to a
+          herb and stop, and that clip is his standing loop — so he stands there, the message
+          box opens, and you get the item.
+          <br><br><b>Why it should be safe.</b> Nothing ever touches the missing clip: the code
+          that applies one already checks for null and returns quietly, so the only thing the
+          failure produces is the flag. And the failure path is essentially unreachable in stock
+          play — <b>76 of 78 models carry the full human clip set</b>, and the game never hands
+          you Koroku on the field.
+          <br><br><b>Why it is still under Test.</b> It changes a shared path: every scripted
+          motion in the game goes through it, and <b>50 of its 251 callers do read that flag</b>.
+          They already take the success side every time in practice, but "in practice" is an
+          argument, not a play-test. It covers the main motion table only; a 13-entry special
+          table keeps its own give-up branch, because that one also clears state on the way out.
+          <br><br>Reverting is one instruction back. Keep a backup save.
+        </div>
+      </div>`;
+    const sel = q("#mfbSel", host);
+    sel.onchange = () => {
+      writeW(MOTIONFB.off, 4, sel.value === "alt" ? MOTIONFB.alt : MOTIONFB.stock);
+      reg(MOTIONFB.off, 4, "num", "Missing animations", "clip-missing branch");
+      drawView();
+    };
+    markField(sel, MOTIONFB.off, 4, "num");
   }
 
   // ---- Field character --------------------------------------------------------
