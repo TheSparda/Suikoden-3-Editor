@@ -601,6 +601,17 @@ head("Field character — per-map coverage; Story content in its own view");
   check("Story content has its own top-level view", !!(await page.$("#storyStock")));
   check("...marked confirmed rather than experimental",
     /confirmed in play/i.test(await page.textContent("#isoView")));
+  // The blank-text fix is two edits in two files, and the ISO half is useless on its own —
+  // this view has to say so, and has to name the save-editor tab that does the other half.
+  // Asserted because that name is a moving target: the picker has already moved once.
+  { const txt = await page.textContent("#isoView");
+    check("it spells out the setup, not just the switch", /Setting it up/i.test(txt));
+    check("...naming the Save Editor tab that does the other half",
+      /Save Editor\s*→\s*Field character/.test(txt));
+    check("...and separating a blank box from a frozen scene",
+      /hangs?/i.test(txt) && /freez/i.test(txt));
+    check("...and explaining the index-0 fallback it relies on",
+      /index 0/.test(txt) && /fall/i.test(txt)); }
   const storyRow = async (id) => {
     const rows = await page.$$("#isoView table.invtbl tbody tr");
     for (const tr of rows) {

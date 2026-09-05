@@ -153,7 +153,8 @@ including the HP pooling that re-splits a pair's HP proportionally the moment th
 **Movement** (the walk/run **speed table** — how fast each character moves on the field,
 confirmed in play; battle movement lives in packed asset data and isn't covered; see below),
 **Story content** (which team's events and dialogue a leader gets — the fix for empty dialogue
-boxes when you play as someone the game didn't plan for; see below),
+boxes when you play as someone the game didn't plan for, with the setup written out step by
+step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
 whitelist and the scene-actor fallback; see below),
 **Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
@@ -211,6 +212,12 @@ boxes**. Hugo is index 0, and 0 is also where an unrecognised leader falls, so *
 can hand any of them Hugo's events by retiring a single instruction immediate. Confirmed in
 play: blank text boxes render correctly afterwards. It fixes *empty* dialogue, not a scene that
 *hangs* — that's the party condition above.
+
+The tab is the standalone twin of the save-editor one: it carries the whole recipe, since the
+fix is two edits to two different files. **Setting it up** walks the order — patch the disc
+here, pick the character in **Save Editor → Field character**, then load the two together —
+and **How it works** covers the id→index switch, the index-0 fallback the trick depends on,
+and the line between a blank box (this tab) and a frozen scene (that one).
 
 **Beyond the eight — ISO Editor → Test.** Widening the whitelist to all 75 battle characters is
 two instruction immediates, and lives under **Test** because the patch working is not the same
