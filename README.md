@@ -229,11 +229,15 @@ Two things elsewhere in the editor exist because of this feature: **Koroku had n
 encounters** until the run-cycle gate under **Movement rules** was repointed (confirmed in play,
 below), and the disc-wide **rename** covers him alongside Hugo, Chris and Geddoe.
 
-**Known limit as Koroku: field pickups hang.** Picking up a herb or looting a skeleton freezes
-the game — the same *walk up, press X, get an item* interaction both times. It plays a motion
-his model has no clip for; his animal rig carries **15 clips against Hugo's 60**, which is also
-why his running needed its own fix. Conversation, battles and scenes are unaffected. No fix
-yet, and the two candidate levers are weighed up in the research doc.
+**Field pickups hang as Koroku — and there's now a patch for it.** Picking up a herb or
+looting a skeleton freezes: the same *walk up, press X, get an item* interaction both times.
+It plays a motion his model has no clip for — his animal rig carries **15 clips against Hugo's
+60**, which is also why his running needed its own fix. As **Luc** the same objects pick up
+fine, which is what proves it's the clip set rather than the field-character feature.
+**ISO Editor → Test → Missing animations** retires the engine's "give up when the model lacks
+the clip" branch, so the pickup stops waiting on a motion that will never play and Koroku
+simply stands there. One instruction, reverted just as easily. It's under Test because it's
+built but not yet play-tested.
 
 > One caveat that applies throughout: **story scripts set the leader byte at chapter
 > transitions**, so a pick holds until the next scene that sets it. The mechanism — the
