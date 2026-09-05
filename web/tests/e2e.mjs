@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, MOTIONFB_SITE,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -579,6 +579,35 @@ head("Field character — the whitelist that decides who you can walk around as"
     check("the read-only second-half bounds were left alone",
       r.u32(0x1FEDA0) === avatarWord(0x3F, "lt") && r.u32(0x1FEDAC) === avatarWord(0xCC, "lt")
       && r.u32(0x1FEDB4) === avatarWord(0xCA, "lt")); }
+  await page.context().close();
+}
+
+// The field-pickup fix: one instruction retires SetMotion's "model has no such clip -> give
+// up" branch, so whatever was waiting on that motion stops waiting. Confirmed model-specific
+// in play (Koroku hangs on a herb, Luc does not); the patch itself is not play-tested yet,
+// which is why it lives under Test.
+head("Missing animations — the field-pickup fix");
+{ const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="motion"]');
+  await page.waitForSelector("#mfbSel", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("it has its own Test sub-tab", !!(await page.$("#mfbSel")));
+  check("...naming the symptom, not the opcode", /herb/i.test(txt) && /skeleton/i.test(txt), "");
+  check("...and the evidence that it is the clip set", /Luc/.test(txt));
+  check("...and that 50 of 251 callers read the flag", /50 of its 251 callers/.test(txt));
+  check("it defaults to stock", (await page.$eval("#mfbSel", (e) => e.value)) === "stock");
+  await page.selectOption("#mfbSel", "alt");
+  await page.waitForSelector("#mfbSel", { timeout: 3000 });
+  { const r = await save(page);
+    check("choosing 'carry on' nops the give-up branch", r.u32(MOTIONFB_SITE[0]) === MOTIONFB_SITE[2],
+      "0x" + (r.u32(MOTIONFB_SITE[0]) >>> 0).toString(16)); }
+  await page.selectOption("#mfbSel", "stock");
+  await page.waitForSelector("#mfbSel", { timeout: 3000 });
+  { const r = await save(page);
+    check("...and switching back restores the branch exactly", r.u32(MOTIONFB_SITE[0]) === MOTIONFB_SITE[1],
+      "0x" + (r.u32(MOTIONFB_SITE[0]) >>> 0).toString(16)); }
   await page.context().close();
 }
 
