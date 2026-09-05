@@ -210,6 +210,24 @@ function charList(curId) {
   return list;
 }
 
+// What playing each one actually turned up, keyed by field-avatar id. Only ids with a verdict
+// appear; everything else is simply untried, and saying nothing is more honest than a guess.
+//
+// Koroku is the one real casualty. His model is animal-rigged: the disc's motion table asks for
+// named clips per slot, and his model carries none of the fourteen `check_*` / `pickup_*` ones
+// that examining and picking things up use, where Luc's carries them. Three separate patches
+// were built and played against it — see docs/FIELD_CHARACTER_RESEARCH.md — and none worked, so
+// it is a documented limitation rather than a bug with a fix pending.
+const AVATAR_NOTES = {
+  54: { ok: false, short: "field pickups freeze",
+        long: "No humanoid animation cycle — he's animal-rigged, and his model has none of the "
+            + "examine/pick-up clips. Picking up a herb or looting a skeleton freezes the game. "
+            + "Walking, running, battles, conversation and cutscenes are all fine." },
+  63: { ok: true, short: "confirmed working",
+        long: "Played through with no problems, including picking up the same objects Koroku "
+            + "freezes on." },
+};
+
 // Field-avatar picker. Deliberately offers ONLY the ids the engine will load by itself —
 // s3save.FIELD_AVATAR_IDS, the comparison chain at vaddr 0x17B7560. Widening that chain is
 // possible (ISO Editor -> Test -> Field character) but it is experimental and hangs scenes,
@@ -221,10 +239,16 @@ function avatarList(curId) {
   // row rather than being a separate lookup the user has to do.
   const cover = (id) => { const a = avatarAreaInfo(id);
     return a ? ` · field model ships in ${a.areas.length}/${a.total} maps${a.areas.length ? ": " + a.areas.join(", ") : ""}` : ""; };
-  const list = (REF.fieldAvatars || []).map((id) => ({ id, name: named(id),
-    cat: STORY_SAFE.has(id) ? "protagonist" : "roaming only",
-    desc: (STORY_SAFE.has(id) ? "a protagonist — scenes are written for them"
-            : "the game ships this one, but scenes can hang; switch back before story") + cover(id) }));
+  const list = (REF.fieldAvatars || []).map((id) => {
+    const n = AVATAR_NOTES[id];
+    return { id, name: named(id),
+      cat: n && !n.ok ? "has a known problem" : STORY_SAFE.has(id) ? "protagonist" : "roaming only",
+      // a known verdict outranks the generic blurb — it is the thing that decides the pick
+      desc: (n ? n.long
+               : STORY_SAFE.has(id) ? "a protagonist — scenes are written for them"
+               : "the game ships this one; scenes work once it's in party slot 1 with the "
+                 + "stand-in removed") + cover(id) };
+  });
   if (curId && !list.some((c) => c.id === curId))
     list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
   return list;
@@ -1155,17 +1179,34 @@ function drawField() {
       while those disagree, a scene will freeze. Re-pick above to put them in step, or fix it
       on the <b>Party</b> tab.</div>` : ""}
     <div class="warnbox" style="margin:8px 0 0">
-      <b>Hugo, Chris, Geddoe and Thomas are the story-safe picks.</b> The rest work — Koroku
-      has been played through scene after scene, speaking the protagonist's lines — but they
-      are stand-ins, and a scene written around something only the real protagonist has can
-      still go wrong. Story scripts also set this byte at chapter transitions, so a change here
-      holds until the next scene that sets it. Keep a backup save.
-      <br><br><b>Known as Koroku: field pickups hang.</b> Picking up a herb, or looting a
-      skeleton, freezes — both are the same "walk up, press X, get an item" interaction, and it
-      plays a motion his model has no clip for (his animal rig carries 15 clips against Hugo's
-      60, which is also why his running needed a separate fix). Conversation, battles and
-      scenes are unaffected. There is no fix yet; walk past them, or switch back to a
-      protagonist to collect. This is why a backup save matters.</div>`;
+      <b>Hugo, Chris, Geddoe and Thomas are the story-safe picks.</b> The rest work <i>in
+      scenes</i> — Koroku has been played through scene after scene, speaking the protagonist's
+      lines — but they are stand-ins, so a scene written around something only the real
+      protagonist has can still go wrong, and some of them have limits outside scenes too
+      (see <b>Known limitations</b> below). Story scripts also set this byte at chapter transitions, so a change here
+      holds until the next scene that sets it. Keep a backup save.</div>
+    <h3 class="sec">Known limitations</h3>
+    <div class="muted" style="font-size:12px;margin:0 0 8px">
+      What playing them actually turned up. Anyone not listed simply hasn't been tested enough
+      to say — which is not the same as working.
+    </div>
+    ${Object.keys(AVATAR_NOTES).map(Number).map((id) => {
+      const n = AVATAR_NOTES[id];
+      return `<div style="margin:0 0 8px;padding:8px 10px;border:1px solid var(--line);
+                  border-left:3px solid ${n.ok ? "var(--ok)" : "var(--crimson)"};border-radius:8px">
+        <div><b>${esc(charLabel(id))}</b> — <span style="color:${n.ok ? "var(--ok)" : "var(--crimson)"}">
+          <b>${n.ok ? "✓" : "✕"} ${esc(n.short)}</b></span></div>
+        <div class="muted" style="font-size:12px;margin:4px 0 0">${esc(n.long)}</div></div>`;
+    }).join("")}
+    <div class="muted" style="font-size:12px;margin:8px 0 0">
+      <b>Koroku is the one real casualty, and it isn't fixable from here.</b> The disc's motion
+      table names a clip per animation slot, and his model carries <b>none of the fourteen
+      examine / pick-up clips</b> — Luc's carries them, which is exactly why Luc is fine.
+      Three patches were built and played against it and none worked, so it's recorded as a
+      limitation rather than a fix pending. Play as him and walk past the herbs; switch to a
+      protagonist to collect. The write-up is in
+      <code>docs/FIELD_CHARACTER_RESEARCH.md</code>.
+    </div>`;
   const cover = (id) => {
     const el = $("#leadercover"); if (!el) return;
     const a = avatarAreaInfo(id);
@@ -1203,11 +1244,22 @@ function drawField() {
       if (warn) {
         // Removal is the default because it is the confirmed-working configuration. Keeping
         // them is still offered, labelled with what it does, rather than silently withheld.
-        warn.innerHTML = esc(r.note) + (DISPLACED
-          ? ` <button type="button" id="keepDisplaced" class="linklike" style="text-decoration:underline">Keep ${esc(nm(DISPLACED))} in the party instead</button>`
-          : "");
-        const kb = $("#keepDisplaced");
-        if (kb) kb.onclick = () => { const r2 = stage(true); DISPLACED = 0; warn.textContent = r2.note; };
+        // A known problem with the pick outranks the party bookkeeping — say it at the moment
+        // of choosing, not only in the table further down the page. Both the first render and
+        // the "keep instead" re-render go through this, so the warning can't be dropped by
+        // taking the second path.
+        const kn = AVATAR_NOTES[id];
+        const head = kn && !kn.ok
+          ? `<b style="color:var(--crimson)">${esc(nm(id))}: ${esc(kn.short)}.</b> ${esc(kn.long)}<br>`
+          : "";
+        const paint = (note, offerKeep) => {
+          warn.innerHTML = head + esc(note) + (offerKeep
+            ? ` <button type="button" id="keepDisplaced" class="linklike" style="text-decoration:underline">Keep ${esc(nm(DISPLACED))} in the party instead</button>`
+            : "");
+          const kb = $("#keepDisplaced");
+          if (kb) kb.onclick = () => { const r2 = stage(true); DISPLACED = 0; paint(r2.note, false); };
+        };
+        paint(r.note, !!DISPLACED);
       }
       cover(id);
     }, (id) => String(id).padStart(3, "0"));
