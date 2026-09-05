@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, MOTIONFB_SITES,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, MOTIONFB_SITES, CLIPFB_BASE, CLIPFB_SLOTS,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
@@ -618,6 +618,31 @@ head("Missing animations — kept, but labelled as not fixing the freeze");
     check("...and switching back restores all four words exactly",
       MOTIONFB_SITES.every(([o, stock]) => r.u32(o) === stock),
       MOTIONFB_SITES.map(([o]) => "0x" + (r.u32(o) >>> 0).toString(16)).join(" ")); }
+
+  // The other approach on the same tab: rename the slot instead of patching the engine.
+  // Koroku's model has no check_*/pickup_* clip but does have neutral_L/R, so pointing the
+  // fourteen slots at neutral gives him an animation that exists.
+  const nameAt = (r, i) => { let o = ""; for (let k = 0; k < 16; k++) {
+    const c = r.u8(CLIPFB_BASE + 20 * i + k); if (!c) break; o += String.fromCharCode(c); } return o; };
+  check("the clip-redirect control is on the same tab", !!(await page.$("#cfbSel")));
+  check("...and says the cost is global", /Hugo stops crouching/.test(await page.textContent("#isoView")));
+  await page.selectOption("#cfbSel", "alt");
+  await page.waitForSelector("#cfbSel", { timeout: 3000 });
+  { const r = await save(page);
+    check("every examine/pick-up slot now names a neutral clip",
+      CLIPFB_SLOTS.every(([i]) => /^neutral_[LR]$/.test(nameAt(r, i))),
+      CLIPFB_SLOTS.map(([i]) => nameAt(r, i)).join(" "));
+    check("...preserving L/R handedness",
+      CLIPFB_SLOTS.every(([i, stock]) => nameAt(r, i) === (/L$|_L$/.test(stock) ? "neutral_L" : "neutral_R")),
+      CLIPFB_SLOTS.map(([i, st]) => st + "->" + nameAt(r, i)).join(" "));
+    check("...and the slot's own flags are untouched", r.u32(CLIPFB_BASE + 20 * 52 + 16) === 0x00000101,
+      "0x" + (r.u32(CLIPFB_BASE + 20 * 52 + 16) >>> 0).toString(16)); }
+  await page.selectOption("#cfbSel", "stock");
+  await page.waitForSelector("#cfbSel", { timeout: 3000 });
+  { const r = await save(page);
+    check("...and reverting restores every original name",
+      CLIPFB_SLOTS.every(([i, stock]) => nameAt(r, i) === stock),
+      CLIPFB_SLOTS.map(([i]) => nameAt(r, i)).join(" ")); }
   await page.context().close();
 }
 
