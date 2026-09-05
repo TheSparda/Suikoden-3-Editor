@@ -28,6 +28,13 @@ html,body { margin:0; background:var(--bg); color:var(--ink);
   font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased; }
 html { scroll-padding-bottom:88px; }        /* keep focused inputs clear of the sticky action bar */
+/* Sideways overscroll must never become "go back". The ISO view's tab strip is wider than the
+   card and has to be scrolled horizontally to reach the right-hand tabs, and the page behind it
+   is often not vertically scrollable — so a two-finger gesture that runs off the end of the strip
+   chains to the document and fires the browser's swipe-back. That leaves the editor entirely,
+   losing staged edits, and lands wherever you came from. Reported as "clicking ISO Editor
+   sometimes opens the GitHub repo". -x only: vertical pull-to-refresh is left alone. */
+html, body { overscroll-behavior-x:none; }
 body { padding:max(14px,env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom)); }
 .wrap { max-width:900px; margin:0 auto; }
 header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px;
@@ -100,7 +107,8 @@ input.ro { color:var(--mut); }
 .subtabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
 /* the ISO view has 9 tabs — keep them on one swipeable row instead of stacking */
 #isoTabs { flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
-  scroll-snap-type:x proximity; padding-bottom:6px; scrollbar-width:thin; }
+  scroll-snap-type:x proximity; padding-bottom:6px; scrollbar-width:thin;
+  overscroll-behavior-x:contain; }
 #isoTabs .chip { flex:0 0 auto; scroll-snap-align:start; }
 .pill { padding:2px 9px; border-radius:999px; font-size:12px; background:var(--input-bg);
   border:1px solid var(--line); white-space:nowrap; color:var(--mut); }
@@ -353,7 +361,8 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 /* sub-file browser */
 .sfpeek { font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--mut);
   background:var(--input-bg); border:1px solid var(--line); border-radius:8px;
-  padding:8px 10px; margin:0 0 6px; overflow-x:auto; white-space:pre; }
+  padding:8px 10px; margin:0 0 6px; overflow-x:auto; white-space:pre;
+  overscroll-behavior-x:contain; }
 
 /* item-source provenance rows (Reference view) */
 .srcrow { font-size:12px; line-height:1.5; margin-bottom:2px; }
@@ -374,7 +383,7 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .spellchip { font-size:11px; color:var(--acc2); border:1px solid var(--line); border-radius:999px;
   padding:1px 8px; background:var(--input-bg); white-space:nowrap; }
 /* 8 rank columns have to fit a 320px phone, so they scroll rather than squeeze the label out */
-.ranktbl { display:block; overflow-x:auto; white-space:nowrap; }
+.ranktbl { display:block; overflow-x:auto; white-space:nowrap; overscroll-behavior-x:contain; }
 .ranktbl th, .ranktbl td { padding:4px 6px; }
 .ranktbl td.ty { white-space:nowrap; color:var(--ink); }
 .ranktbl td.sl { width:auto; text-align:right; font-variant-numeric:tabular-nums; }
@@ -429,7 +438,7 @@ details.fold[open] > summary { margin:0 0 10px; }
 .mcf.off   { opacity:.7; }
 /* Three mount columns of badges don't fit 320px, so the grid scrolls rather than wrapping a
    badge mid-label (same trick as .ranktbl). */
-.mcfwrap { overflow-x:auto; }
+.mcfwrap { overflow-x:auto; overscroll-behavior-x:contain; }
 .mcftbl { min-width:420px; }
 .mcftbl th, .mcftbl td { padding:5px 8px; white-space:nowrap; }
 /* The rider name has to stay readable once the grid is scrolled to the Ruby column, and letting
