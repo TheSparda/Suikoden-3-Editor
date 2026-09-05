@@ -113,22 +113,6 @@ export const ACTORFB_SITES = [[0x1FD238, 0x03E00008, 0x085ED732], [0x1FD23C, 0x0
 // field-pickup fix; the last two are the ones whose success path marks the motion finished,
 // which is what a waiting interaction polls. Planted so the editor's toggle is exercised
 // end to end. [ISO offset, stock word, retired word]
-// The motion-name table: 20-byte entries of `char name[16]; u32 flags` at ISO 0x3ADE10.
-// Slots 46-59 are the examine/pick-up motions the clip-redirect patch renames.
-export const CLIPFB_BASE = 0x3ADE10;
-export const CLIPFB_SLOTS = [
-  [46, "check_startL"], [47, "check_startR"], [48, "check_loopL"], [49, "check_loopR"],
-  [50, "check_startL"], [51, "check_startR"], [52, "pickup_startL"], [53, "pickup_startR"],
-  [54, "pickup_loopL"], [55, "pickup_loopR"], [56, "pickup_del_L"], [57, "pickup_del_R"],
-  [58, "pickup_endL"], [59, "pickup_endR"],
-];
-export const MOTIONFB_SITES = [
-  [0x136D70, 0x10400030, 0x00000000],   // SetMotion, main table
-  [0x136DF8, 0x1040000A, 0x00000000],   // SetMotion, special table
-  [0x137070, 0x10400040, 0x00000000],   // installer — marks finished
-  [0x1370F0, 0x10400020, 0x00000000],   // installer, second entry
-];
-
 export const STORY_CASES = [
   [0x1C76DC, 1, 0], [0x1C76CC, 2, 1], [0x1C76F0, 3, 2], [0x1C7740, 0xCB, 3],
   [0x1C7724, 0x3F, 4], [0x1C7738, 0xCA, 4], [0x1C76F8, 0x11, 5],
@@ -372,13 +356,6 @@ export function buildSynthIso() {
   STORY_CASES.forEach(([o, imm]) => w32(o, avatarWord(imm, "eq")));
   ENCMOVE_SITES.forEach(([o, imm, opc, neg]) => w32(o, encMoveWord(imm, opc, neg)));
   ACTORFB_SITES.forEach(([o, stock]) => w32(o, stock));
-  MOTIONFB_SITES.forEach(([o, stock]) => w32(o, stock));
-  // plant slot 0/1 (neutral) plus the fourteen the patch retargets, names null-padded to 16
-  [[0, "neutral_L"], [1, "neutral_R"]].concat(CLIPFB_SLOTS).forEach(([i, nm]) => {
-    const at = CLIPFB_BASE + 20 * i;
-    for (let k = 0; k < 16; k++) bytes[at + k] = k < nm.length ? nm.charCodeAt(k) : 0;
-    w32(at + 16, 0x00000101);
-  });
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
