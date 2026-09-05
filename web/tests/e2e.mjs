@@ -3100,6 +3100,28 @@ head("Save editor — Field character tab at 320px");
     `${r.scrollW}px content in ${r.clientW}px` + (r.wide.length ? " — " + r.wide.join(", ") : ""));
 }
 
+// A sideways overscroll must not turn into a history navigation. The ISO tab strip is wider
+// than its card by design, and the page behind it is frequently not vertically scrollable, so
+// a two-finger gesture that runs off the end of the strip used to chain to the document and
+// fire the browser's swipe-back -- leaving the editor with staged edits and landing wherever
+// the user came from. Reported in the wild as "clicking ISO Editor sometimes opens the repo".
+head("Sideways overscroll can't navigate away from the editor");
+{ const page = await newPage();
+  await loadIso(page);
+  const r = await page.evaluate(() => {
+    const t = document.querySelector("#isoTabs"), de = document.documentElement;
+    return { overflows: t.scrollWidth > t.clientWidth,
+             strip: getComputedStyle(t).overscrollBehaviorX,
+             doc: getComputedStyle(de).overscrollBehaviorX,
+             body: getComputedStyle(document.body).overscrollBehaviorX };
+  });
+  check("the ISO tab strip really does scroll sideways", r.overflows);
+  check("...so its overscroll is contained, not chained", r.strip === "contain", r.strip);
+  check("the document refuses horizontal overscroll", r.doc === "none", r.doc);
+  check("...and so does the body", r.body === "none", r.body);
+  await page.context().close();
+}
+
 for (const [w, h] of [[360, 640], [320, 480]]) {
   head(`Mobile ${w}px — no horizontal overflow`);
   const page = await newPage({ width: w, height: h });
