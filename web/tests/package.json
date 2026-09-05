@@ -10,6 +10,6 @@
     "test:stream": "node stream-save.mjs"
   },
   "devDependencies": {
-    "playwright-core": "^1.40.0"
+    "playwright-core": "1.62.1"
   }
 }
