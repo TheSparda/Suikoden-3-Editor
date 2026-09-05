@@ -234,7 +234,13 @@ looting a skeleton freezes: the same *walk up, press X, get an item* interaction
 It plays a motion his model has no clip for — his animal rig carries **15 clips against Hugo's
 60**, which is also why his running needed its own fix. As **Luc** the same objects pick up
 fine, which is what proves it's the clip set rather than the field-character feature.
-**No fix — the search was closed off.** Three mechanisms were tried and played, and none of
+The tab carries a **Known limitations** section recording what playing each one turned up:
+**Koroku ✕ field pickups freeze** (no humanoid animation cycle — he's animal-rigged), **Luc ✓
+confirmed working**, and nothing said about the rest, because untested isn't the same as fine.
+The picker row and the pick-time note carry the same verdict, so it can't be missed by going
+straight to the dropdown.
+
+**No fix for Koroku — the search was closed off.** Three mechanisms were tried and played, and none of
 them helped; the attempts have been removed rather than left in the editor pretending. What did
 come out of it is worth keeping, and it's all in the research doc: the engine's motion table is
 decoded (`char name[16]; u32 flags`, with `check_*` at slots 46–51 and `pickup_*` at 52–59), and
