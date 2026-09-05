@@ -3062,7 +3062,10 @@ head("Save editor — Field character tab");
     const canKeep = !!document.querySelector("#keepDisplaced");
     document.querySelector("#keepDisplaced").click();
     const kept = JSON.parse(JSON.stringify(PARTY));
+    const noteAfterKeep = document.querySelector("#leaderparty").textContent;
+    const tab = document.querySelector("#subview").textContent;
     return { onOverview, shown, rows, staged, note, canKeep, kept, leader: LEADER,
+             noteAfterKeep, tab,
              diff: buildDiff().map((d) => d.g + ": " + d.t) };
   });
   check("the picker is no longer on the Overview card", r.onOverview === false);
@@ -3078,6 +3081,16 @@ head("Save editor — Field character tab");
   check("…and swaps rather than removes", r.kept[0] === 54 && r.kept[2] === 1, JSON.stringify(r.kept));
   check("the pick is staged for review", r.diff.some((d) => /Field character: .*Hugo .*Koroku/.test(d)),
     r.diff.join(" | "));
+  // Koroku freezes on field pickups and there is no fix — three were built and played. The
+  // tab has to say so at the moment of choosing, and keep saying it down the "keep them
+  // instead" path, which used to overwrite the note with textContent.
+  check("picking a character with a known problem warns immediately",
+    /field pickups freeze/i.test(r.note), r.note.slice(0, 90));
+  check("...naming the cause, not just the symptom", /animal-rigged/i.test(r.note));
+  check("...and the warning survives the 'keep instead' path",
+    /field pickups freeze/i.test(r.noteAfterKeep), r.noteAfterKeep.slice(0, 90));
+  check("the tab lists known limitations", /Known limitations/.test(r.tab));
+  check("...marking Luc confirmed working", /confirmed working/i.test(r.tab));
   await page.context().close();
 }
 
