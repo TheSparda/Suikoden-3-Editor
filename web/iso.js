@@ -361,93 +361,6 @@
     },
   };
 
-  // ---- give a model the clip it is missing, by pointing the slot elsewhere -----
-  // The engine's motion table at vaddr 0x1966610 (ISO 0x3ADE10) is 317 entries of
-  // `char name[16]; u32 flags` — the NAME is what a model's own clip list is searched for, and
-  // the flags (play-once, looping, …) belong to the slot, not to the clip. So renaming a slot
-  // redirects it to different animation data while keeping its timing behaviour.
-  //
-  // Slots 46–51 are `check_*` (examine) and 52–59 are `pickup_*`. Scanning every `cha_*` model
-  // record on the disc for names that appear in this table, Koroku's records carry **none of
-  // those fourteen** — but they do carry `neutral_L` and `neutral_R` (slots 0 and 1). That is
-  // the asymmetry behind "Luc loots a skeleton fine and Koroku hangs", found in the data rather
-  // than inferred: Luc's model has the clips, Koroku's does not.
-  //
-  // Pointing the fourteen at neutral is the user-facing idea "make his pickup animation a copy
-  // of his standing one", done in the one place that needs no new data: he stands there instead
-  // of crouching, and the animation resolves. L slots go to neutral_L and R slots to neutral_R
-  // so facing stays consistent.
-  //
-  // It is global — every character's pickup and examine motion becomes their own idle, so Hugo
-  // stops crouching too. That is cosmetic and opt-in, and it is the honest cost of fixing this
-  // without editing model assets.
-  const CLIPFB = {
-    base: 0x3ADE10, stride: 20, width: 16,
-    slots: [
-      [46, "check_startL", "neutral_L"], [47, "check_startR", "neutral_R"],
-      [48, "check_loopL", "neutral_L"],  [49, "check_loopR", "neutral_R"],
-      [50, "check_startL", "neutral_L"], [51, "check_startR", "neutral_R"],
-      [52, "pickup_startL", "neutral_L"], [53, "pickup_startR", "neutral_R"],
-      [54, "pickup_loopL", "neutral_L"],  [55, "pickup_loopR", "neutral_R"],
-      [56, "pickup_del_L", "neutral_L"],  [57, "pickup_del_R", "neutral_R"],
-      [58, "pickup_endL", "neutral_L"],   [59, "pickup_endR", "neutral_R"],
-    ],
-  };
-  const clipOff = (i) => CLIPFB.base + CLIPFB.stride * i;
-  function clipName(i) {
-    let out = "";
-    for (let k = 0; k < CLIPFB.width; k++) {
-      const c = r8(clipOff(i) + k);
-      if (!c) break;
-      out += String.fromCharCode(c);
-    }
-    return out;
-  }
-  function clipWrite(i, name) {
-    const b = new Uint8Array(CLIPFB.width);
-    for (let k = 0; k < name.length && k < CLIPFB.width; k++) b[k] = name.charCodeAt(k);
-    writeBytes(clipOff(i), b);
-  }
-
-  // ---- missing-animation fallback ---------------------------------------------
-  // The field-pickup freeze: as Koroku, picking up a herb or looting a skeleton hangs. His
-  // animal rig carries 15 animation clips against Hugo's 60, so the interaction asks for a
-  // clip he does not own. Confirmed model-specific in play (2026-09-05) — Luc picks the same
-  // objects up fine, and he goes through identical avatar machinery.
-  //
-  // What the interaction actually waits on is a FLAG, not a return value. Object flags live at
-  // obj+0x04; bit 0x80000000 means "motion finished". Starting a motion clears it, the
-  // animation code sets it when the clip ends, and waiters poll it (6 sites read it, 3 set it).
-  // With no clip, nothing ever sets it, so the wait never ends.
-  //
-  // v1.87.0 retired only the first site below and did NOT fix the hang — correctly, in
-  // hindsight: that site only stops SetMotion *reporting* failure, and never causes "finished"
-  // to be set. The two installer sites are the ones that matter, because their success path is
-  // what sets the flag and writes the motion slot to obj+0x0E.
-  //
-  // Retiring all four makes a missing clip behave as a motion that completed instantly. The
-  // converged path is null-safe by construction, which is the part worth checking rather than
-  // assuming: with no clip resolved, 0x16D7440 is handed null, returns 0 (it null-checks at
-  // its first instruction), and the branch at 0x16EF934 skips the one place that would have
-  // dereferenced it (`lw $a2,0x18($s0)`), landing on `addiu $v0,$zero,1` — success.
-  //
-  // Blast radius, stated honestly: this is a shared path, and 50 of SetMotion's 251 callers do
-  // branch on its result. What keeps it tolerable is that 76 of 78 models carry the full human
-  // clip set and the game never hands you Koroku on the field, so in stock play these branches
-  // are essentially unreachable and already take the success side every time.
-  const MOTIONFB = {
-    sites: [
-      { off: 0x136D70, stock: 0x10400030, alt: 0, va: 0x16EF570,
-        what: "SetMotion — main motion table" },
-      { off: 0x136DF8, stock: 0x1040000A, alt: 0, va: 0x16EF5F8,
-        what: "SetMotion — 13-entry special table" },
-      { off: 0x137070, stock: 0x10400040, alt: 0, va: 0x16EF870,
-        what: "motion installer — this one marks the motion finished" },
-      { off: 0x1370F0, stock: 0x10400020, alt: 0, va: 0x16EF8F0,
-        what: "motion installer — second entry point" },
-    ],
-  };
-
   // ---- what counts as "moving" for a random encounter -------------------------
   // Before the rate is even computed, the roll is gated on the PLAYER OBJECT's current
   // motion slot (`obj->+0x0E`) and object kind (`obj->+0x02`):
@@ -3954,17 +3867,15 @@
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "avatar";
-  const TESTS = [["avatar", "Field character"], ["motion", "Missing animations"]];
+  const TESTS = [["avatar", "Field character"]];
   function drawTest(host) {
     host.innerHTML = `
       <div class="warnbox" style="margin:0 0 12px">
-        <b>Experimental — these rewrite game code and are not confirmed in play.</b> They are
-        not all the same shape, so read each one's own note. <b>Field character</b> widens the
-        model whitelist past the stock eight, and everyone beyond it is untested — Yuber and
-        Lucia were both seen to hang a scene, though that was before the scene freeze was traced
-        to the party and fixed, so their status is simply unknown now. <b>Missing animations</b>
-        is a targeted fix for a confirmed, reproducible bug with a confirmed cause; it is here
-        because it has been built but not yet played.
+        <b>Experimental — rewrites game code, and is not confirmed in play.</b>
+        <b>Field character</b> widens the model whitelist past the stock eight. Everyone beyond
+        it is untested: Yuber and Lucia were both seen to hang a scene, though that was before
+        the scene freeze was traced to the party and fixed, so their status is simply unknown
+        now. The eight the game ships need no patch at all — pick those in the Save Editor.
         <br>Keep a backup save. Note too that story scripts rewrite the leader byte themselves
         at <b>chapter transitions</b>, so a pick holds only until the next scene that sets it.
       </div>
@@ -3973,133 +3884,6 @@
       <div id="testView"></div>`;
     qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
     if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
-    else if (TESTVIEW === "motion") drawMotionFb(q("#testView", host));
-  }
-
-  // ---- Missing animations -----------------------------------------------------
-  function drawMotionFb(host) {
-    const sites = MOTIONFB.sites;
-    const bad = sites.some((f) => !inBlk(f.off, 4) || (r32(f.off) !== f.stock && r32(f.off) !== f.alt));
-    if (bad) {
-      host.innerHTML = `<div class="warnbox">The motion branches aren't where this build
-        expects them — no edits offered.</div>`;
-      return;
-    }
-    const on = sites.every((f) => r32(f.off) === f.alt);
-    host.innerHTML = `<div class="bag">
-        <div class="bag-h">Missing animations <span class="u">does NOT fix the pickup freeze</span></div>
-        <div class="warnbox" style="margin:0 0 10px">
-          <b>Tried against the field-pickup hang, twice, and it does not fix it.</b> Kept because
-          the engine change is real and correct, and because the negative result is worth
-          keeping — but do not enable this expecting Koroku to loot a skeleton. He still hangs.
-        </div>
-        <div class="muted" style="margin:0 0 10px">
-          The theory was that the interaction waits for a motion to finish, and that Koroku —
-          animal-rigged, <b>15 animation clips against Hugo's 60</b> — is asked for a clip he
-          does not have, so the wait never ends. The clip gap is real, and it is real that
-          <b>Luc loots the same skeleton fine</b>. The wait is what was wrong: the two engine
-          functions that test the <i>motion finished</i> flag are <b>not reachable from any of
-          the 359 event-script opcode handlers</b>, so whatever a script waits on, it is not
-          this. Patching it changes nothing about the hang.
-        </div>
-        <label class="field" style="max-width:460px"><span>When a model lacks the requested clip</span>
-          <select id="mfbSel">
-            <option value="stock"${on ? "" : " selected"}>give up — the motion never starts, and never finishes (stock)</option>
-            <option value="alt"${on ? " selected" : ""}>treat it as finished instantly</option>
-          </select></label>
-        <div class="muted" style="font-size:12px;margin:8px 0 0">
-          <b>What it does.</b> Object flags live at <code>obj+0x04</code>, and bit
-          <code>0x80000000</code> means <i>motion finished</i>. Retiring the four give-up
-          branches makes a missing clip take the normal success path: the flag is set, the
-          motion slot is recorded, and the model keeps the pose it is already in instead of the
-          motion silently never starting. That is a sane thing for the engine to do — it is
-          simply not what the field pickup is blocked on.
-          <br><br><b>Why it should not crash.</b> The one place the absent clip would have been
-          dereferenced is skipped: with nothing resolved, the call at <code>0x16EF92C</code> gets
-          null, returns zero because it null-checks at its first instruction, and the branch
-          after it jumps past that read to the success return.
-          <br><br><b>Why it is still under Test.</b> It is a shared path — every scripted motion
-          in the game goes through it, and <b>50 of its 251 callers do read the result</b>. They
-          already take the success side every time in practice, because 76 of 78 models carry
-          the full human clip set and the game never hands you Koroku on the field. That is an
-          argument, not a play-test.
-          <br><br>Reverting restores all four words exactly. Keep a backup save.
-        </div>
-        <table class="invtbl" style="margin:10px 0 0"><thead><tr><th>ISO</th><th>vaddr</th><th>state</th><th>what it guards</th></tr></thead><tbody>
-        ${sites.map((f) => `<tr><td class="dim">0x${f.off.toString(16).toUpperCase()}</td>
-          <td class="dim">0x${f.va.toString(16).toUpperCase()}</td>
-          <td>${r32(f.off) === f.alt ? '<b class="acc2">retired</b>' : "stock"}</td>
-          <td class="dim">${esc2(f.what)}</td></tr>`).join("")}
-        </tbody></table>
-      </div>`;
-    const sel = q("#mfbSel", host);
-    sel.onchange = () => {
-      sites.forEach((f) => {
-        writeW(f.off, 4, sel.value === "alt" ? f.alt : f.stock);
-        reg(f.off, 4, "num", "Missing animations", f.what);
-      });
-      drawView();
-    };
-    markField(sel, sites[0].off, 4, "num");
-    drawClipFb(host);
-  }
-
-  // ---- redirect a slot to a clip the model actually has ------------------------
-  function drawClipFb(host) {
-    const rows = CLIPFB.slots;
-    const bad = rows.some(([i, stock, to]) => {
-      const n = clipName(i);
-      return !inBlk(clipOff(i), CLIPFB.width) || (n !== stock && n !== to);
-    });
-    const wrap = document.createElement("div");
-    if (bad) {
-      wrap.innerHTML = `<div class="warnbox" style="margin:12px 0 0">The motion-name table
-        isn't where this build expects it — no edits offered.</div>`;
-      host.appendChild(wrap); return;
-    }
-    const on = rows.every(([i, , to]) => clipName(i) === to);
-    wrap.innerHTML = `<div class="bag" style="margin:12px 0 0">
-        <div class="bag-h">Pickup animation → standing <span class="u">the other approach · untested</span></div>
-        <div class="muted" style="margin:0 0 10px">
-          Rather than make the engine tolerate a missing animation, give the slot an animation
-          that exists. The motion table is <code>char name[16]; u32 flags</code>, and the
-          <b>name</b> is what a model's own clip list is searched for — so renaming a slot points
-          it at different animation data while keeping that slot's own timing. The flags stay
-          put, so a play-once slot still plays once.
-          <br><br><b>The asymmetry, measured rather than assumed.</b> Scanning every model record
-          on the disc for names in this table: Koroku's carry <b>none</b> of the fourteen
-          <code>check_*</code> and <code>pickup_*</code> slots — but they do carry
-          <code>neutral_L</code> and <code>neutral_R</code>. Luc's have the pickup clips. That is
-          exactly the difference between the model that loots a skeleton and the one that hangs.
-        </div>
-        <label class="field" style="max-width:460px"><span>Examine / pick-up motions</span>
-          <select id="cfbSel">
-            <option value="stock"${on ? "" : " selected"}>their own clips (stock)</option>
-            <option value="alt"${on ? " selected" : ""}>the model's standing clip</option>
-          </select></label>
-        <div class="muted" style="font-size:12px;margin:8px 0 0">
-          <b>The cost, plainly:</b> the table is global, so this changes <i>everyone's</i> examine
-          and pick-up animation to their own idle — Hugo stops crouching for a herb too. It is
-          cosmetic, it is opt-in, and it is what fixing this without editing model assets costs.
-          L slots go to <code>neutral_L</code> and R slots to <code>neutral_R</code>, so facing
-          stays consistent.
-        </div>
-        <table class="invtbl" style="margin:10px 0 0"><thead><tr><th>slot</th><th>ISO</th><th>stock</th><th>now</th></tr></thead><tbody>
-        ${rows.map(([i, stock]) => `<tr><td class="dim">${i}</td>
-          <td class="dim">0x${clipOff(i).toString(16).toUpperCase()}</td>
-          <td class="dim">${esc2(stock)}</td>
-          <td>${clipName(i) === stock ? '<span class="dim">stock</span>' : '<b class="acc2">' + esc2(clipName(i)) + "</b>"}</td></tr>`).join("")}
-        </tbody></table>
-      </div>`;
-    host.appendChild(wrap);
-    const sel = q("#cfbSel", wrap);
-    sel.onchange = () => {
-      rows.forEach(([i, stock, to]) => {
-        clipWrite(i, sel.value === "alt" ? to : stock);
-        reg(clipOff(i), CLIPFB.width, "str", "Pickup animation", `slot ${i}`);
-      });
-      drawView();
-    };
   }
 
   // ---- Field character --------------------------------------------------------
