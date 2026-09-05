@@ -362,31 +362,42 @@
   };
 
   // ---- missing-animation fallback ---------------------------------------------
-  // SetMotion (vaddr 0x16EF4F0) asks the model for the requested clip and, when the model does
-  // not own it, reports failure WITHOUT touching the object's motion state. Anything that then
-  // waits for that motion to finish waits forever. That is the field-pickup freeze: picking up
-  // a herb or looting a skeleton hangs as Koroku, whose animal rig carries 15 clips against
-  // Hugo's 60. Confirmed model-specific in play (2026-09-05) — Luc picks the same objects up
-  // perfectly, so it is the clip set, not the avatar machinery.
+  // The field-pickup freeze: as Koroku, picking up a herb or looting a skeleton hangs. His
+  // animal rig carries 15 animation clips against Hugo's 60, so the interaction asks for a
+  // clip he does not own. Confirmed model-specific in play (2026-09-05) — Luc picks the same
+  // objects up fine, and he goes through identical avatar machinery.
   //
-  // Nothing dereferences the absent clip: the applier at 0x16D8508 null-checks both the model
-  // and the clip and returns quietly (`beqz $s0` at 0x16D8540). The only casualty is the
-  // "did it play" flag. Retiring the give-up branch lets the call fall through to its success
-  // path — the motion slot is recorded, the caller stops waiting, and the model simply keeps
-  // the clip it is already playing, which for a pickup you have just walked up to is its
-  // standing loop.
+  // What the interaction actually waits on is a FLAG, not a return value. Object flags live at
+  // obj+0x04; bit 0x80000000 means "motion finished". Starting a motion clears it, the
+  // animation code sets it when the clip ends, and waiters poll it (6 sites read it, 3 set it).
+  // With no clip, nothing ever sets it, so the wait never ends.
   //
-  // Two things bound the blast radius honestly. This is the MAIN motion table (ids < 0x13D);
-  // the 13-entry second table has its own give-up branch at 0x16EF5F8, left alone because its
-  // failure path also clears obj+0x24 and skipping that would strand a record pointer. And
-  // 50 of SetMotion's 251 callers do branch on the flag — so this is not "nobody reads it".
-  // What makes it tolerable is that 76 of 78 models carry the full human clip set, so in
-  // stock play the failure path is essentially never reached and those 50 branches already
-  // always take the success side.
+  // v1.87.0 retired only the first site below and did NOT fix the hang — correctly, in
+  // hindsight: that site only stops SetMotion *reporting* failure, and never causes "finished"
+  // to be set. The two installer sites are the ones that matter, because their success path is
+  // what sets the flag and writes the motion slot to obj+0x0E.
+  //
+  // Retiring all four makes a missing clip behave as a motion that completed instantly. The
+  // converged path is null-safe by construction, which is the part worth checking rather than
+  // assuming: with no clip resolved, 0x16D7440 is handed null, returns 0 (it null-checks at
+  // its first instruction), and the branch at 0x16EF934 skips the one place that would have
+  // dereferenced it (`lw $a2,0x18($s0)`), landing on `addiu $v0,$zero,1` — success.
+  //
+  // Blast radius, stated honestly: this is a shared path, and 50 of SetMotion's 251 callers do
+  // branch on its result. What keeps it tolerable is that 76 of 78 models carry the full human
+  // clip set and the game never hands you Koroku on the field, so in stock play these branches
+  // are essentially unreachable and already take the success side every time.
   const MOTIONFB = {
-    off: 0x136D70,          // vaddr 0x16EF570
-    stock: 0x10400030,      // beq $v0,$zero,0x16EF634 — clip missing, give up
-    alt: 0x00000000,        // nop — fall through, keep the current pose
+    sites: [
+      { off: 0x136D70, stock: 0x10400030, alt: 0, va: 0x16EF570,
+        what: "SetMotion — main motion table" },
+      { off: 0x136DF8, stock: 0x1040000A, alt: 0, va: 0x16EF5F8,
+        what: "SetMotion — 13-entry special table" },
+      { off: 0x137070, stock: 0x10400040, alt: 0, va: 0x16EF870,
+        what: "motion installer — this one marks the motion finished" },
+      { off: 0x1370F0, stock: 0x10400020, alt: 0, va: 0x16EF8F0,
+        what: "motion installer — second entry point" },
+    ],
   };
 
   // ---- what counts as "moving" for a random encounter -------------------------
@@ -3919,55 +3930,64 @@
 
   // ---- Missing animations -----------------------------------------------------
   function drawMotionFb(host) {
-    const cur = inBlk(MOTIONFB.off, 4) ? r32(MOTIONFB.off) : null;
-    if (cur === null || (cur !== MOTIONFB.stock && cur !== MOTIONFB.alt)) {
-      host.innerHTML = `<div class="warnbox">The motion-set branch isn't where this build
-        expects it — no edits offered.</div>`;
+    const sites = MOTIONFB.sites;
+    const bad = sites.some((f) => !inBlk(f.off, 4) || (r32(f.off) !== f.stock && r32(f.off) !== f.alt));
+    if (bad) {
+      host.innerHTML = `<div class="warnbox">The motion branches aren't where this build
+        expects them — no edits offered.</div>`;
       return;
     }
-    const on = cur === MOTIONFB.alt;
+    const on = sites.every((f) => r32(f.off) === f.alt);
     host.innerHTML = `<div class="bag">
         <div class="bag-h">Missing animations <span class="u">built, not yet play-tested</span></div>
         <div class="muted" style="margin:0 0 10px">
-          <b>The fix for field pickups freezing as Koroku.</b> Walking up to a herb, or looting a
-          skeleton, hangs — both are the same "press X, play a short motion, receive an item"
+          <b>The fix for field pickups freezing as Koroku.</b> Walking up to a herb, or looting
+          a skeleton, hangs — both are the same "press X, play a short motion, receive an item"
           interaction. His model is animal-rigged and carries <b>15 animation clips against
-          Hugo's 60</b>, so the pickup asks for a clip he does not have. The engine reports that
-          the motion failed and leaves his pose alone, and whatever was waiting for that motion
-          to end waits forever. <b>Confirmed model-specific in play:</b> Luc picks the same
-          objects up without trouble.
+          Hugo's 60</b>, so the pickup asks for a clip he does not have. <b>Confirmed
+          model-specific in play:</b> Luc picks the same objects up without trouble, and he goes
+          through identical avatar machinery.
         </div>
-        <label class="field" style="max-width:420px"><span>When a model lacks the requested clip</span>
+        <label class="field" style="max-width:460px"><span>When a model lacks the requested clip</span>
           <select id="mfbSel">
-            <option value="stock"${on ? "" : " selected"}>give up — the motion never plays (stock)</option>
-            <option value="alt"${on ? " selected" : ""}>carry on — keep the pose it is already in</option>
+            <option value="stock"${on ? "" : " selected"}>give up — the motion never starts, and never finishes (stock)</option>
+            <option value="alt"${on ? " selected" : ""}>treat it as finished instantly</option>
           </select></label>
         <div class="muted" style="font-size:12px;margin:8px 0 0">
-          <b>What "carry on" does.</b> One instruction retires the give-up branch, so the call
-          falls through to its normal success path: the motion is recorded as set, whatever was
-          waiting stops waiting, and the model keeps the clip it is already playing. Walk up to a
-          herb and stop, and that clip is his standing loop — so he stands there, the message
-          box opens, and you get the item.
-          <br><br><b>Why it should be safe.</b> Nothing ever touches the missing clip: the code
-          that applies one already checks for null and returns quietly, so the only thing the
-          failure produces is the flag. And the failure path is essentially unreachable in stock
-          play — <b>76 of 78 models carry the full human clip set</b>, and the game never hands
-          you Koroku on the field.
-          <br><br><b>Why it is still under Test.</b> It changes a shared path: every scripted
-          motion in the game goes through it, and <b>50 of its 251 callers do read that flag</b>.
-          They already take the success side every time in practice, but "in practice" is an
-          argument, not a play-test. It covers the main motion table only; a 13-entry special
-          table keeps its own give-up branch, because that one also clears state on the way out.
-          <br><br>Reverting is one instruction back. Keep a backup save.
+          <b>What it is actually waiting on.</b> Not a return value — a flag. Object flags live
+          at <code>obj+0x04</code>, and bit <code>0x80000000</code> means <i>motion finished</i>.
+          Starting a motion clears it, the animation code sets it when the clip ends, and the
+          interaction polls it. With no clip, nothing ever sets it, so the wait never ends.
+          Retiring the four give-up branches makes a missing clip take the normal success path:
+          the flag is set, the motion slot is recorded, and the interaction carries on. Koroku
+          keeps the pose he is already in — standing, for a pickup you have just walked up to.
+          <br><br><b>Why it should not crash.</b> The one place the absent clip would have been
+          dereferenced is skipped: with nothing resolved, the call at <code>0x16EF92C</code> gets
+          null, returns zero because it null-checks at its first instruction, and the branch
+          after it jumps past that read to the success return.
+          <br><br><b>Why it is still under Test.</b> It is a shared path — every scripted motion
+          in the game goes through it, and <b>50 of its 251 callers do read the result</b>. They
+          already take the success side every time in practice, because 76 of 78 models carry
+          the full human clip set and the game never hands you Koroku on the field. That is an
+          argument, not a play-test.
+          <br><br>Reverting restores all four words exactly. Keep a backup save.
         </div>
+        <table class="invtbl" style="margin:10px 0 0"><thead><tr><th>ISO</th><th>vaddr</th><th>state</th><th>what it guards</th></tr></thead><tbody>
+        ${sites.map((f) => `<tr><td class="dim">0x${f.off.toString(16).toUpperCase()}</td>
+          <td class="dim">0x${f.va.toString(16).toUpperCase()}</td>
+          <td>${r32(f.off) === f.alt ? '<b class="acc2">retired</b>' : "stock"}</td>
+          <td class="dim">${esc2(f.what)}</td></tr>`).join("")}
+        </tbody></table>
       </div>`;
     const sel = q("#mfbSel", host);
     sel.onchange = () => {
-      writeW(MOTIONFB.off, 4, sel.value === "alt" ? MOTIONFB.alt : MOTIONFB.stock);
-      reg(MOTIONFB.off, 4, "num", "Missing animations", "clip-missing branch");
+      sites.forEach((f) => {
+        writeW(f.off, 4, sel.value === "alt" ? f.alt : f.stock);
+        reg(f.off, 4, "num", "Missing animations", f.what);
+      });
       drawView();
     };
-    markField(sel, MOTIONFB.off, 4, "num");
+    markField(sel, sites[0].off, 4, "num");
   }
 
   // ---- Field character --------------------------------------------------------
