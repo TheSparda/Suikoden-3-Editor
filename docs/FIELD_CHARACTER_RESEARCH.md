@@ -1004,6 +1004,59 @@ Scope: the main motion table (ids < `0x13D`). The 13-entry second table keeps it
 branch at `0x16EF5F8`, because that failure path also clears `obj+0x24` and skipping it would
 strand a record pointer.
 
+### How a script actually blocks — and the map of every motion wait
+
+Two patches missed because the wait was never found, only assumed. It is found now, and this is
+the part worth keeping whatever the cause turns out to be.
+
+**The blocking mechanism.** An EDS handler is re-entered every frame and keeps its progress in a
+**state byte at `ctx+0x02`**. Op 119 is the clearest example: `lb $v1,2($s3)` at `0x1794428`
+dispatches to *start* (state 0), *poll* (state > 0) or *cleanup* (state −1). The poll path either
+falls through to `jal 0x1778860` — which advances the instruction pointer at `ctx+0x0C` — or
+returns without advancing, which is what "still waiting" means. So a blocking opcode is exactly
+one whose IP advance can be branched over, and that is mechanically detectable.
+
+**11 of the 17 motion-driving opcodes block**, and this is what each waits on:
+
+| opcode(s) | waits on |
+|---|---|
+| 119, 121, 123 | `TestFlag(obj, 0x08000000)` |
+| 125 | `TestFlag(obj, 0x01000000)` |
+| 145, 146 | `TestFlag(obj, 0x00800000)` (146 also `0x00200000`) |
+| 159 | `TestFlag(obj, 0x20000000)` |
+| 171, 172 | `TestFlag(obj, 0x00080000)` |
+| 109, 175 | not a flag — polls something else |
+
+Object flags live at `obj+0x04`; `0x16E7B18` sets/clears, `0x16E7B48` tests.
+
+**Why the shipped patch was irrelevant, stated precisely.** The bit it manipulates,
+`0x80000000`, appears in *no* row above. Its two test sites live in `0x16E9848` and `0x16EF080`,
+whose 3 and 2 callers are all engine-internal — **none inside any of the 359 handler bodies**
+(`0x178FE10`–`0x17B1F60`). No script can block on it.
+
+**And the missing-clip story does not survive this either.** Ops 119/121/123 wait on
+`0x08000000`, which has exactly two writers, both inside `SetMotion`: the second-table success
+path **sets** it (`0x16EF614`) and the second-table *failure* path **clears** it
+(`0x16EF62C`). So a model that lacks the clip makes that wait end *immediately* rather than
+hang. Whatever stalls the pickup, "the clip is missing so the wait never ends" is not the shape
+of it.
+
+**What the play evidence now pins down** (2026-09-05): the hang happens **before any message
+box appears**, and **save points and doors work fine** — so the generic "press X, run the
+object's script" path is healthy. It is specific to picking an item up off the ground, and it
+stalls before the item is granted.
+
+**The live lead.** Op 109 — one of the two blocking opcodes that does *not* poll a flag — reads
+an actor handle, calls `0x16C7338` and branches on the result being **7** (`0x17A22B4`) before
+setting motion `0x63`. A branch on an actor's *kind* is exactly the kind of thing that could
+separate Koroku from Luc, and object kind is already known to matter on this disc (§8 had to
+settle Koroku's kind to explain the run gate). Worth following before anything is patched.
+
+**Method note.** Three theories have now been killed here by evidence rather than by argument:
+the `evneutral` clip, the motion-finished flag, and the missing-clip wait. Each was plausible
+and each was wrong, which is a reasonable prior for the next one. The next patch should follow
+a script that is known to run for a herb, not a mechanism that merely could.
+
 ## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other
