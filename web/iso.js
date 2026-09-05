@@ -361,6 +361,54 @@
     },
   };
 
+  // ---- give a model the clip it is missing, by pointing the slot elsewhere -----
+  // The engine's motion table at vaddr 0x1966610 (ISO 0x3ADE10) is 317 entries of
+  // `char name[16]; u32 flags` — the NAME is what a model's own clip list is searched for, and
+  // the flags (play-once, looping, …) belong to the slot, not to the clip. So renaming a slot
+  // redirects it to different animation data while keeping its timing behaviour.
+  //
+  // Slots 46–51 are `check_*` (examine) and 52–59 are `pickup_*`. Scanning every `cha_*` model
+  // record on the disc for names that appear in this table, Koroku's records carry **none of
+  // those fourteen** — but they do carry `neutral_L` and `neutral_R` (slots 0 and 1). That is
+  // the asymmetry behind "Luc loots a skeleton fine and Koroku hangs", found in the data rather
+  // than inferred: Luc's model has the clips, Koroku's does not.
+  //
+  // Pointing the fourteen at neutral is the user-facing idea "make his pickup animation a copy
+  // of his standing one", done in the one place that needs no new data: he stands there instead
+  // of crouching, and the animation resolves. L slots go to neutral_L and R slots to neutral_R
+  // so facing stays consistent.
+  //
+  // It is global — every character's pickup and examine motion becomes their own idle, so Hugo
+  // stops crouching too. That is cosmetic and opt-in, and it is the honest cost of fixing this
+  // without editing model assets.
+  const CLIPFB = {
+    base: 0x3ADE10, stride: 20, width: 16,
+    slots: [
+      [46, "check_startL", "neutral_L"], [47, "check_startR", "neutral_R"],
+      [48, "check_loopL", "neutral_L"],  [49, "check_loopR", "neutral_R"],
+      [50, "check_startL", "neutral_L"], [51, "check_startR", "neutral_R"],
+      [52, "pickup_startL", "neutral_L"], [53, "pickup_startR", "neutral_R"],
+      [54, "pickup_loopL", "neutral_L"],  [55, "pickup_loopR", "neutral_R"],
+      [56, "pickup_del_L", "neutral_L"],  [57, "pickup_del_R", "neutral_R"],
+      [58, "pickup_endL", "neutral_L"],   [59, "pickup_endR", "neutral_R"],
+    ],
+  };
+  const clipOff = (i) => CLIPFB.base + CLIPFB.stride * i;
+  function clipName(i) {
+    let out = "";
+    for (let k = 0; k < CLIPFB.width; k++) {
+      const c = r8(clipOff(i) + k);
+      if (!c) break;
+      out += String.fromCharCode(c);
+    }
+    return out;
+  }
+  function clipWrite(i, name) {
+    const b = new Uint8Array(CLIPFB.width);
+    for (let k = 0; k < name.length && k < CLIPFB.width; k++) b[k] = name.charCodeAt(k);
+    writeBytes(clipOff(i), b);
+  }
+
   // ---- missing-animation fallback ---------------------------------------------
   // The field-pickup freeze: as Koroku, picking up a herb or looting a skeleton hangs. His
   // animal rig carries 15 animation clips against Hugo's 60, so the interaction asks for a
@@ -3993,6 +4041,65 @@
       drawView();
     };
     markField(sel, sites[0].off, 4, "num");
+    drawClipFb(host);
+  }
+
+  // ---- redirect a slot to a clip the model actually has ------------------------
+  function drawClipFb(host) {
+    const rows = CLIPFB.slots;
+    const bad = rows.some(([i, stock, to]) => {
+      const n = clipName(i);
+      return !inBlk(clipOff(i), CLIPFB.width) || (n !== stock && n !== to);
+    });
+    const wrap = document.createElement("div");
+    if (bad) {
+      wrap.innerHTML = `<div class="warnbox" style="margin:12px 0 0">The motion-name table
+        isn't where this build expects it — no edits offered.</div>`;
+      host.appendChild(wrap); return;
+    }
+    const on = rows.every(([i, , to]) => clipName(i) === to);
+    wrap.innerHTML = `<div class="bag" style="margin:12px 0 0">
+        <div class="bag-h">Pickup animation → standing <span class="u">the other approach · untested</span></div>
+        <div class="muted" style="margin:0 0 10px">
+          Rather than make the engine tolerate a missing animation, give the slot an animation
+          that exists. The motion table is <code>char name[16]; u32 flags</code>, and the
+          <b>name</b> is what a model's own clip list is searched for — so renaming a slot points
+          it at different animation data while keeping that slot's own timing. The flags stay
+          put, so a play-once slot still plays once.
+          <br><br><b>The asymmetry, measured rather than assumed.</b> Scanning every model record
+          on the disc for names in this table: Koroku's carry <b>none</b> of the fourteen
+          <code>check_*</code> and <code>pickup_*</code> slots — but they do carry
+          <code>neutral_L</code> and <code>neutral_R</code>. Luc's have the pickup clips. That is
+          exactly the difference between the model that loots a skeleton and the one that hangs.
+        </div>
+        <label class="field" style="max-width:460px"><span>Examine / pick-up motions</span>
+          <select id="cfbSel">
+            <option value="stock"${on ? "" : " selected"}>their own clips (stock)</option>
+            <option value="alt"${on ? " selected" : ""}>the model's standing clip</option>
+          </select></label>
+        <div class="muted" style="font-size:12px;margin:8px 0 0">
+          <b>The cost, plainly:</b> the table is global, so this changes <i>everyone's</i> examine
+          and pick-up animation to their own idle — Hugo stops crouching for a herb too. It is
+          cosmetic, it is opt-in, and it is what fixing this without editing model assets costs.
+          L slots go to <code>neutral_L</code> and R slots to <code>neutral_R</code>, so facing
+          stays consistent.
+        </div>
+        <table class="invtbl" style="margin:10px 0 0"><thead><tr><th>slot</th><th>ISO</th><th>stock</th><th>now</th></tr></thead><tbody>
+        ${rows.map(([i, stock]) => `<tr><td class="dim">${i}</td>
+          <td class="dim">0x${clipOff(i).toString(16).toUpperCase()}</td>
+          <td class="dim">${esc2(stock)}</td>
+          <td>${clipName(i) === stock ? '<span class="dim">stock</span>' : '<b class="acc2">' + esc2(clipName(i)) + "</b>"}</td></tr>`).join("")}
+        </tbody></table>
+      </div>`;
+    host.appendChild(wrap);
+    const sel = q("#cfbSel", wrap);
+    sel.onchange = () => {
+      rows.forEach(([i, stock, to]) => {
+        clipWrite(i, sel.value === "alt" ? to : stock);
+        reg(clipOff(i), CLIPFB.width, "str", "Pickup animation", `slot ${i}`);
+      });
+      drawView();
+    };
   }
 
   // ---- Field character --------------------------------------------------------
