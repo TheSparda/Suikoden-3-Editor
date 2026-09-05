@@ -1083,7 +1083,7 @@ names that appear in this table, Koroku's records carry **none of the fourteen `
 So the difference between the model that loots a skeleton and the model that hangs is now a
 measured fact about the data, not an inference from a hang.
 
-### Shipped (v1.90.0): point the slot at a clip the model has
+### Tried (v1.90.0), played, removed (v1.91.0): point the slot at a clip the model has
 
 Renaming a slot redirects it to different animation data while keeping that slot's own timing —
 so slots 46–59 can be pointed at `neutral_L` / `neutral_R` (L to L, R to R, so facing stays
@@ -1098,10 +1098,21 @@ already ships.
 motion becomes their own idle — Hugo stops crouching for a herb too. Cosmetic, opt-in, off by
 default, and the panel says so.
 
-**Still unproven in play.** Three theories have been killed here by evidence already; this one
-has better evidence behind it than any of them — the missing clips are named, not guessed — but
-"the clip now resolves" is not the same as "the interaction completes", and only playing it
-settles that.
+**Played, and it did not work either.** Even with the requested clip resolving to one the model
+owns, the interaction still does not complete. That is a genuinely informative negative: it
+means the stall is **not** the animation lookup at all. Whatever the pickup waits for, Koroku
+fails it for some other reason — which puts the weight on the remaining lead, op 109's branch on
+an actor *kind* being 7 (`0x17A22B4`).
+
+**The line of work stopped here, and the patches were removed (v1.91.0).** Three mechanisms were
+built and played — the motion-finished flag, the missing-clip wait, and the clip redirect — and
+none helped. A Test tab full of patches that do not do what they claim is worse than no entry at
+all, so the editor no longer carries them.
+
+Everything learned is kept in this document: the decoded motion table, the blocking-opcode map,
+and the measured fact that Koroku's model lacks all fourteen `check_*` / `pickup_*` clips.
+Anyone resuming this should start from op 109 and from a script *known* to run for a herb —
+not from the animation system, which is now falsified three times over.
 
 ## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
