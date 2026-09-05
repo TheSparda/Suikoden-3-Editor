@@ -892,6 +892,62 @@ Clip data caveat: measured where records sit in the **uncompressed** area archiv
 a clip is solid evidence; absence is weaker, because `ETC.BIN` payloads are compressed and
 opaque.
 
+### Field pickups still hang as Koroku (reported 2026-09-05)
+
+With both party conditions satisfied — Koroku in slot 1, Hugo out of the party — scenes play
+through and he speaks the protagonist's lines. **Two field interactions still hang:**
+
+| reported | what it is |
+|---|---|
+| picking up a herb | the sparkle pickup points on field maps |
+| looting a skeleton | the same "walk up, press X, receive an item" interaction |
+
+Both are the *same class*: a field object that gives you an item and plays a short motion on
+the protagonist first. That they fail together, and that ordinary conversation does not, is the
+useful part of the report — it points at the motion, not at the actor plumbing that §9 solved.
+
+**The likely mechanism, and why it is Koroku specifically.** His model is animal-rigged and his
+clip set is locomotion-only — 15 clips against Hugo's 60 (§8). He is also the only one of the
+23 models with event animations that lacks `evneutral`. A pickup that asks for a crouch/reach
+clip he does not have gets a failure from `SetMotion`, and if the interaction then waits for
+that motion to finish, it waits forever. This is the residual, model-specific half of the
+`evneutral` finding that §9 explicitly left open when Yuber falsified it as the *general* cause
+of scene hangs — the general cause was the two-actor collision; this is what is left.
+
+**Why the herb is a better test case than any cutscene.** It is short, repeatable, needs no
+chapter state, and it is reachable within a minute of loading a save. Every hang diagnosed on
+this disc so far has been diagnosed by playing it, because there is no emulator on the
+development machine (§ *Reading the hang instead of inferring it*). A repeatable one-minute
+repro is worth more than a cutscene for exactly that reason.
+
+**The discriminating experiment, not yet run.** Try a herb pickup as **Luc or Thomas** —
+humanoid models with full clip sets.
+
+- They pick it up fine → it is Koroku's clip poverty, and the fallback below is the right lever.
+- They hang too → it is not clips, and this belongs with the avatar machinery instead.
+
+Until that is run, the mechanism above is a hypothesis with good circumstantial support, not a
+finding.
+
+**Fix candidates, and what each would cost.**
+
+| lever | call sites | note |
+|---|---|---|
+| make the motion-*wait* give up on failure | `SetMotion` @ `0x16EF4F0` has **252** callers | what §9 proposed; every scripted motion in the game runs through it |
+| make the *clip lookup* fall back to a clip every model has | `0x16D8480` has **3** callers | far more surgical, and dormant in stock play |
+
+The second is the more promising one and was not considered before. `SetMotion` already
+distinguishes the two failures: an out-of-range motion id leaves its table pointer null, while a
+clip the *model* lacks comes back as zero from the lookup at `0x16D8480` (`beqz $v0` at
+`0x16EF570` → the `move $v0,$zero` exit at `0x16EF634`). A fallback on that second path would
+fire **only** when a model is asked for a clip it does not own — which stock play essentially
+never does, since 76 of 78 models carry the full human set and the game never hands you Koroku
+on the field. Koroku would stand still instead of crouching, and the interaction would continue.
+
+Neither is built. Both are shared-path patches that cannot be validated here, so they stay
+research until someone can play-test them — the same bar §8's run-cycle fix had to clear before
+it shipped.
+
 ## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other
