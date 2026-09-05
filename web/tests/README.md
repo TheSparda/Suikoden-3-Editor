@@ -257,3 +257,38 @@ node web/tests/stream-save.mjs      # or: npm --prefix web/tests run test:stream
 
 Skips cleanly (exit 0) without playwright-core/Chromium, and if the service worker never
 takes control.
+
+## Why `playwright-core` is pinned to an exact version
+
+`devDependencies` names **`1.62.1`**, not a `^` range. CI runs `npm install` on a clean
+runner, so a floating range means the browser under test is "whatever shipped since the last
+push" — and on 2026-09-04 that turned main red with no code change on our side.
+
+`playwright-core@1.63.0` (published 22:43Z that day) bundles **Chromium 153.0.8010.12 /
+`chromium_headless_shell-1243`**, and that build crashes the renderer when a
+`FileSystemFileHandle` is **read back out of IndexedDB**. Writing it in is fine; the
+deserialize is what dies. Minimal repro, no editor code involved:
+
+```js
+const root = await navigator.storage.getDirectory();
+const fh   = await root.getFileHandle('f.bin', { create: true });
+const w = await fh.createWritable(); await w.write(new ArrayBuffer(16)); await w.close();
+// store: OK
+await put(db, fh, 'k');
+// read back: renderer crash — "Target page, context or browser has been closed"
+await get(db, 'k');
+```
+
+A plain object round-trips through the same store untouched, so it is specific to the handle.
+That is exactly what *Last opened ISO (persist handle + reopen)* exercises, and exactly what
+the editor's auto-reopen does in `iso.js` (`idbGet("lastIso")` in `showLastIso`) — so this is
+**not** a test-harness artefact. It is guarded by `try/catch` there, which does not help: a
+renderer crash is not a catchable exception.
+
+Chromium 1234 (playwright 1.62.1) is the last build that passes. Two things follow:
+
+- **Re-test before unpinning.** Bump the pin, run `node web/tests/e2e.mjs`, and only keep the
+  bump if that test still passes.
+- **Watch it reach stable.** If this regression ships to stable Chrome, opening the ISO Editor
+  would kill the tab for anyone who has opened a disc before. Nothing can be done in JS; the
+  only lever would be to stop persisting the handle.
