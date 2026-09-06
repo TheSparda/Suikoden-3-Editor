@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
@@ -1653,7 +1653,10 @@ head("Rune reskin + description rewrite");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
   await openFold(page, "#spReskinBox");
-  await page.selectOption("#rsRune", "fire"); await page.fill("#rsPower", "300"); await page.click("#rsApply"); await page.waitForTimeout(150);
+  // The rune picker is keyed by ITEM id now, not by a bundled name: it lists whatever this
+  // disc's rune records point at, so it follows a reassignment instead of a hardcoded list.
+  await page.selectOption("#rsRune", String(mapping.runes[0].id));
+  await page.fill("#rsPower", "300"); await page.click("#rsApply"); await page.waitForTimeout(150);
   const r = await save(page);
   check("reskin: spell0 power = 300", r.u32(SPELL.off + 0x1C) === 300);
   check("reskin: spell3 power = 300", r.u32(SPELL.off + 3 * SPELL.stride + 0x1C) === 300);
@@ -2273,10 +2276,13 @@ head("Runes — families, granted spells, who has it");
   const groups = await page.$$eval("[data-rgrp]", (es) => es.map((e) => e.textContent.trim()));
   check("the three rune families each have a chip", /Magic \(22\)/.test(groups.join(" "))
     && /Special attack \(27\)/.test(groups.join(" ")) && /Support \(23\)/.test(groups.join(" ")), groups.join(" | "));
-  // a magic rune names the spells it grants; the browser is where you look that up
-  await page.fill("#isoSearch", "true fire"); await page.waitForTimeout(150);
-  const tf = await page.textContent("#isoView");
-  check("a magic rune lists the spells it grants", /Hellfire/.test(tf) && /Blazing Wall/.test(tf), tf.slice(0, 200));
+  // A rune names the spells it grants, and that now comes off the rune's own record. This
+  // fixture only plants a handful of rows, so True Wind is a rune with NO record here — the
+  // bundled "Grants ..." prose is the fallback for exactly that case, and it is display only.
+  await page.fill("#isoSearch", "true wind"); await page.waitForTimeout(150);
+  const tw = await page.textContent("#isoView");
+  check("a rune with no record on this disc still lists what it grants",
+    /Eternal Wind/.test(tw) && /Shining Wind/.test(tw), tw.slice(-200));
   // A rune whose row the disc names renders that name in the rename INPUT, and an input's
   // value is not part of textContent — so the view has to be read as text plus field values
   // or every one of these filter checks would silently pass on the wrong evidence.
@@ -2287,8 +2293,19 @@ head("Runes — families, granted spells, who has it");
   // the filter reaches past the name into owners, spells and drop sources
   await page.fill("#isoSearch", "sasarai"); await page.waitForTimeout(150);
   check("filtering finds a rune by who carries it", /True Earth/.test(await viewText()));
-  await page.fill("#isoSearch", "hellfire"); await page.waitForTimeout(150);
-  check("filtering finds a rune by a spell it grants", /True Fire/.test(await viewText()));
+  await page.fill("#isoSearch", "eternal wind"); await page.waitForTimeout(150);
+  check("filtering finds a rune by a spell it grants", /True Wind/.test(await viewText()));
+  // ...and where the disc DOES carry the record, the list is the record's, not the prose:
+  // the fixture's first rune holds spell numbers 1-4, labelled by the 0-based row the Spells
+  // tab shows. This is the assertion that would have caught the binding being read from a
+  // bundled map instead of the disc.
+  await page.fill("#isoSearch", mapping.runes[0].name.toLowerCase()); await page.waitForTimeout(150);
+  const fromRec = await page.evaluate((id) => [...document.querySelectorAll(
+    `#isoView select.rspell[data-id="${id}"]`)].map((e) => e.options[e.selectedIndex].textContent.trim()),
+    mapping.runes[0].id);
+  check("a rune whose record is on this disc lists what the RECORD grants",
+    fromRec.join(" | ") === "Flaming Arrows (#0) | Dancing Flames (#1) | Blazing Wall (#2) | Explosion (#3)",
+    fromRec.join(" | "));
   await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
   // the family chips actually narrow the table, and the support runes are reachable in one click
   await page.click('[data-rgrp="support"]'); await page.waitForTimeout(150);
@@ -2299,13 +2316,18 @@ head("Runes — families, granted spells, who has it");
   const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
   check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
   check("the view stages nothing", await nothingStaged(page));
-  // The tab is no longer read-only — it owns the rune's NAME and its menu text (issue #11: the
-  // only copy of it the game actually reads). It must still stage nothing until touched, and it
-  // must carry ONLY those two: what a rune DOES belongs to the spell record, and a second set of
-  // those fields here is exactly the duplication the granted-spell links replaced.
+  // The tab is no longer read-only — it owns the rune's NAME, its menu text (issue #11: the
+  // only copy of it the game actually reads) and its four spell slots. It must still stage
+  // nothing until touched, and it must carry only those: a spell's own power/cast/element
+  // belongs to the spell record, and a second set of THOSE fields here is exactly the
+  // duplication the granted-spell links replaced. Which spells a rune grants is not one of
+  // them — that lives in the rune's record, so this tab is where it belongs.
   const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable fields are the name and the menu text",
+  check("the only editable text fields are the name and the menu text",
     kinds.every((k) => /^(rname|rdesc)$/.test(k)), kinds.join(" | "));
+  const sels = await page.$$eval("#isoView select", (es) => [...new Set(es.map((e) => e.className))].sort());
+  check("the only editable dropdowns are the spell slots",
+    sels.length > 0 && sels.every((k) => /^rspell$/.test(k)), sels.join(" | "));
   check("no spell fields are duplicated onto this tab",
     (await page.locator("#isoView details.runefx, #isoView input.rfx, #isoView [data-fxpreset]").count()) === 0);
   // A rune is only editable when its table row still names it — the same check runeTblDesc()
@@ -3593,18 +3615,18 @@ head("Runes tab — rename and menu text");
     const i = document.querySelector("#isoView input.rname"); return i ? i.value : null; }, NEW);
   check("the row is still findable under its original name", stillThere === NEW, String(stillThere));
 
-  // Every spell a rune grants is a link to that spell's own record. This is the only route
-  // from an attack rune to its numbers: Kite and Phoenix carry no status effect, so the inline
-  // effect editor never appears for them, and before this the row was a dead end.
+  // Every FILLED spell slot links to that spell's own record. This is the only route from an
+  // attack rune to its numbers: Kite and Phoenix carry no status effect, so the inline effect
+  // editor never appears for them, and before this the row was a dead end.
   await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
   await page.waitForTimeout(120);
   const chip = await page.evaluate(() => {
-    const c = document.querySelector("#isoView .grants button.spellchip");
+    const c = document.querySelector("#isoView .runeslots button.spellchip");
     return c ? { text: c.textContent.trim(), spi: c.dataset.spi } : null;
   });
   check("a granted spell is a link, carrying the spell's index", !!chip && chip.spi === String(mapping.twin.spellIdx),
     JSON.stringify(chip));
-  await page.click("#isoView .grants button.spellchip");
+  await page.click("#isoView .runeslots button.spellchip");
   await page.waitForTimeout(200);
   const landed = await page.evaluate((spi) => {
     const d = document.querySelector(`#isoView details.char[data-i="${spi}"]`);
@@ -3623,6 +3645,82 @@ head("Runes tab — rename and menu text");
   await page.waitForTimeout(120);
   const afterBlank = await page.evaluate(() => document.querySelector("#isoView input.rname")?.value);
   check("an empty name is refused", afterBlank === NEW, String(afterBlank));
+  await page.context().close();
+}
+
+// ---- Runes tab: the four spell slots -------------------------------------------------------
+// The rune->spell binding is RUNE_TBL +0x18: four u16 1-based spell numbers, 0 = a free slot.
+// A rune granting fewer than four spells is zero-PADDED, not short — which is the whole reason
+// "give Kite three more spells" is a data edit and not a code patch. The fixture plants all
+// three shapes the disc uses (four spells / two / one) so the empty slots have to render as
+// controls rather than be hidden, and a write has to land on the right two bytes.
+head("Runes tab — spell slots (rune → spell binding)");
+{
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="runes"]');
+  const [full, part, lone] = mapping.runes;               // [1,2,3,4] / [2,3,0,0] / [1,0,0,0]
+  const slotsOf = (page2, id) => page2.evaluate((id2) => [...document.querySelectorAll(
+    `#isoView select.rspell[data-id="${id2}"]`)].map((e) => ({ k: e.dataset.k, v: e.value,
+      label: e.options[e.selectedIndex]?.textContent.trim() })), id);
+  // A slot only holds its current value until it is focused, so every pick focuses first —
+  // which is what a user does too: a native select cannot be changed without focusing it.
+  const pickSlot = async (page2, id, k, v) => {
+    const sel = `#isoView select.rspell[data-id="${id}"][data-k="${k}"]`;
+    await page2.focus(sel); await page2.waitForTimeout(60);
+    await page2.selectOption(sel, v); await page2.waitForTimeout(150);
+  };
+
+  await page.fill("#isoSearch", lone.name.toLowerCase()); await page.waitForTimeout(150);
+  const one = await slotsOf(page, lone.id);
+  check("a one-spell rune still shows all four slots", one.length === 4, JSON.stringify(one));
+  check("...slot 1 holds its spell", one[0].v === "1" && /^Flaming Arrows \(#0\)$/.test(one[0].label), JSON.stringify(one[0]));
+  check("...and slots 2-4 read as free, not hidden",
+    one.slice(1).every((x) => x.v === "0" && /empty/i.test(x.label)), JSON.stringify(one.slice(1)));
+  check("the view stages nothing until a slot is touched", await nothingStaged(page));
+
+  // The options are injected on first interaction — rendering 94 of them for every slot of
+  // every rune is ~1MB of HTML, and the filter box re-renders this tab on each keystroke.
+  const before = await page.evaluate((id) =>
+    document.querySelector(`#isoView select.rspell[data-id="${id}"][data-k="1"]`).options.length, lone.id);
+  check("a slot ships with only its current value", before === 1, String(before));
+  await page.focus(`#isoView select.rspell[data-id="${lone.id}"][data-k="1"]`);
+  await page.waitForTimeout(60);
+  const after = await page.evaluate((id) =>
+    document.querySelector(`#isoView select.rspell[data-id="${id}"][data-k="1"]`).options.length, lone.id);
+  check("...and fills with every spell plus 'empty' once touched", after === 95, String(after));
+
+  // The edit itself: hand a one-spell rune a second spell.
+  await pickSlot(page, lone.id, 1, "3");
+  const now = await slotsOf(page, lone.id);
+  // The stored byte is 1-based (3) but the label carries the 0-based row (#2) the Spells tab
+  // shows, so a slot and the record it points at are never two different numbers.
+  check("a free slot can be given a spell", now[1].v === "3" && /^Blazing Wall \(#2\)$/.test(now[1].label),
+    JSON.stringify(now[1]));
+  check("...and the other slots are untouched",
+    now[0].v === "1" && now[2].v === "0" && now[3].v === "0", JSON.stringify(now));
+  const dirty = await page.evaluate((id) => document.querySelector(
+    `#isoView select.rspell[data-id="${id}"][data-k="1"]`).classList.contains("dirty"), lone.id);
+  check("the changed slot is highlighted", dirty === true);
+
+  const r = await save(page);
+  const slotOff = (id, k) => RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.spells + k * 2;
+  check("the write lands on slot 2 of that rune's record", r.u16(slotOff(lone.id, 1)) === 3,
+    String(r.u16(slotOff(lone.id, 1))));
+  check("...and slot 1 still holds the original spell", r.u16(slotOff(lone.id, 0)) === 1);
+  check("...and slots 3-4 are still free",
+    r.u16(slotOff(lone.id, 2)) === 0 && r.u16(slotOff(lone.id, 3)) === 0);
+  check("...and no other rune's slots moved",
+    r.u16(slotOff(full.id, 0)) === 1 && r.u16(slotOff(full.id, 3)) === 4
+    && r.u16(slotOff(part.id, 2)) === 0);
+
+  // Emptying a slot has to write a real 0, not be refused the way a blank NAME is: a rune
+  // with fewer spells is a shape the game already ships.
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", full.name.toLowerCase()); await page.waitForTimeout(150);
+  await pickSlot(page, full.id, 3, "0");
+  const r2 = await save(page);
+  check("a slot can be emptied", r2.u16(slotOff(full.id, 3)) === 0, String(r2.u16(slotOff(full.id, 3))));
   await page.context().close();
 }
 

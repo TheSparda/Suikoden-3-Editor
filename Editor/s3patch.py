@@ -719,6 +719,18 @@ def clear_mod(path):
 
 # Rune -> ordered spell names (from Suikosource S3 casting-time guide).
 # Resolved to spell-table indices at runtime by name, so it survives index drift.
+#
+# NOT ground truth any more, and not the rune->spell binding. The disc carries that
+# itself, in the rune table at file 0x3EAF78 +0x18: four u16 1-based spell numbers per
+# rune (see Suikoden3_ISO_offsets.md, "Custom runes — rune->spell binding"). Every entry
+# below was checked against those bytes on a pristine SLUS-20387 and all 22 match exactly
+# — but they describe a STOCK disc, so on an edited one they are simply wrong. The web
+# editor reads the record and keeps no copy of this map.
+#
+# What it is still good for is the one job it has left: build_item_desc_extra.py bakes a
+# "— Grants a, b, c" clause into s3_rune_food_desc.json, which the save editor (no ISO to
+# read) and the ISO editor's untrusted-row fallback both display as prose. If that JSON is
+# ever regenerated, prefer reading the binding off the disc instead of this map.
 RUNE_SPELLS = {
     "fire":        ["Flaming Arrows", "Dancing Flames", "Blazing Wall", "Explosion"],
     "rage":        ["Dancing Flames", "Blazing Wall", "Explosion", "Final Flame"],

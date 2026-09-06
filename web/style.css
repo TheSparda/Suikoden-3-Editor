@@ -405,6 +405,14 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 button.spellchip { font:inherit; font-size:11px; line-height:inherit; cursor:pointer;
   text-decoration:underline; text-underline-offset:2px; }
 button.spellchip:hover, button.spellchip:focus-visible { color:var(--ink); border-color:var(--acc2); }
+/* The four spell slots a rune grants. All four are always shown, empty ones included — an
+   unused slot is a zero in the record, not a missing row, and it is the thing you fill in to
+   give a rune another spell — so the slot NUMBER is a fixed-width gutter and the selects line
+   up under each other whether or not the rune uses them all. */
+.runeslots .slotrow { display:flex; align-items:center; gap:6px; margin-top:3px; }
+.runeslots .slotn { flex:0 0 auto; width:14px; text-align:right; font-size:11px;
+  font-variant-numeric:tabular-nums; color:var(--muted); }
+.runeslots select.rspell { flex:1 1 auto; min-width:0; }
 /* 8 rank columns have to fit a 320px phone, so they scroll rather than squeeze the label out */
 .ranktbl { display:block; overflow-x:auto; white-space:nowrap; overscroll-behavior-x:contain; }
 .ranktbl th, .ranktbl td { padding:4px 6px; }
