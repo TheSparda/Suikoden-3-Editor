@@ -382,6 +382,12 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .grants { margin-top:4px; display:flex; gap:4px; flex-wrap:wrap; }
 .spellchip { font-size:11px; color:var(--acc2); border:1px solid var(--line); border-radius:999px;
   padding:1px 8px; background:var(--input-bg); white-space:nowrap; }
+/* A granted spell that HAS a record on this disc is a link to it. It has to read as clickable
+   next to the plain chips beside it (the support runes have no record to open), hence the
+   underline and the pointer rather than colour alone — the two chip kinds sit side by side. */
+button.spellchip { font:inherit; font-size:11px; line-height:inherit; cursor:pointer;
+  text-decoration:underline; text-underline-offset:2px; }
+button.spellchip:hover, button.spellchip:focus-visible { color:var(--ink); border-color:var(--acc2); }
 /* 8 rank columns have to fit a 320px phone, so they scroll rather than squeeze the label out */
 .ranktbl { display:block; overflow-x:auto; white-space:nowrap; overscroll-behavior-x:contain; }
 .ranktbl th, .ranktbl td { padding:4px 6px; }
