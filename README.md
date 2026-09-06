@@ -76,11 +76,28 @@ Editable per save:
   characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
   manually is unneeded and can soft-lock an early save (the story/optional split is derived
   from the character guide).
-- **108 Stars** — a completion dashboard over the Stars of Destiny: how many you have, the
+- **108 Stars** — a completion checklist over the Stars of Destiny, laid out in the
+  **recruitment guide's order** — the order you can actually get them in — and cut into that
+  order's stages (Chapter 1's four parties, the Budehuc-era optional recruits, each story
+  block, the Chapter 6 four), **each stage with its own progress** and foldable once it's
+  done. Shows how many you have, each star's Star of Destiny name and guide position, the
   Hugo / Chris / Geddoe / Thomas / shared spread, filters (recruited vs missing, optional vs
-  story), the guide's how-to line under each missing **optional** star, and a **＋ recruit**
-  button that stages it without leaving the list. It reflects staged edits live, so it doubles
-  as a worklist for a completion run.
+  story), the guide's how-to line under each missing **optional** star, **next in guide
+  order** (the first one you can go and get), and a **＋ recruit** button that stages it
+  without leaving the list. Under each how-to it also spells out **what that errand needs**:
+  where the item it asks for actually comes from and when (the disc's own shop counters — town,
+  regular stock vs rare find, the rare find's per-visit chance and which story stages carry it —
+  plus enemy drops with the enemy, level, odds and area, and treasure chests), the **potch price
+  measured against your purse**, and any star you have to **bring along or recruit first**, with
+  a ✓/✗ for whether you already have them. Where nothing is known it says so rather than
+  guessing. Each of those can also be **handed over**: an item goes into the bag of the party
+  the save is currently playing (derived from the field-leader byte and that character's team —
+  before the parties merge each protagonist carries their own bag, so "your inventory" is not
+  one place), and a potch price is topped up by exactly the shortfall. An errand that says
+  **buy** is money, not goods — Dominic joins when you *buy* the Mole Armor from him, so that
+  one is priced off the disc (600 potch) and offers the top-up, never a free copy. Both only stage the
+  change, so they still go through **Review changes**. It reflects staged edits live, so it
+  doubles as a worklist for a completion run.
 - **Party** — the active battle party (up to 6), by character name.
 - **Inventory** — every bag, split into Party Items vs Key/Valuables, with name-resolved
   item pickers, quantities, add and remove. The bag layout follows the save: before the
@@ -143,23 +160,60 @@ multiplies every character's growth rate at once and carries the idempotent *Tou
 Brutal* difficulty presets, optionally scoped to whatever the filter box is showing),
 **Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**,
-**Runes** (every rune in the game: **rename** it and rewrite the **menu text** the game shows
-for it. What a rune *does* lives in the spells it grants, so each of those is a **link straight
-into the Spells tab with that record open** rather than a second copy of the same fields — which
-is also the only route from an attack rune to its numbers, since Kite and Phoenix carry no status
-effect for an effect editor to hang off. The passive support runes link to nothing, because they
-have no spell record at all: what they do is engine code, not a row. Names and menu text are
-rewritten in place, so each is capped to the slot
+**Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows
+for it, and **choose which spells it grants**. Every rune record carries **four spell slots**,
+and a rune with fewer spells than that is simply zero-padded — so *Kite* grants one attack and
+has **three free slots**, and filling one is how a rune is given a spell it never had. Each of
+the game's 94 spells can go in any slot. All 27 special-attack runes have the same three slots
+spare. Each filled slot is also a **link straight into the Spells tab with that record open**,
+which stays the one place a spell's own power / cast / element / target / status is edited —
+and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
+status effect for an effect editor to hang off. The passive support runes ship with all four
+slots empty: what they do is engine code, not a spell — and the **Passives** tab is where that
+code is reached. Two caveats, both written into the tab:
+the character levels that gate a rune's later spells are **not** in this record and are not
+editable yet, and whether an attack rune will surface more than one spell is untested on
+hardware — try a reassigned rune in game before building a run around it. Names and menu text
+are rewritten in place, so each is capped to the slot
 the disc already reserves for it, and both are **mirrored across every copy**: the 20 attack
 runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well —
 *Kite* the rune and *Kite* the spell it grants each hold their own — so one edit keeps the rune
 menu, the battle command and the item list agreeing. A rename shows up immediately in every
 picker, tooltip and list in the editor for that ISO, and the rune stays findable under its
 original name),
+**Passives** (the passive **support runes** that work **outside battle** — *Champion's* (no
+encounters with weaker foes) and *Sunbeam's* walk-heal — forced on *without equipping them*, and
+without spending a rune slot. A support rune grants no spells and has no battle command: each is
+one question the engine asks at the moment it matters, *“does this character have item N
+equipped?”*, always through the same three seven-slot equipment lookups. Both field checks are
+**loops over party slots 1–6**, so answering yes there means everyone in your party has the rune
+— exactly what it does when six people wear one, and there are no enemies on the field to leak it
+to. The other 21 runes (and Sunbeam's in-battle half) are decoded, listed at the bottom of the tab
+with what each does, and **deliberately not switchable**: a call site frees one instruction word
+for the answer, which is enough for *yes* and not enough for *yes, if this is Hugo*, and the
+battle-side lookup never receives the character at all — it resolves whichever unit is acting, so
+forcing one would arm **every unit in the fight, enemies included**. Both switchable sites are
+byte-checked against a pristine disc before anything is written and untick back to stock exactly,
+but neither has been watched working in play — it's experimental, keep a backup. *Fortune* is
+listed and cannot be forced; its effect doesn't ask the question the other 22 ask, and the
+searches that came up empty are recorded in the offsets doc so nobody repeats them. The same tab
+also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
+constants across 12 runes, read out of the instruction each rune runs right after it has asked
+whether you have it. *Sunbeam heals 15HP a combat turn and 1HP every 0.3 seconds of walking*, and
+both of those numbers are editable, as are Killer's and Counter's ×150%, Gale's SPD boost,
+Haziness' real dodge chance (30%, which its menu text never states), Drain's and Barrier's
+divisors, Hunter's damage clamp, Violence's half-HP trigger, and the doubling/halving shifts
+behind Wall, Double-Strike, Fire Sealing, Wizard and Warrior. These need **no switch** and work
+on a stock disc — every site sits inside the rune's own *if equipped* branch, so the rune still
+has to be equipped — but like every code constant here they are **global**: raising Killer raises
+it for everyone who wears one, enemies included. Each control rewrites only the value inside an
+instruction the game already runs, checks the site is still the shape it decoded before writing,
+and reverts byte-for-byte),
 **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
-poison* — that edits every spell a rune grants at once, a **bulk Power scale** for the whole
-table, and optional description rewrites),
+poison* — that edits every spell a rune grants at once, for any of the 49 runes that grant
+something (it reads each rune's slots off the disc, so it follows a reassignment), a **bulk
+Power scale** for the whole table, and optional description rewrites),
 **Unites** (including the same bulk Power scale), **Mounts** (both of the game's mount systems — the per-character **assigned horse**
 that puts the six Zexen Knights on horseback in the field *and* in battle, and the hard-coded
 **three-pair** battle table, stock *Hugo+Fubar / Futch+Bright / Franz+Ruby*, which can be
@@ -175,10 +229,11 @@ boxes when you play as someone the game didn't plan for, with the setup written 
 step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
 whitelist and the scene-actor fallback; see below),
-**Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
+**Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
-the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
+the set number that can be pointed at a different set), **Food** (rename a dish, rewrite its
+description, set its heal and proc chance), **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Encounter**
 (a global **random-encounter rate** as a plain percentage, plus the three per-movement
@@ -195,6 +250,12 @@ below).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
+
+> **Names and descriptions are written in place**, over the bytes they already occupy, so each
+> is capped to the slot the disc reserves for it (the field shows the cap and refuses anything
+> longer rather than truncating). Where the disc stores one string **twice** — 27 descriptions
+> and 43 names, e.g. *Kite* the rune and *Kite* the spell it grants, or the Wind Amulet and its
+> spell — an edit writes **every copy**, and the field says so.
 
 **Field character — run around the map as someone else.** The on-field avatar is the
 **party-leader byte** in your save, and that byte names a *model*.
@@ -218,11 +279,13 @@ slot 1 **and removes the stand-in**, and says what it did. The alternative — k
 is still one click away, labelled with the fact that it freezes scenes. The **Health** tab
 flags a save that's already in the broken state, with the same one-click fix.
 
-**Which maps carry which character.** A field model has to be in the area you're standing in,
-and the per-area sets are small — a median of **4 of the 28** area archives. The picker says so
-up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, …"*. Thomas is in 5, Koroku
-in 6. Measured from the disc, and phrased as *ships in* rather than *works in*, because
-`ETC.BIN` carries every model too and a resident one isn't evicted when you change area.
+**The area doesn't limit the pick.** Field models ship per area archive and the per-area sets
+are small — a median of **4 of the 28** — so the editor used to print a coverage figure next to
+each character ("ships in 9/28 maps"). Playing them retired it: **every character the picker
+offers worked in every area it was taken to**, which is what `ETC.BIN` carrying all of them and
+a resident model not being evicted on an area change would predict. The figure is gone from
+both tabs; the measured table is kept as research in
+[`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md) §6.
 
 **Whose story you get — the Story content tab.** The leader byte is also *which team's events
 and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and Masked Luc
@@ -618,8 +681,9 @@ Editor/
   s3patch.py        ISO reader library + verified field tables. Its one consumer is
                     build_item_desc_extra.py; it is not a second editor.
   build_*.py        regenerate the guide reference data (skills, caps, growth, rune slots,
-                    bestiary, recruit flags, rune/food descriptions, room and sub-file
-                    indexes) from a pristine disc + the saved guide text
+                    bestiary, recruit flags, recruitment order and prerequisites, rune/food
+                    descriptions, room, sub-file and BGM indexes) from a pristine disc + the
+                    saved guide text
   suikosource/      saved Suikosource guide text the generators parse
   s3_*.json / *_ids.txt    verified id->name / description / guide reference data
   Suikoden3_ISO_offsets.md the reverse-engineering notebook — the source of truth for offsets

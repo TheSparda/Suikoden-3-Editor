@@ -10,14 +10,14 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
+import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
-  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr } from "./synth-iso.mjs";
+  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES, RUNEFX_SITES, RUNEFX_FLOAT } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -69,9 +69,10 @@ async function newPage(viewport) {
   await page.addInitScript(fakeHandle());
   return page;
 }
-// The full-screen boot gate covers the mode tabs until Pyodide is up, and these tests abort
-// the Pyodide CDN on purpose — so take the gate down first. That button exists for real users
-// too: the ISO editor needs no Python. web/tests/boot-gate.mjs is what tests the gate itself.
+// The boot gate covers the save loader card until Pyodide is up, and these tests abort the
+// Pyodide CDN on purpose, so it would sit there for the whole run. It no longer covers the
+// mode tabs — clicking through to the ISO editor works with it up — but taking it down keeps
+// these tests off the gate's geometry entirely. web/tests/boot-gate.mjs tests the gate itself.
 async function dismissBoot(page) {
   const b = await page.$("#bootHide");
   if (b) await b.click().catch(() => {});   // may have self-closed already (stubbed engine)
@@ -319,7 +320,8 @@ head("Byte-exact edits across every editable view");
   // Gear: DEF/price/effect/desc
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
   await page.fill('input.gr[data-l="DEF"]', "42"); await page.dispatchEvent('input.gr[data-l="DEF"]', "change");
-  await page.fill('input.gr[data-l="Price"]', "9999"); await page.dispatchEvent('input.gr[data-l="Price"]', "change");
+  // +0x08 is a price TIER into the shared 15-step ladder, not potch (see the offsets notebook)
+  await page.fill('input.gr[data-l="Price tier"]', "4"); await page.dispatchEvent('input.gr[data-l="Price tier"]', "change");
   await page.selectOption(".ge-type >> nth=0", "1");   // effect0 type -> HP regen
   // Food: heal/proc
   await page.click('#isoTabs [data-v="food"]');
@@ -353,7 +355,7 @@ head("Byte-exact edits across every editable view");
   check("unite0 chance = 40%", r.u16(UNITE.off + UNITE.chance) === 40);
   check("unite summary shows the radius", /r2/.test(uniteSum), uniteSum);
   check("gear DEF = 42", r.u16(GEAR.P + GEAR.stride + GEAR.def) === 42);
-  check("gear price = 9999", r.u32(GEAR.P + GEAR.stride + GEAR.price) === 9999);
+  check("gear price tier = 4", r.u32(GEAR.P + GEAR.stride + GEAR.price) === 4);
   check("gear effect0 type = 1", r.u16(GEAR.P + GEAR.stride + GEAR.effs[0]) === 1);
   check("food0 heal = 250", r.u16(FOOD.off + FOOD.heal) === 250);
   check("food0 proc = 60", r.u16(FOOD.off + FOOD.proc) === 60);
@@ -437,6 +439,162 @@ head("Armor sets view — decode, edit, byte-exact save");
   check("counter site B = slti 50", r.u32(SETS.counterSites[1]) === 0x28420032);
   check("heal bias = addiu +1", r.u32(SETS.healBias) === 0x26220001);
   check("heal shift = sra 1", r.u32(SETS.healShift) === 0x00021043);
+  await page.context().close();
+}
+
+head("Passives view — force the out-of-battle support runes on");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("input.psOn", { timeout: 3000 });
+  // Exactly two switches, and they are the two whose checks loop your party on the field.
+  // Anything else appearing here would be a battle check, which cannot be scoped to the party —
+  // that is the whole reason the tab is split, so it is asserted rather than assumed.
+  const boxes = await page.$$eval("input.psOn", (b) => b.map((x) => x.dataset.id));
+  check("exactly two runes are switchable", boxes.length === 2, boxes.join(","));
+  check("...and they are Champion's (0x1B9) and Sunbeam (0x1BD)",
+    boxes.sort().join(",") === "441,445", boxes.join(","));
+  check("every switch starts off on a stock disc",
+    (await page.$$("input.psOn:checked")).length === 0);
+  { const txt = await page.textContent("#isoView");
+    check("it says plainly this is untested in play", /not yet seen working in play/i.test(txt));
+    check("it explains the field checks loop the party", /loops over party slots 1–6/i.test(txt));
+    check("the in-battle sites are listed but not offered", /deliberately not switchable/i.test(txt));
+    check("...with the per-unit limit spelled out", /cannot be made per-unit/i.test(txt));
+    check("...and what forcing them would do to enemies", /enemies included/i.test(txt));
+    check("Sunbeam's battle half is named as held back", /Sunbeam's other half/.test(txt));
+    check("Fortune is listed as the one with no site at all", /no site found/.test(txt)); }
+  check("the held-back runes have no checkbox of their own",
+    (await page.$$("input.psOn")).length === 2);
+
+  await page.click('input.psOn[data-id="441"]');           // Champion's
+  await page.waitForTimeout(60);
+  check("ticking it stages something", await somethingStaged(page));
+  check("the row now reads ALWAYS ON", /ALWAYS ON/.test(await page.textContent("#isoView")));
+
+  // Unticking must restore the stock pair byte-for-byte — a tab that can only be applied in one
+  // direction is a trap. Checked BEFORE saving, because saving makes the patched words the new
+  // pristine baseline and the badge would then be measuring the wrong thing.
+  await page.click('input.psOn[data-id="441"]');
+  await page.waitForTimeout(60);
+  check("unticking it clears every staged byte", await nothingStaged(page));
+
+  await page.click('input.psOn[data-id="441"]');
+  await page.waitForTimeout(60);
+  { const r = await save(page);
+    const YES = 0x0004102B;                                 // sltu $v0,$zero,$a0
+    const site = PASSIVE_SITES.find(([o]) => o === 0x149F90);
+    check("the delay slot moved up into the jal's word", r.u32(0x149F90) === site[2] >>> 0);
+    check("...and the answer went into the word it vacated", r.u32(0x149F94) === YES);
+    check("no other passive site moved anywhere",
+      PASSIVE_SITES.filter(([o]) => o !== 0x149F90)
+        .every(([o, jal, ds]) => r.u32(o) === jal >>> 0 && r.u32(o + 4) === ds >>> 0)); }
+
+  // A disc whose code is not what we decoded is read-only, never overwritten.
+  { const patched = Uint8Array.from(bytes);
+    new DataView(patched.buffer).setUint32(0x149F90, 0xDEADBEEF, true);
+    setServed(patched);
+    const p2 = await newPage(); await loadIso(p2);
+    await p2.click('#isoTabs [data-v="passives"]');
+    await p2.waitForSelector("input.psOn", { timeout: 3000 });
+    check("a drifted site makes its rune read-only, not writable",
+      await p2.isDisabled('input.psOn[data-id="441"]'));
+    check("...and only that rune", !(await p2.isDisabled('input.psOn[data-id="445"]')));
+    await p2.context().close();
+    setServed(bytes); }
+  await page.context().close();
+}
+
+head("Passives view — rune power: what a passive is worth once it fires");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("#rfBox", { timeout: 3000 });
+  // The card is a separate patch from the switches above it: these constants live INSIDE each
+  // rune's "if equipped" branch, so they work on a stock disc and need no switch. If that ever
+  // stops being said on the tab, the controls read as part of the forcing feature and someone
+  // will tick a box expecting them to do nothing without it.
+  { const txt = await page.textContent("#rfBox");
+    check("it says the switches and the numbers are separate things", /whether a passive runs/.test(txt));
+    check("...that the rune still has to be equipped", /still has to be equipped/.test(txt));
+    check("...and that these constants are global", /global/.test(txt));
+    check("Sunbeam's two numbers are named up front", /15 HP a combat turn and 1 HP every\s+0\.3 seconds/.test(txt)); }
+  check("the card starts collapsed", !(await page.locator('input.rf[data-k="sunTurn"]').isVisible()));
+  await page.click("#rfBox > summary");
+  const keys = await page.$$eval(".rf", (n) => n.map((x) => x.dataset.k));
+  check("every rune power control renders", keys.length === 15, keys.join(","));
+  check("...none of them read-only on a stock disc", (await page.$$(".rf:disabled")).length === 0);
+  check("the shift controls are dropdowns, not free numbers",
+    (await page.$$eval("select.rf", (n) => n.map((x) => x.dataset.k))).sort().join(",")
+      === "dblStrike,fireSeal,wall,warrior,wizard");
+  check("Sunbeam's turn heal starts at the stock 15",
+    (await page.inputValue('input.rf[data-k="sunTurn"]')) === "15");
+  check("...and its walk-heal interval at the stock 0.3",
+    (await page.inputValue('input.rf[data-k="sunWalk"]')) === "0.3");
+  check("Wall's multiplier starts at x2",
+    (await page.locator('select.rf[data-k="wall"] option:checked').textContent()) === "×2");
+
+  // An immediate write must move the LOW half-word and nothing else — the opcode and registers
+  // are what make the instruction still an instruction.
+  await page.fill('input.rf[data-k="sunTurn"]', "200");
+  await page.dispatchEvent('input.rf[data-k="sunTurn"]', "change"); await page.waitForTimeout(60);
+  // A shift write must move ONLY bits 10..6, at both of Double-Strike's sites.
+  await page.selectOption('select.rf[data-k="dblStrike"]', "3");
+  await page.waitForTimeout(60);
+  // ...and the interval is a float in the data pool, not an instruction at all.
+  await page.fill('input.rf[data-k="sunWalk"]', "0.05");
+  await page.dispatchEvent('input.rf[data-k="sunWalk"]', "change"); await page.waitForTimeout(60);
+  { const { r, review } = await saveAndReview(page);
+    check("Sunbeam now heals 200 HP a combat turn", r.u32(0x261198) === 0x244200C8,
+      r.u32(0x261198).toString(16));
+    check("...and only the immediate moved", (r.u32(0x261198) >>> 16) === 0x2442);
+    check("Double-Strike shifts by 3 at both sites",
+      r.u32(0x1047C8) === 0x001080C0 && r.u32(0x1047DC) === 0x001080C0,
+      r.u32(0x1047C8).toString(16));
+    check("...and only bits 10..6 moved",
+      ((r.u32(0x1047C8) & ~0x7C0) >>> 0) === ((0x00108040 & ~0x7C0) >>> 0));
+    { const dv = new DataView(new ArrayBuffer(4));
+      dv.setUint32(0, r.u32(RUNEFX_FLOAT.off), true);
+      check("the walk-heal interval is a float, written as one",
+        Math.abs(dv.getFloat32(0, true) - 0.05) < 1e-6, String(dv.getFloat32(0, true))); }
+    check("nothing else in the rune power table moved",
+      RUNEFX_SITES.filter((f) => !["sunTurn", "dblStrike"].includes(f.key))
+        .every((f) => r.u32(f.off) === (f.word >>> 0)));
+    check("no equipped-check word pair was touched",
+      PASSIVE_SITES.every(([o, jal, ds]) => r.u32(o) === jal >>> 0 && r.u32(o + 4) === ds >>> 0));
+    check("the review names them under Rune power", /Rune power/.test(review));
+    check("...and names the rune and the number", /Sunbeam — HP healed each combat turn/.test(review));
+    check("...and numbers a multi-site write", /site 2 of 2/.test(review)); }
+  await page.context().close();
+}
+
+head("Passives view — rune power reverts and refuses a drifted disc");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("#rfBox", { timeout: 3000 });
+  await page.click("#rfBox > summary");
+  await page.fill('input.rf[data-k="killer"]', "400");
+  await page.dispatchEvent('input.rf[data-k="killer"]', "change"); await page.waitForTimeout(60);
+  await page.selectOption('select.rf[data-k="wizard"]', "0");
+  await page.waitForTimeout(60);
+  check("editing stages something", await somethingStaged(page));
+  // "Restore all to stock" has to put back the exact bytes, not merely a value that reads the
+  // same — otherwise a round-trip leaves the disc quietly modified.
+  await page.click("#rfReset"); await page.waitForTimeout(80);
+  check("Restore all to stock clears every staged byte", await nothingStaged(page));
+
+  { const patched = Uint8Array.from(bytes);
+    new DataView(patched.buffer).setUint32(0x104088, 0xDEADBEEF, true);   // Killer, site 1 of 2
+    setServed(patched);
+    const p2 = await newPage(); await loadIso(p2);
+    await p2.click('#isoTabs [data-v="passives"]');
+    await p2.waitForSelector("#rfBox", { timeout: 3000 });
+    await p2.click("#rfBox > summary");
+    check("a drifted site makes its control read-only, not writable",
+      await p2.isDisabled('input.rf[data-k="killer"]'));
+    check("...and only that one", !(await p2.isDisabled('input.rf[data-k="counter"]')));
+    check("...and the card says how many are read-only",
+      /1<\/b> control\(s\) are read-only/.test(await p2.innerHTML("#rfBox")));
+    await p2.context().close();
+    setServed(bytes); }
   await page.context().close();
 }
 
@@ -585,16 +743,18 @@ head("Field character — the whitelist that decides who you can walk around as"
   await page.context().close();
 }
 
-head("Field character — per-map coverage; Story content in its own view");
+head("Field character — chips; Story content in its own view");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
   await page.waitForSelector("#avWide", { timeout: 3000 });
-  // Coverage rides on the chip, because "is this character even in the map I am on" is the
-  // second thing that decides whether a pick works and the user cannot check it themselves.
+  // Per-area coverage used to ride on each chip as a second condition to satisfy. Play
+  // testing retired it — the shipped characters worked everywhere — so the chips must not
+  // advertise a map limit again.
   { const txt = await page.textContent("#isoView");
-    check("chips report how many maps ship each model", /\d+\/28 maps/.test(txt), (txt.match(/\d+\/28 maps/) || [])[0]);
-    check("Thomas's chip shows his small coverage", /5\/28 maps/.test(txt)); }
+    check("chips carry no per-area coverage claim", !/\/28 maps/.test(txt),
+      (txt.match(/\S*\/28 maps/) || [])[0]);
+    check("...and still name the ids they admit", /#1\b/.test(txt) && /#29\b/.test(txt)); }
 
   // The story-content control: retiring a case must move that character to Hugo's index.
   // Story content was promoted out of Test once it was confirmed in play, so it is reached
@@ -1016,6 +1176,41 @@ head("Movement speed — restore covers speeds and classes together");
   await page.click("#spdChars > summary");
   check("...and Chris is back in her own class",
     (await page.inputValue('#isoView select.spd-cls[data-rec="2"]')) === String(MOVESPD_CLASS[2]));
+  await page.context().close();
+}
+
+head("Reference — Music: where the game picks a track, read-only");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
+  await page.click('[data-ref="bgm"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  check("the sub-tab hint follows the sub-tab", /which music plays/.test(await page.textContent("#isoHint")), await page.textContent("#isoHint"));
+  const txt = await page.textContent("#isoView");
+  // Both sources of a track, and the field split that names them
+  check("it counts both cue sources", /script cues/.test(txt) && /room\s+records/.test(txt.replace(/\s+/g, " ")));
+  check("it names the room record's two audio fields", /\+0x22/.test(txt) && /\+0x24/.test(txt));
+  check("track ids are listed in hex", /0x0200/.test(txt) && /0x0113/.test(txt), txt.slice(0, 120));
+  check("track 0 reads as silence, not as an id", /silence/.test(txt));
+  check("areas are named, not just archive codes", /Budehuc Castle/.test(txt));
+  // The honesty rows — the whole reason this is reference and not an editor
+  check("it says the ids have no names", /no name table/.test(txt));
+  check("it flags 0x0200 as the map's own theme rather than a song", /own theme/.test(txt));
+  check("it says the audio itself can't be replaced", /SD\/STR\.BIN/.test(txt));
+  check("it states the filter that validates a cue", /91%/.test(txt));
+  // Filtering reaches the area names, not only the ids. Assert on the AREA table's row count:
+  // the track table legitimately keeps naming every area a surviving track plays in, so a
+  // whole-page "other areas are gone" check would be wrong, not just brittle.
+  const areaTable = page.locator("table.invtbl").nth(1);
+  const before = await areaTable.locator("tbody tr").count();
+  await page.fill("#isoSearch", "brass castle"); await page.waitForTimeout(150);
+  const after = await areaTable.locator("tbody tr").count();
+  check("filtering narrows the area table", after >= 1 && after < before, `${before} -> ${after}`);
+  check("filtering matches an area name", /Brass Castle/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("clearing the filter restores every area", (await areaTable.locator("tbody tr").count()) === before);
+  check("the view stages nothing", await nothingStaged(page));
+  check("there is no input in the Music view", (await page.locator("#isoView input, #isoView select").count()) === 0);
   await page.context().close();
 }
 
@@ -1651,7 +1846,10 @@ head("Rune reskin + description rewrite");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
   await openFold(page, "#spReskinBox");
-  await page.selectOption("#rsRune", "fire"); await page.fill("#rsPower", "300"); await page.click("#rsApply"); await page.waitForTimeout(150);
+  // The rune picker is keyed by ITEM id now, not by a bundled name: it lists whatever this
+  // disc's rune records point at, so it follows a reassignment instead of a hardcoded list.
+  await page.selectOption("#rsRune", String(mapping.runes[0].id));
+  await page.fill("#rsPower", "300"); await page.click("#rsApply"); await page.waitForTimeout(150);
   const r = await save(page);
   check("reskin: spell0 power = 300", r.u32(SPELL.off + 0x1C) === 300);
   check("reskin: spell3 power = 300", r.u32(SPELL.off + 3 * SPELL.stride + 0x1C) === 300);
@@ -1792,6 +1990,41 @@ head("Shops — a gap in a stock list is called out");
   const t = await page.textContent("#isoView");
   check("gap warning appears", /hides the rest/.test(t));
   check("gap warning explains the consequence", /never appear/.test(t));
+  await page.context().close();
+}
+
+// A dish's NAME is one record behind the data it names, so the row for dish i must show dish
+// i's own heal — not the previous dish's. That was wrong from v12 until now: the tab paired
+// each name with the block it sat in, so editing "Fried Ice Cream" wrote Tomato Ice Cream.
+// The fixture plants two dishes precisely so an off-by-one lands on the other one instead of
+// on zeroes, which a single-row fixture would have hidden.
+head("Food — each dish's name lines up with its own record");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
+  const grid = await page.evaluate(() => [...document.querySelectorAll("#isoView tbody tr")].slice(0, 2).map((r) => ({
+    name: r.querySelector("input.fdname")?.value ?? r.cells[1].textContent.trim(),
+    heal: r.querySelector('input[data-kind="heal"]')?.value,
+    desc: r.querySelector("input.fddesc")?.value,
+  })));
+  check("dish 0 is Medicine, healing 100", grid[0] && grid[0].name === "Medicine" && grid[0].heal === "100",
+    JSON.stringify(grid));
+  check("...with its own description", grid[0] && grid[0].desc === "Heals 100HP", JSON.stringify(grid));
+  check("dish 1 is Antitoxin, healing 10 — not Medicine's numbers",
+    grid[1] && grid[1].name === "Antitoxin" && grid[1].heal === "10" && grid[1].desc === "Cures poison",
+    JSON.stringify(grid));
+
+  // Renaming a dish: in place, capped, refused when empty — same contract as gear and runes.
+  const nm = "input.fdname >> nth=0";
+  check("a dish can be renamed", await page.isVisible(nm));
+  check("the rename is capped to the on-disc slot (8)", +(await page.getAttribute(nm, "maxlength")) === 8);
+  await page.fill(nm, "Potion"); await page.dispatchEvent(nm, "change"); await page.waitForTimeout(80);
+  check("the new name sticks", (await page.inputValue(nm)) === "Potion");
+  await page.fill(nm, ""); await page.dispatchEvent(nm, "change"); await page.waitForTimeout(80);
+  check("an empty name is refused", (await page.inputValue(nm)) === "Potion");
+  const saved = await save(page);
+  check("the rename is written NUL-padded over the old bytes",
+    [...Array(8)].map((_, i) => saved.at(mapping.food.nameOff + i)).join(",") === [80, 111, 116, 105, 111, 110, 0, 0].join(","),
+    [...Array(8)].map((_, i) => saved.at(mapping.food.nameOff + i)).join(","));
   await page.context().close();
 }
 
@@ -2236,10 +2469,13 @@ head("Runes — families, granted spells, who has it");
   const groups = await page.$$eval("[data-rgrp]", (es) => es.map((e) => e.textContent.trim()));
   check("the three rune families each have a chip", /Magic \(22\)/.test(groups.join(" "))
     && /Special attack \(27\)/.test(groups.join(" ")) && /Support \(23\)/.test(groups.join(" ")), groups.join(" | "));
-  // a magic rune names the spells it grants; the browser is where you look that up
-  await page.fill("#isoSearch", "true fire"); await page.waitForTimeout(150);
-  const tf = await page.textContent("#isoView");
-  check("a magic rune lists the spells it grants", /Hellfire/.test(tf) && /Blazing Wall/.test(tf), tf.slice(0, 200));
+  // A rune names the spells it grants, and that now comes off the rune's own record. This
+  // fixture only plants a handful of rows, so True Wind is a rune with NO record here — the
+  // bundled "Grants ..." prose is the fallback for exactly that case, and it is display only.
+  await page.fill("#isoSearch", "true wind"); await page.waitForTimeout(150);
+  const tw = await page.textContent("#isoView");
+  check("a rune with no record on this disc still lists what it grants",
+    /Eternal Wind/.test(tw) && /Shining Wind/.test(tw), tw.slice(-200));
   // A rune whose row the disc names renders that name in the rename INPUT, and an input's
   // value is not part of textContent — so the view has to be read as text plus field values
   // or every one of these filter checks would silently pass on the wrong evidence.
@@ -2250,8 +2486,19 @@ head("Runes — families, granted spells, who has it");
   // the filter reaches past the name into owners, spells and drop sources
   await page.fill("#isoSearch", "sasarai"); await page.waitForTimeout(150);
   check("filtering finds a rune by who carries it", /True Earth/.test(await viewText()));
-  await page.fill("#isoSearch", "hellfire"); await page.waitForTimeout(150);
-  check("filtering finds a rune by a spell it grants", /True Fire/.test(await viewText()));
+  await page.fill("#isoSearch", "eternal wind"); await page.waitForTimeout(150);
+  check("filtering finds a rune by a spell it grants", /True Wind/.test(await viewText()));
+  // ...and where the disc DOES carry the record, the list is the record's, not the prose:
+  // the fixture's first rune holds spell numbers 1-4, labelled by the 0-based row the Spells
+  // tab shows. This is the assertion that would have caught the binding being read from a
+  // bundled map instead of the disc.
+  await page.fill("#isoSearch", mapping.runes[0].name.toLowerCase()); await page.waitForTimeout(150);
+  const fromRec = await page.evaluate((id) => [...document.querySelectorAll(
+    `#isoView select.rspell[data-id="${id}"]`)].map((e) => e.options[e.selectedIndex].textContent.trim()),
+    mapping.runes[0].id);
+  check("a rune whose record is on this disc lists what the RECORD grants",
+    fromRec.join(" | ") === "Flaming Arrows (#0) | Dancing Flames (#1) | Blazing Wall (#2) | Explosion (#3)",
+    fromRec.join(" | "));
   await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
   // the family chips actually narrow the table, and the support runes are reachable in one click
   await page.click('[data-rgrp="support"]'); await page.waitForTimeout(150);
@@ -2262,13 +2509,18 @@ head("Runes — families, granted spells, who has it");
   const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
   check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
   check("the view stages nothing", await nothingStaged(page));
-  // The tab is no longer read-only — it owns the rune's NAME and its menu text (issue #11: the
-  // only copy of it the game actually reads). It must still stage nothing until touched, and it
-  // must carry ONLY those two: what a rune DOES belongs to the spell record, and a second set of
-  // those fields here is exactly the duplication the granted-spell links replaced.
+  // The tab is no longer read-only — it owns the rune's NAME, its menu text (issue #11: the
+  // only copy of it the game actually reads) and its four spell slots. It must still stage
+  // nothing until touched, and it must carry only those: a spell's own power/cast/element
+  // belongs to the spell record, and a second set of THOSE fields here is exactly the
+  // duplication the granted-spell links replaced. Which spells a rune grants is not one of
+  // them — that lives in the rune's record, so this tab is where it belongs.
   const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable fields are the name and the menu text",
+  check("the only editable text fields are the name and the menu text",
     kinds.every((k) => /^(rname|rdesc)$/.test(k)), kinds.join(" | "));
+  const sels = await page.$$eval("#isoView select", (es) => [...new Set(es.map((e) => e.className))].sort());
+  check("the only editable dropdowns are the spell slots",
+    sels.length > 0 && sels.every((k) => /^rspell$/.test(k)), sels.join(" | "));
   check("no spell fields are duplicated onto this tab",
     (await page.locator("#isoView details.runefx, #isoView input.rfx, #isoView [data-fxpreset]").count()) === 0);
   // A rune is only editable when its table row still names it — the same check runeTblDesc()
@@ -2882,21 +3134,34 @@ head("Recruit section (save editor, Pyodide stubbed)");
 head("108 Stars dashboard (save editor, Pyodide stubbed)");
 { const page = await newPage();
   // Same stub shape as the Recruit section. Hugo/Geddoe/Rico recruited; Chris (story),
-  // Jeane + Lulu are optional recruits that should land in the "missing" worklist.
+  // Jeane + Lulu are optional recruits that should land in the "missing" worklist. Augustine
+  // and Watari are there for the prerequisite chips: an item with a real source, and a potch
+  // price this save (1,000 gold) cannot meet.
   await page.addInitScript(`
     const CHARS = [
       ['Hugo','Hugo',true], ['Chris','',false], ['Jeane','',false],
-      ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false]
+      ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false],
+      ['Augustine','',false], ['Watari','',false], ['Dominic','',false]
     ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
       level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
       stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
     const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
       global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
-      carryover: {}, names: [], characters: CHARS, party: [0,0,0,0,0,0], inventory: [] }];
+      carryover: {}, names: [], characters: CHARS, party: [0,0,0,0,0,0],
+      // pre-merge bag layout, so the "+ get it" button has to pick the bag of the party
+      // being played (Hugo leads this save)
+      inventory: [
+        { region: 'Hugo', base: 0, firstSlot: 0, capacity: 30, used: 1, freeSlots: [1,2], appendSlots: [1,2],
+          items: [{ slot: 0, id: 1, qty: 1, category: 'consumable', stackable: true }] },
+        { region: 'Chris', base: 0, firstSlot: 30, capacity: 30, used: 0, freeSlots: [30], appendSlots: [30], items: [] },
+      ] }];
     window.loadPyodide = async () => ({
       FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
       runPython(code) {
-        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {},
+        if (code.includes('load_reference()')) return JSON.stringify({
+          items: [{ id: 315, name: 'Rose Brooch', cat: 'valuable' }, { id: 1, name: 'Medicine D', cat: 'consumable' },
+                  { id: 194, name: 'Mole Armor', cat: 'armor' }],
+          skills: [], charById: { 1: 'Hugo' },
           charRoster: { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 }, charChoices: [1, 2, 3, 4, 5, 6] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
         if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
@@ -2915,10 +3180,61 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   // progress header counts recruited over the tracked set (Hugo/Geddoe/Rico = 3 recruited)
   check("stars progress shows recruited count", /\b3\b/.test(await page.textContent(".starsnum")));
   check("progress bar renders", (await page.locator(".starsbar > span").count()) === 1);
-  // default filter is "missing": recruited stars should be hidden
-  check("default 'missing' filter hides recruited stars", (await page.locator('.starstbl tbody tr:has-text("Hugo")').count()) === 0);
+  // default filter is "missing": recruited stars should be hidden. Match on the character
+  // cell, not the row — a stage header names protagonists in its blurb.
+  check("default 'missing' filter hides recruited stars",
+    (await page.locator('.starstbl tbody tr:not(.phaserow):not(.howrow) td:nth-child(2):has-text("Hugo")').count()) === 0);
   // an optional missing star carries its guide how-to as a full-width row
   check("optional missing star shows a how-to row", (await page.locator(".starstbl tr.howrow .howto").count()) >= 1);
+  // the checklist is laid out in the recruitment guide's order, cut into that order's stages
+  check("stage headers carry their own progress", (await page.locator(".starstbl tr.phaserow .phprog").count()) >= 2);
+  const ord = (await page.locator(".starstbl tbody tr:not(.phaserow):not(.howrow) td.ordn").allTextContents())
+    .map((t) => (t.trim() === "–" ? Infinity : +t.trim()));
+  check("rows run in guide order", ord.length >= 2 && ord.every((n, i) => i === 0 || ord[i - 1] <= n));
+  check("Star of Destiny names are shown", /^[A-Z][a-z]+$/.test((await page.locator(".starstbl td.sod").first().textContent()).trim()));
+  // "next up" points at the first OPTIONAL star still missing in guide order — Augustine (#27),
+  // not Chris (a story join) and not Jeane (#35, further down the guide)
+  check("next-up names the first gettable star", /Augustine/.test(await page.textContent(".nextup")));
+  // under a how-to, what that errand needs: where the item comes from, and the potch you are short of
+  await until(page, () => document.querySelectorAll(".starstbl .need").length >= 2);
+  const needs = (await page.locator(".starstbl .need").allTextContents()).join(" | ");
+  check("an item need names its source and stock stage",
+    /Rose Brooch/.test(needs) && /Iksay Village's Item Shop/.test(needs) && /stages 1-3 of 3/.test(needs));
+  check("a potch need is measured against this save's purse", /100,000 potch — you have 1,000/.test(needs));
+  check("...and is flagged as unaffordable", (await page.locator(".starstbl .need.short").count()) === 1);
+  // an errand that says BUY needs the money, not a free copy of the goods
+  const buyChip = await page.textContent('.starstbl .need:has-text("Mole Armor")');
+  check("a bought item is priced instead of fetched", /buy it from Dominic: 600 potch/.test(buyChip));
+  check("...with no offer to conjure one into the bag",
+    (await page.locator('.starstbl [data-needitem="194"]').count()) === 0);
+  // "+ get it" hands the item over: into the bag of the party this save is playing (Hugo's),
+  // staged like any other edit
+  check("the item chip offers to put it in the current party's bag",
+    (await page.locator('.starstbl [data-needitem="315"]').first().textContent()).includes("Hugo"));
+  await page.click('.starstbl [data-needitem="315"]'); await page.waitForTimeout(80);
+  check("...and says where it landed", /Rose Brooch.*Hugo, slot 1.*not yet saved/.test(await page.textContent("#status")));
+  // the potch top-up covers exactly the shortfall against this save's 1,000 gold
+  check("the potch chip offers the shortfall", /99,000/.test(await page.textContent('.starstbl [data-needgold]')));
+  await page.click(".starstbl [data-needgold]"); await page.waitForTimeout(80);
+  check("...and topping up clears the chip", (await page.locator(".starstbl .need.short").count()) === 0);
+  check("...leaving nothing more to top up", (await page.locator(".starstbl [data-needgold]").count()) === 0);
+  // both are real staged edits: they show up in the review-before-write list
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const staged = await page.textContent(".cf-list");
+  check("the item and the gold reach Review changes",
+    /Rose Brooch/.test(staged) && /1000 → 100000/.test(staged));
+  await page.click("#cfCancel");
+  // ...and the item really is in Hugo's bag on the Inventory tab, not just in the diff
+  await page.click('[data-sub="items"]'); await page.waitForSelector(".bag");
+  const hugoBag = await page.locator('.bag:has-text("Hugo")').first().textContent();
+  check("the item shows up in that bag on the Inventory tab", /Rose Brooch/.test(hugoBag));
+  await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
+  // a stage folds away, taking its rows with it
+  const rowsBefore = await page.locator(".starstbl tbody tr:not(.phaserow)").count();
+  await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);
+  check("a stage collapses", (await page.locator(".starstbl tbody tr:not(.phaserow)").count()) < rowsBefore);
+  await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);
+  check("a stage expands again", (await page.locator(".starstbl tbody tr:not(.phaserow)").count()) === rowsBefore);
   // the per-row +recruit action stages a recruit and bumps the count to 4
   await page.selectOption("#rteam", "Chris").catch(() => {});
   const before = await page.textContent(".starsnum");
@@ -3492,8 +3808,12 @@ head("Runes tab — rename and menu text");
   await loadIso(page);
   const tabs = await page.$$eval("#isoTabs [data-v]", (b) => b.map((x) => x.dataset.v));
   check("Runes is a top-level tab", tabs.includes("runes"));
-  check("it sits immediately before Spells", tabs[tabs.indexOf("runes") + 1] === "spells",
-    tabs.slice(0, 8).join(","));
+  // Runes -> Passives -> Spells: the rune's text, then its engine-side effect, then the spells
+  // it grants. Passives was slotted in between in v1.105.0, so this is an ordering check, not
+  // an adjacency one.
+  check("it sits between Shops and Passives, with Spells after that",
+    tabs[tabs.indexOf("runes") - 1] === "shops" && tabs[tabs.indexOf("runes") + 1] === "passives"
+      && tabs[tabs.indexOf("runes") + 2] === "spells", tabs.slice(0, 9).join(","));
   await page.click('#isoTabs [data-v="runes"]');
   await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
   await page.waitForTimeout(120);
@@ -3540,18 +3860,18 @@ head("Runes tab — rename and menu text");
     const i = document.querySelector("#isoView input.rname"); return i ? i.value : null; }, NEW);
   check("the row is still findable under its original name", stillThere === NEW, String(stillThere));
 
-  // Every spell a rune grants is a link to that spell's own record. This is the only route
-  // from an attack rune to its numbers: Kite and Phoenix carry no status effect, so the inline
-  // effect editor never appears for them, and before this the row was a dead end.
+  // Every FILLED spell slot links to that spell's own record. This is the only route from an
+  // attack rune to its numbers: Kite and Phoenix carry no status effect, so the inline effect
+  // editor never appears for them, and before this the row was a dead end.
   await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
   await page.waitForTimeout(120);
   const chip = await page.evaluate(() => {
-    const c = document.querySelector("#isoView .grants button.spellchip");
+    const c = document.querySelector("#isoView .runeslots button.spellchip");
     return c ? { text: c.textContent.trim(), spi: c.dataset.spi } : null;
   });
   check("a granted spell is a link, carrying the spell's index", !!chip && chip.spi === String(mapping.twin.spellIdx),
     JSON.stringify(chip));
-  await page.click("#isoView .grants button.spellchip");
+  await page.click("#isoView .runeslots button.spellchip");
   await page.waitForTimeout(200);
   const landed = await page.evaluate((spi) => {
     const d = document.querySelector(`#isoView details.char[data-i="${spi}"]`);
@@ -3570,6 +3890,82 @@ head("Runes tab — rename and menu text");
   await page.waitForTimeout(120);
   const afterBlank = await page.evaluate(() => document.querySelector("#isoView input.rname")?.value);
   check("an empty name is refused", afterBlank === NEW, String(afterBlank));
+  await page.context().close();
+}
+
+// ---- Runes tab: the four spell slots -------------------------------------------------------
+// The rune->spell binding is RUNE_TBL +0x18: four u16 1-based spell numbers, 0 = a free slot.
+// A rune granting fewer than four spells is zero-PADDED, not short — which is the whole reason
+// "give Kite three more spells" is a data edit and not a code patch. The fixture plants all
+// three shapes the disc uses (four spells / two / one) so the empty slots have to render as
+// controls rather than be hidden, and a write has to land on the right two bytes.
+head("Runes tab — spell slots (rune → spell binding)");
+{
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="runes"]');
+  const [full, part, lone] = mapping.runes;               // [1,2,3,4] / [2,3,0,0] / [1,0,0,0]
+  const slotsOf = (page2, id) => page2.evaluate((id2) => [...document.querySelectorAll(
+    `#isoView select.rspell[data-id="${id2}"]`)].map((e) => ({ k: e.dataset.k, v: e.value,
+      label: e.options[e.selectedIndex]?.textContent.trim() })), id);
+  // A slot only holds its current value until it is focused, so every pick focuses first —
+  // which is what a user does too: a native select cannot be changed without focusing it.
+  const pickSlot = async (page2, id, k, v) => {
+    const sel = `#isoView select.rspell[data-id="${id}"][data-k="${k}"]`;
+    await page2.focus(sel); await page2.waitForTimeout(60);
+    await page2.selectOption(sel, v); await page2.waitForTimeout(150);
+  };
+
+  await page.fill("#isoSearch", lone.name.toLowerCase()); await page.waitForTimeout(150);
+  const one = await slotsOf(page, lone.id);
+  check("a one-spell rune still shows all four slots", one.length === 4, JSON.stringify(one));
+  check("...slot 1 holds its spell", one[0].v === "1" && /^Flaming Arrows \(#0\)$/.test(one[0].label), JSON.stringify(one[0]));
+  check("...and slots 2-4 read as free, not hidden",
+    one.slice(1).every((x) => x.v === "0" && /empty/i.test(x.label)), JSON.stringify(one.slice(1)));
+  check("the view stages nothing until a slot is touched", await nothingStaged(page));
+
+  // The options are injected on first interaction — rendering 94 of them for every slot of
+  // every rune is ~1MB of HTML, and the filter box re-renders this tab on each keystroke.
+  const before = await page.evaluate((id) =>
+    document.querySelector(`#isoView select.rspell[data-id="${id}"][data-k="1"]`).options.length, lone.id);
+  check("a slot ships with only its current value", before === 1, String(before));
+  await page.focus(`#isoView select.rspell[data-id="${lone.id}"][data-k="1"]`);
+  await page.waitForTimeout(60);
+  const after = await page.evaluate((id) =>
+    document.querySelector(`#isoView select.rspell[data-id="${id}"][data-k="1"]`).options.length, lone.id);
+  check("...and fills with every spell plus 'empty' once touched", after === 95, String(after));
+
+  // The edit itself: hand a one-spell rune a second spell.
+  await pickSlot(page, lone.id, 1, "3");
+  const now = await slotsOf(page, lone.id);
+  // The stored byte is 1-based (3) but the label carries the 0-based row (#2) the Spells tab
+  // shows, so a slot and the record it points at are never two different numbers.
+  check("a free slot can be given a spell", now[1].v === "3" && /^Blazing Wall \(#2\)$/.test(now[1].label),
+    JSON.stringify(now[1]));
+  check("...and the other slots are untouched",
+    now[0].v === "1" && now[2].v === "0" && now[3].v === "0", JSON.stringify(now));
+  const dirty = await page.evaluate((id) => document.querySelector(
+    `#isoView select.rspell[data-id="${id}"][data-k="1"]`).classList.contains("dirty"), lone.id);
+  check("the changed slot is highlighted", dirty === true);
+
+  const r = await save(page);
+  const slotOff = (id, k) => RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.spells + k * 2;
+  check("the write lands on slot 2 of that rune's record", r.u16(slotOff(lone.id, 1)) === 3,
+    String(r.u16(slotOff(lone.id, 1))));
+  check("...and slot 1 still holds the original spell", r.u16(slotOff(lone.id, 0)) === 1);
+  check("...and slots 3-4 are still free",
+    r.u16(slotOff(lone.id, 2)) === 0 && r.u16(slotOff(lone.id, 3)) === 0);
+  check("...and no other rune's slots moved",
+    r.u16(slotOff(full.id, 0)) === 1 && r.u16(slotOff(full.id, 3)) === 4
+    && r.u16(slotOff(part.id, 2)) === 0);
+
+  // Emptying a slot has to write a real 0, not be refused the way a blank NAME is: a rune
+  // with fewer spells is a shape the game already ships.
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", full.name.toLowerCase()); await page.waitForTimeout(150);
+  await pickSlot(page, full.id, 3, "0");
+  const r2 = await save(page);
+  check("a slot can be emptied", r2.u16(slotOff(full.id, 3)) === 0, String(r2.u16(slotOff(full.id, 3))));
   await page.context().close();
 }
 
