@@ -7912,9 +7912,18 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     ["What track 0x0200 really is",
      "It is 465 of the script cues AND the dominant room-record value, which reads as “this map’s own theme” rather than one specific song. The 0x0113–0x0129 band behaves like real per-song ids; 0x0200 probably does not.",
      "—"],
+    ["Which stream a track id means",
+     "The 29 streams below are located and playable, but nothing found so far joins a track id to one of them — so they are listed separately rather than behind a ▶ on the id. Listening is how that gets settled.",
+     "—"],
+    ["Most of the soundtrack is not in STR.BIN",
+     "The OST is 76 tracks and about 2½ hours; these 29 streams total 15.7 minutes, so at most ~10% of the music is streamed. The rest must be sequenced — and SD.BIN holds only instrument banks (Vagi/Smpl/Sset/Prog), with no sequence data in it. Where the sequences live is not known.",
+     "/SD/SD.BIN"],
     ["Replacing the music itself",
-     "The audio lives in the SD/STR.BIN SCEI container. The area archives carry no Sony audio headers at all (SShd/SSbd/VAGp/SEQp: zero hits), so only which id is requested can ever be changed here — not what it sounds like.",
-     "SD/STR.BIN"],
+     "Playing a stream is one thing; substituting one is another. A replacement would have to be PS-ADPCM at the same rate and fit the space the disc already reserves, and nothing here writes audio back.",
+     "/SD/STR.BIN"],
+    ["What the streams are",
+     "Not all 29 are music. #5 is 5.8s (a sting, too short for a loop) and #22 and #28 read as ambience or noise beds. Stream #27 runs 7:02.6, which matches the OST's “To Peaceful Days (Staff Roll BGM)” at 7:01 — the one track a duration alone can identify, since every other stream is under 41s and the shortest OST track is 21s.",
+     "—"],
     ["Adding a cue where the script has none",
      "The sound command is a fixed 18 bytes, so retargeting a track or silencing it (id 0) is an in-place 2-byte write. Inserting a new cue would mean lengthening the script, which is a different and much riskier problem.",
      "0x17AF1A8"],
@@ -7922,6 +7931,53 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   function bgmIndex() {
     const idx = (typeof window !== "undefined" && window.S3_TEST_BGM) || (REF && REF.bgm);
     return idx && Array.isArray(idx.script) && Array.isArray(idx.rooms) ? idx : null;
+  }
+
+  // ---- playing the streamed audio --------------------------------------------
+  // The decode itself lives in web/svag-core.js so it can be unit-tested without a browser
+  // (web/tests/svag-core.mjs). This half is only the I/O: read the bytes off the open disc,
+  // hand them to the decoder, push the result at Web Audio.
+  //
+  // A 21 MB stream (#27, the 7-minute one) would decode to ~150 MB of Float32, so cap what
+  // we decode rather than the browser's memory; the row says when a track is cut short.
+  const PLAY_CAP_SEC = 100;
+
+  let AUDIO = null, PLAYING = null;      // AudioContext + the live source node
+  function stopStream() {
+    if (PLAYING) { try { PLAYING.stop(); } catch (e) { /* already ended */ } PLAYING = null; }
+  }
+  async function playStream(st, onState) {
+    stopStream();
+    if (!isoFile) { onState("no disc"); return; }
+    onState("reading…");
+    // Only read what we will actually decode, rounded to whole interleave blocks.
+    const capBytes = Math.ceil(PLAY_CAP_SEC * st.rate * 16 / 28) * st.ch;
+    const want = Math.min(st.bytes, Math.floor(capBytes / (st.inter * st.ch)) * st.inter * st.ch);
+    const bytes = new Uint8Array(await isoFile.slice(st.off, st.off + want).arrayBuffer());
+    onState("decoding…");
+    const chans = SvagCore.decodeSvag(bytes, st.ch, st.inter);
+    // A short read (a truncated disc, or an index built for a different one) decodes to
+    // nothing, and createBuffer throws on a zero length — say which it is instead.
+    if (!chans[0].length) { onState(`no audio at 0x${st.off.toString(16)}`); return; }
+    AUDIO = AUDIO || new (window.AudioContext || window.webkitAudioContext)();
+    if (AUDIO.state === "suspended") await AUDIO.resume();
+    const buf = AUDIO.createBuffer(st.ch, chans[0].length, st.rate);
+    for (let c = 0; c < st.ch; c++) buf.copyToChannel(chans[c], c);
+    // What actually got decoded, for the headless test — "playing" on its own would also
+    // be true of a buffer full of silence, which is exactly how a decode bug would look.
+    let peak = 0;
+    for (let c = 0; c < st.ch; c++) {
+      const d = chans[c];
+      for (let i = 0; i < d.length; i += 97) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+    }
+    window.__s3audio = { rate: st.rate, frames: buf.length, ch: st.ch, peak };
+    const src = AUDIO.createBufferSource();
+    src.buffer = buf;
+    src.connect(AUDIO.destination);
+    src.onended = () => { if (PLAYING === src) { PLAYING = null; onState("done"); } };
+    src.start();
+    PLAYING = src;
+    onState("playing");
   }
   function drawBgmRef(host) {
     const idx = bgmIndex();
@@ -7970,7 +8026,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         instruction whose third halfword is the track) and <b>${idx.rooms.length.toLocaleString()}</b> room
         records, each carrying a BGM id at <code>+0x22</code> and an ambient sound effect at
         <code>+0x24</code> — which is why ambience reads 0 indoors and non-zero on field maps.
-        <b>${trk.size}</b> distinct track ids in all.</div>
+        <b>${trk.size}</b> distinct track ids in all, and the <b>${(idx.streams || []).length}</b>
+        streamed tracks the disc actually carries \u2014 playable below.</div>
       <div class="muted" style="margin:0 0 10px">The request function is <code>0x17AEA38</code>; kind 1 is
         BGM because its tag in the table at <code>0x1983020</code> is <code>0x1000</code>, exactly the bit
         masked off before the current-track comparison. A raw scan for the opcode also matches ordinary
@@ -7981,6 +8038,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${tbl(["Track", "Decimal", "Script cues", "Rooms", "Areas that use it"], trkRows)}
       <div class="bag-h" style="margin-top:14px">By area — what each place plays</div>
       ${tbl(["Area", "Script cues", "Room BGM", "Room ambience", "Rooms"], areaRows)}
+      <div class="bag-h" style="margin-top:14px">Streamed audio — playable from your disc</div>
+      ${streamSection(idx, hit)}
       <div class="bag-h" style="margin-top:14px">What is not resolved</div>
       ${tbl(["Finding", "Where it stands", "Address"],
         BGM_UNRESOLVED.filter((r) => hit(...r)).map((r) =>
@@ -7988,7 +8047,51 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       <div class="muted" style="margin:10px 0 0">${seIds.size} distinct ambient sound effects across the
         room records. Rebuild this index from a pristine disc with
         <code>python3 Editor/build_bgm_index.py &lt;iso&gt;</code>.</div>`;
+    wireStreams(host);
     wireRefTabs(host);
+  }
+
+  // The 29 streams are listed SEPARATELY from the track ids, and not joined to them,
+  // because nothing on the disc joins them yet. Putting a ▶ next to id 0x0124 would claim
+  // a mapping that has not been established — and most ids probably refer to sequenced
+  // music, which is not in this file and cannot be played at all.
+  const STREAM_NOTE = "The music itself. /SD/STR.BIN is 29 <code>Svag</code> streams — Sony "
+    + "interleaved VAG, i.e. plain PS-ADPCM — located by a 29-record table in "
+    + "<code>MODULES/SD_CALL.IRX</code> whose every entry lands exactly on a stream header. "
+    + "Decoded in the browser, straight off your open disc; nothing is uploaded.";
+  function streamSection(idx, hit) {
+    const sts = (idx.streams || []).filter((s) =>
+      hit(`stream ${s.i}`, String(s.i), s.rate + "hz", s.ch === 2 ? "stereo" : "mono"));
+    if (!(idx.streams || []).length) {
+      return `<div class="muted">This index predates stream extraction — rebuild
+        <code>Editor/s3_bgm.json</code> to enable playback.</div>`;
+    }
+    const mm = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+    const rows = sts.map((s) => {
+      const capped = s.secs > PLAY_CAP_SEC;
+      return `<tr><td class="sl">${s.i}</td><td class="sl" style="white-space:nowrap">${mm(s.secs)}${
+        capped ? `<div class="muted">plays first ${PLAY_CAP_SEC}s</div>` : ""}</td><td class="sl" style="white-space:nowrap">${
+        (s.rate / 1000).toFixed(1)} kHz ${s.ch === 2 ? "stereo" : "mono"}</td><td class="sl" style="white-space:nowrap">${
+        (s.bytes / 1048576).toFixed(2)} MB</td><td style="width:99%"><button type="button" class="chip" data-play="${s.i}"
+        ${isoFile ? "" : "disabled"}>▶ Play</button> <span class="muted" data-pstate="${s.i}"></span></td></tr>`;
+    });
+    return `<div class="muted" style="margin:0 0 10px">${STREAM_NOTE}</div>
+      ${!isoFile ? `<div class="warnbox">Playback needs the open ISO.</div>` : ""}
+      <div style="margin:0 0 8px"><button type="button" class="chip" data-stopall>■ Stop</button></div>
+      <table class="invtbl"><thead><tr><th>Stream</th><th>Length</th><th>Format</th><th>Size</th><th></th></tr></thead>
+      <tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table>`;
+  }
+  function wireStreams(host) {
+    const idx = bgmIndex();
+    const stop = q("[data-stopall]", host);
+    if (stop) stop.onclick = () => { stopStream(); qa("[data-pstate]", host).forEach((e) => (e.textContent = "")); };
+    qa("[data-play]", host).forEach((b) => (b.onclick = async () => {
+      const st = (idx.streams || []).find((s) => s.i === +b.dataset.play);
+      const cell = q(`[data-pstate="${st.i}"]`, host);
+      qa("[data-pstate]", host).forEach((e) => (e.textContent = ""));
+      try { await playStream(st, (m) => { if (cell) cell.textContent = m; }); }
+      catch (e) { if (cell) cell.textContent = "failed: " + e.message; }
+    }));
   }
 
   function drawItemsRef(host) {
