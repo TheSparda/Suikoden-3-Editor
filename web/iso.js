@@ -633,7 +633,7 @@
   const auxRevertAt = (rel, len) => AUX.forEach((w) => { if (w.tag === "potch") w.buf.set(w.orig.subarray(rel, rel + len), rel); });
   // Saving makes the written bytes the new "original", which is also the baseline the stock
   // comparison measures against — so drop its cached verdict and let it re-measure.
-  const auxMarkSaved = () => { AUX.forEach((w) => { w.orig = w.buf.slice(); }); ESCALE = null; };
+  const auxMarkSaved = () => { AUX.forEach((w) => { w.orig = w.buf.slice(); }); ESCALE = RSCALE = null; };
   // Multi-offset field helpers for enemy edits: one logical field lives at the same
   // relative spot in every pack copy; write all, dirty/revert consider all.
   function eRead(offs, w) { return w === 1 ? auxR8(offs[0]) : w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
@@ -840,6 +840,7 @@
   let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
   let ESCALE = null;  // cached stock-vs-disc comparison for the open disc (see detectStockScale)
   let ROOMS = [], ROOMS_SKIPPED = 0;        // per-area room tables (Encounter view)
+  let RSCALE = null;  // cached stock-vs-disc comparison of those tables (see detectRoomScale)
   let WPACKS_SKIPPED = 0;                                    // war packs unavailable on this disc (War view)
   const EREG = {};    // enemy-field review registry: key -> {group,label,offs,w,fmt}
   let BUF = null, DV = null;                // live editable block (Uint8Array + DataView)
@@ -1429,7 +1430,7 @@
   function resetTables() {
     TABLES_STATE = "idle"; TABLES_PROMISE = null; TABLES_ERR = ""; DISC_GEN++;
     EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; WPACKS_SKIPPED = 0; ESCALE = null;
-    ROOMS = []; ROOMS_SKIPPED = 0;
+    ROOMS = []; ROOMS_SKIPPED = 0; RSCALE = null;
   }
   // Idempotent: concurrent callers (two tabs clicked quickly, or a view and a patch apply at
   // once) share one read. Never rejects — the outcome is in TABLES_STATE.
@@ -1556,7 +1557,7 @@
     // read was in flight has to survive it.
     AUX = AUX.concat(aux);
     EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped; WPACKS_SKIPPED = wskipped; ESCALE = null;
-    ROOMS = rareas; ROOMS_SKIPPED = rskipped;
+    ROOMS = rareas; ROOMS_SKIPPED = rskipped; RSCALE = null;
     TABLES_STATE = "ready";
   }
   // Gate for the three views that need the deferred tables. Returns true when the caller can
@@ -5219,14 +5220,48 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return out;
   }
 
-  // Scale every room in one area from the DISC's own value, so re-applying never compounds
-  // and 100% restores the original bytes exactly (same rule as the global control).
+  // A row whose rate on THIS file differs from the stock disc's: the one place a per-map
+  // change that is already saved into the file can be seen at all.
+  const stockKnownRow = (r) => roomStockKnown() && auxO16(r.rateOffs[0]) !== r.rate;
+
+  // ---- Are these rates already scaled? ----------------------------------------
+  // Same problem the enemy packs had, same fix (see detectStockScale): a saved ISO records the
+  // rates a preset produced, never the preset, so a file saved at 50% used to reopen with the
+  // presets measuring from the halved numbers - Half again gave a quarter, and "Stock" restored
+  // the halved values rather than the disc's own. s3_rooms.json is built by build_room_index.py
+  // against a PRISTINE disc, so every room record carries the stock rate and grace beside its
+  // offsets; comparing the two recovers the scale that is already baked into the file.
+  const roomStockKnown = () => { const d = detectRoomScale(); return !!(d && d.ok && d.matched); };
+  function detectRoomScale() {
+    if (RSCALE) return RSCALE;
+    if (!ROOMS.length) return (RSCALE = { ok: false });
+    const rate = [], grace = [], byArea = ROOMS.map(() => []);
+    ROOMS.forEach((a, ai) => {
+      for (const t of a.tables) for (const r of t.rooms) {
+        // A stock 0 carries no ratio, and grace is never scaled by this tab - it rides along as
+        // corroboration that these really are the same tables the index was built from.
+        const cr = auxO16(r.rateOff), cg = auxO16(r.graceOff);
+        if (cr !== null && r.rate > 0) { rate.push(r.rate, cr); byArea[ai].push(r.rate, cr); }
+        if (cg !== null && r.grace > 0) grace.push(r.grace, cg);
+      }
+    });
+    const fr = fitScale(rate, 0, 999), fg = fitScale(grace, 0, 4000);
+    const tot = fr.n + fg.n, hit = fr.hit + fg.hit;
+    return (RSCALE = { ok: true, rate: fr, grace: fg, samples: tot, explained: tot ? hit / tot : 0,
+                       matched: tot > 0 && hit >= tot * 0.9,
+                       areas: byArea.map((sa) => fitScale(sa, 0, 999)) });
+  }
+  // Scale every room in one area from the STOCK disc's value when this file matches the index,
+  // otherwise from what the file opened with. Either way re-applying never compounds; with the
+  // stock baseline that also holds across a save, and 100% is a true restore of the disc's rates.
   function scaleArea(a, pct) {
+    const st = roomStockKnown();
     let n = 0;
     for (const t of a.tables) for (const r of t.rooms) {
       const o = auxO16(r.rateOff);
       if (o === null) continue;
-      auxW16(r.rateOff, Math.max(0, Math.min(999, Math.round((o * pct) / 100))));
+      const base = st ? r.rate : o;
+      auxW16(r.rateOff, Math.max(0, Math.min(999, Math.round((base * pct) / 100))));
       n++;
     }
     return n;
@@ -5247,7 +5282,25 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
              global scale is available.</div>`;
       return;
     }
+    // Compare against the stock disc first: it decides whether the presets scale the stock
+    // numbers or this file's, and it is the only thing that can tell you a saved file is
+    // already at 50% (the file itself records the halved rates, not the halving).
+    const rsc = detectRoomScale(), rknown = roomStockKnown();
+    const rpct = (r) => `${Math.round(r * 1000) / 10}%`;
+    const scaled = rknown && rsc.rate.sure && rsc.rate.r !== 1;
     const parts = [`<h3 class="sec">Per-area base rates</h3>`,
+      !rsc.ok ? "" :
+      !rsc.matched ? `<div class="warnbox" style="margin:0 0 10px">These room tables don't line up with the stock
+          USA disc this editor indexes (only ${Math.round(rsc.explained * 100)}% of ${rsc.samples} values match a
+          single scale) — a different build, or per-map edits. The presets below scale <b>this file's</b> rates
+          instead of the stock ones, so they can compound if you save and come back.</div>`
+      : scaled ? `<div class="warnbox" style="margin:0 0 10px">These rates are <b>already scaled</b>: the disc sits at
+          <b>${rpct(rsc.rate.r)}</b> of the stock disc's rates (${Math.round(rsc.explained * 100)}% of ${rsc.samples}
+          values match${rsc.explained < 1 ? "; the rest are per-map edits" : ""}). The presets scale the <b>stock</b> numbers, so Half is half of
+          stock rather than half again, and <b>Stock</b> puts the disc's own rates back — even though this file
+          no longer holds them.</div>`
+      : `<div class="muted" style="margin:0 0 10px">Checked against the stock USA disc: these rates are stock
+          (${Math.round(rsc.explained * 100)}% of ${rsc.samples} values match exactly).</div>`,
       `<div class="muted" style="margin:0 0 10px">Each map's own rate, read straight from the packed archives —
         the percentage above multiplies <b>these</b>. <b>0</b> means no random battles on that map, which is how
         the game marks towns and interiors; the disc's field and dungeon maps sit between <b>2 and 9</b>.
@@ -5265,8 +5318,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       if (q2 && !(a.archive + " " + nm + " " + zones).toLowerCase().includes(q2)) return;
       const rows = roomRows(a);
       const live = rows.filter((r) => r.rate > 0).length;
+      const af = rknown && rsc.areas[ai];
+      const atag = af && af.n && af.sure && af.r !== 1
+        ? ` <span class="opt-tag" title="measured against the stock disc's own rates for these maps">at ${rpct(af.r)} of stock</span>` : "";
       parts.push(`<details class="char rarea" data-ra="${ai}" data-i="ra${ai}"><summary><span class="chev">▸</span>
-          <span class="nm">${esc2(a.archive)}${nm ? ` — ${esc2(nm)}` : ""}</span>
+          <span class="nm">${esc2(a.archive)}${nm ? ` — ${esc2(nm)}` : ""}</span>${atag}
           <span class="muted">${esc2(zones || "no battle zones indexed")}</span>
           <span class="lv">${rows.length} map row(s) · ${a.tables.length} chapter table(s) · ${live} with encounters</span></summary>
         <div class="char-body"><div class="muted">expanding…</div></div></details>`);
@@ -5293,13 +5349,15 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <span class="muted">Whole area:</span>
         ${ROOM_PRESETS.map(([l, v]) => `<button class="chip" data-rp="${v}">${l}</button>`).join("")}
         <button class="chip" data-rrev="1">↺ Restore area</button>
-        <span class="muted">scaled from the disc's own values — re-applying never compounds</span>
+        <span class="muted">${roomStockKnown() ? "scaled from the stock disc's values — Stock is a real restore, even in an already-scaled file"
+          : "scaled from the disc's own values — re-applying never compounds"}</span>
       </div>
       <table class="invtbl"><thead><tr><th style="width:34%">Map</th><th style="width:20%">Rate</th>
         <th style="width:20%">Grace</th><th>Applies to</th></tr></thead>
         <tbody>${rows.map((r, i) => `<tr>
           <td class="sl">Room ${r.room}${r.split ? ` <span class="opt-tag" title="this room's chapter tables don't all carry the same value">variant</span>` : ""}${
-            r.rate === 0 ? ` <span class="opt-tag" title="the disc has no random battles on this map — raising it asks for an encounter with nothing to spawn">no battles</span>` : ""}</td>
+            r.rate === 0 ? ` <span class="opt-tag" title="the stock disc has no random battles on this map — raising it asks for an encounter with nothing to spawn">no battles</span>` : ""}${
+            stockKnownRow(r) ? ` <span class="opt-tag" title="what a pristine USA disc holds for this map — this file was saved with a different rate">stock ${r.rate}</span>` : ""}</td>
           <td><input type="number" class="rm-f" data-r="${i}" data-k="rate" min="0" max="999" style="width:84px"></td>
           <td><input type="number" class="rm-f" data-r="${i}" data-k="grace" min="0" max="4000" style="width:84px"></td>
           <td class="muted">${r.variants} table${r.variants === 1 ? "" : "s"}</td></tr>`).join("")}</tbody></table>`;
@@ -5385,6 +5443,32 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       return (p.archive + " " + archName(p.archive) + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase().includes(q2);
     });
   }
+  // Recover the one multiplier that best explains a set of (stock, disc) pairs, given as a flat
+  // [stock, disc, stock, disc, ...] array. A candidate is scored by REPLAYING the multiply -
+  // rounding and clamping included - so a ratio only "explains" a value if applying it would
+  // reproduce that exact number. The median survives up to half the values being hand-edited.
+  // Shared by the enemy packs and the per-area encounter rates; both index files carry the
+  // stock numbers because both were built from a pristine disc.
+  function fitScale(s, min, max) {
+    const n = s.length / 2;
+    if (!n) return { n: 0, r: 1, hit: 0, sure: false };
+    const score = (r) => { let k = 0;
+      for (let i = 0; i < s.length; i += 2)
+        if (Math.max(min, Math.min(max, Math.round(s[i] * r))) === s[i + 1]) k++;
+      return k; };
+    const ratios = [];
+    for (let i = 0; i < s.length; i += 2) ratios.push(s[i + 1] / s[i]);
+    ratios.sort((a, b) => a - b);
+    const med = ratios[ratios.length >> 1];
+    let r = 1, hit = score(1);                     // 1 first, so an untouched disc reports exactly x1
+    for (const c of [Math.round(med * 20) / 20, Math.round(med * 100) / 100, Math.round(med * 1000) / 1000, med]) {
+      if (!Number.isFinite(c) || c < 0) continue;
+      const k = score(c);
+      if (k > hit) { r = c; hit = k; }
+    }
+    return { n, r, hit, sure: hit >= n * 0.9 };
+  }
+
   // ---- Is this disc already tuned? -------------------------------------------
   // A saved ISO records no multiplier, only the numbers it produced, so re-opening a disc whose
   // HP had been doubled used to show x1 with no hint that anything had moved. The pack index is
@@ -5415,26 +5499,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const groups = {};
     let tot = 0, hit = 0;
     for (const g of EB_GROUPS) {
-      const s = S[g.key], n = s.length / 2;
-      if (!n) { groups[g.key] = { n: 0, r: 1, hit: 0, sure: false }; continue; }
-      // Score a candidate by REPLAYING the multiply: rounding and clamping included, so a
-      // ratio only "explains" a value if applying it would reproduce that exact number.
-      const score = (r) => { let k = 0;
-        for (let i = 0; i < s.length; i += 2)
-          if (Math.max(g.min, Math.min(g.max, Math.round(s[i] * r))) === s[i + 1]) k++;
-        return k; };
-      const ratios = [];
-      for (let i = 0; i < s.length; i += 2) ratios.push(s[i + 1] / s[i]);
-      ratios.sort((a, b) => a - b);
-      const med = ratios[ratios.length >> 1];      // median: survives up to half the values being hand-edited
-      let best = 1, bestHit = score(1);            // 1 first, so an untouched disc reports exactly x1
-      for (const r of [Math.round(med * 20) / 20, Math.round(med * 100) / 100, Math.round(med * 1000) / 1000, med]) {
-        if (!Number.isFinite(r) || r < 0) continue;
-        const k = score(r);
-        if (k > bestHit) { best = r; bestHit = k; }
-      }
-      groups[g.key] = { n, r: best, hit: bestHit, sure: bestHit >= n * 0.9 };
-      tot += n; hit += bestHit;
+      const d = fitScale(S[g.key], g.min, g.max);
+      groups[g.key] = d;
+      tot += d.n; hit += d.hit;
     }
     ESCALE = { ok: true, groups, variants, samples: tot, explained: tot ? hit / tot : 0,
                matched: tot > 0 && hit >= tot * 0.9 };
@@ -5527,8 +5594,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           values instead of the stock ones, and can compound if you save and re-apply.</div>`);
       else if (tuned.length)
         parts.push(`<div class="warnbox">This disc is <b>already tuned</b>: ${tuned.map((g) => `${g.label} ×${sc.groups[g.key].r}`).join(", ")},
-          measured against the stock USA disc (${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match; the rest
-          are hand edits). The multipliers below are prefilled with what's on the disc and multiply the <b>stock</b>
+          measured against the stock USA disc (${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match${
+            sc.explained < 1 ? "; the rest are hand edits" : ""}). The multipliers below are prefilled with what's on the disc and multiply the <b>stock</b>
           numbers, so re-applying ×${sc.groups[tuned[0].key].r} keeps it there instead of stacking.</div>`);
       else if (known)
         parts.push(`<div class="muted" style="margin:0 0 8px">Checked against the stock USA disc: these enemy numbers are
