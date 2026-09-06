@@ -1399,6 +1399,10 @@
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = null; RUNE_FX_OPEN = new Set(); resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
+    // The region map is keyed to the base disc's pointers, and the out-of-block comparison
+    // to the windows THIS disc loaded — both are stale the moment a different disc opens.
+    // The base disc itself is not: it is the pristine reference and outlives any one image.
+    CHG_REGIONS = null; CHG_AUX = null; CHG_ROWS = [];
     VIEW = "chars"; SEARCH = "";
     autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -1667,7 +1671,12 @@
       if (!isDirty(m.off, m.width)) continue;
       covered += m.width;
       let ov, nv;
-      if (m.kind === "text") { ov = `"${strFrom(ORIG, m.off, m.width)}"`; nv = `"${strFrom(BUF, m.off, m.width)}"`; }
+      // A span wider than a word (a reverted gear effect slot, an unlabelled run off the
+      // Changes tab) has no scalar reading: readW would silently report its first four
+      // bytes, and two spans that share a prefix would then compare equal and drop out of
+      // the list entirely. Show the bytes instead.
+      if (m.kind === "bytes") { ov = chgHexOf(ORIG, m.off, m.width); nv = chgHexOf(BUF, m.off, m.width); }
+      else if (m.kind === "text") { ov = `"${strFrom(ORIG, m.off, m.width)}"`; nv = `"${strFrom(BUF, m.off, m.width)}"`; }
       else { ov = fmtVal(m.kind, origW(m.off, m.width)); nv = fmtVal(m.kind, readW(m.off, m.width)); }
       if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}` });
     }
@@ -2123,7 +2132,7 @@
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
-    ["text", "Text"], ["ref", "Reference"], ["test", "Test"]];
+    ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
 
   function renderEditor(size) {
     const root = q("#isoRoot");
@@ -2216,6 +2225,7 @@
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item, rune and skill lookups, where each item comes from, and every packed sub-file on the disc.",
+      changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
     };
     q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
     const host = q("#isoView");
@@ -2245,6 +2255,10 @@
     else if (VIEW === "enemies") { if (needTables(host)) drawEnemies(host); }
     else if (VIEW === "war") { if (needTables(host)) drawWar(host); }
     else if (VIEW === "ref") drawReference(host);
+    // The Changes tab is the only view that reads a SECOND disc, so it asks for the
+    // remembered base handle on first draw rather than on ISO load — nobody pays for a
+    // permission prompt or a 3.7 MB read until they open the tab.
+    else if (VIEW === "changes") { drawChanges(host); if (SUPPORTS_FS) chgRestoreBase(); }
     if (open.size) qa("details.char", host).forEach((d) => {
       if (open.has(detKey(d))) { d.open = true; d.dispatchEvent(new Event("toggle")); }
     });
@@ -6927,6 +6941,580 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       inp.onchange = () => { if (inp.files[0]) loadRef().then(() => loadFromInputFile(inp.files[0]))
         .catch((e) => setStatus("Failed to load reference tables: " + e.message, "err")); };
     }
+  }
+
+  // ---- Changes: what is already on this disc, vs a base disc ------------------
+  // Every other tab reports what YOU staged this session; the review list and the dirty
+  // badge are both built from FIELD_REG, which the WRITE path fills in. That makes them a
+  // history, not a map — a disc that arrives already patched carries no history at all, so
+  // "what has been done to this image" was a question the editor could not answer. It is
+  // the question that matters when a patched disc and the game disagree, which is exactly
+  // how the Kite rune description turned out to be stored twice (issue #11).
+  //
+  // Answering it needs two things this section adds:
+  //   • a PRISTINE copy to compare against. Nothing about a stock disc ships in this repo —
+  //     it is Konami's executable — so the base disc is a file you point at once, and the
+  //     handle is remembered the same way the last-opened ISO is.
+  //   • a STATIC map of the block, so a changed byte can be named without having watched it
+  //     change. chgRegions builds one out of the same constants the views read.
+  //
+  // Bytes no region claims are still listed, as hex. A change this tab silently omitted
+  // would be worse than an unlabelled row, because the whole value of the tab is that the
+  // list is complete.
+  let BASE = null;              // {name, size, block:Uint8Array, dv:DataView, file:File}
+  let BASE_STATE = "idle";      // idle | loading | ready | error
+  let BASE_ERR = "";
+  let CHG_REGIONS = null;       // region map, keyed to the loaded disc (dropped on close)
+  let CHG_HEX = false;          // filter: also show the unmapped hex rows
+  let CHG_AUX = null;           // {rows:[{tag,bytes,windows}], err} — out-of-block comparison
+  let CHG_ROWS = [];            // last rendered rows, so a revert button can find its own
+
+  // null-terminated slot length inside an ARBITRARY block copy (origSlotLen reads ORIG)
+  function slotLenIn(arr, dptr) {
+    const rel = vaOff(dptr) - ELF_BASE;
+    if (rel < 0 || rel >= arr.length) return 0;
+    let e = arr.indexOf(0, rel);
+    return e < 0 ? 0 : e - rel;
+  }
+
+  // ---- the region map --------------------------------------------------------
+  // Named regions are fields; filler regions cover the rest of a record so an unnamed byte
+  // still says which record it sits in. Fillers are clipped around the named ones, and two
+  // named regions that overlap (the one real case is list1's last record physically
+  // abutting list3 — see nextBoundary) are resolved by keeping the earlier: letting one
+  // byte answer to two labels would make every row on the tab a guess.
+  function chgDisjoint(sorted) {
+    const out = [];
+    let end = -1;
+    for (const r of sorted) {
+      const off = Math.max(r.off, end), len = r.off + r.len - off;
+      if (len <= 0) continue;
+      out.push(off === r.off && len === r.len ? r : Object.assign({}, r, { off, len }));
+      end = off + len;
+    }
+    return out;
+  }
+  // Every filler minus every kept region, in one merge pass (both lists are sorted, and a
+  // filler never starts before an earlier filler, so the cursor into `kept` only advances).
+  function chgSubtractAll(fills, kept) {
+    const out = [];
+    let j = 0;
+    for (const f of fills) {
+      while (j < kept.length && kept[j].off + kept[j].len <= f.off) j++;
+      let cur = f.off, k = j;
+      const end = f.off + f.len;
+      while (k < kept.length && kept[k].off < end) {
+        if (kept[k].off > cur) out.push(Object.assign({}, f, { off: cur, len: kept[k].off - cur }));
+        cur = Math.max(cur, kept[k].off + kept[k].len);
+        k++;
+      }
+      if (cur < end) out.push(Object.assign({}, f, { off: cur, len: end - cur }));
+    }
+    return out;
+  }
+
+  // Build the map from the BASE block: pointers and slot lengths must come from the
+  // pristine side, or a patched disc that shortened a string would size its own slot.
+  function chgRegions(blk) {
+    if (CHG_REGIONS) return CHG_REGIONS;
+    const dv = new DataView(blk.buffer, blk.byteOffset, blk.byteLength);
+    const u32 = (o) => dv.getUint32(o - ELF_BASE, true);
+    const named = [], fill = [];
+    const add = (off, len, group, label, kind) => {
+      if (len > 0 && inBlk(off, len)) named.push({ off, len, group, label, kind: kind || "hex" });
+    };
+    const gap = (off, len, group, label) => {
+      if (len > 0 && inBlk(off, len)) fill.push({ off, len, group, label, kind: "hex" });
+    };
+    // A string slot is the WHOLE original slot: shortening a string changes bytes past the
+    // new terminator, and a half-slot row would read as a mystery.
+    const strSlot = (va, group, label) => {
+      if (!va) return;
+      const L = slotLenIn(blk, va);
+      if (L > 0) add(vaOff(va), L, group, label, "text");
+    };
+    const nm1 = (REF.names && REF.names.list1) || {}, nm2 = (REF.names && REF.names.list2) || {};
+    const nm3 = (REF.names && REF.names.list3) || {}, nm4 = (REF.names && REF.names.list4) || {};
+
+    // --- list1..list4 records (the four stat tables) ---------------------------
+    const recTable = (key, count, group, names, fields) => {
+      const [base, stride] = TABLES[key];
+      for (let i = 0; i < count; i++) {
+        const rec = base + i * stride, who = names[i + 1] || names[i] || `#${i}`;
+        for (const [label, off, w, kind] of fields) add(rec + off, w, group, `${who} · ${label}`, kind);
+        gap(rec, stride, group, `${who} · other bytes`);
+      }
+    };
+    recTable("list1", LIST_COUNT.list1, "Characters", nm1, LIST1_FIELDS);
+    {
+      const l2 = LIST2_GROWTH.concat(LIST2_FIXED);
+      for (let s = 0; s < 43; s++) l2.push([`Skill cap ${skillName(s + 1)}`, LIST2_SKILLMAX_START + s, 1, "max"]);
+      l2.push(["Movement class", MOVESPD.classOff, 1, "num"]);
+      recTable("list2", LIST_COUNT.list2, "Growth", nm2, l2);
+    }
+    recTable("list3", LIST_COUNT.list3, "Support", nm3, LIST3_FIELDS);
+    recTable("list4", LIST_COUNT.list4, "Weapons", nm4, LIST4_FIELDS);
+
+    // --- spells / unites -------------------------------------------------------
+    // A spell record's own fields start at +0x08 and its last three ride one record ahead
+    // (see the SPELL comment); a unite's are 8 bytes longer, so its tail stays inside it.
+    const castTable = (T, group, kind) => {
+      for (let i = 0; i < T.count; i++) {
+        const rec = T.off + i * T.stride, who = strFrom(blk, vaOff(u32(rec + 0x08)), 40) || `${kind} #${i}`;
+        add(rec + 0x08, 4, group, `${who} · name pointer`, "ptr");
+        add(rec + 0x0C, 4, group, `${who} · description pointer`, "ptr");
+        add(rec + 0x10, 4, group, `${who} · cast (MOV)`, "num");
+        add(rec + 0x14, 4, group, `${who} · target / area-of-effect`, "flags14");
+        add(rec + 0x18, 4, group, `${who} · status effects`, "status");
+        add(rec + 0x1C, 2, group, `${who} · power`, "num");
+        add(rec + T.radius, 1, group, `${who} · radius`, "num");
+        add(rec + T.chance, 1, group, `${who} · status chance %`, "num");
+        if (T.elem) add(rec + T.elem, 1, group, `${who} · element`, "elem");
+        strSlot(u32(rec + 0x08), "Text", `${who} · name`);
+        strSlot(u32(rec + 0x0C), "Text", `${who} · description`);
+        gap(rec, T.stride, group, `${who} · other bytes`);
+      }
+    };
+    castTable(SPELL, "Spells", "Spell");
+    castTable(UNITE, "Unites", "Unite");
+
+    // --- the five item bands (name @+0, desc @+4) ------------------------------
+    // Same dispatcher the game's own getDesc walks, so this is every item, rune, statue
+    // and quest item on the disc — and the two description copies of issue #11 land here
+    // and in the spell table above, which is what makes them visible side by side.
+    DESC_BANDS.forEach(([lo, hi, base, stride], n) => {
+      for (let id = lo; id <= hi; id++) {
+        const rec = base + id * stride, who = itemName(id) || `item ${hex(id, 3)}`;
+        const grp = n === 2 ? "Runes" : n === 1 ? "Gear" : "Items";
+        if (!inBlk(rec, stride)) continue;
+        add(rec, 4, grp, `${who} · name pointer`, "ptr");
+        add(rec + 4, 4, grp, `${who} · description pointer`, "ptr");
+        strSlot(u32(rec), "Text", `${who} · name`);
+        strSlot(u32(rec + 4), "Text", `${who} · description`);
+        if (n === 1) {
+          // The weapon/armour band and the gear STATS record are the same 0x44 table read
+          // from two different anchors: scanGear anchors on the record whose +0x00 is the
+          // description and whose +0x40 is the name, while this band anchors on the name.
+          // So the stats an item's row describes start 4 bytes on. Checked by reading DEF
+          // and price back for ids 161/162/200/316 against their own "DEF(+n)" text.
+          const st = rec + 4;
+          add(st + GEAR.def, 2, "Gear", `${who} · DEF`, "num");
+          add(st + GEAR.price, 4, "Gear", `${who} · price`, "num");
+          GEAR.effs.forEach((e, k) => add(st + e, 8, "Gear", `${who} · effect slot ${k + 1}`, "hex"));
+        }
+        gap(rec, stride, grp, `${who} · other bytes`);
+      }
+    });
+
+    // --- food / recipes --------------------------------------------------------
+    for (let i = 0; i < FOOD.count; i++) {
+      const rec = FOOD.off + i * FOOD.stride, who = strFrom(blk, vaOff(u32(rec + FOOD.name)), 40) || `dish #${i}`;
+      add(rec + FOOD.desc, 4, "Food", `${who} · description pointer`, "ptr");
+      add(rec + FOOD.name, 4, "Food", `${who} · name pointer`, "ptr");
+      add(rec + FOOD.heal, 2, "Food", `${who} · heals`, "num");
+      add(rec + FOOD.proc, 1, "Food", `${who} · proc chance %`, "num");
+      strSlot(u32(rec + FOOD.desc), "Text", `${who} · description`);
+      strSlot(u32(rec + FOOD.name), "Text", `${who} · name`);
+      gap(rec, FOOD.stride, "Food", `${who} · other bytes`);
+    }
+
+    // --- enemy names (stored inline, not as pointers) --------------------------
+    for (let i = 0; i < ENEMY.count; i++)
+      add(ENEMY.off + i * ENEMY.stride, ENEMY.stride, "Text",
+        `Enemy name #${i} (${strFrom(blk, ENEMY.off + i * ENEMY.stride, ENEMY.stride) || "?"})`, "text");
+
+    // --- shop counters ---------------------------------------------------------
+    for (const k of SHOPS.kinds) for (let loc = 0; loc < SHOPS.locs; loc++) for (let st = 0; st < SHOPS.stages; st++) {
+      const rec = k.base + loc * SHOPS.varStride + st * SHOPS.stride;
+      const who = `${k.name} · ${shopLocName(loc)} · stage ${st + 1}`;
+      for (let i = 0; i < SHOPS.stock; i++) add(rec + i * 2, 2, "Shops", `${who} · stock slot ${i + 1}`, "item");
+      for (let r = 0; r < SHOPS.rarCount; r++)
+        add(rec + SHOPS.rarOff + r * SHOPS.rarStride, 2, "Shops", `${who} · rare find ${r + 1}`, "item");
+      gap(rec, SHOPS.stride, "Shops", `${who} · other bytes`);
+    }
+    {
+      const [pb, pn, pw] = PRICE_LADDER;
+      for (let i = 0; i < pn; i++) add(pb + i * pw, pw, "Shops", `Shared price ladder · step ${i + 1}`, "num");
+      const [ib, iN, iw] = ITEM1;
+      for (let i = 0; i < iN; i++) add(ib + i * iw, iw, "Shops", `item1 group · word ${i + 1}`, "num");
+    }
+
+    // --- armor sets ------------------------------------------------------------
+    for (let s = 0; s < SETS.count; s++) for (let c = 0; c < 4; c++)
+      add(SETS.table + s * SETS.stride + c * 2, 2, "Sets", `${SETS.meta[s].name} · ${SETS.slots[c]}`, "item");
+
+    // --- field movement speed --------------------------------------------------
+    for (let r = 0; r < MOVESPD.rows; r++) {
+      const rec = MOVESPD.tbl + r * MOVESPD.stride;
+      add(rec, 4, "Movement", `Movement class ${r} · model id`, "num");
+      for (const c of MOVESPD.cols) add(rec + c.off, 4, "Movement", `Movement class ${r} · ${c.label}`, "f32");
+    }
+
+    // --- class name table (what the menu calls a unit) -------------------------
+    for (let i = 0; i < CLASS_POOL.count; i++) {
+      const o = CLASS_POOL.off + i * 4;
+      add(o, 4, "Text", `Class word ${i} pointer`, "ptr");
+      strSlot(u32(o), "Text", `Class word ${i}`);
+    }
+    for (let r = 0; r < CLASS_TBL.max; r++)
+      gap(CLASS_TBL.off + r * CLASS_TBL.stride, CLASS_TBL.stride, "Text", `Class table · row ${r + 1}`);
+
+    // --- code patch sites ------------------------------------------------------
+    // Everything the editor patches as an instruction immediate. Each is one 4-byte word,
+    // and they are all word-aligned and at least a word apart, so the regions stay disjoint.
+    const code = (off, label, kind) => add(off, 4, "Code patches", label, kind || "imm16");
+    code(SPLIT.route, "Damage+heal split · which spell", "spellid");
+    code(SPLIT.amtSel, "Damage+heal split · which spell (heal selector)", "spellid");
+    code(SPLIT.amt, "Damage+heal split · heal amount");
+    ENC.sites.forEach((o, i) => code(o, `Encounter rate · ${ENC.labels[i]}`, i === 1 ? "hex" : "imm16"));
+    ENCMOVE.walk.forEach((s) => code(s.off, `Movement rules · walk ${s.what}`));
+    ENCMOVE.run.forEach((s) => code(s.off, `Movement rules · run ${s.what}`));
+    code(ENCMOVE.runAlt.base.off, "Movement rules · run second range base");
+    code(ENCMOVE.runAlt.len.off, "Movement rules · run second range length");
+    MOUNTS.pairs.forEach((p, i) => {
+      p.riderSites.forEach((o, k) => code(o, `Mount pair ${i + 1} · rider${p.riderSites.length > 1 ? ` (site ${k + 1})` : ""}`));
+      code(p.mountSite, `Mount pair ${i + 1} · mount`);
+    });
+    STATUSFX.forEach((f) => f.sites.forEach(([o], k) =>
+      code(o, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    SETS.counterSites.forEach((o, k) => code(o, `Destiny counter chance (site ${k + 1})`));
+    SETS.counterOwnerSites.forEach((o, k) => code(o, `Counter bonus · which set owns it (site ${k + 1})`));
+    code(SETS.healOwnerSite, "Pale Moon heal · which set owns it");
+    code(SETS.squeakOwnerSite, "Squeaky footsteps · which set owns it");
+    code(SETS.halveMaskSite, "Halved counter damage · set mask");
+    code(SETS.healBias, "Pale Moon heal · share (bias)");
+    code(SETS.healShift, "Pale Moon heal · share (shift)");
+    code(SETS.healDivRepair, "Pale Moon heal · divisor repair slot", "hex");
+    AVATAR.gates.forEach((g) => code(g.off, `Field character · ${g.label}`));
+    AVATAR.slots.forEach((s) => code(s.off, `Field character · ${s.label}`));
+    AVATAR.ACTORFB.sites.forEach((s, k) => code(s.off, `Scene actor fallback · word ${k + 1}`, "hex"));
+    AVATAR.STORY.cases.forEach((c) => code(c.off, `Story content · case for id ${hex(c.id, 2)} (team ${c.idx})`));
+
+    const out = (() => {
+      const kept = chgDisjoint(ChangesCore.sortRegions(named));
+      const pieces = chgSubtractAll(ChangesCore.sortRegions(fill), kept);
+      return chgDisjoint(ChangesCore.sortRegions(kept.concat(pieces)));
+    })();
+    return (CHG_REGIONS = out);
+  }
+
+  // ---- reading a value out of an arbitrary block ------------------------------
+  const CHG_GROUPS = ["Text", "Runes", "Spells", "Unites", "Items", "Gear", "Food", "Shops",
+    "Characters", "Growth", "Support", "Weapons", "Sets", "Movement", "Code patches", "Unmapped"];
+  function chgRead(dv, off, w) {
+    const r = off - ELF_BASE;
+    return w === 1 ? dv.getUint8(r) : w === 2 ? dv.getUint16(r, true) : dv.getUint32(r, true);
+  }
+  const CHG_HEX_CAP = 12;      // bytes shown before a long unmapped run is elided
+  function chgHexOf(arr, off, len) {
+    let s = "";
+    for (let i = 0; i < Math.min(len, CHG_HEX_CAP); i++) s += (i ? " " : "") + hex(arr[off - ELF_BASE + i], 2);
+    return s + (len > CHG_HEX_CAP ? ` …(${len} bytes)` : "");
+  }
+  // One row's before/after, formatted the way the rest of the editor formats that kind.
+  function chgValues(row, bDv, cDv) {
+    const k = row.kind;
+    if (k === "text") return [`"${strFrom(BASE.block, row.off, row.len)}"`, `"${strFrom(ORIG, row.off, row.len)}"`];
+    if (k === "ptr") return [`0x${hex(chgRead(bDv, row.off, 4), 8)}`, `0x${hex(chgRead(cDv, row.off, 4), 8)}`];
+    if (k === "f32") {
+      const f = (dv) => { const v = dv.getFloat32(row.off - ELF_BASE, true); return Number.isFinite(v) ? String(+v.toFixed(3)) : "?"; };
+      return [f(bDv), f(cDv)];
+    }
+    if (k !== "hex" && (row.len === 1 || row.len === 2 || row.len === 4))
+      return [fmtVal(k, chgRead(bDv, row.off, row.len)), fmtVal(k, chgRead(cDv, row.off, row.len))];
+    return [chgHexOf(BASE.block, row.off, row.len), chgHexOf(ORIG, row.off, row.len)];
+  }
+
+  // ---- known-stock audit (works with no base disc at all) ---------------------
+  // Every code patch this editor makes replaces a documented stock word, so a disc can be
+  // checked against those without a second file. It says nothing about the data tables —
+  // that is what the base disc is for — but it names the code patches for free.
+  function chgCodeAudit(dv) {
+    const out = [];
+    const word = (off, stock, label) => {
+      if (!inBlk(off, 4)) return;
+      const got = chgRead(dv, off, 4) >>> 0;
+      if (got !== (stock >>> 0)) out.push({ off, label, stock, got });
+    };
+    word(SPLIT.route, SPLIT.stockRoute, "Damage+heal split · which spell");
+    word(SPLIT.amtSel, SPLIT.stockAmtSel, "Damage+heal split · which spell (heal selector)");
+    word(SPLIT.amt, SPLIT.stockAmt, "Damage+heal split · heal amount");
+    ENC.sites.forEach((o, i) => word(o, ENC.stock[i], `Encounter rate · ${ENC.labels[i]}`));
+    STATUSFX.forEach((f) => f.sites.forEach(([o, w], k) =>
+      word(o, w, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    AVATAR.ACTORFB.sites.forEach((s, k) => word(s.off, s.stock, `Scene actor fallback · word ${k + 1}`));
+    // 16-bit immediates: only the low half-word is the value, so compare that alone.
+    const imm = (off, stock, label) => {
+      if (!inBlk(off, 2)) return;
+      const got = chgRead(dv, off, 2);
+      if (got !== stock) out.push({ off, label, stock, got, imm: true });
+    };
+    ENCMOVE.walk.concat(ENCMOVE.run).forEach((s) => imm(s.off, s.stock, `Movement rules · ${s.what}`));
+    AVATAR.gates.forEach((g) => imm(g.off, g.stock, `Field character · ${g.label}`));
+    AVATAR.slots.forEach((s) => imm(s.off, s.stock, `Field character · ${s.label}`));
+    AVATAR.STORY.cases.forEach((c) => imm(c.off, c.id, `Story content · case for id ${hex(c.id, 2)}`));
+    MOUNTS.pairs.forEach((p, i) => {
+      imm(p.riderSites[0], MOUNTS.STOCK[i][0], `Mount pair ${i + 1} · rider`);
+      imm(p.mountSite, MOUNTS.STOCK[i][1], `Mount pair ${i + 1} · mount`);
+    });
+    return out;
+  }
+
+  // ---- base disc: pick, remember, load ---------------------------------------
+  const BASE_KEY = "baseIso";
+  async function chgReadBase(file) {
+    const vw = new DataView(await file.slice(VERSION_OFF, VERSION_OFF + 4).arrayBuffer());
+    if (vw.byteLength < 4 || vw.getUint32(0, false) !== VERSION_VAL)
+      throw new Error("that file isn't a SLUS-20387 (USA) Suikoden III disc");
+    const block = new Uint8Array(await file.slice(ELF_BASE, ELF_END).arrayBuffer());
+    if (block.length !== ELF_LEN) throw new Error("the file ended early — is it a complete disc image?");
+    return { name: file.name, size: file.size, file, block, dv: new DataView(block.buffer) };
+  }
+  async function chgSetBase(handle, file) {
+    BASE_STATE = "loading"; BASE_ERR = ""; CHG_AUX = null; drawView();
+    try {
+      BASE = await chgReadBase(file || await handle.getFile());
+      BASE_STATE = "ready";
+      if (handle) idbSet(BASE_KEY, { name: BASE.name, handle, at: Date.now() }).catch(() => {});
+    } catch (e) { BASE = null; BASE_STATE = "error"; BASE_ERR = e.message; }
+    drawView();
+  }
+  async function chgPickBase() {
+    let handle;
+    try { [handle] = await window.showOpenFilePicker({ multiple: false }); }
+    catch (e) { if (e && e.name !== "AbortError") setStatus("Could not open that file: " + e.message, "err"); return; }
+    await chgSetBase(handle, null);
+  }
+  // Re-open the remembered base disc. Read permission only — this side is never written.
+  async function chgRestoreBase() {
+    if (BASE || BASE_STATE === "loading") return;
+    let rec; try { rec = await idbGet(BASE_KEY); } catch (e) { return; }
+    if (!rec || !rec.handle) return;
+    let st; try { st = await rec.handle.queryPermission({ mode: "read" }); } catch (e) { return; }
+    if (st !== "granted") { BASE_STATE = "remembered"; BASE_ERR = rec.name; drawView(); return; }
+    await chgSetBase(rec.handle, null);
+  }
+  async function chgGrantBase() {
+    let rec; try { rec = await idbGet(BASE_KEY); } catch (e) { return; }
+    if (!rec || !rec.handle) return;
+    try { if ((await rec.handle.requestPermission({ mode: "read" })) !== "granted") return; }
+    catch (e) { return; }
+    await chgSetBase(rec.handle, null);
+  }
+
+  // ---- out-of-block windows (enemy / war / room tables, potch overlay) --------
+  // These live hundreds of MB into the disc and are read on demand, so the comparison can
+  // only cover what is actually loaded. Rather than quietly skip them, the tab says which
+  // are in and which need their tab opened first.
+  async function chgCompareAux() {
+    if (!BASE) return;
+    CHG_AUX = { rows: [], err: "", pending: true }; drawView();
+    const byTag = {};
+    try {
+      for (const w of AUX) {
+        const b = new Uint8Array(await BASE.file.slice(w.off, w.off + w.len).arrayBuffer());
+        if (b.length !== w.len) throw new Error("base disc is shorter than this one");
+        let n = 0;
+        for (let i = 0; i < w.len; i++) if (b[i] !== w.orig[i]) n++;
+        const t = byTag[w.tag] || (byTag[w.tag] = { tag: w.tag, bytes: 0, windows: 0, touched: 0 });
+        t.bytes += n; t.windows++; if (n) t.touched++;
+      }
+    } catch (e) { CHG_AUX = { rows: [], err: e.message }; return drawView(); }
+    CHG_AUX = { rows: Object.values(byTag), err: "" };
+    drawView();
+  }
+  const CHG_AUX_LABEL = { potch: "Armor sets (potch overlay)", enemy: "Enemies", room: "Encounter rates (per area)", war: "War units" };
+
+  // ---- export the applied diff ------------------------------------------------
+  // Same .s3mod the staged-edit export writes, so a patch lifted off one disc can be
+  // replayed onto a pristine one with the editor's own "apply a patch" path.
+  function chgExportRecipe(runs) {
+    const patches = runs.map((r) => {
+      let oldHex = "", newHex = "";
+      for (let i = 0; i < r.len; i++) {
+        oldHex += hex(BASE.block[r.off - ELF_BASE + i], 2).toLowerCase();
+        newHex += hex(ORIG[r.off - ELF_BASE + i], 2).toLowerCase();
+      }
+      return { off: r.off, old: oldHex, new: newHex };
+    });
+    const mod = { format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
+      note: `changes already on ${isoName} vs ${BASE.name}`, patchCount: patches.length, patches };
+    const blob = new Blob([JSON.stringify(mod, null, 1)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (isoName.replace(/\.[^.]+$/, "") || "s3") + "-applied.s3mod";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    setStatus(`Exported ${patches.length} applied change(s) as a .s3mod recipe.`, "ok");
+  }
+
+  // ---- the view ---------------------------------------------------------------
+  function drawChanges(host) {
+    const staged = buildReview();
+    const stagedBytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
+    const audit = chgCodeAudit(ODV);
+
+    let h = `<div class="muted" style="margin:0 0 10px">Two different questions, kept apart on purpose.
+      <b>Already on this disc</b> compares the image you have open against a pristine base disc you
+      point at — that is the list of everything ever written to it, by this editor or any other, and it
+      is the only way to see a change that was applied in an earlier session. <b>Staged</b> is what you
+      have changed since opening it and have not saved yet. Nothing about a stock disc ships with this
+      editor (it is the game's own executable), so the base disc has to be your own pristine copy.</div>`;
+
+    // ---- base disc card ----
+    h += `<div class="card" style="margin:0 0 12px"><div class="bag-h">Base disc</div>`;
+    if (!SUPPORTS_FS) {
+      h += `<div class="warnbox">This browser can't open a second file for comparison. Use desktop
+        Chrome or Edge for this tab; everything else in the editor still works here.</div>`;
+    } else if (BASE_STATE === "loading") {
+      h += `<div class="muted">Reading the base disc…</div>`;
+    } else if (BASE_STATE === "remembered") {
+      h += `<div class="muted">Remembered base disc: <b>${esc2(BASE_ERR)}</b> — the browser needs
+        permission again after a reload.</div>
+        <div class="row" style="gap:8px;margin-top:8px"><button class="primary" id="chgGrant">Use it again</button>
+        <button id="chgPick">Choose a different disc…</button></div>`;
+    } else if (BASE_STATE === "error") {
+      h += `<div class="warnbox">Couldn't use that file: ${esc2(BASE_ERR)}</div>
+        <div class="row" style="gap:8px;margin-top:8px"><button class="primary" id="chgPick">Choose a base disc…</button></div>`;
+    } else if (BASE) {
+      const same = BASE.name === isoName && BASE.size === (isoFile ? isoFile.size : BASE.size);
+      h += `<div class="muted">Comparing against <b>${esc2(BASE.name)}</b>.
+        ${same ? `<span style="color:var(--warn)">That looks like the same file you have open — every
+          comparison below will come out empty. Pick your pristine copy instead.</span>` : ""}</div>
+        <div class="row" style="gap:8px;margin-top:8px"><button id="chgPick">Choose a different disc…</button>
+        <button id="chgForget">Forget it</button></div>`;
+    } else {
+      h += `<div class="muted">Point this at a <b>pristine</b> Suikoden III (USA) image. It is opened
+        read-only and never written to, and the choice is remembered for next time.</div>
+        <div class="row" style="gap:8px;margin-top:8px"><button class="primary" id="chgPick">Choose a base disc…</button></div>`;
+    }
+    h += `</div>`;
+
+    // ---- already on this disc ----
+    if (BASE) {
+      const regions = chgRegions(BASE.block);
+      const runs = ChangesCore.runs(BASE.block, ORIG, ELF_BASE);
+      const bytes = ChangesCore.runBytes(runs);
+      // allRows covers every changed byte exactly once (web/tests/changes-core.mjs proves
+      // that property), so "revert all" walks it rather than the raw runs — every staged
+      // revert then carries the same label the table showed.
+      const allRows = ChangesCore.overlay(runs, regions);
+      allRows.forEach((r, i) => (r.i = i));   // a row's own index; indexOf here would be O(n^2)
+      CHG_ROWS = allRows;
+      const rows = allRows.filter((r) => !r.unmapped || CHG_HEX);
+      const hidden = allRows.length - rows.length;
+      h += `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Already on this disc <span class="u">${bytes} byte(s) in ${runs.length} run(s)</span></div>`;
+      if (!runs.length) {
+        h += `<div class="muted">Byte for byte identical to the base disc across the whole editable
+          region — nothing has been applied to this image.</div>`;
+      } else {
+        h += `<div class="row" style="gap:8px;margin:0 0 10px">
+            <label class="row" style="gap:6px;cursor:pointer;margin:0"><input type="checkbox" id="chgHex"${CHG_HEX ? " checked" : ""}>
+              show unlabelled byte runs${hidden && !CHG_HEX ? ` <span class="u">· ${hidden} hidden</span>` : ""}</label>
+            <button class="chip mini" id="chgExport">Export as .s3mod</button>
+            <button class="chip mini" id="chgRevertAll">Stage a revert of all of it</button></div>
+          <table class="invtbl"><thead><tr><th style="width:11%">Offset</th><th style="width:34%">What</th>
+            <th>Base disc → this disc</th><th style="width:8%"></th></tr></thead><tbody>`;
+        for (const g of ChangesCore.byGroup(rows, CHG_GROUPS)) {
+          h += `<tr><td colspan="4" class="grouphead"><b>${esc2(g.group)}</b> <span class="u">${g.rows.length} change(s)</span></td></tr>`;
+          for (const r of g.rows) {
+            const [ov, nv] = chgValues(r, BASE.dv, ODV);
+            const staleName = r.unmapped ? `<span class="muted">unlabelled — ${r.len} byte(s)</span>` : esc2(r.label);
+            h += `<tr><td class="sl">0x${hex(r.off, 6)}</td><td>${staleName}</td>
+              <td><span class="muted">${esc2(ov)}</span> → <b>${esc2(nv)}</b></td>
+              <td><button class="chip mini" data-rev="${r.i}"
+                title="Stage a rewrite of these bytes back to the base disc's values">↺</button></td></tr>`;
+          }
+        }
+        h += `</tbody></table>`;
+      }
+      // out-of-block windows
+      h += `<div style="margin-top:10px">`;
+      if (!AUX.length) {
+        h += `<div class="muted"><b>Outside the executable</b> — the enemy, war and per-area encounter
+          tables live hundreds of MB further into the disc and are only read when you open those tabs.
+          Open <b>Enemies</b>, <b>War</b> or <b>Encounter</b> first and come back to include them.</div>`;
+      } else if (!CHG_AUX) {
+        h += `<button class="chip mini" id="chgAux">Also compare the ${AUX.length} loaded out-of-block window(s)</button>`;
+      } else if (CHG_AUX.pending) {
+        h += `<div class="muted">Reading those windows from the base disc…</div>`;
+      } else if (CHG_AUX.err) {
+        h += `<div class="warnbox">Couldn't read them from the base disc: ${esc2(CHG_AUX.err)}</div>`;
+      } else {
+        const any = CHG_AUX.rows.filter((r) => r.bytes);
+        h += `<div class="muted"><b>Outside the executable</b> — ${CHG_AUX.rows.reduce((a, r) => a + r.windows, 0)} loaded window(s) compared.
+          ${any.length ? any.map((r) => `${esc2(CHG_AUX_LABEL[r.tag] || r.tag)}: <b>${r.bytes}</b> byte(s) differ across ${r.touched} window(s)`).join(" · ")
+                       : "all identical to the base disc."}</div>`;
+      }
+      h += `</div></div>`;
+    }
+
+    // ---- staged ----
+    h += `<div class="card" style="margin:0 0 12px"><div class="bag-h">Staged, not yet saved
+      <span class="u">${stagedBytes} byte(s)</span></div>`;
+    h += staged.length
+      ? `<table class="invtbl"><tbody>${staged.map((r) =>
+          `<tr><td style="width:22%">${esc2(r.g)}</td><td>${esc2(r.t)}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="muted">Nothing staged — every edit you have made this session is already saved,
+         or you haven't made any.</div>`;
+    h += `</div>`;
+
+    // ---- code audit ----
+    h += `<div class="card"><div class="bag-h">Code patches, checked against their stock values
+      <span class="u">no base disc needed</span></div>
+      <div class="muted" style="margin:0 0 8px">Every patch this editor makes to the game's CODE replaces
+      a word this repo has decoded and documented, so those can be checked without a second file. This
+      says nothing about the data tables — items, stats, shops, text — which is what the base disc above
+      is for.</div>`;
+    h += audit.length
+      ? `<table class="invtbl"><thead><tr><th style="width:12%">Offset</th><th>What</th>
+          <th style="width:32%">Stock → this disc</th></tr></thead><tbody>${audit.map((a) =>
+          `<tr><td class="sl">0x${hex(a.off, 6)}</td><td>${esc2(a.label)}</td>
+            <td><span class="muted">${a.imm ? a.stock : "0x" + hex(a.stock, 8)}</span> →
+            <b>${a.imm ? a.got : "0x" + hex(a.got, 8)}</b></td></tr>`).join("")}</tbody></table>`
+      : `<div class="muted">All known code patch sites hold their stock values — no code patch has been applied to this disc.</div>`;
+    h += `</div>`;
+
+    host.innerHTML = h;
+    const on = (id, fn) => { const b = q("#" + id, host); if (b) b.onclick = fn; };
+    on("chgPick", chgPickBase);
+    on("chgGrant", chgGrantBase);
+    on("chgForget", async () => { BASE = null; BASE_STATE = "idle"; CHG_REGIONS = null; CHG_AUX = null;
+      await idbDel(BASE_KEY).catch(() => {}); drawView(); });
+    on("chgAux", chgCompareAux);
+    on("chgExport", () => chgExportRecipe(ChangesCore.runs(BASE.block, ORIG, ELF_BASE)));
+    on("chgRevertAll", () => {
+      const n = ChangesCore.runBytes(ChangesCore.runs(BASE.block, ORIG, ELF_BASE));
+      for (const r of CHG_ROWS) chgRevertRange(r);
+      setStatus(`Staged a revert of ${n} byte(s) back to ${BASE.name}. Nothing is written until you save.`, "ok");
+      drawView();
+    });
+    const hexBox = q("#chgHex", host);
+    if (hexBox) hexBox.onchange = () => { CHG_HEX = hexBox.checked; drawView(); };
+    qa("[data-rev]", host).forEach((b) => (b.onclick = () => {
+      const row = CHG_ROWS[+b.dataset.rev];
+      if (!row) return;
+      chgRevertRange(row);
+      setStatus("Staged — the bytes go back to the base disc's values when you save.", "ok");
+      drawView();
+    }));
+  }
+  // Stage the base disc's bytes over one row's range. Goes through writeBytes so undo, the
+  // dirty badge and the review list all account for it exactly like a field edit — and the
+  // row keeps its own label and kind, so the review list reads "Kite · description: "…" →
+  // "…"" rather than an address. A span too wide to read as a scalar becomes "bytes".
+  function chgRevertRange(row) {
+    const { off, len } = row;
+    if (!BASE || !inBlk(off, len)) return;
+    writeBytes(off, BASE.block.subarray(off - ELF_BASE, off - ELF_BASE + len));
+    const scalar = len === 1 || len === 2 || len === 4;
+    FIELD_REG[off] = {
+      group: "Reverted to base disc",
+      label: row.label || `0x${hex(off, 6)} (${len} byte${len === 1 ? "" : "s"})`,
+      off, width: len,
+      kind: row.kind === "text" ? "text" : scalar && row.kind !== "hex" ? row.kind : "bytes",
+    };
   }
 
   // ---- mode tabs + init ------------------------------------------------------
