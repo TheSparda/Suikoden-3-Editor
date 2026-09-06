@@ -1757,9 +1757,17 @@ one of the 17 call sites; the 0x3C stride is fully accounted for, which is itsel
 | +0x0C | u32 | pointer (tested non-zero at 5 sites; NULL is normal) |
 | +0x10/+0x14/+0x18 | f32 | three floats, read with `lwc1` |
 | +0x1C | s16 | flag, tested non-zero at 6 sites |
-| +0x1F | s8 | ? |
-| +0x22, +0x24 | u16 | ? |
-| +0x28…+0x38 | u32 ×5 | ? (read as words; likely more pointers) |
+| +0x1F | s8 | **audio** — sole arg to `0x17AE0A8` (environment/reverb preset; 3 values disc-wide) |
+| +0x22 | u16 | **room BGM id** — see "BGM / sound control" |
+| +0x24 | u16 | **room ambient SE id** — 0 indoors, non-zero on field maps |
+| +0x28 | u32 | **audio** — fade/volume bits, split `&0x00070000` and `&0x00F00000` |
+| +0x2C, +0x30 | u32 | **audio** — BGM request params |
+| +0x34 | u32 | **audio** — ambient SE param |
+| +0x38 | u32 | ? (read as a word at one site) |
+
+The tail from `+0x1F` to `+0x34` is **not** the "more pointers" the earlier note guessed —
+it is the room's audio block, fanned out to three sound calls at `0x17AEDA8`. See the
+"BGM / sound control" section for the decode.
 
 **FSECT.BIN is a directory after all** (superseding the 2026-08-09 "relocation table"
 verdict). The loader is at 0x1734278 (`\DATA\FSECT.BIN;1` @0x19BE018) and the entry
@@ -2874,3 +2882,111 @@ when a record's name is at the far end of its block, check which block the data 
 `build_item_desc_extra.py` was written to work around. They are ordinary band-0 items with
 name @+0 and desc @+4; the food table only adds the heal and proc numbers. The regenerated
 `s3_rune_food_desc.json` now agrees with the item table 60/60.
+
+---
+
+## BGM / sound control — decoded (2026-09-06)
+
+Music is **not** a table in the ELF. Two places pick a track, both now located, indexed and
+editable in place. Index: `Editor/build_bgm_index.py <pristine ISO>` → `Editor/s3_bgm.json`
+— **1,175 script cues + 1,612 room records**.
+
+### The request function — `0x17AEA38`
+
+The BGM entry point, identified by its own debug printf: it materialises
+`prevBgm:0x%x stat:0x%x` (string @ `0x19C92C0`) at `0x17AEAC0`. Signature:
+
+```
+soundReq(kind, track, volBits, fadeBits, param0, param1, flag)
+    tag  = u16 [0x1983020 + kind*2]      ; 8 entries: 0, 0x1000, 0x2000, 0x3000, 38,39,40,41
+    stat = 0x17AEA08(kind)               ; current state for this category
+    prev = stat & ~0x1000                ; ...and the comparison that names the field
+    if (track != 0 && prev != track) -> restart
+```
+
+**Kind 1 is BGM.** Its tag `0x1000` is exactly the bit masked off at `0x17AEABC` before the
+comparison, so `track` lives in the same space as `prevBgm`. That mask is the proof, not the
+naming — the printf and the tag agree independently.
+
+### Where tracks come from
+
+**1 — event-script opcode 59/60** (handler `0x17AF1A8`, **18 bytes**, both opcodes share it;
+`w0 ^ 0x3C` distinguishes them). Operands are read straight off the script stream:
+
+| Word | Offset | Meaning |
+|---|---|---|
+| w0 | +0x00 | opcode, 59 or 60 |
+| w1 | +0x02 | **kind** (indexes the 8-entry table above; 1 = BGM) |
+| w2 | +0x04 | **track id** ← the editable field, a single u16 |
+| w3/w4 | +0x06 | fade/volume u32 (`w4` observed 35,37,38,48,49,52,64,68) |
+| w5/w6 | +0x0A | param u32 (always 0 in valid instructions) |
+| w7/w8 | +0x0E | param u32 (`w8` = 16) |
+
+**2 — the room record's `+0x22`** (the 0x3C record already located by
+`build_room_index.py`). `0x17AEDA8` fetches the room and fans its tail out:
+
+```
+soundReq(kind=1, room->0x22, room->0x28 & 0xF00000, room->0x28 & 0x70000,
+         room->0x2C, room->0x30, 0)
+tailcall 0x17AE1E0(room->0x24, room->0x34)      ; the SD_SE_START path
+```
+
+So `+0x22` is the room's BGM and `+0x24` its ambient SE — confirmed by the data, which reads
+0 for interiors and non-zero on field maps, and by `0x17AE1E0` being the function that prints
+`%s callNo: (SD_SE_START + %d)`. The room record's `+0x28` is byte-identical (`0x00440000`) to
+the value the scripts pass in the same argument slot, which cross-checks the whole contract.
+
+### Finding the cues — and the filter that makes it trustworthy
+
+A raw two-byte search for opcode 59/60 matches ordinary data freely, and the chainer in
+`eds_dis.py` is no help here: it recovers only ~20 sound commands across all 133 town
+sub-files, because it stops dead at the first opcode whose length is unrecovered. So the scan
+is raw, and a **structural filter** does the validating: `w3`, `w5`, `w6` and `w7` are zero in
+every disassembler-confirmed instruction, so a candidate is kept only if they are zero here.
+
+That filter keeps **1,175 of 1,294** raw kind-1 hits (91%) and collapses **33 candidate track
+ids to 13**. What it drops is the obvious garbage — 23908, 55482, 32768 — which is the check
+that says it separates signal from noise rather than merely shrinking the set. It cleans the
+other categories by the same margin (kind 2: 308→269, kind 3: 143→105). Every emitted offset
+re-reads the value the index stores for it (0 mismatches).
+
+### The 13 track ids
+
+| Track | Cues | Track | Cues | Track | Cues |
+|---|---|---|---|---|---|
+| 0x0200 | 465 | 0x0114 | 75 | 0x011E | 26 |
+| 0x0000 (stop) | 250 | 0x0124 | 58 | 0x0202 | 18 |
+| 0x0204 | 97 | 0x0129 | 35 | 0x0203 | 7 |
+| 0x0113 | 77 | 0x0201 | 33 | 0x0122 | 6 |
+| | | 0x0115 | 28 | | |
+
+They fall into two bands: **0x0200–0x0204**, and **0x0113–0x0129**. The per-area spread reads
+like the game — Budehuc Castle (HNKT) carries the widest variety (0x0124, 0x0129, 0x0113,
+0x0114, 0x0115, 0x011E, 0x0122), exactly right for the hub that cycles themes across chapters,
+while field maps (MORI, HAKA, KSKR, RVER) are almost entirely `0x0200`. That, plus `0x0200`
+also being the dominant value in the *room* records, is why `0x0200` is read as **"this map's
+own theme"** rather than one specific song — editing those 465 cues is the part most likely
+not to behave as a user expects. The `0x0113`–`0x0129` band is the meaningful set.
+
+### What is NOT resolved
+
+- **No id → song name.** 13 ids, no name table anywhere on the disc. Mapping them needs a
+  patched disc and an emulator, not another scan.
+- **Where a track id becomes audio.** Area archives contain no Sony audio headers (`SShd`,
+  `SSbd`, `VAGp`, `SEQp` — checked across AKMT/MORI/SOGE/HGB1 `data` sub-files, zero hits), so
+  the music itself lives in `SD/STR.BIN` (the `SCEI`/`VerS` container). **Replacing the audio
+  is out of reach**; only re-pointing which id is requested is in scope.
+- **Inserting new cues.** The 18-byte instruction means retargeting a track (2 bytes) or
+  silencing it (track = 0) is free, but adding a music change where the script has none would
+  need the script lengthened — a different and much riskier problem.
+
+### Side finding — the opcode table is self-naming
+
+273 of the 359 handlers reference a debug string that names their command
+(`EC_MODEL_INIT_E`, `EC_TOWN_DATA_LOAD_E`, `EC_FOOT_SE_CALL_%s_S`, …). Walk each handler from
+its entry to its first `jr $ra`, collect `lui`+`addiu`/`ori` pairs that resolve into the string
+region, and most of `eds_dis.NAMES` fills itself in. Note the handler table maps several
+opcodes to one address, and unrelated helper functions sit *between* handlers — so attribute a
+call site by scanning back to its `addiu $sp, $sp, -N` prologue, not by taking the nearest
+preceding handler entry. The nearest-entry shortcut put the room-audio consumer inside op
+65/66 and was wrong.
