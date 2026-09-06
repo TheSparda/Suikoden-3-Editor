@@ -654,9 +654,11 @@
     .sort((a, b) => a - b);
   const nextBoundary = (off) => { for (const b of BOUNDARIES) if (b > off) return b; return ELF_END; };
 
-  // ---- Hard Mode / bulk balance (mirror s3editor apply_hard_mode) ------------
-  const GROWTH_OFFS = { PWR: 4, SKL: 5, MAG: 6, REP: 7, MDF: 8, SPD: 9, LUK: 10, HP: 11 };
-  const HM_STATS = ["HP", "PWR", "MAG", "SKL", "MDF", "SPD", "REP", "LUK"];
+  // ---- difficulty presets (mirror s3editor apply_hard_mode) ------------------
+  // One preset spans three tables that live on three tabs: `growth` is applied by the Growth
+  // tab's bulk card, `spell` by the Spells tab's, `unite` by the Unites tab's. The numbers stay
+  // in one table here so "Hard" means the same thing wherever it is clicked.
+  const HM_STATS = ["HP", "PWR", "MAG", "SKL", "MDF", "SPD", "REP", "LUK"];   // display order only
   const HM_PRESETS = {
     tougher: { label: "Tougher", desc: "A gentle nerf — the party grows a bit slower.",
       growth: { HP: 0.8, PWR: 0.85, MAG: 0.85, SKL: 0.9, MDF: 0.9, SPD: 0.95, REP: 1, LUK: 1 }, spell: 0.9, unite: 0.9 },
@@ -807,6 +809,12 @@
     ["PWR growth", 4, 1, "num"], ["SKL growth", 5, 1, "num"], ["MAG growth", 6, 1, "num"], ["REP growth", 7, 1, "num"],
     ["MDF growth", 9, 1, "num"], ["SPD growth", 10, 1, "num"], ["LUK growth", 11, 1, "num"], ["HP growth", 0, 1, "num"],
   ];
+  // stat -> record offset, for the bulk growth scaler. DERIVED from LIST2_GROWTH on purpose:
+  // the old Balance tab carried its own hand-written copy that still held the pre-issue-#2
+  // mapping (MDF:8, SPD:9, LUK:10, HP:11), so every bulk preset wrote MDF's multiplier into the
+  // non-growth byte at +8, shifted MDF/SPD/LUK down one, put HP's multiplier on LUK and never
+  // touched real HP growth at +0. Deriving it means the two can't drift apart again.
+  const GROWTH_OFFS = Object.fromEntries(LIST2_GROWTH.map(([label, off]) => [label.replace(" growth", ""), off]));
   const LIST2_FIXED = [
     ["Fixed Skill 1 (id)", 80, 1, "skill"], ["Skill 1 level learned", 81, 1, "num"],
     ["Fixed Skill 2 (id)", 82, 1, "skill"], ["Skill 2 level learned", 83, 1, "num"],
@@ -853,6 +861,12 @@
                                             // bank (they pair, then keep their normal pose)
   let spSplitOpen = false, spReskinOpen = false;   // Spells-tab tool cards: collapsed until asked for,
                                                    // and kept open across the drawView() an Apply triggers
+  // Bulk-scaling cards (Growth / Spells / Unites — what used to be the one Balance tab).
+  // Each Apply re-renders its whole view so the per-record fields show the new numbers, so
+  // the open state AND the entered multipliers have to survive that redraw.
+  let gbOpen = false, gbMults = {};                // Growth: stat -> multiplier (absent = 1.00)
+  let spBulkOpen = false, spBulkPow = 1;           // Spells: whole-table Power multiplier
+  let unBulkOpen = false, unBulkPow = 1;           // Unites: same
   let gearCache = null;                     // {itemId: absStatsOffset}
   let gearAlias = {};                       // renamed gear: newName -> itemId. scanGear anchors a
                                             // record by its on-disc name, so a rename would hide it
@@ -1759,9 +1773,11 @@
     }, 0);
     if (roomDirty > roomCovered)
       rows.push({ g: "Encounters", t: `${roomDirty - roomCovered} more room byte(s) changed (per-area rate presets)` });
-    // Bulk edits (Balance presets) change many bytes not tied to one labeled field.
+    // Bulk growth scaling (the Growth tab's card) rewrites up to 80 x 8 bytes at once — far too
+    // many to name one by one — so it lands here as a count. The spell and unite power scales are
+    // small enough to register per record, so those DO appear by name above.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
-    if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. Balance multipliers)` });
+    if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. bulk growth scaling)` });
     return rows;
   }
   let recipeExported = false, saveNudged = false;
@@ -2169,7 +2185,7 @@
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["runes", "Runes"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
-    ["balance", "Balance"], ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
+    ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
 
   function renderEditor(size) {
@@ -2244,13 +2260,13 @@
     qa("#isoTabs [data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === VIEW));
     const hints = {
       chars: "Character starting stats (list 1): starting skills, ranks, equipped runes and gear.",
-      growth: "Per-character stat-growth rates, rune levels, fixed skills, and starting level (list 2).",
+      growth: "Per-character stat-growth rates, fixed skills, skill caps and starting level (list 2) — plus bulk scaling at the top of the tab: multiply every character's growth rate at once, with the Tougher / Hard / Brutal difficulty presets. This is where the old Balance tab went; the spell and unite halves of those presets are now on the Spells and Unites tabs.",
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and edit the status or enhance effect it carries. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: which spells a rune grants, who carries it and where it drops.",
-      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
@@ -2259,7 +2275,6 @@
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
-      balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
@@ -2288,7 +2303,6 @@
     else if (VIEW === "sets") drawSets(host);
     else if (VIEW === "food") drawFood(host);
     else if (VIEW === "text") drawText(host);
-    else if (VIEW === "balance") drawBalance(host);
     else if (VIEW === "encounter") drawEncounter(host);
     // The three views whose data is read on demand. drawEncounter draws its own global
     // half first — that lives in the ELF block — and gates only the per-area table.
@@ -2609,13 +2623,23 @@
       if (SEARCH && !nm.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, label: nm, base: base + i * stride });
     }
-    if (!rows.length) { host.innerHTML = `<div class="muted">no matches</div>`; return; }
-    host.innerHTML = rows.map((r) =>
+    const bulk = growthBulkHTML(rows);
+    if (!rows.length) {
+      host.innerHTML = bulk + `<div class="muted">no matches</div>`;
+      wireGrowthBulk(host, rows);
+      return;
+    }
+    host.innerHTML = bulk + rows.map((r) =>
       `<details class="char" data-rec="${r.base}"><summary>
-         <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span><span class="muted">#${r.i}</span></summary>
+         <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span><span class="muted">#${r.i}</span>
+         <span class="lv gr-sum">${growthSummary(r.base)}</span></summary>
          <div class="char-body"></div></details>`).join("");
+    wireGrowthBulk(host, rows);
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
+      // Keep the collapsed line honest while the record is open — an edit to a growth field
+      // has to move the number the summary is showing, not just the input it was typed in.
+      const refreshSum = () => { const s = d.querySelector(".gr-sum"); if (s) s.textContent = growthSummary(rec); };
       const build = () => {
         const body = d.querySelector(".char-body");
         const skillmax = [];
@@ -2630,11 +2654,16 @@
            <h4>Fixed skills &amp; start</h4><div class="grid">${recFields(rec, LIST2_FIXED, lbl)}</div>
            <h4>Skill maximum levels</h4>${presets}<div class="grid">${skillmax.join("")}</div>`;
         wireFields(d, rec, lbl);
+        body.addEventListener("change", refreshSum);     // change bubbles from the growth inputs
         qa("[data-cap]", body).forEach((b) => (b.onclick = () => { applyCapPreset(rec, lbl, b.dataset.cap); build(); }));
       };
       d.addEventListener("toggle", () => { if (d.open && !d.dataset.built) { build(); d.dataset.built = "1"; } });
     });
   }
+  // The eight growth bytes on one line, for the collapsed row — so a bulk multiplier's effect
+  // across the roster is readable without opening 80 records. HM_STATS order, matching the
+  // bulk card's inputs, so the two can be compared straight down the page.
+  const growthSummary = (rec) => HM_STATS.map((s) => `${s} ${r8(rec + GROWTH_OFFS[s])}`).join(" · ");
   // Bulk-set a character's 43 skill-max bytes: guide caps (from the Suikosource guide),
   // all-S, or all "Can't get". Staged like any edit (revertible; nothing written until Save).
   function applyCapPreset(rec, lbl, mode) {
@@ -3198,7 +3227,7 @@
         <span class="u">fills the fields — then Apply</span></div>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
         <span class="muted" id="rsInfo"></span></div></details>`;
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes <span class="u">\u00b7 applies to the rune reskin above too</span></label>`;
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes <span class="u">\u00b7 applies to both bulk edits above too</span></label>`;
 
     const rows = [];
     for (let i = 0; i < SPELL.count; i++) {
@@ -3239,10 +3268,12 @@
     host.innerHTML = sec("Status effects \u00b7 what an effect is worth") + fxCard()
       + sec("Special effect \u00b7 one spell only") + splitCard()
       + sec("Bulk edit \u00b7 a whole rune") + reskin
+      + sec("Bulk edit \u00b7 every spell") + powerBulkHTML("spell", spBulkPow, spBulkOpen)
       + sec("Every spell") + updBox + body;
 
     wireFx(host);
     wireSplit(host);
+    wirePowerBulk(host, "spell");
     const fold = (id, set) => { const d = q(id, host); if (d) d.ontoggle = () => set(d.open); };
     fold("#spSplitBox", (v) => { spSplitOpen = v; });
     fold("#spReskinBox", (v) => { spReskinOpen = v; });
@@ -3359,9 +3390,11 @@
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && !who.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, off, name, who });
     }
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes</label>`
+    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes <span class="u">· applies to the bulk edit above too</span></label>`
       + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
-    host.innerHTML = updBox + (rows.map(({ i, off, name, who }) => {
+    const sec = (t) => `<div class="secdiv"><span>${t}</span></div>`;
+    host.innerHTML = sec("Bulk edit · every unite") + powerBulkHTML("unite", unBulkPow, unBulkOpen)
+      + sec("Every unite") + updBox + (rows.map(({ i, off, name, who }) => {
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
       const radVal = r8(off + UNITE.radius), chVal = r16(off + UNITE.chance);
       const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
@@ -3405,6 +3438,7 @@
       const dEl = d.querySelector(".undesc");
       if (dEl) { const dptr = r32(off + 0x0C), doff = vaOff(dptr), dmax = origSlotLen(dptr); dEl.value = strFrom(BUF, doff, dmax); markField(dEl, doff, dmax, "text"); }
     };
+    wirePowerBulk(host, "unite");
     const un = q("#unUpd", host); if (un) un.onchange = (e) => { unDescOn = e.target.checked; };
     qa(".un", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, k = el.dataset.k, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
@@ -4943,68 +4977,185 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     });
   }
 
-  // ---- Balance (Hard Mode / bulk) --------------------------------------------
-  // All scaling is relative to the ORIGINAL on-disk value, so presets are idempotent
-  // (re-applying "Hard" doesn't compound) and setting a multiplier to 1 restores the field.
-  function applyHardMode(growthMults, spellMult, uniteMult) {
-    let gN = 0, sN = 0, uN = 0;
-    const [gb, gs] = TABLES.list2;
-    for (let i = 0; i < LIST_COUNT.list2; i++) {
-      for (const stat in GROWTH_OFFS) {
-        const m = growthMults[stat]; if (m == null) continue;
-        const off = gb + i * gs + GROWTH_OFFS[stat];
-        const nv = Math.max(0, Math.min(15, Math.round(o8(off) * m)));   // growth bytes clamp 0..15
-        if (nv !== r8(off)) gN++;
-        writeW(off, 1, nv);
+  // ---- bulk scaling (growth rates / spell power / unite power) ----------------
+  // What used to be the single "Balance" tab. It was really three unrelated tables behind one
+  // panel, so each half now lives on the tab that shows the records it rewrites: growth on
+  // Growth, spell Power on Spells, unite Power on Unites. HM_PRESETS still defines all three
+  // in one place, so "Hard" means the same thing on every tab.
+  //
+  // Every scale is relative to the ORIGINAL on-disk value, never the current one, which is what
+  // makes presets idempotent (re-applying "Hard" doesn't compound) and 1.00x a clean restore
+  // rather than another edit.
+  const gbMult = (stat) => (gbMults[stat] == null ? 1 : gbMults[stat]);
+  // The list2 records a bulk growth scale would touch: every character, or just the ones the
+  // tab's filter is showing.
+  function growthRecs(scope, rows) {
+    if (scope === "filter" && rows) return rows.map((r) => r.i);
+    return Array.from({ length: LIST_COUNT.list2 }, (_, i) => i);
+  }
+  function growthOffs(recs) {
+    const [gb, gs] = TABLES.list2, out = [];
+    for (const i of recs) for (const stat in GROWTH_OFFS) out.push([stat, gb + i * gs + GROWTH_OFFS[stat]]);
+    return out;
+  }
+  // Scaling starts from the pristine bytes, so it silently discards anything typed into a
+  // growth field first. Count those up front and let the caller ask before throwing them away.
+  const dirtyGrowth = (recs) => growthOffs(recs).reduce((n, [, off]) => n + (isDirty(off, 1) ? 1 : 0), 0);
+  function scaleGrowth(mults, recs) {
+    let n = 0;
+    for (const [stat, off] of growthOffs(recs)) {
+      const m = mults[stat]; if (m == null) continue;
+      const nv = Math.max(0, Math.min(15, Math.round(o8(off) * m)));   // growth bytes clamp 0..15
+      if (nv !== r8(off)) n++;
+      writeW(off, 1, nv);
+    }
+    return n;
+  }
+  // Spell and unite Power share a record shape: name at +0x08, description at +0x0C, power at
+  // +0x1C. 94 + 38 records is few enough to reg() every one, so a bulk scale produces named
+  // review rows ("Fire Lv1 · Power") instead of an anonymous byte count. `updateDesc` honours
+  // the tab's own "also rewrite the damage number" toggle, so a bulk scale and a hand-typed
+  // Power leave the description in the same state.
+  function powerDirty(TBL) {
+    let n = 0;
+    for (let i = 0; i < TBL.count; i++) if (isDirty(TBL.off + i * TBL.stride + 0x1C, 4)) n++;
+    return n;
+  }
+  function scalePower(TBL, mult, updateDesc) {
+    let n = 0, trunc = 0;
+    for (let i = 0; i < TBL.count; i++) {
+      const off = TBL.off + i * TBL.stride, po = off + 0x1C;
+      const nv = Math.max(0, Math.min(0xFFFFFFFF, Math.round(o32(po) * mult)));
+      if (nv === r32(po)) continue;                       // already there — nothing to stage
+      const name = strAt(r32(off + 0x08));
+      writeW(po, 4, nv); reg(po, 4, "num", name, "Power"); n++;
+      if (updateDesc) {
+        const dr = rewriteDesc(r32(off + 0x0C), (t) => descPower(t, nv), name, "Description");
+        if (dr && dr.truncated) trunc++;
       }
     }
-    if (spellMult != null) for (let i = 0; i < SPELL.count; i++) {
-      const off = SPELL.off + i * SPELL.stride + 0x1C, nv = Math.max(0, Math.min(0xFFFFFFFF, Math.round(o32(off) * spellMult)));
-      if (nv !== r32(off)) sN++; writeW(off, 4, nv);
-    }
-    if (uniteMult != null) for (let i = 0; i < UNITE.count; i++) {
-      const off = UNITE.off + i * UNITE.stride + 0x1C, nv = Math.max(0, Math.min(0xFFFFFFFF, Math.round(o32(off) * uniteMult)));
-      if (nv !== r32(off)) uN++; writeW(off, 4, nv);
-    }
-    return { gN, sN, uN };
+    return { n, trunc };
   }
-  function drawBalance(host) {
-    const presetBtns = Object.entries(HM_PRESETS).map(([k, p]) =>
-      `<button class="chip" data-preset="${k}" title="${esc2(p.desc)}">${p.label}</button>`).join("");
-    const statRows = HM_STATS.map((s) =>
-      `<label class="field"><span>${s} growth ×</span>
-        <input type="number" class="hm-g" data-stat="${s}" min="0" max="4" step="0.05" value="1"></label>`).join("");
-    host.innerHTML = `
-      <div class="warnbox" style="margin-bottom:10px">This is a party <b>nerf</b> tool. It lowers how fast your characters grow (and optionally your spell/unite power) to make the game harder. Enemies can't be buffed directly in this ROM. Values scale from the ISO's originals, so presets don't stack.</div>
-      <div class="bag-h">Presets</div>
-      <div class="subtabs" style="margin-bottom:12px">${presetBtns}<button class="chip" data-preset="reset">Reset to 1.00×</button></div>
-      <div class="bag-h">Growth-rate multipliers <span class="u">1.00 = unchanged</span></div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">${statRows}</div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:10px">
-        <label class="field"><span>Spell power ×</span><input type="number" id="hm-spell" min="0" max="4" step="0.05" value="1"></label>
-        <label class="field"><span>Unite power ×</span><input type="number" id="hm-unite" min="0" max="4" step="0.05" value="1"></label>
-      </div>
+
+  // ---- bulk scaling: the Growth tab's card -----------------------------------
+  // Collapsed by default so it never pushes the 80-character roster down the page, but its
+  // summary names the presets so the lever is still findable now that the tab is gone.
+  function growthBulkHTML(rows) {
+    const presets = Object.entries(HM_PRESETS).map(([k, p]) =>
+      `<button type="button" class="chip mini" data-gpreset="${k}" title="${esc2(p.desc)}">${p.label}</button>`).join("");
+    const fields = HM_STATS.map((s) =>
+      `<label class="field"><span>${s} ×</span>
+        <input type="number" class="gb-m" data-stat="${s}" min="0" max="4" step="0.05" value="${gbMult(s)}"></label>`).join("");
+    // The scope picker only exists while a filter is active — with an empty box there is
+    // nothing to scope to, and an inert "all characters" dropdown would just invite a misread.
+    const scoped = SEARCH && rows.length && rows.length < LIST_COUNT.list2;
+    const scope = scoped
+      ? `<label class="field" style="max-width:22em"><span>Apply to</span><select id="gb-scope">
+           <option value="all">all ${LIST_COUNT.list2} characters</option>
+           <option value="filter">the ${rows.length} matching “${esc2(SEARCH)}”</option></select></label>`
+      : "";
+    return `<details class="card fold" id="gbBox" style="margin:0 0 12px"${gbOpen ? " open" : ""}>
+      <summary class="bag-h"><span class="chev">▸</span>Bulk scaling
+        <span class="u">multiply every character's growth rate at once · Tougher / Hard / Brutal</span></summary>
+      <div class="muted" style="margin:0 0 10px">Scales from the disc's <b>original</b> numbers, not the
+        current ones — so presets don't stack, and 1.00× puts everything back rather than staging
+        another edit. Growth bytes cap at <b>15</b>, so multipliers above 1 saturate quickly. This nerfs
+        the <i>party</i>; to push the other side up, use the bulk multipliers on the <b>Enemies</b> and
+        <b>War</b> tabs. The matching spell and unite power presets are on the <b>Spells</b> and
+        <b>Unites</b> tabs.</div>
+      <div class="row" style="flex-wrap:wrap;gap:4px;margin:0 0 10px">
+        <span class="muted">Presets:</span>${presets}
+        <button type="button" class="chip mini" data-gpreset="reset">Reset to 1.00×</button>
+        <span class="muted">fills the fields — then Apply</span></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">${fields}</div>
+      ${scope ? `<div style="margin-top:10px">${scope}</div>` : ""}
       <div class="row" style="margin-top:12px">
-        <button class="primary" id="hm-apply">Stage these multipliers</button>
-        <span class="muted" id="hm-out"></span>
-      </div>`;
-    const gInputs = qa(".hm-g", host);
-    const setMults = (g, sp, up) => {
-      gInputs.forEach((i) => { i.value = g[i.dataset.stat] != null ? g[i.dataset.stat] : 1; });
-      q("#hm-spell", host).value = sp; q("#hm-unite", host).value = up;
-    };
-    qa("[data-preset]", host).forEach((b) => (b.onclick = () => {
-      if (b.dataset.preset === "reset") return setMults({}, 1, 1);
-      const p = HM_PRESETS[b.dataset.preset]; setMults(p.growth, p.spell, p.unite);
+        <button class="primary mini" id="gb-apply">Apply multipliers</button>
+        <span class="muted" id="gb-out"></span></div></details>`;
+  }
+  function wireGrowthBulk(host, rows) {
+    const box = q("#gbBox", host); if (!box) return;
+    box.ontoggle = () => { gbOpen = box.open; };
+    const inputs = qa(".gb-m", host);
+    const readInputs = () => { const g = {}; inputs.forEach((i) => (g[i.dataset.stat] = +i.value || 0)); return g; };
+    const fill = (g) => inputs.forEach((i) => { i.value = g[i.dataset.stat] != null ? g[i.dataset.stat] : 1; });
+    inputs.forEach((i) => (i.onchange = () => { gbMults = readInputs(); }));
+    qa("[data-gpreset]", host).forEach((b) => (b.onclick = () => {
+      const k = b.dataset.gpreset;
+      gbMults = k === "reset" ? {} : { ...HM_PRESETS[k].growth };
+      fill(gbMults);
+      setStatus(k === "reset" ? "Reset filled — Apply to restore the disc's growth rates."
+        : `“${HM_PRESETS[k].label}” filled — then Apply.`, "ok");
     }));
-    q("#hm-apply", host).onclick = () => {
-      const g = {}; gInputs.forEach((i) => (g[i.dataset.stat] = +i.value || 0));
-      const sp = +q("#hm-spell", host).value, up = +q("#hm-unite", host).value;
-      const res = applyHardMode(g, sp, up);
-      updateDirtyBadge();
-      q("#hm-out", host).textContent =
-        `Staged ${res.gN} growth byte(s)` + (res.sN ? `, ${res.sN} spell power(s)` : "") + (res.uN ? `, ${res.uN} unite power(s)` : "") + ". Review, then Save.";
-      setStatus("Balance multipliers staged.", "ok");
+    q("#gb-apply", host).onclick = () => {
+      gbMults = readInputs();
+      const sel = q("#gb-scope", host);
+      const recs = growthRecs(sel ? sel.value : "all", rows);
+      const hand = dirtyGrowth(recs);
+      if (hand && !confirm(`${hand} growth value(s) you edited by hand will be overwritten — bulk ` +
+        `scaling always starts from the disc's original numbers. Continue?`)) return;
+      const n = scaleGrowth(gbMults, recs);
+      const where = sel && sel.value === "filter" ? `${recs.length} character(s)` : `all ${recs.length} characters`;
+      drawView();                                   // per-character fields must show the new numbers
+      const out = q("#gb-out");
+      if (out) out.textContent = n ? `Staged ${n} growth byte(s) across ${where}. Review, then Save.`
+        : `Nothing to change across ${where} — those are already the values on disc.`;
+      setStatus(n ? "Growth multipliers staged." : "Growth rates already match those multipliers.", n ? "ok" : "warn");
+    };
+  }
+
+  // ---- bulk scaling: the Spells / Unites power cards --------------------------
+  // One builder for both, since the two tables only differ in what a record is called.
+  function powerBulkHTML(kind, cur, open) {
+    const presets = Object.entries(HM_PRESETS).map(([k, p]) =>
+      `<button type="button" class="chip mini" data-pbpreset="${k}" title="${esc2(p.desc)}">${p.label} (×${p[kind]})</button>`).join("");
+    const noun = kind === "spell" ? "spell" : "unite";
+    const sibling = kind === "spell" ? "Unites" : "Spells";
+    return `<details class="card fold" id="pbBox" style="margin:0 0 12px"${open ? " open" : ""}>
+      <summary class="bag-h"><span class="chev">▸</span>Bulk power
+        <span class="u">multiply every ${noun}'s Power at once · Tougher / Hard / Brutal</span></summary>
+      <div class="muted" style="margin:0 0 10px">Scales from the disc's <b>original</b> Power, not the
+        current one — presets don't stack and 1.00× puts every ${noun} back. Each changed record is
+        listed by name in the review. The matching growth preset is on the <b>Growth</b> tab, and the
+        ${noun === "spell" ? "unite" : "spell"} one on <b>${sibling}</b>.</div>
+      <div class="row" style="flex-wrap:wrap;gap:4px;margin:0 0 10px">
+        <span class="muted">Presets:</span>${presets}
+        <button type="button" class="chip mini" data-pbpreset="reset">Reset to 1.00×</button></div>
+      <div class="row" style="flex-wrap:wrap">
+        <label class="field" style="max-width:12em"><span>Power ×</span>
+          <input type="number" id="pb-m" min="0" max="4" step="0.05" value="${cur}"></label>
+        <button class="primary mini" id="pb-apply">Apply to all ${noun}s</button>
+        <span class="muted" id="pb-out"></span></div></details>`;
+  }
+  function wirePowerBulk(host, kind) {
+    const box = q("#pbBox", host); if (!box) return;
+    const TBL = kind === "spell" ? SPELL : UNITE;
+    const noun = kind === "spell" ? "spell" : "unite";
+    box.ontoggle = () => { if (kind === "spell") spBulkOpen = box.open; else unBulkOpen = box.open; };
+    const inp = q("#pb-m", host);
+    const remember = (v) => { if (kind === "spell") spBulkPow = v; else unBulkPow = v; };
+    inp.onchange = () => remember(+inp.value || 0);
+    qa("[data-pbpreset]", host).forEach((b) => (b.onclick = () => {
+      const k = b.dataset.pbpreset, v = k === "reset" ? 1 : HM_PRESETS[k][kind];
+      inp.value = v; remember(v);
+      setStatus(k === "reset" ? `Reset filled — Apply to restore every ${noun}'s Power.`
+        : `“${HM_PRESETS[k].label}” filled — then Apply.`, "ok");
+    }));
+    q("#pb-apply", host).onclick = () => {
+      const mult = +inp.value || 0; remember(mult);
+      const hand = powerDirty(TBL);
+      if (hand && !confirm(`${hand} ${noun} Power value(s) you edited by hand will be overwritten — bulk ` +
+        `scaling always starts from the disc's original numbers. Continue?`)) return;
+      const descOn = kind === "spell" ? spDescOn : unDescOn;
+      const res = scalePower(TBL, mult, descOn);
+      drawView();                                   // per-record Power fields + summaries
+      const out = q("#pb-out");
+      if (out) out.textContent = res.n ? `Staged ${res.n} ${noun} Power value(s). Review, then Save.`
+        : `Nothing to change — every ${noun} already carries that Power.`;
+      if (res.trunc) setStatus(`Staged ${res.n} ${noun} Power value(s) — but ${res.trunc} description(s) ` +
+        `were at their length limit, so their DMG number couldn't be rewritten. Edit those descriptions to fit.`, "warn");
+      else setStatus(res.n ? `${noun[0].toUpperCase()}${noun.slice(1)} power multiplier staged.`
+        : `Every ${noun} already matches that multiplier.`, res.n ? "ok" : "warn");
     };
   }
 

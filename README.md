@@ -138,7 +138,10 @@ only and needs the streaming *save patched copy* path, which the in-place write 
 The list is limited to names that never occur inside a longer word, since a same-length replace
 would corrupt those too — which is why *Luc* isn't offered: "Lucia", "Luck"),
 **Growth** (stat-growth rates, fixed skills, and the 43-skill maximum-level caps with
-one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weapons** (ATK
+one-click presets: *Set to guide caps*, *Max all*, *Clear* — plus **bulk scaling**, which
+multiplies every character's growth rate at once and carries the idempotent *Tougher / Hard /
+Brutal* difficulty presets, optionally scoped to whatever the filter box is showing),
+**Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**,
 **Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows for
 it, and edit the status or enhance effect it carries — plus which spells it grants, who carries
@@ -151,8 +154,9 @@ picker, tooltip and list in the editor for that ISO, and the rune stays findable
 original name),
 **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
-poison* — that edits every spell a rune grants at once, and optional description rewrites),
-**Unites**, **Mounts** (both of the game's mount systems — the per-character **assigned horse**
+poison* — that edits every spell a rune grants at once, a **bulk Power scale** for the whole
+table, and optional description rewrites),
+**Unites** (including the same bulk Power scale), **Mounts** (both of the game's mount systems — the per-character **assigned horse**
 that puts the six Zexen Knights on horseback in the field *and* in battle, and the hard-coded
 **three-pair** battle table, stock *Hugo+Fubar / Futch+Bright / Franz+Ruby*, which can be
 re-pointed so **any rider with a mounted-battle animation bank rides Fubar, Bright or Ruby** —
@@ -172,7 +176,7 @@ set-bonus constants patched straight into the game code — potch multiplier, co
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
 the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
-original byte length), **Balance** (idempotent hard-mode multiplier presets), **Encounter**
+original byte length), **Encounter**
 (a global **random-encounter rate** as a plain percentage, plus the three per-movement
 multipliers it is made of — see below), **Enemies** (the full
 per-area enemy editor — stats, rewards, drops, bulk multipliers, and each zone's spawns &
