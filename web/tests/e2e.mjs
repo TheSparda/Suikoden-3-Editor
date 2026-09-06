@@ -2952,10 +2952,26 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   // progress header counts recruited over the tracked set (Hugo/Geddoe/Rico = 3 recruited)
   check("stars progress shows recruited count", /\b3\b/.test(await page.textContent(".starsnum")));
   check("progress bar renders", (await page.locator(".starsbar > span").count()) === 1);
-  // default filter is "missing": recruited stars should be hidden
-  check("default 'missing' filter hides recruited stars", (await page.locator('.starstbl tbody tr:has-text("Hugo")').count()) === 0);
+  // default filter is "missing": recruited stars should be hidden. Match on the character
+  // cell, not the row — a stage header names protagonists in its blurb.
+  check("default 'missing' filter hides recruited stars",
+    (await page.locator('.starstbl tbody tr:not(.phaserow) td:has-text("Hugo")').count()) === 0);
   // an optional missing star carries its guide how-to as a full-width row
   check("optional missing star shows a how-to row", (await page.locator(".starstbl tr.howrow .howto").count()) >= 1);
+  // the checklist is laid out in the recruitment guide's order, cut into that order's stages
+  check("stage headers carry their own progress", (await page.locator(".starstbl tr.phaserow .phprog").count()) >= 2);
+  const ord = (await page.locator(".starstbl tbody tr:not(.phaserow):not(.howrow) td.ordn").allTextContents())
+    .map((t) => (t.trim() === "–" ? Infinity : +t.trim()));
+  check("rows run in guide order", ord.length >= 2 && ord.every((n, i) => i === 0 || ord[i - 1] <= n));
+  check("Star of Destiny names are shown", /^[A-Z][a-z]+$/.test((await page.locator(".starstbl td.sod").first().textContent()).trim()));
+  // "next up" points at the first OPTIONAL star still missing (Chris is a story join)
+  check("next-up names the first gettable star", /Jeane/.test(await page.textContent(".nextup")));
+  // a stage folds away, taking its rows with it
+  const rowsBefore = await page.locator(".starstbl tbody tr:not(.phaserow)").count();
+  await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);
+  check("a stage collapses", (await page.locator(".starstbl tbody tr:not(.phaserow)").count()) < rowsBefore);
+  await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);
+  check("a stage expands again", (await page.locator(".starstbl tbody tr:not(.phaserow)").count()) === rowsBefore);
   // the per-row +recruit action stages a recruit and bumps the count to 4
   await page.selectOption("#rteam", "Chris").catch(() => {});
   const before = await page.textContent(".starsnum");
