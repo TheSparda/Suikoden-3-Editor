@@ -589,6 +589,192 @@
     return enc && enc.every((x, i) => x === w[i]) ? p : null;
   };
 
+
+  // ---- passive support runes, forced on without equipping them ---------------
+  // The 23 support runes (Fortune, Balance, Fury, Wall...) grant no spells and have no battle
+  // command: each one is a passive the engine asks about at the moment it matters. Every one of
+  // those asks is the same shape --- "does this character have item N equipped?" --- and it goes
+  // through one of three helpers, all of which walk the character's seven equip slots (slot 7
+  // being the three rune slots) looking for that exact item id:
+  //
+  //   VA 0x16CB380  FindEquipSlot(charRecord, itemId)   -> slot 1..7, or 0
+  //   VA 0x16CB438  FindEquipSlot(charId, itemId)       -> resolves the id, then the above
+  //   VA 0x181B3B0  UnitHasItem(unit, itemId)           -> battle side; IGNORES its argument and
+  //                                                        resolves the ACTING unit itself, then
+  //                                                        calls 0x16CB270, the same slot walk
+  //
+  // 51 sites across 22 runes, all decoded and byte-verified (see PS_BATTLE below and the offsets
+  // doc). Only TWO of them are offered as switches, and the reason is scope.
+  //
+  // WHY ONLY THE FIELD ONES. A call site is exactly two words --- `jal <helper>` and its branch
+  // delay slot --- with the result tested in $v0 immediately after. Dropping the call frees both
+  // words, and one of them has to keep the delay-slot instruction (at five sites it is not the
+  // argument setup, and at three of those it is arithmetic the next instruction consumes). That
+  // leaves ONE word for the answer, which is enough for "yes" and not enough for "yes, if this is
+  // <character>": reading the id off the record, comparing it and normalising the result to a
+  // boolean is three instructions minimum. The battle-side helper is worse than that --- it never
+  // receives the character at all, so at those 23 sites there is nothing to test against. So an
+  // in-battle passive cannot be made per-unit here; forced on, it would be on for whichever unit
+  // the engine is asking about, enemies included. Those sites are listed, with what they do, and
+  // deliberately not switchable. Doing it properly means relocating code into free space in the
+  // ELF and calling out to it, which is a different job from flipping a word in place.
+  //
+  // The two field sites have no such problem. Both live in the field-step module and both are
+  // LOOPS OVER PARTY SLOTS 1-6 (`0x16FFCA8(slot)`), asking once per slot:
+  //
+  //   0x1702740  the encounter roll   -> `movn $s1,$s3,$v0`: any yes turns on the weak-foe skip
+  //   0x17029A0  the walk-heal        -> a yes heals THAT slot (`0x16C8790`)
+  //
+  // so answering yes there means "everyone in your party has it", which is exactly what the rune
+  // does when six people wear one. There are no enemies on the field to leak to.
+  //
+  // The patch, then: move the delay-slot instruction up into the jal's word, and write the answer
+  // into the word it vacated. Order is preserved, nothing is inserted, and the stock two words go
+  // back byte-for-byte, so turning a rune off again stages nothing.
+  //
+  // The answer is `sltu $v0,$zero,$a0` rather than a bare 1, at both sites. $a0 is the party-slot
+  // handle `0x16FFCA8` just returned, and it is 0 for an empty slot --- the walk-heal site tests
+  // exactly that itself two instructions earlier (`beqz $s0`). So an empty slot still answers no,
+  // which is what the stock code does.
+  //
+  // Fortune ("Doubles experience value gained") is NOT here, and the searches that came up empty
+  // are worth recording: its item id 440 (0x1B8) appears eight times as an instruction immediate
+  // anywhere in the ELF and every one is a struct offset or a stack displacement, never an
+  // argument; no call to any of the three helpers passes it; and no data table pairs it with
+  // another support-rune id. Whatever grants the EXP bonus does not ask the question the other
+  // 22 ask.
+  const PS_YES = 0x0004102B;          // sltu $v0,$zero,$a0 — yes, for an occupied party slot
+  const PASSIVES = [
+    { id: 0x1B9, where: "field",
+      what: "The whole rune. The field encounter roll (VA 0x1702740) walks party slots 1–6 asking "
+        + "this and turns on the weak-foe skip if any of them says yes, so one answer covers the party.",
+      sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
+    { id: 0x1BD, where: "field",
+      what: "The walking half only — the field heal loop (VA 0x17029A0), which heals each party "
+        + "slot that answers yes. The “15HP each combat turn” half is a battle site and is "
+        + "listed below with the rest, unswitched.",
+      sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" }] },
+  ];
+  // Decoded, verified, and deliberately NOT offered — see "WHY ONLY THE FIELD ONES" above. Kept
+  // in code rather than in a comment so the tab can name each one, and so the same bounds and
+  // jal-target checks that guard the switchable sites guard these too (web/tests/validate.mjs).
+  const PS_BATTLE = [
+    { id: 0x1BA, what: "Multiplies the high-damage-hit chance by 150/100, at both sites that roll it.",
+      sites: [{ off: 0x10407C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" },
+              { off: 0x10413C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" }] },
+    { id: 0x1BB, what: "Multiplies the counter-attack chance by 150/100 at all three sites that roll it.",
+      sites: [{ off: 0x1038E0, jal: 0x0C5B2CE0, ds: 0x240501BB, k: "rec" },
+              { off: 0x103B54, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" },
+              { off: 0x103D28, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" }] },
+    { id: 0x1BC, what: "Multiplies SPD by 150/100.",
+      sites: [{ off: 0x10FD28, jal: 0x0C5B2CE0, ds: 0x240501BC, k: "rec" }] },
+    { id: 0x1BD, what: "Sunbeam's other half: the +15 HP a combat turn adds (the literal "
+        + "`addiu $v0,$v0,0xF` right after the check). The walking half IS switchable, above.",
+      sites: [{ off: 0x261184, jal: 0x0C5B2CE0, ds: 0x240501BD, k: "rec" }] },
+    { id: 0x1BE, what: "Doubles PDF at the damage site — and turns on the other half of the rune at "
+        + "eight battle-action sites, which is what stops the character doing anything else.",
+      sites: [{ off: 0x104368, jal: 0x0C5B2CE0, ds: 0x02129821, k: "rec" },
+              { off: 0x110F74, jal: 0x0C5B2D0E, ds: 0x240501BE, k: "id" },
+              { off: 0x25C844, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25C8F8, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CA60, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CB18, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CBBC, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CC54, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CC9C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CD5C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" }] },
+    { id: 0x1BF, what: "Opens the dodge roll — the code right after is `rand(100) < 30`, so the 30% "
+        + "is the rune's real number.",
+      sites: [{ off: 0x1037F4, jal: 0x0C5B2CE0, ds: 0x240501BF, k: "rec" }] },
+    { id: 0x1C0, what: "The critical-hit self-heal.",
+      sites: [{ off: 0x245D6C, jal: 0x0C606CEC, ds: 0x240501C0, k: "unit" }] },
+    { id: 0x1C1, what: "The magic-reflect roll.",
+      sites: [{ off: 0x105200, jal: 0x0C5B2CE0, ds: 0x0200202D, k: "rec" }] },
+    { id: 0x1C2, what: "Clears the unbalance status bit (0x10) in both places the state is rebuilt.",
+      sites: [{ off: 0x1100AC, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" },
+              { off: 0x1100E0, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" }] },
+    { id: 0x1C3, what: "Zeroes incoming damage of one element and doubles another, at all four sites "
+        + "that scale elemental damage.",
+      sites: [{ off: 0x104858, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
+              { off: 0x104FC0, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
+              { off: 0x10544C, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
+              { off: 0x1115C4, jal: 0x0C5B2CE0, ds: 0xAFA40000, k: "rec" }] },
+    { id: 0x1C4, what: "Three sites in the target picker: the one that decides a single-target attack "
+        + "may not land here.",
+      sites: [{ off: 0x22E694, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
+              { off: 0x22EB04, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
+              { off: 0x230B44, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" }] },
+    { id: 0x1C5, what: "The other side of the same picker — preferred target.",
+      sites: [{ off: 0x230B64, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" },
+              { off: 0x23AC20, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" }] },
+    { id: 0x1C6, what: "The auto-item action, in the turn planner and again where the action is issued.",
+      sites: [{ off: 0x23B9CC, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" },
+              { off: 0x259C48, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" }] },
+    { id: 0x1C7, what: "Doubles damage dealt AND damage taken — the two sites are the attacker's copy "
+        + "and the defender's, and the shifts are literal `sll ...,1`.",
+      sites: [{ off: 0x1047BC, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" },
+              { off: 0x1047D0, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" }] },
+    { id: 0x1C8, what: "Moves half of the SKL-derived figure into MGC. Two sites: one adds the half, "
+        + "one halves what is left.",
+      sites: [{ off: 0x10FD64, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" },
+              { off: 0x10FD9C, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" }] },
+    { id: 0x1C9, what: "The same pair of sites for REP into PWR.",
+      sites: [{ off: 0x10FDBC, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" },
+              { off: 0x10FDF4, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" }] },
+    { id: 0x1CA, what: "Sets the asleep state at battle start and the berserk state on waking — the "
+        + "two status writes right after each check.",
+      sites: [{ off: 0x244B1C, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" },
+              { off: 0x25DFC8, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" }] },
+    { id: 0x1CB, what: "The turn-4 wake-up.",
+      sites: [{ off: 0x2611C8, jal: 0x0C606CEC, ds: 0x240501CB, k: "unit" }] },
+    { id: 0x1CC, what: "Always berserk: one site in the stat module and two that set the state in battle.",
+      sites: [{ off: 0x105634, jal: 0x0C5B2CE0, ds: 0x240501CC, k: "rec" },
+              { off: 0x25DFE8, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" },
+              { off: 0x2610D0, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" }] },
+    { id: 0x1CD, what: "The berserk-on-heavy-damage trigger.",
+      sites: [{ off: 0x244B3C, jal: 0x0C606CEC, ds: 0x240501CD, k: "unit" }] },
+    { id: 0x1CE, what: "Clamps the damage dealt (the site writes a literal 5 over it) and turns on the "
+        + "item-drop side.",
+      sites: [{ off: 0x1035E0, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
+              { off: 0x104838, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
+              { off: 0x2463CC, jal: 0x0C606CEC, ds: 0x240501CE, k: "unit" }] },
+  ];
+  // Fortune is the one support rune with no decoded site at all (see the note above). Named here
+  // so the tab can say so by name rather than just leaving a gap in the list.
+  const PS_UNMAPPED = [0x1B8];
+  // A switchable site is one of three things and nothing else: the stock two words, the forced
+  // two words, or something this editor did not write. The third case goes read-only rather than
+  // being overwritten, the same rule the Status-effect controls follow.
+  function psSiteState(s) {
+    if (!inBlk(s.off, 8)) return "oob";
+    const a = readW(s.off, 4) >>> 0, b = readW(s.off + 4, 4) >>> 0;
+    if (a === (s.jal >>> 0) && b === (s.ds >>> 0)) return "stock";
+    if (a === (s.ds >>> 0) && b === (PS_YES >>> 0)) return "forced";
+    return "other";
+  }
+  // ...and a rune is the summary of its sites. "mixed" is a real state worth naming: a disc
+  // patched by an older recipe, or one where a site went read-only after the rest were set.
+  function psState(p) {
+    const st = p.sites.map(psSiteState);
+    if (st.some((x) => x === "oob" || x === "other")) return "unknown";
+    return st.every((x) => x === "forced") ? "forced" : st.every((x) => x === "stock") ? "stock" : "mixed";
+  }
+  function psWrite(p, on) {
+    let n = 0;
+    p.sites.forEach((s, i) => {
+      const st = psSiteState(s);
+      if (st !== "stock" && st !== "forced") return;          // never write over a site we can't read
+      writeW(s.off, 4, on ? s.ds : s.jal);
+      writeW(s.off + 4, 4, on ? PS_YES : s.ds);
+      const nm = REF.items[p.id] || `rune ${hex(p.id, 3)}`;
+      const tag = p.sites.length > 1 ? ` (site ${i + 1} of ${p.sites.length})` : "";
+      reg(s.off, 4, "word", "Passive runes", `${nm} always on${tag} — the check`);
+      reg(s.off + 4, 4, "word", "Passive runes", `${nm} always on${tag} — the answer`);
+      n++;
+    });
+    return n;
+  }
+
   const mipsSll = (rd, rt, sa) => (rt << 16) | (rd << 11) | (sa << 6);
   function potchWords(m) {      // -> [sll word, addu word] or null if unsupported
     if (m === 1) return [0, 0];
@@ -1306,6 +1492,7 @@
     if (kind === "flags14") return decodeTarget(v);
     if (kind === "status") return decodeF18(v);
     if (kind === "imm16") return String(v & 0xFFFF);   // a patched MIPS word: only the immediate moved
+    if (kind === "word") return "0x" + hex(v >>> 0, 8);  // ...and one where the whole word was replaced
     if (kind === "f32") { const f = f32Of(v); return Number.isFinite(f) ? String(+f.toFixed(3)) : "?"; }
     if (kind === "spellid") {                          // ...and that immediate is a 1-based spell number
       const gid = v & 0xFFFF;
@@ -2232,7 +2419,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["runes", "Runes"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["runes", "Runes"], ["passives", "Passives"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
 
@@ -2314,6 +2501,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
+      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Both switchable sites are byte-checked against a pristine disc, but neither has been watched working in play. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -2343,6 +2531,7 @@
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "runes") drawRunes(host);
+    else if (VIEW === "passives") drawPassives(host);
     else if (VIEW === "mounts") drawMounts(host);
     else if (VIEW === "movement") drawMoveSpeed(host);
     else if (VIEW === "story") drawStory(host);
@@ -6750,6 +6939,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         spell to four. Whichever slots you use, the levels a character has to reach before the later ones
         unlock are <b>not</b> in this record and are not editable yet; test a reassigned rune in game
         before building a run around it.
+        What those runes do instead is engine code, and that code is on the <b>Passives</b> tab: the two
+        that work outside battle can be switched on for the whole party without the rune, and the rest are
+        listed there with what they do and why they are not offered.
         Which rune a character has equipped is set on the <b>Characters</b> tab.</div>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
@@ -6863,6 +7055,114 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         drawRunes(host);
       };
     });
+  }
+
+
+  // ---- Passives browser ------------------------------------------------------
+  // Two tables, and the split between them is the whole point of the tab: what can be forced
+  // safely (the field checks, which loop your party) above, and what was decoded but is not
+  // offered (the battle checks, which are about whichever unit is acting) below. Each row shows
+  // the rune's own menu text off this disc next to what the decoded call sites actually do,
+  // because those are two different claims and a reader should not have to guess which is which.
+  const PS_STATE_LABEL = {
+    stock: ["off", "stock — only works when the rune is equipped"],
+    forced: ["ALWAYS ON", "this disc answers “yes” for every occupied party slot"],
+    mixed: ["PARTLY ON", "some of this rune's sites are forced and some are stock — tick it, or untick it, to make them agree"],
+    unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
+  };
+  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what].join(" ").toLowerCase();
+  const psSiteCount = (p) => `${p.sites.length} site${p.sites.length > 1 ? "s" : ""}`;
+
+  function drawPassives(host) {
+    const q2 = SEARCH;
+    const keep = (p) => !q2 || psHaystack(p, runeInfo(p.id)).includes(q2);
+    const rows = PASSIVES.filter(keep);
+    const held = PS_BATTLE.filter(keep);
+    const forced = PASSIVES.filter((p) => psState(p) === "forced").length;
+    const unknown = PASSIVES.filter((p) => psState(p) === "unknown").length;
+    const nBattle = PS_BATTLE.reduce((a, p) => a + p.sites.length, 0);
+    const body = rows.map((p) => {
+      const info = runeInfo(p.id), st = psState(p);
+      const [pill, why] = PS_STATE_LABEL[st];
+      return `<tr>
+        <td><input type="checkbox" class="psOn" data-id="${p.id}"${st === "forced" ? " checked" : ""}${st === "unknown" ? " disabled" : ""}></td>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · id ${hex(p.id, 3)}</div></td>
+        <td>${esc2(info.text || "—")}</td>
+        <td class="muted">${esc2(p.what)}</td>
+        <td><span class="u" title="${esc2(why)}">${pill}</span></td>
+      </tr>`;
+    }).join("");
+    const heldBody = held.map((p) => {
+      const info = runeInfo(p.id);
+      return `<tr>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · id ${hex(p.id, 3)}</div></td>
+        <td>${esc2(info.text || "—")}</td>
+        <td class="muted">${esc2(p.what)}</td>
+      </tr>`;
+    }).join("");
+    const gap = PS_UNMAPPED.filter((id) => !q2 || (REF.items[id] || "").toLowerCase().includes(q2))
+      .map((id) => `<tr class="muted">
+        <td><b>${esc2(REF.items[id] || hex(id, 3))}</b><div style="font-size:11px">no site found · id ${hex(id, 3)}</div></td>
+        <td>${esc2(runeTblDesc(id) || (REF.runeFood && REF.runeFood[String(id)]) || "—")}</td>
+        <td>Nothing to switch, and nothing found to switch it at. Its item id appears nowhere in the game
+          code as an argument, no call to any of the three equipped-rune lookups passes it, and no data table
+          pairs it with another support-rune id — so whatever grants this bonus does not ask the question the
+          other 22 ask.</td>
+      </tr>`).join("");
+    host.innerHTML = `
+      <div class="muted" style="margin:0 0 10px">A support rune does nothing until someone equips it, and then only
+        for them. This tab removes the <b>equipped</b> half of that sentence for the passives that work
+        <b>outside battle</b>: the effect runs whether or not the rune is anywhere in your inventory, and the rune
+        itself is untouched — still buyable, still equippable, still doing the same thing when equipped. The
+        <b>What forcing it does</b> column is read off the decoded call sites, not off the rune's menu text beside
+        it; where the two disagree, the code column is the one that is true of this disc.</div>
+      <div style="overflow-x:auto"><table class="invtbl">
+        <thead><tr><th style="width:34px">On</th><th style="width:15%">Rune</th><th style="width:24%">What the game says</th>
+          <th>What forcing it does <span class="u">decoded from the call sites</span></th><th style="width:90px">State</th></tr></thead>
+        <tbody>${body || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody>
+      </table></div>
+      <div class="muted" style="margin:8px 0 0">Both of these are <b>loops over party slots 1–6</b> in the
+        field-step module, asking once per slot, so answering yes means “everyone in your party has it” — which is
+        exactly what the rune does when six people wear one. The answer written is
+        <code>sltu $v0,$zero,$a0</code>, not a bare <i>yes</i>: an empty party slot still answers no, which is what
+        the stock code does. ${forced} of ${PASSIVES.length} are on.${unknown
+          ? ` <b>${unknown}</b> is read-only because this disc's code at one of its sites is not what the editor
+              decoded.` : ""}
+        Every write is two instruction words per site and shows up per site in the <b>Changes</b> tab, under
+        “Passive runes”.</div>
+      <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Both sites are
+        decoded from a pristine USA SLUS-20387 and byte-checked before they are written, and unticking restores the
+        stock instructions exactly. What is untested is the <i>result</i>: neither forced passive has been watched
+        running in game. Keep a backup disc.</div>
+      <details class="card"><summary><b>The in-battle passives</b>
+        <span class="u">decoded — ${PS_BATTLE.length} runes, ${nBattle} sites — and deliberately not switchable</span></summary>
+        <div class="muted" style="margin:8px 0 10px">These are the other 21 runes, plus Sunbeam's second half. They
+          are found, verified and listed here, but there is no switch for them, and the reason is that
+          <b>the answer cannot be made per-unit</b>. A call site is two instruction words; one of them has to keep
+          the delay-slot instruction that was already there, which leaves exactly one word for the answer. That is
+          enough for <i>yes</i> and not enough for <i>yes, if this is Hugo</i> — reading the character id off the
+          record, comparing it and turning that into a 0/1 is three instructions at best. The battle-side lookup is
+          worse still: it never receives the character, it resolves whichever unit is acting and asks about that. So
+          a forced battle passive would be on for <b>every unit in the fight, enemies included</b> — Wall would lock
+          the whole battlefield in place, Hunter would clamp everyone's damage to nothing. Reaching these properly
+          means relocating code into free space in the executable and calling out to it, which is a different job
+          from flipping a word in place; the offsets doc has every site if someone wants to take it on.</div>
+        <div style="overflow-x:auto"><table class="invtbl">
+          <thead><tr><th style="width:16%">Rune</th><th style="width:26%">What the game says</th>
+            <th>Where it is asked</th></tr></thead>
+          <tbody>${heldBody}${gap}${heldBody || gap ? "" : `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody>
+        </table></div>
+      </details>`;
+    qa(".psOn", host).forEach((b) => (b.onchange = () => {
+      const p = PASSIVES.find((x) => x.id === +b.dataset.id);
+      const on = b.checked;
+      const n = psWrite(p, on);
+      const nm = runeInfo(p.id).name;
+      drawView();
+      setStatus(n ? `${nm} — ${on ? "forced on for the whole party" : "back to stock (equip the rune to use it)"}, `
+        + `${n} site${n > 1 ? "s" : ""} written.` : `${nm} — nothing written; this disc's code doesn't match.`,
+        n ? "ok" : "warn");
+    }));
   }
 
   // ---- Skills browser --------------------------------------------------------
@@ -7594,7 +7894,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   }
 
   // ---- reading a value out of an arbitrary block ------------------------------
-  const CHG_GROUPS = ["Text", "Runes", "Spells", "Unites", "Items", "Gear", "Food", "Shops",
+  const CHG_GROUPS = ["Text", "Runes", "Passive runes", "Spells", "Unites", "Items", "Gear", "Food", "Shops",
     "Characters", "Growth", "Support", "Weapons", "Sets", "Movement", "Code patches", "Unmapped"];
   function chgRead(dv, off, w) {
     const r = off - ELF_BASE;
@@ -7652,6 +7952,15 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       imm(p.riderSites[0], MOUNTS.STOCK[i][0], `Mount pair ${i + 1} · rider`);
       imm(p.mountSite, MOUNTS.STOCK[i][1], `Mount pair ${i + 1} · mount`);
     });
+    // Both words of every support-rune check — including the 49 this editor deliberately does NOT
+    // write. Those are the ones most worth auditing: if a disc has them patched, it was done
+    // somewhere else, and the audit naming the site is how anyone would find out.
+    PASSIVES.concat(PS_BATTLE).forEach((p) => p.sites.forEach((st, i) => {
+      const nm = (REF && REF.items[p.id]) || `rune ${hex(p.id, 3)}`;
+      const tag = p.sites.length > 1 ? ` (site ${i + 1} of ${p.sites.length})` : "";
+      word(st.off, st.jal, `Passive rune · ${nm} always on${tag} — the check`);
+      word(st.off + 4, st.ds, `Passive rune · ${nm} always on${tag} — the answer`);
+    }));
     return out;
   }
 
