@@ -3139,8 +3139,17 @@ the Changes-tab audit can still report a disc that has them patched some other w
 > exists; its entries live in `PASSIVES`. What this section says about where the asks are and what
 > each does is unchanged and still the reference.
 
-**Still untested in play.** Both switchable sites are decoded and byte-verified; neither has
-been watched working in game. The tab says so.
+**CONFIRMED IN PLAY (2026-09-06) — Sunbeam.** Switched on, the party heals by walking with
+**nobody carrying the rune**. That settles more than the one rune: it is the first evidence that
+the *approach* works — dropping the `jal`, keeping the delay-slot instruction, and answering the
+question in the word it vacated really does turn a passive on, and `sltu $v0,$zero,$a0` is an
+answer the following test accepts.
+
+**Champion's is still untested.** It is the identical patch shape, on the identical helper
+(`0x16CB438`), in the same module one function away, so it is *expected* to work rather than a
+guess — but nobody has walked past a weak encounter with it on yet. The tab marks the two
+differently for that reason, in the same confirmed / untested vocabulary the Mounts and Movement
+tabs use, and a marker is only ever moved by a play report, never by a passing test.
 **Fortune `0x1B8` is not here at all — WHERE IT IS NOT.** "Doubles experience value gained" is the
 one support rune with no decoded site, and three exhaustive searches came up empty, so
 nobody should repeat them: (a) its id 440 appears as an instruction immediate exactly eight
@@ -3417,6 +3426,13 @@ the whole tab read-only, the same rule the site-level checks follow. v1.106.0's 
 is still *recognised* — a disc patched by it is named as such and offered a one-click return to
 stock — but nothing writes it any more.
 
-**Still untested in play.** Every site is decoded and byte-verified and the helper is assembled
-and disassembled here, but no forced passive has been watched running in game, and the in-battle
-ones are new. The tab says so.
+**What is proven and what is not.** Sunbeam's field walk-heal *site* is confirmed in play
+(2026-09-06, recorded in the section above): forced to yes, the party healed by walking with
+nobody carrying the rune. That proves the site, the effect, and that answering this one question
+with a yes is all a passive needs — which is the load-bearing assumption for all 51. What it does
+**not** prove is this delivery of the yes: the play report was taken with the previous patch
+shape, where the call was dropped and the answer written into the word it vacated, and this
+version returns the answer from a relocated helper instead. So Sunbeam and Champion's are marked
+*expected* in the tab and everything else *untested*, in the same confirmed / expected / untested
+vocabulary the Mounts tab uses, and a marker is only ever moved by a play report — never by a
+passing test.

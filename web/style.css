@@ -161,6 +161,9 @@ input.search, input.picker-search {
 .slotbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .rm { color:var(--acc2); border-color:var(--line); background:transparent; padding:4px 9px; }
 .warnbox { color:var(--warn); font-size:12px; margin:0 2px 10px; }
+/* Same shape as .warnbox, for the opposite kind of news: a finding CONFIRMED in play. The
+   two read as a pair, so a tab that has both can be skimmed for which is which. */
+.okbox { color:var(--ok); font-size:12px; margin:0 2px 10px; }
 
 /* recruit section: story auto-join units are faded (this tool is for optional recruits) */
 .invtbl tr.story-auto td { opacity:.5; }

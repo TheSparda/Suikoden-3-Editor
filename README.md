@@ -197,7 +197,12 @@ enemy's record is heap-allocated and can never land inside that array. So *Wall*
 Hugo alone, and everybody else — every ally, every enemy — gets the disc's own stock answer.
 Every site is byte-checked against a pristine disc before anything is written, and clearing a
 rune restores the stock instruction exactly; clearing every rune puts the borrowed routine back
-byte-for-byte. None of it has been watched working in play — it's experimental, keep a backup.
+byte-for-byte. One of the 51 has been **watched working in play** (2026-09-06): forced to yes,
+Sunbeam's field walk-heal healed the party by walking with nobody carrying the rune — which
+proves the site and the effect, and with them that answering this one question is all a passive
+needs. That was proven with the previous patch shape, where the call was dropped instead of
+retargeted, so Sunbeam and *Champion's* are marked **expected** and everything else **untested**;
+markers here move on a play report, never on a passing test. It's experimental, keep a backup.
 Not offered: *Fortune*, whose effect doesn't ask the question the other 22 ask (the searches that
 came up empty are recorded in the offsets doc so nobody repeats them), and Koroku's four dogs,
 whose character records live outside the array the table indexes. The same tab
