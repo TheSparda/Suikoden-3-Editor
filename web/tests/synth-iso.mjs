@@ -288,7 +288,11 @@ export const WAR_LEAD_A = 0x466600, WAR_LEAD_B = 0x4666A0;
 // Placed clear of the enemy/war spans so it gets its OWN aux window, the way the real
 // disc's town-data sub-files do, instead of being absorbed into an enemy range.
 export const ROOM_TABLE_A = 0x467000, ROOM_TABLE_B = 0x467100;
-export const SYNTH_EXTRA = 0x1800;                             // file = ELF_END + this
+// A planted `Svag` stream for the Music tab's player: 0x400 header, its duplicate at
+// 0x400, PCM at 0x800. Two 8192-byte interleave blocks, one per channel, so the whole
+// de-interleave path runs rather than a mono short-circuit.
+export const SVAG_STREAM = 0x468000, SVAG_INTER = 8192, SVAG_BYTES = SVAG_INTER * 2;
+export const SYNTH_EXTRA = 0x6C00;                             // file = ELF_END + this
 export const ENEMY_TEST_PACKS = {
   format: "s3enemy", version: 1,
   recLayout: { hp: 48, maxhp: 50, lv: 64, stats: 32, size: 0x8C },
@@ -639,6 +643,27 @@ export function buildSynthIso() {
   mapping.runes = runeRows;
   mapping.food = { nameOff: foodNameOff, nameMax: "Medicine".length };
   mapping.balance = { ...balance, desc: "Maintains balance." };
+
+  // ---- Svag audio fixture -----------------------------------------------------------
+  // Valid PS-ADPCM rather than random bytes: filter 0 (so no IIR history) and alternating
+  // nibbles, which decodes to a square wave. Random bytes would still "decode", so they
+  // would not catch a de-interleave or header bug — this does.
+  bytes.set(enc("Svag"), SVAG_STREAM);
+  bytes.set(enc("Svag"), SVAG_STREAM + 0x400);
+  for (const h of [SVAG_STREAM, SVAG_STREAM + 0x400]) {
+    dv.setUint32(h + 4, SVAG_BYTES, true);      // total PCM bytes, both channels
+    dv.setUint32(h + 8, 44100, true);           // sample rate
+    dv.setUint32(h + 12, 2, true);              // channels
+    dv.setUint32(h + 16, SVAG_INTER, true);     // interleave
+  }
+  for (let p = 0; p < SVAG_BYTES; p += 16) {
+    const o = SVAG_STREAM + 0x800 + p;
+    bytes[o] = 0x04;                            // shift 4, filter 0
+    bytes[o + 1] = 0;                           // flags
+    // left block gets 1/-1 nibbles, right block 2/-2, so the channels are distinguishable
+    const hi = p < SVAG_INTER ? 0xF1 : 0xE2;
+    for (let i = 0; i < 14; i++) bytes[o + 2 + i] = hi;
+  }
 
   return { bytes, armor, mapping };
 }
