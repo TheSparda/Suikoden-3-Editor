@@ -1041,6 +1041,9 @@ function drawStars() {
   // bag, a potch price is topped up by exactly what you are short. Both only STAGE the change,
   // so they go through Review changes with everything else.
   const needBtn = (n) => {
+    // An item you have to buy needs the money, not the item: give it the same top-up the potch
+    // lines get, never "＋ add to bag" — a Mole Armor in your pack recruits nobody.
+    if (n.kind === "item" && n.buy) return topUpBtn(n);
     if (n.kind === "item" && n.id) {
       if (!bagTarget || bagTarget.slot === null) return "";
       const warn = bagTarget.unstarted
@@ -1049,12 +1052,13 @@ function drawStars() {
       return ` <button class="chip mini needbtn" data-needitem="${n.id}"
         title="Put one ${esc(n.name)} in ${esc(bagTarget.region)} — ${esc(bagTarget.why)}${esc(warn)}">＋ add to ${esc(bagTarget.region)}</button>`;
     }
-    if (n.kind === "potch" && n.short > 0) {
-      return ` <button class="chip mini needbtn" data-needgold="${n.amount}"
-        title="Top your purse up to ${n.amount.toLocaleString()} potch — the ${n.short.toLocaleString()} you are short">＋ ${n.short.toLocaleString()}</button>`;
-    }
+    if (n.kind === "potch") return topUpBtn(n);
     return "";
   };
+  const topUpBtn = (n) => (n.short > 0
+    ? ` <button class="chip mini needbtn" data-needgold="${n.amount}"
+        title="Top your purse up to ${n.amount.toLocaleString()} potch — the ${n.short.toLocaleString()} you are short">＋ ${n.short.toLocaleString()}</button>`
+    : "");
 
   const body = groups.map((g) =>
     groupHead(g) + (STARS_COLLAPSED[g.key] ? "" : g.rows.map(starRow).join(""))
@@ -2010,10 +2014,11 @@ function bootProgress(pct, msg, step) {
     `<div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>`;
 }
 
-// ---- boot gate (the full-screen block in index.html) ------------------------
+// ---- boot gate (the panel over the save loader card in index.html) ---------
 // Two surfaces, one progress source: this drives the gate and the inline #engineStatus line,
-// because the gate is dismissible (the ISO editor needs no Python and must stay reachable) and
-// whoever dismisses it still deserves to see the engine come up underneath.
+// because the gate is dismissible and whoever dismisses it still deserves to see the engine
+// come up underneath. It covers only #loaderCard — Python gates loading a memory card and
+// nothing else, so the rest of the app (ISO editor above all) stays live while it boots.
 const bootGate = (() => {
   const STEPS = ["rt", "mod", "ref"];
   let closed = false;
@@ -2033,7 +2038,7 @@ const bootGate = (() => {
         li.classList.toggle("done", at < 0 || i < at);
       });
     },
-    // Engine failed: keep the gate up (there is nothing behind it that works) but swap the
+    // Engine failed: keep the gate up (the loader under it can't do anything) but swap the
     // spinner for the reason and the two things that actually help — a retry and a cache nuke,
     // since a half-written service-worker cache is the usual culprit.
     fail(msg) {
@@ -2062,7 +2067,8 @@ const bootGate = (() => {
       const o = ov(); if (!o || closed) return;
       closed = true;
       o.classList.add("gone");
-      // Remove it rather than leaving an invisible fixed layer over the app.
+      // Remove it rather than leaving an invisible layer over the loader (and to drop the
+      // min-height that keeps the card gate-sized while it is in the DOM).
       setTimeout(() => o.remove(), 260);
     },
     get closed() { return closed; },
@@ -2145,18 +2151,18 @@ window.addEventListener("DOMContentLoaded", () => {
     if (dirtyNow()) { e.preventDefault(); e.returnValue = ""; }
   });
 
-  // Boot gate: the ISO button hands off to the tab that needs no engine (iso.js owns the tab
-  // switch, so click its button rather than reach into its closure); Dismiss/Escape let anyone
-  // out — a modal you cannot leave is worse than a slow one, and the picker stays disabled
-  // until the engine is actually up regardless.
-  const bootIso = $("#bootIso"), bootHide = $("#bootHide"), bootCard = $("#bootCard");
+  // Boot gate: the ISO button is a shortcut to the tab that needs no engine (iso.js owns the
+  // tab switch, so click its button rather than reach into its closure); Dismiss/Escape reveal
+  // the loader underneath. Nothing here is load-bearing any more — the gate covers one card,
+  // not the app — and the picker stays disabled until the engine is actually up regardless.
+  // No autofocus: this is a progress notice, not a dialog, so it must not steal the caret.
+  const bootIso = $("#bootIso"), bootHide = $("#bootHide");
   if (bootIso) bootIso.onclick = () => {
     bootGate.close();
     const tab = document.querySelector('.mtab[data-mode="iso"]'); if (tab) tab.click();
   };
   if (bootHide) bootHide.onclick = () => bootGate.close();
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !bootGate.closed) bootGate.close(); });
-  if (bootCard) { try { bootCard.focus(); } catch (e) {} }
 
   pyReady = bootPyodide();
   pyReady.then(() => {

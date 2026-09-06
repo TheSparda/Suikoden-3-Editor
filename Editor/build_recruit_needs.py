@@ -21,7 +21,13 @@ s3_recruit_order.json and resolves three kinds of prerequisite:
           An item with no source at all is emitted with an empty source list, so the editor can
           say "not in the editor's tables" instead of implying it knows.
 
-  potch   "Pay him 100,000 potch" and friends — you cannot walk in short.
+  potch   "Pay him 100,000 potch" and friends — you cannot walk in short. An item you have to
+          BUY counts here too: Dominic joins when you buy the Mole Armor from him, so what that
+          errand actually needs is the money, not a Mole Armor. Its price comes off the disc.
+          Gear records hold a price TIER, not potch: the field at gear+0x08 is 2..5 across the
+          whole band, and the price routine at VA 0x1773390 reads `ladder[tier - 1]` from the
+          15-step shared ladder at 0x3C963C (base materialised as ladder-4, so 1-based). Rune
+          records at +0x0C hold real potch. Anything else the disc does not price here.
 
   first   other Stars the line makes you bring or recruit first (Ayame needs Watari along,
           Melville needs Billy recruited). Each carries that star's own guide position, which is
@@ -58,6 +64,16 @@ SPELLING = {"Knight Status S": "Knight Statue S", "Grapes": "Grape"}
 
 MIN_ITEM_LEN = 4               # below this, item names are too generic to match on
 
+# Where a buy price lives, per item band. See the module docstring: gear stores a tier into the
+# shared ladder, runes store potch outright, and nothing else on the disc prices an item here.
+PRICE_LADDER = (0x3C963C, 15)
+GEAR_PRICE = (0x3D8684, 0x44, 0x08, 161, 316)      # base, stride, field, first id, last id
+RUNE_PRICE = (0x3EAF78, 0x20, 0x0C, 317, 462)
+
+# "Buy the Mole Armor from him" — the errand is the money, not the item.
+BUY_RE = re.compile(r"\bbuys?\b", re.I)
+BUY_FROM_RE = re.compile(r"\bfrom (him|her|them)\b", re.I)
+
 
 def item_names():
     txt = open(os.path.join(HERE, "Suikoden3_item_ids.txt"), encoding="utf-8").read()
@@ -75,7 +91,7 @@ def arch_names():
 
 
 def shop_index(iso_arg):
-    """item id -> [{counter, town, kind, chance, stages, maxStage}], read off the disc."""
+    """(item id -> [{counter, town, kind, chance, stages, maxStage}], the ELF buffer)."""
     if iso_arg:
         sys.argv.append(iso_arg)
     buf = re_elf.load(); re_elf.verify(buf); base = re_elf.PT_LOAD_ISO
@@ -113,6 +129,25 @@ def shop_index(iso_arg):
     out = {}
     for (it, *_rest), e in hits.items():
         out.setdefault(it, []).append(e)
+    return out, buf
+
+
+def price_index(buf):
+    """item id -> buy price in potch, for the bands the disc actually prices."""
+    base = re_elf.PT_LOAD_ISO
+    u32 = lambda fo: struct.unpack_from("<I", buf, fo - base)[0]
+    lad = [u32(PRICE_LADDER[0] + i * 4) for i in range(PRICE_LADDER[1])]
+    out = {}
+    gb, gs, gf, glo, ghi = GEAR_PRICE
+    for i in range(glo, ghi + 1):
+        tier = u32(gb + i * gs + gf)
+        if 1 <= tier <= len(lad):
+            out[i] = {"potch": lad[tier - 1], "tier": tier, "how": "gear price tier"}
+    rb, rs, rf, rlo, rhi = RUNE_PRICE
+    for i in range(rlo, rhi + 1):
+        p = u32(rb + i * rs + rf)
+        if 0 < p < 1000000:
+            out[i] = {"potch": p, "tier": None, "how": "rune record"}
     return out
 
 
@@ -215,7 +250,8 @@ def main():
     iso_arg = sys.argv[1] if len(sys.argv) > 1 else None
     names = item_names()
     order = json.load(open(os.path.join(HERE, "s3_recruit_order.json"), encoding="utf-8"))
-    shops = shop_index(iso_arg)
+    shops, elf = shop_index(iso_arg)
+    prices = price_index(elf)
     drops, guide, chests = drop_index(arch_names())
 
     stars = order["chars"]
@@ -235,12 +271,25 @@ def main():
             src = {"shops": shops.get(iid, []), "drops": mine[:3],
                    "moreDrops": max(0, len(mine) - 3),
                    "chests": chests.get(iid, []), "guide": guide.get(iid, [])}
+            # Buy or bring? "Buy the Mole Armor from him" makes the errand the money — handing
+            # yourself a Mole Armor recruits nobody. Judged on the sentence the item is named
+            # in, so Barts (give him Grapes; you CAN buy them elsewhere) stays an item errand.
+            at = how.lower().index(nm.lower()) if nm.lower() in how.lower() else 0
+            sentence = next((t for t in re.split(r"(?<=[.])\s+", how)
+                             if nm.lower() in t.lower()), how)
+            buy = bool(BUY_RE.search(sentence) and not re.search(r"\bgive\b", sentence, re.I))
+            price = prices.get(iid)
             known = any(src[k] for k in ("shops", "drops", "chests", "guide"))
             # If nothing is known, does the line itself already say where to get it? Scott's
             # antler comes "from the Vinay del Zexay trading post" — the editor has nothing to
             # add there, which reads differently from having no idea at all (Billy's statues).
             says = bool(re.search(r"\b(from|buy|bought|sold|sell|trading post|shop)\b", how, re.I))
-            needs["items"].append(dict(src, id=iid, name=nm, known=known, lineSays=says))
+            needs["items"].append(dict(src, id=iid, name=nm, known=known, lineSays=says,
+                                       buy=buy,
+                                       # who you buy it from: the recruit, when the line says so
+                                       buyFrom=who if (buy and BUY_FROM_RE.search(sentence)) else "",
+                                       price=price["potch"] if (buy and price) else None,
+                                       priceHow=price["how"] if (buy and price) else ""))
             n_items += 1
             n_unknown += 0 if known else 1
 
@@ -272,6 +321,10 @@ def main():
     for who, n in sorted(out.items(), key=lambda kv: stars[kv[0]]["n"]):
         bits = []
         for it in n.get("items", []):
+            if it["buy"]:
+                bits.append(f"{it['name']}(BUY {it['price']} potch)" if it["price"]
+                            else f"{it['name']}(BUY, unpriced)")
+                continue
             where = ("shop" if it["shops"] else "drop" if it["drops"] else
                      "chest" if it["chests"] else "guide" if it["guide"] else "UNKNOWN")
             bits.append(f"{it['name']}({where})")
