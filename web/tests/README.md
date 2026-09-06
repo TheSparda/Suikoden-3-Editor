@@ -1,6 +1,6 @@
 # Web editor tests
 
-Twelve suites, all runnable with plain Node (v18+). `npm test` runs the ten browser-free
+Thirteen suites, all runnable with plain Node (v18+). `npm test` runs the eleven browser-free
 ones; `npm run test:e2e` runs the Playwright suite; `version-drift.mjs` is a pre-push check
 run on its own (see below):
 
@@ -127,6 +127,26 @@ place the merged strings are asserted — against the real committed data.
 
 ```bash
 node web/tests/desc-merge.mjs
+```
+
+## `changes-core.mjs` — the Changes tab's diff join, no browser
+The Changes tab's whole claim is that its list is **complete**: every byte that differs
+between the open disc and a base disc is either named or shown as hex, and none is dropped.
+That property lives entirely in `web/changes-core.js`'s run→region join, so it is asserted
+directly rather than inferred from a rendered table — including as a **property** over 200
+randomized region maps ("every changed byte is covered exactly once"). Also checked: a single
+identical byte splits a run (a run that swallowed it would report an unchanged byte as
+changed, and the revert button writes exactly the run), a touched region comes back at its
+**full** extent rather than the run's, `checkRegions` reports an overlapping pair with its
+address, and a group the caller forgot to name is appended rather than dropped.
+
+`e2e.mjs` drives the other half — the real region map, built from the real table constants —
+against a synthetic disc served **already patched**, with the pristine build handed to the
+base-disc picker. That is the situation the tab exists for: nothing is staged, so the edit is
+visible only as a difference between two files.
+
+```bash
+node web/tests/changes-core.mjs
 ```
 
 ## `vcdiff.mjs` — the .xdelta encoder **and** decoder

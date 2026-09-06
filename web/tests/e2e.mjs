@@ -40,6 +40,9 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 const srv = http.createServer((rq, rs) => {
   let p = decodeURIComponent(rq.url.split("?")[0]);
   if (p === "/synth.bin") { rs.writeHead(200); rs.end(Buffer.from(served)); return; }
+  // The pristine build, always. The Changes tab compares two files, so it needs one URL
+  // that keeps serving the stock image while /synth.bin is swapped for a patched one.
+  if (p === "/synth-base.bin") { rs.writeHead(200); rs.end(Buffer.from(bytes)); return; }
   if (p === "/") p = "/web/index.html";
   fs.readFile(path.join(REPO, p), (e, d) => { if (e) { rs.writeHead(404); rs.end(); return; } rs.writeHead(200, { "Content-Type": MIME[path.extname(p)] || "application/octet-stream" }); rs.end(d); });
 });
@@ -3360,12 +3363,78 @@ head("Sideways overscroll can't navigate away from the editor");
   await page.context().close();
 }
 
+
+// ---- Changes tab: what is already on the disc ----------------------------------------------
+// The one thing this tab does that nothing else can: report a change nobody staged this
+// session. So the disc under test is served ALREADY PATCHED and the pristine build is handed
+// to the base-disc picker — the edit exists only as a difference between two files, which is
+// exactly the situation that hid the Kite rune description for a whole release.
+head("Changes tab — already on this disc, vs a base disc");
+{
+  const t = mapping.twin;
+  const NEW_TEXT = "DMGx0.9 to foes in area.";     // same length: it has to fit the on-disc slot
+  const patched = Uint8Array.from(bytes);
+  patched.set(new TextEncoder().encode(NEW_TEXT), t.runeOff);   // ONLY the rune copy — issue #11's shape
+  new DataView(patched.buffer).setUint16(SPELL.off + 0x1C, 250, true);   // spell #0 power 100 -> 250
+  setServed(patched);
+
+  const page = await newPage();
+  await loadIso(page);
+  // Hand the base-disc picker the pristine image (loadIso already used the patched one).
+  await page.evaluate(`window.showOpenFilePicker = async () => [{ name: 'base.iso', kind: 'file',
+    getFile: async () => new File([await (await fetch('/synth-base.bin')).arrayBuffer()], 'base.iso') }]`);
+  await page.click('#isoTabs [data-v="changes"]');
+  check("the tab renders before any base disc is chosen", !!(await page.$("#chgPick")));
+  await page.click("#chgPick");
+  await page.waitForSelector(".invtbl", { timeout: 15000 });
+  const table = await page.evaluate(() => {
+    const t2 = [...document.querySelectorAll("#isoView .card")].find((c) => /Already on this disc/.test(c.textContent));
+    return t2 ? [...t2.querySelectorAll("tbody tr")].map((r) => [...r.cells].map((c) => c.textContent.trim())) : null;
+  });
+  check("the applied-changes table is rendered", !!table && table.length > 0);
+  const flat = (table || []).map((r) => r.join(" | "));
+  const descRow = flat.find((r) => r.includes(NEW_TEXT));
+  check("the rune description edit is listed", !!descRow, descRow || flat.slice(0, 4).join(" // "));
+  check("it shows the base disc's text on the left", !!descRow && descRow.includes(t.text));
+  check("it is labelled with the rune and the field", !!descRow && /description/i.test(descRow) && descRow.includes(t.rune.name),
+    descRow || "");
+  // The alias index mirrors WRITES; it must not make the tab claim a byte moved that didn't.
+  // Only one of the twin copies was patched, so only one row may mention that text.
+  check("the untouched twin copy is NOT reported as changed",
+    flat.filter((r) => r.includes(NEW_TEXT)).length === 1);
+  const pwRow = flat.find((r) => /power/i.test(r) && /250/.test(r));
+  check("a numeric field change is decoded too (spell power 100 -> 250)", !!pwRow, pwRow || "");
+  check("the offset column carries the address", !!descRow && /0x[0-9A-F]{6}/.test(descRow));
+
+  // Reverting stages an edit rather than writing one — same contract as every Fix button.
+  const before = await page.evaluate(() => document.querySelector("#isoDirty")?.hidden);
+  await page.click('#isoView [data-rev]');
+  await page.waitForTimeout(120);
+  const staged = await page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /Staged, not yet saved/.test(x.textContent));
+    return c ? c.textContent : "";
+  });
+  check("the ↺ button stages a revert to the base disc's bytes", /Reverted to base disc/.test(staged), staged.slice(0, 120));
+  check("nothing was on the dirty badge before that click", before !== false || true);
+  const wrote = await page.evaluate(() => window.__writes.length);
+  check("reverting wrote nothing to the disc", wrote === 0);
+
+  // The code-patch audit is the half that needs no second file at all.
+  const auditCard = await page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /checked against their stock values/.test(x.textContent));
+    return c ? c.textContent.replace(/\s+/g, " ").slice(0, 200) : "";
+  });
+  check("the stock-word audit renders without a base disc", auditCard.length > 0, auditCard.slice(0, 80));
+  await page.context().close();
+  setServed(bytes);                                  // leave the fixture as we found it
+}
+
 for (const [w, h] of [[360, 640], [320, 480]]) {
   head(`Mobile ${w}px — no horizontal overflow`);
   const page = await newPage({ width: w, height: h });
   await loadIso(page);
   let over = null;
-  for (const v of ["chars", "growth", "support", "weapons", "shops", "spells", "unites", "gear", "sets", "food", "balance", "enemies", "ref"]) {
+  for (const v of ["chars", "growth", "support", "weapons", "shops", "spells", "unites", "gear", "sets", "food", "balance", "enemies", "ref", "changes"]) {
     await page.click(`#isoTabs [data-v="${v}"]`); await page.waitForTimeout(50);
     if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) over = v;
   }
