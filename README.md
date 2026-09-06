@@ -76,11 +76,16 @@ Editable per save:
   characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
   manually is unneeded and can soft-lock an early save (the story/optional split is derived
   from the character guide).
-- **108 Stars** — a completion dashboard over the Stars of Destiny: how many you have, the
+- **108 Stars** — a completion checklist over the Stars of Destiny, laid out in the
+  **recruitment guide's order** — the order you can actually get them in — and cut into that
+  order's stages (Chapter 1's four parties, the Budehuc-era optional recruits, each story
+  block, the Chapter 6 four), **each stage with its own progress** and foldable once it's
+  done. Shows how many you have, each star's Star of Destiny name and guide position, the
   Hugo / Chris / Geddoe / Thomas / shared spread, filters (recruited vs missing, optional vs
-  story), the guide's how-to line under each missing **optional** star, and a **＋ recruit**
-  button that stages it without leaving the list. It reflects staged edits live, so it doubles
-  as a worklist for a completion run.
+  story), the guide's how-to line under each missing **optional** star, **next in guide
+  order** (the first one you can go and get), and a **＋ recruit** button that stages it
+  without leaving the list. It reflects staged edits live, so it doubles as a worklist for a
+  completion run.
 - **Party** — the active battle party (up to 6), by character name.
 - **Inventory** — every bag, split into Party Items vs Key/Valuables, with name-resolved
   item pickers, quantities, add and remove. The bag layout follows the save: before the
@@ -627,8 +632,8 @@ Editor/
   s3patch.py        ISO reader library + verified field tables. Its one consumer is
                     build_item_desc_extra.py; it is not a second editor.
   build_*.py        regenerate the guide reference data (skills, caps, growth, rune slots,
-                    bestiary, recruit flags, rune/food descriptions, room and sub-file
-                    indexes) from a pristine disc + the saved guide text
+                    bestiary, recruit flags, recruitment order, rune/food descriptions, room
+                    and sub-file indexes) from a pristine disc + the saved guide text
   suikosource/      saved Suikosource guide text the generators parse
   s3_*.json / *_ids.txt    verified id->name / description / guide reference data
   Suikoden3_ISO_offsets.md the reverse-engineering notebook — the source of truth for offsets
