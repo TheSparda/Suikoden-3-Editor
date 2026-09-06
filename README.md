@@ -181,26 +181,31 @@ runes and 7 magic scrolls store their description twice, and 43 names are stored
 menu, the battle command and the item list agreeing. A rename shows up immediately in every
 picker, tooltip and list in the editor for that ISO, and the rune stays findable under its
 original name),
-**Passives** (the passive **support runes** that work **outside battle** — *Champion's* (no
-encounters with weaker foes) and *Sunbeam's* walk-heal — forced on *without equipping them*, and
-without spending a rune slot. A support rune grants no spells and has no battle command: each is
-one question the engine asks at the moment it matters, *“does this character have item N
-equipped?”*, always through the same three seven-slot equipment lookups. Both field checks are
-**loops over party slots 1–6**, so answering yes there means everyone in your party has the rune
-— exactly what it does when six people wear one, and there are no enemies on the field to leak it
-to. The other 21 runes (and Sunbeam's in-battle half) are decoded, listed at the bottom of the tab
-with what each does, and **deliberately not switchable**: a call site frees one instruction word
-for the answer, which is enough for *yes* and not enough for *yes, if this is Hugo*, and the
-battle-side lookup never receives the character at all — it resolves whichever unit is acting, so
-forcing one would arm **every unit in the fight, enemies included**. *Sunbeam* is **confirmed in play**
-(2026-09-06): switched on, the party heals by walking with nobody carrying the rune — which is
-also the first evidence that the approach itself works. *Champion's* is the identical patch shape
-one function away, so it's expected to work, but it stays marked **untested** until someone plays
-it; markers here move on a play report, not on a passing test. Both sites are byte-checked against
-a pristine disc before anything is written and untick back to stock exactly — keep a backup
-anyway. *Fortune* is
-listed and cannot be forced; its effect doesn't ask the question the other 22 ask, and the
-searches that came up empty are recorded in the offsets doc so nobody repeats them. The same tab
+**Passives** (the 22 **support runes** the engine actually asks about — *Wall*, *Fury*, *Hunter*,
+*Champion's*, *Sunbeam's* and the rest — handed to **the characters you choose**, without
+equipping the rune and without spending a rune slot. A support rune grants no spells and has no
+battle command: each is one question the engine asks at the moment it matters, *“does this
+character have item N equipped?”*, always through the same three seven-slot equipment lookups,
+and this repo has all **51** places it is asked. Every one of them is reachable, because the
+answer is not a word written over the call — it is a **retargeted call**. The site's `jal` keeps
+being a `jal` and its branch delay slot is never touched, so exactly one word per site changes;
+the new target is a 288-byte helper relocated over a routine in the executable that nothing in
+the image references, plus a 22×16-byte table of one bit per character. The helper identifies the
+character the way the game does, by where its record sits in the static 112-entry array the
+engine indexes — which is also what keeps a forced in-battle passive **off enemies**, since an
+enemy's record is heap-allocated and can never land inside that array. So *Wall* can be given to
+Hugo alone, and everybody else — every ally, every enemy — gets the disc's own stock answer.
+Every site is byte-checked against a pristine disc before anything is written, and clearing a
+rune restores the stock instruction exactly; clearing every rune puts the borrowed routine back
+byte-for-byte. One of the 51 has been **watched working in play** (2026-09-06): forced to yes,
+Sunbeam's field walk-heal healed the party by walking with nobody carrying the rune — which
+proves the site and the effect, and with them that answering this one question is all a passive
+needs. That was proven with the previous patch shape, where the call was dropped instead of
+retargeted, so Sunbeam and *Champion's* are marked **expected** and everything else **untested**;
+markers here move on a play report, never on a passing test. It's experimental, keep a backup.
+Not offered: *Fortune*, whose effect doesn't ask the question the other 22 ask (the searches that
+came up empty are recorded in the offsets doc so nobody repeats them), and Koroku's four dogs,
+whose character records live outside the array the table indexes. The same tab
 also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
 constants across 12 runes, read out of the instruction each rune runs right after it has asked
 whether you have it. *Sunbeam heals 15HP a combat turn and 1HP every 0.3 seconds of walking*, and
