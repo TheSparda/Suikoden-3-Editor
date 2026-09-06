@@ -201,6 +201,24 @@
     const o = opts || {}, out = [];
     (needs && needs.items || []).forEach((it) => {
       const where = itemWhere(it);
+      // An item you have to BUY is a money errand, not a fetch one: Dominic joins when you buy
+      // the Mole Armor FROM HIM, so handing yourself a Mole Armor recruits nobody. Price it
+      // against the purse the same way a potch line is priced.
+      if (it.buy) {
+        const gold = typeof o.gold === "number" ? o.gold : null;
+        const from = it.buyFrom ? ` from ${it.buyFrom}` : "";
+        const rest = where.length ? ` · ${where.join(" · ")}` : "";
+        if (!it.price) {
+          out.push({ kind: "item", name: it.name, id: it.id, buy: true, ok: null,
+            text: `${it.name} — buy it${from}; the disc doesn't price it here${rest}` });
+          return;
+        }
+        out.push({ kind: "item", name: it.name, id: it.id, buy: true, amount: it.price,
+          short: gold === null ? null : Math.max(0, it.price - gold),
+          ok: gold === null ? null : gold >= it.price,
+          text: `${it.name} — buy it${from}: ${num(it.price)} potch${gold === null ? "" : ` — you have ${num(gold)}`}${rest}` });
+        return;
+      }
       // Nothing known splits two ways: the guide's line already told you where (Scott's antler
       // is "from the Vinay del Zexay trading post"), or nobody has said — which the checklist
       // owns up to rather than dressing up.

@@ -491,6 +491,13 @@ console.log("Guide overlays + xdelta:");
       && rose.shops[0].town === "Iksay Village" && rose.shops[0].kind === "rare"
       ? ok : bad)(`s3_recruit_needs.json parses (${Object.keys(j.chars).length} stars, ${items.length} items)`); }
   catch (e) { bad("s3_recruit_needs.json — " + e.message); }
+  // gear +0x08 is a price tier into the shared ladder, not potch — resolved everywhere it shows
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8"));
+    const mole = (j.chars["Dominic"].items || [])[0];
+    (mole && mole.buy === true && mole.price === 600 ? ok : bad)("a bought recruit item is priced from the disc");
+  } catch (e) { bad("recruit needs buy price — " + e.message); }
+  (/tierPotch/.test(iso) && /Price tier/.test(iso) && !/Price \(potch\)/.test(iso)
+    ? ok : bad)("iso.js resolves the gear price tier through the ladder");
   // manual "Force refresh" escape hatch: footer button that clears SW + caches and reloads
   (/id="forceRefreshBtn"/.test(html) && /#forceRefreshBtn/.test(app)
     ? ok : bad)("footer has an always-available Force-refresh button");
