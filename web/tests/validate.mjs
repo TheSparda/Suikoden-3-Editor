@@ -66,6 +66,36 @@ const STATUSFX_SITES = [
   [0x1054B8, 0x24020096],
   [0x1054CC, 0x24020096],
 ]
+// Rune power (Passives tab): the magnitudes the passive support runes are worth, as
+// [offset, stock word]. These sit INSIDE each rune's "if equipped" branch — they are not the
+// equipped-check itself (that is PASSIVE_SITES/PS_BATTLE) — and each control rewrites only the
+// value inside the instruction, so the stock word pins both the address and the shape. The
+// last entry is not code at all: it is the walk-heal interval float in the small-data pool.
+const RUNEFX_SITES = [
+  [0x261198, 0x2442000F],   // Sunbeam   addiu $v0,$v0,15   — HP a combat turn adds
+  [0x104088, 0x24020096],   // Killer    addiu $v0,$zero,150
+  [0x104148, 0x24020096],
+  [0x1038EC, 0x24020096],   // Counter
+  [0x103B60, 0x24020096],
+  [0x103D34, 0x24020096],
+  [0x10FD34, 0x24020096],   // Gale
+  [0x10380C, 0x2842001E],   // Haziness  slti $v0,$v0,30
+  [0x245D78, 0x24020003],   // Drain     addiu $v0,$zero,3  — self-heal divisor
+  [0x105218, 0x2403000A],   // Barrier   addiu $v1,$zero,10 — reflect divisor
+  [0x1035E8, 0x24030005],   // Hunter    addiu $v1,$zero,5  — damage clamp
+  [0x244B54, 0x3C013F00],   // Violence  lui $at,0x3F00     — 0.5f HP threshold
+  [0x104370, 0x00131840],   // Wall      sll $v1,$s3,1
+  [0x1047C8, 0x00108040],   // Double-Strike
+  [0x1047DC, 0x00108040],
+  [0x104878, 0x00101040],   // Fire Sealing
+  [0x104FE0, 0x00111040],
+  [0x10546C, 0x00101040],
+  [0x10FD84, 0x00021042],   // Wizard    srl $v0,$v0,1
+  [0x10FDA8, 0x00101042],
+  [0x10FDDC, 0x00021042],   // Warrior
+  [0x10FE00, 0x00101042],
+];
+const RUNEFX_FLOAT = [0x42C3B0, 0x3E99999A];   // Sunbeam walk-heal interval, 0.3f
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -113,6 +143,39 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   (bad2.length ? bad : ok)(bad2.length
     ? `iso.js STATUSFX is missing//drifted for ${bad2.map(([o]) => "0x" + o.toString(16)).join(", ")}`
     : "iso.js STATUSFX lists every site with its stock instruction word");
+}
+{
+  const all = RUNEFX_SITES.concat([RUNEFX_FLOAT]);
+  const oob = all.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
+  if (oob.length) bad(`rune power sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
+  else ok(`rune power sites (${all.length} in block: ${RUNEFX_SITES.length} code + 1 float)`);
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const missing = all.filter(([o, w]) => {
+    const re = new RegExp(`\\[0x${o.toString(16).toUpperCase()},\\s*0x${w.toString(16).toUpperCase().padStart(8, "0")}\\]`, "i");
+    return !re.test(iso);
+  });
+  (missing.length ? bad : ok)(missing.length
+    ? `iso.js RUNEFX is missing/drifted for ${missing.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "iso.js RUNEFX lists every site with its stock word");
+  // A rune-power site must never land on an equipped-check word pair or a status constant:
+  // both tables write, and the second writer would silently eat the first.
+  const psOffs = [...iso.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal:/g)].map((m) => parseInt(m[1], 16));
+  const clash = all.filter(([o]) => psOffs.some((p) => o >= p && o < p + 8)
+    || STATUSFX_SITES.some(([s]) => s === o) || MOUNT_SITES.includes(o));
+  (clash.length ? bad : ok)(clash.length
+    ? `rune power overlaps another patch at ${clash.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "no rune power site overlaps an equipped-check word pair, a status constant or a mount site");
+  const dupes = all.map(([o]) => o).filter((o, i, a) => a.indexOf(o) !== i);
+  (dupes.length ? bad : ok)(dupes.length
+    ? `the same address is listed twice: ${dupes.map((o) => "0x" + o.toString(16)).join(", ")}`
+    : "every rune power site is listed once");
+  // The four value shapes and their guards have to stay in iso.js: an `imm` control that
+  // silently started rewriting a shift would corrupt the instruction rather than the value.
+  (/const RF_KIND = \{/.test(iso) && /imm:\s/.test(iso) && /sa:\s/.test(iso)
+    && /f32hi:\s/.test(iso) && /f32:\s/.test(iso) ? ok : bad)(
+    "RF_KIND still defines all four value shapes (imm / sa / f32hi / f32)");
+  (/rfSiteOk\(off, stock, e\.kind\)/.test(iso) ? ok : bad)(
+    "rfWrite re-checks each site's stock shape before writing it");
 }
 {
   const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);

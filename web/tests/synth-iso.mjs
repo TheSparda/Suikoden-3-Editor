@@ -210,6 +210,38 @@ export const MECH = {
   roundMount: { off: 0x226FF8, stock: 0x26100001 },
   adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
 };
+// Rune power (iso.js RUNEFX): the magnitudes the passive runes are worth, planted stock so the
+// Passives tab's controls decode and a write has a real instruction to rewrite the value inside.
+// `kind` mirrors iso.js so the e2e can assert the right bits moved — an `imm` write must leave
+// the high half-word alone, an `sa` write must only move bits 10..6. Kept in step with iso.js by
+// validate.mjs, which parses both.
+export const RUNEFX_SITES = [
+  { key: "sunTurn", off: 0x261198, word: 0x2442000F, kind: "imm", value: 15 },
+  { key: "killer", off: 0x104088, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "killer", off: 0x104148, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "counter", off: 0x1038EC, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "counter", off: 0x103B60, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "counter", off: 0x103D34, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "gale", off: 0x10FD34, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "haziness", off: 0x10380C, word: 0x2842001E, kind: "imm", value: 30 },
+  { key: "drain", off: 0x245D78, word: 0x24020003, kind: "imm", value: 3 },
+  { key: "barrier", off: 0x105218, word: 0x2403000A, kind: "imm", value: 10 },
+  { key: "hunter", off: 0x1035E8, word: 0x24030005, kind: "imm", value: 5 },
+  { key: "violence", off: 0x244B54, word: 0x3C013F00, kind: "f32hi", value: 50 },
+  { key: "wall", off: 0x104370, word: 0x00131840, kind: "sa", value: 1 },
+  { key: "dblStrike", off: 0x1047C8, word: 0x00108040, kind: "sa", value: 1 },
+  { key: "dblStrike", off: 0x1047DC, word: 0x00108040, kind: "sa", value: 1 },
+  { key: "fireSeal", off: 0x104878, word: 0x00101040, kind: "sa", value: 1 },
+  { key: "fireSeal", off: 0x104FE0, word: 0x00111040, kind: "sa", value: 1 },
+  { key: "fireSeal", off: 0x10546C, word: 0x00101040, kind: "sa", value: 1 },
+  { key: "wizard", off: 0x10FD84, word: 0x00021042, kind: "sa", value: 1 },
+  { key: "wizard", off: 0x10FDA8, word: 0x00101042, kind: "sa", value: 1 },
+  { key: "warrior", off: 0x10FDDC, word: 0x00021042, kind: "sa", value: 1 },
+  { key: "warrior", off: 0x10FE00, word: 0x00101042, kind: "sa", value: 1 },
+];
+// Sunbeam's walk-heal interval is not an instruction — it is a float in the small-data literal
+// pool, read by exactly one lwc1 in the whole executable.
+export const RUNEFX_FLOAT = { key: "sunWalk", off: 0x42C3B0, value: 0.3 };
 // Status effect strength (iso.js STATUSFX): eleven `addiu $rt,$zero,imm` battle-code sites whose
 // immediates are the percentages a status effect is worth. The fixture plants the stock words so
 // the controls decode, and the e2e checks a write lands in the low half only.
@@ -604,6 +636,9 @@ export function buildSynthIso() {
   }
   for (const f of STATUSFX_SITES) w32(f.off, f.word);   // status effect strength code sites
   mapping.statusfx = STATUSFX_SITES;
+  for (const f of RUNEFX_SITES) w32(f.off, f.word);     // rune power code sites
+  wf32(RUNEFX_FLOAT.off, RUNEFX_FLOAT.value);           // ...and the walk-heal interval
+  mapping.runefx = { sites: RUNEFX_SITES, float: RUNEFX_FLOAT };
   mapping.shops = SHOP_FIXTURE;
   mapping.runes = runeRows;
   mapping.food = { nameOff: foodNameOff, nameMax: "Medicine".length };

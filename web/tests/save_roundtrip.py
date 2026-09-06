@@ -560,6 +560,44 @@ def main():
           s3save.carryover_bonus_edits({6: {"level": 30, "weaponLv": 5, "s2Level": 0,
                                             "s2WeaponLv": 0, "runes": [0, 0, 0]}}) == {})
 
+    print("Battle formation is edited in place, not re-derived:")
+    # The six entries at 0x3240 are battle POSITIONS holding a 1-based member index. The game
+    # writes reordered and spread layouts of its own — a real card carries [1,0,3,0,2,0] for a
+    # three-member party — so a party edit must leave standing members where they are instead
+    # of flattening the table. It also has to clear entries pointing at members who are gone:
+    # AddPartyMember looks for a free byte HERE, not in the party list, so a stale table
+    # silently blocks every story join.
+    def formation_after(party_before, form_before, party_after, mounts_before=None):
+        b = bytearray(0x4000)
+        for k, v in enumerate(party_before):
+            struct.pack_into("<H", b, s3save.PARTY_OFF + k * 2, v)
+        for k, v in enumerate(mounts_before or [0] * 6):
+            struct.pack_into("<H", b, s3save.PARTY_MOUNT_OFF + k * 2, v)
+        b[s3save.FORMATION_OFF:s3save.FORMATION_OFF + 6] = bytes(form_before)
+        old = s3save.decode_party(bytes(b))
+        for k, v in enumerate(party_after):
+            struct.pack_into("<H", b, s3save.PARTY_OFF + k * 2, v)
+        s3save._rebuild_formation(b, old)
+        return (s3save.decode_party(bytes(b)),
+                list(b[s3save.FORMATION_OFF:s3save.FORMATION_OFF + 6]),
+                s3save.decode_party_mounts(bytes(b)))
+
+    H, J, L, F = 1, 25, 26, 8
+    _, f, _ = formation_after([H, J, L, 0, 0, 0], [1, 0, 3, 0, 2, 0], [H, J, L, 0, 0, 0])
+    check("an unchanged party keeps its spread layout byte for byte", f == [1, 0, 3, 0, 2, 0], str(f))
+    _, f, _ = formation_after([H, J, L, 0, 0, 0], [1, 0, 3, 0, 2, 0], [H, J, L, F, 0, 0])
+    check("adding a member fills the first free position, nobody else moves",
+          f == [1, 4, 3, 0, 2, 0], str(f))
+    _, f, _ = formation_after([H, J, L, 0, 0, 0], [1, 0, 3, 0, 2, 0], [H, J, 0, 0, 0, 0])
+    check("removing a member frees just their position", f == [1, 0, 0, 0, 2, 0], str(f))
+    _, f, _ = formation_after([H, J, L, 0, 0, 0], [1, 2, 3, 4, 5, 6], [H, J, L, 0, 0, 0])
+    check("a stale table from the older build is repaired to the real members",
+          sorted(x for x in f if x) == [1, 2, 3] and f.count(0) == 3, str(f))
+    p2, _, m2 = formation_after([H, J, L, 0, 0, 0], [1, 0, 3, 0, 2, 0], [H, 0, L, 0, 0, 0],
+                                mounts_before=[0, 0, 309, 0, 0, 0])
+    check("a mount follows its rider when an earlier member is removed",
+          m2[p2.index(L)] == 309 and sum(1 for x in m2 if x) == 1, str(m2))
+
     print("Memory-card ECC helper:")
     zero = s3save.ecc_page(bytes(512))
     check("ecc_page returns 16 bytes", len(zero) == 16)
