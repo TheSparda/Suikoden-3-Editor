@@ -145,8 +145,86 @@
     return all.find((r) => !r.st.recruited && !r.story) || null;
   }
 
+  // ---- What a recruit asks you to bring --------------------------------------
+  // A how-to line says "speak to him with the Rose Brooch in your inventory" and stops there.
+  // Editor/s3_recruit_needs.json answers the rest — where that item comes from and when — from
+  // the disc's shop and drop tables plus the guide's own lines. This turns one star's entry into
+  // display chips, and checks each against the save it can see: a prerequisite star you already
+  // have, or potch you cannot currently afford, is worth knowing before you walk over there.
+  //
+  // opts: {recruited: name -> true|false|null, gold: number|null}. Both optional; without them
+  // the chips still render, just without the ✓/✗.
+  const num = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const stageText = (s) => {
+    const st = (s.stages || []).slice().sort((a, b) => a - b);
+    if (!st.length) return "";
+    const span = st[st.length - 1] - st[0] + 1 === st.length;
+    const which = span && st.length > 1 ? `${st[0]}-${st[st.length - 1]}` : st.join(", ");
+    return `stage${st.length > 1 ? "s" : ""} ${which} of ${s.maxStage}`;
+  };
+  function itemWhere(it) {
+    const out = [];
+    (it.shops || []).forEach((s) => {
+      const what = s.kind === "rare" ? `rare find at` : `sold at`;
+      const odds = s.kind === "rare" && s.chance ? ` — ${s.chance}% a visit` : "";
+      out.push(`${what} ${s.town}'s ${s.counter} (${stageText(s)})${odds}`);
+    });
+    (it.chests || []).forEach((c) => out.push(`treasure chest in ${c.place}${c.guardian ? ` (guarded by ${c.guardian})` : ""}`));
+    // Drops read as one line per hunting ground: same odds, same first area, all the enemies
+    // that carry it there. Three separate "dropped by X in Kuput Forest" clauses for the same
+    // forest is noise, and the same enemy at two levels is one enemy.
+    const grounds = [];
+    (it.drops || []).forEach((d) => {
+      const here = d.areas[0] || "";
+      const key = `${d.pct}|${here}`;
+      let g = grounds.find((x) => x.key === key);
+      if (!g) grounds.push((g = { key, pct: d.pct, here, who: [], also: new Set() }));
+      const seen = g.who.find((w) => w.name === d.enemy);
+      if (seen) { if (d.lv) seen.lv.push(d.lv); } else g.who.push({ name: d.enemy, lv: d.lv ? [d.lv] : [] });
+      d.areas.slice(1).forEach((a) => g.also.add(a));
+    });
+    grounds.forEach((g) => {
+      const who = g.who.map((w) => `${w.name}${w.lv.length ? ` Lv${w.lv.join("/")}` : ""}`).join(", ");
+      const also = g.also.size ? ` (also in ${g.also.size} other area${g.also.size === 1 ? "" : "s"})` : "";
+      out.push(`dropped by ${who} (${g.pct}%) in ${g.here}${also}`);
+    });
+    if (it.moreDrops) out.push(`+${it.moreDrops} more dropper${it.moreDrops === 1 ? "" : "s"}`);
+    (it.guide || []).forEach((g) => {
+      // the Rare Armor guide's own words, minus any line that just restates a counter the disc
+      // already told us about ("Item Shop in Iksay Village")
+      const dupe = /^shop/.test(g.kind) && (it.shops || []).some((s2) => g.text.includes(s2.town));
+      if (!dupe) out.push(`${g.text} (guide)`);
+    });
+    return out;
+  }
+  function needChips(needs, opts) {
+    const o = opts || {}, out = [];
+    (needs && needs.items || []).forEach((it) => {
+      const where = itemWhere(it);
+      // Nothing known splits two ways: the guide's line already told you where (Scott's antler
+      // is "from the Vinay del Zexay trading post"), or nobody has said — which the checklist
+      // owns up to rather than dressing up.
+      const blank = it.lineSays ? "only the line above" : "no source in the editor's tables";
+      out.push({ kind: "item", name: it.name, ok: null,
+        text: `${it.name} — ${where.length ? where.join(" · ") : blank}` });
+    });
+    (needs && needs.potch || []).forEach((amount) => {
+      const gold = typeof o.gold === "number" ? o.gold : null;
+      out.push({ kind: "potch", name: amount, ok: gold === null ? null : gold >= amount,
+        text: `${num(amount)} potch${gold === null ? "" : ` — you have ${num(gold)}`}` });
+    });
+    (needs && needs.first || []).forEach((f) => {
+      const got = o.recruited ? o.recruited(f.name) : null;
+      const verb = f.how === "recruit" ? "Recruit" : "Bring";
+      out.push({ kind: "first", name: f.name, ok: got === null ? null : !!got,
+        text: `${verb} ${f.name} (#${f.n})${got === null ? "" : got ? " — recruited" : " — not yet recruited"}` });
+    });
+    (needs && needs.gates || []).forEach((g) => out.push({ kind: "gate", name: g, ok: null, text: g }));
+    return out;
+  }
+
   const api = { RECRUITERS, recState, setRecruit, applyCanonical, teamCounts, previewChanges,
-    orderStars, groupStars, nextStar };
+    orderStars, groupStars, nextStar, needChips };
   if (typeof module !== "undefined" && module.exports) module.exports = api;   // Node (CJS)
   root.RecruitCore = api;                                                       // browser global
 })(typeof self !== "undefined" ? self : globalThis);

@@ -613,7 +613,9 @@ function showSub() {
     $("#subhint").innerHTML = `Recruitment completion across the <b>108 Stars of Destiny</b>, in the ` +
       `<b>recruitment guide's order</b> — the order you can actually get them in — grouped into that ` +
       `order's stages, each with its own progress. Filter to <b>missing</b> to see who's left, with the ` +
-      `guide's <i>how-to-recruit</i> for each optional star. ` +
+      `guide's <i>how-to-recruit</i> for each optional star — and under it, <b>what that errand needs</b>: ` +
+      `where the item it asks for actually comes from, the potch measured against your purse, and any ` +
+      `star you must bring or recruit first. ` +
       `Team pills show which protagonist(s) a recruited star is on (a star can be on several at once).`;
     drawStars();
   } else if (SUB === "party") {
@@ -814,6 +816,9 @@ let RECRUIT_META = null;            // name -> {auto, how}: story auto-join vs o
 // The Suikosource recruitment guide's own table: {phases, chars:{name -> {n, star, how, phase}},
 // extras}. It is what puts the 108-Stars checklist in recruitment order instead of roster order.
 let RECRUIT_ORDER = null;
+// name -> {items, potch, first, gates}: what a star's how-to makes you bring, and where each
+// item comes from (disc shop/drop tables + guide lines). See Editor/build_recruit_needs.py.
+let RECRUIT_NEEDS = null;
 let STARS_COLLAPSED = {};           // guide stage key -> folded away in the checklist?
 async function loadRecruitMeta() {
   if (RECRUIT_META) return RECRUIT_META;
@@ -826,6 +831,12 @@ async function loadRecruitOrder() {
   try { RECRUIT_ORDER = await (await fetch("../Editor/s3_recruit_order.json")).json(); }
   catch (e) { RECRUIT_ORDER = { phases: [], chars: {}, extras: [] }; }   // falls back to one flat list
   return RECRUIT_ORDER;
+}
+async function loadRecruitNeeds() {
+  if (RECRUIT_NEEDS) return RECRUIT_NEEDS;
+  try { RECRUIT_NEEDS = (await (await fetch("../Editor/s3_recruit_needs.json")).json()).chars || {}; }
+  catch (e) { RECRUIT_NEEDS = {}; }    // no file: the how-to line still shows, just without the extras
+  return RECRUIT_NEEDS;
 }
 // Story characters auto-join — recruiting/un-recruiting them manually is pointless and can
 // soft-lock. This tool is meant for OPTIONAL recruits.
@@ -917,6 +928,7 @@ function charByRoster(ri) { return saves[curSlot].characters.find((c) => c.roste
 function drawStars() {
   if (RECRUIT_META === null) loadRecruitMeta().then(() => { if (SUB === "stars") drawStars(); });
   if (RECRUIT_ORDER === null) loadRecruitOrder().then(() => { if (SUB === "stars") drawStars(); });
+  if (RECRUIT_NEEDS === null) loadRecruitNeeds().then(() => { if (SUB === "stars") drawStars(); });
   const s = saves[curSlot];
   // The tracked set = characters either guide knows as recruitable stars, plus anyone actually
   // recruited in this save (covers roster/name drift either way).
@@ -950,6 +962,15 @@ function drawStars() {
   });
   const groups = RecruitCore.groupStars(rows0, shown, RECRUIT_ORDER);
 
+  // bind this save into the pure formatter: staged gold, and whether a named prerequisite star
+  // is (or is about to be) recruited.
+  const byName = {};
+  rows0.forEach((r) => (byName[r.c.name] = r));
+  const needChips = (name) => RecruitCore.needChips((RECRUIT_NEEDS || {})[name], {
+    gold: typeof GOLD === "number" ? GOLD : (s.global && s.global.gold),
+    recruited: (n) => (byName[n] ? byName[n].st.recruited : null),
+  });
+
   const teamPills = (st) => st.teams.length
     ? st.teams.map((t) => `<span class="tpill t${t[0]}">${t[0]}</span>`).join("")
     : `<span class="tpill tS" title="shared / story">S</span>`;
@@ -974,8 +995,20 @@ function drawStars() {
     // blurb is the fallback for anyone the guide doesn't cover. Full table width so it reads
     // cleanly at any pane size.
     const how = (!rec && !x.story) ? (x.guideHow || x.how) : "";
-    const howRow = how
-      ? `<tr class="${dirty}howrow"><td colspan="6"><div class="howto">${esc(how)}</div></td></tr>` : "";
+    // ...and under it, what that line makes you bring: the item's actual source and stock stage,
+    // the potch measured against what this save is carrying, and any star you need along or
+    // recruited first (with whether you already have them). A line that says "give him a Deer
+    // Antler" is only half an errand until you know where antlers come from.
+    const chips = (!rec && !x.story) ? needChips(x.c.name) : [];
+    const chipHtml = chips.map((n) => {
+      const mark = n.ok === null ? "" : n.ok ? `<span class="ok">✓</span> ` : `<span class="miss">✗</span> `;
+      return `<span class="need n-${n.kind}${n.ok === false ? " short" : ""}">${mark}${esc(n.text)}</span>`;
+    }).join("");
+    const howRow = (how || chipHtml)
+      ? `<tr class="${dirty}howrow"><td colspan="6">
+           ${how ? `<div class="howto">${esc(how)}</div>` : ""}
+           ${chipHtml ? `<div class="needs"><span class="needlbl">needs</span>${chipHtml}</div>` : ""}
+         </td></tr>` : "";
     return main + howRow;
   };
 
