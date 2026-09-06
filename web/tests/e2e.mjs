@@ -18,7 +18,8 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
   MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES,
-  RUNEFX_SITES, RUNEFX_FLOAT, PS_HOOK, PS_HOOK_STOCK, PS_HOOK_JAL } from "./synth-iso.mjs";
+  RUNEFX_SITES, RUNEFX_FLOAT, PS_HOOK, PS_HOOK_STOCK, PS_HOOK_JAL,
+  SVAG_STREAM, SVAG_INTER, SVAG_BYTES } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -1258,6 +1259,74 @@ head("Movement speed — restore covers speeds and classes together");
   await page.context().close();
 }
 
+head("Reference — Music: playing the streamed audio off the disc");
+{ const page = await newPage();
+  // A cut-down index whose one stream points at the planted Svag in the synth disc.
+  const BGM = { format: "s3bgm", schema: 1, kindBgm: 1,
+    script: [{ archive: "TEST", label: "t", op: 59, track: 0x200, fade: 64, tail: 16, trackOff: 0 }],
+    rooms: [{ archive: "TEST", area: 1, sub: 0, room: 1, bgmOff: 0, seOff: 0, bgm: 0x200, se: 0 }],
+    streams: [{ i: 0, sect: 0, sectors: 1, flags: 115, off: SVAG_STREAM + 0x800,
+                bytes: SVAG_BYTES, rate: 44100, ch: 2, inter: SVAG_INTER, secs: 0.16 }] };
+  await page.addInitScript(`window.S3_TEST_BGM = ${JSON.stringify(BGM)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
+  await page.click('[data-ref="bgm"]');
+  await page.waitForSelector("[data-play]", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("the streamed-audio section is present", /Streamed audio/.test(txt));
+  check("it says the decode happens locally", /nothing is uploaded/.test(txt));
+  // The honesty this section exists to preserve: no ▶ is attached to a track id, because
+  // nothing on the disc joins the two.
+  check("no play button sits on a track id row",
+    (await page.locator("table.invtbl").nth(0).locator("[data-play]").count()) === 0);
+  check("it states the id-to-stream link is unproven", /nothing found so far joins a track id/.test(txt));
+  check("it states most of the soundtrack is not streamed", /at most ~10% of the music/.test(txt));
+
+  await page.click('[data-play="0"]');
+  await page.waitForFunction(() => {
+    const e = document.querySelector('[data-pstate="0"]');
+    return e && /playing|done|failed|no disc/.test(e.textContent);
+  }, null, { timeout: 15000 });
+  const state = await page.textContent('[data-pstate="0"]');
+  check("clicking Play decodes and starts the stream", /playing|done/.test(state), state);
+  // It must really have produced audio, not just flipped a label.
+  const info = await page.evaluate(() => {
+    const c = window.__s3audio; return c ? { rate: c.rate, frames: c.frames, ch: c.ch, peak: c.peak } : null;
+  });
+  check("an AudioBuffer was built from the planted stream",
+    info && info.ch === 2 && info.rate === 44100 && info.frames === 14336, JSON.stringify(info));
+  check("the decoded buffer is not silence", info && info.peak > 0, JSON.stringify(info));
+  await page.click("[data-stopall]");
+  check("Stop clears the row state", (await page.textContent('[data-pstate="0"]')) === "");
+  check("playback stages nothing", await nothingStaged(page));
+  await page.context().close();
+}
+
+head("Reference — Music: a bad stream offset reports, it does not crash the page");
+{ const page = await newPage();
+  // An index pointing past the end of the disc — what a stale s3_bgm.json would look like.
+  const BGM = { format: "s3bgm", schema: 1, kindBgm: 1, script: [], rooms: [],
+    streams: [{ i: 0, sect: 0, sectors: 1, flags: 115, off: 0x7F000000,
+                bytes: SVAG_BYTES, rate: 44100, ch: 2, inter: SVAG_INTER, secs: 0.16 }] };
+  await page.addInitScript(`window.S3_TEST_BGM = ${JSON.stringify(BGM)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
+  await page.click('[data-ref="bgm"]');
+  await page.waitForSelector("[data-play]", { timeout: 3000 });
+  await page.click('[data-play="0"]');
+  await page.waitForFunction(() => {
+    const e = document.querySelector('[data-pstate="0"]');
+    return e && !/^(|reading…|decoding…)$/.test(e.textContent);
+  }, null, { timeout: 15000 });
+  const state = await page.textContent('[data-pstate="0"]');
+  check("it names the offset it found nothing at", /no audio at 0x7f000000/i.test(state), state);
+  // newPage() counts pageerror/console-error into `fails`, so a crash here fails the run.
+  check("the rest of the view still works", /Streamed audio/.test(await page.textContent("#isoView")));
+  await page.context().close();
+}
+
 head("Reference — Music: where the game picks a track, read-only");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
@@ -1330,15 +1399,25 @@ head("Assigned horse — the per-character list2 field, field + battle");
   // field bank but no battle one, which is exactly the distinction this section exists to make
   check("Geddoe is offered an assigned horse", (await page.$(sel(3))) !== null);
   check("Geddoe is labelled field-only", /Geddoe[\s\S]{0,80}field/.test(await page.textContent("#isoView")));
-  // the card must not imply that setting this alone puts someone on a horse in battle
-  { const txt = await page.textContent("#isoView");
-    check("it says the flag grants permission, not a horse", /does not by itself put\s+anyone on a horse/.test(txt.replace(/\s+/g, " ")));
-    check("it points at Ruby to actually force one", /use <?b?>?Ruby<?\/?b?>?/.test(txt) || /Ruby/.test(txt));
-    check("it explains why Chris rides in some battles only", /some battles\s+and\s+not others/.test(txt.replace(/\s+/g, " "))); }
-  // only 308/309 are honoured by the game, so only those may be offered
+  // The card used to say this flag "does not by itself put anyone on a horse". That was wrong
+  // and the copy was corrected: PartyPut reads +0x66 and writes the horse into the party list
+  // six positions along, which a real save corroborates (Chris at party position 3, her horse
+  // at 9). What it genuinely cannot do is make a scene ASK for a mount. These assertions track
+  // the corrected claims, so the card cannot quietly drift back to the old one.
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("it says the field really does stage a horse", /really does stage the horse/.test(txt));
+    check("it explains the pos\u002B6 staging", /six positions along/.test(txt));
+    check("it says the limit is the script, not the flag", /cannot do is write the script/.test(txt));
+    check("it points at Ruby to force one in battle", /Ruby/.test(txt));
+    check("it explains why Chris rides only sometimes", /some scenes and not others/.test(txt));
+    check("it warns the party must be re-formed", /re-formed/.test(txt));
+    check("it points at the Test tab for the wider list", /Test<\/b>? ?tab can widen|Test tab can widen/.test(txt)); }
+  // Only 308/309 are honoured while the clamp is stock, so only those may be offered. The Test
+  // tab can widen the clamp, and the dropdown then grows — this asserts the DEFAULT, which is
+  // what a freshly loaded ISO must show.
   const optVals = await page.$$eval(sel(1), (els) => Array.from(els[0].options).map((o) => o.value));
-  check("only none/308/309 are offered", JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]),
-    optVals.join(","));
+  check("only none/308/309 are offered while the clamp is stock",
+    JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]), optVals.join(","));
   await page.selectOption(sel(1), "308");     // give Hugo a knight horse
   await page.selectOption(sel(2), "0");       // take Chris's away
   const r = await save(page);
