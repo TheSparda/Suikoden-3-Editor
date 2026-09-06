@@ -175,10 +175,11 @@ boxes when you play as someone the game didn't plan for, with the setup written 
 step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
 whitelist and the scene-actor fallback; see below),
-**Gear** (DEF, price, 5 effect slots), **Sets** (armor-set composition, the
+**Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
-the set number that can be pointed at a different set), **Food**, **Text** (in-ELF UI strings —
+the set number that can be pointed at a different set), **Food** (rename a dish, rewrite its
+description, set its heal and proc chance), **Text** (in-ELF UI strings —
 battle messages, menu labels, prize/error prompts and character blurbs, each capped to its
 original byte length), **Encounter**
 (a global **random-encounter rate** as a plain percentage, plus the three per-movement
@@ -195,6 +196,12 @@ below).
 
 > **Text scope.** Story **dialogue** is *not* editable in either editor — it lives in packed
 > event files outside the executable. The Text tab covers the strings held in the boot ELF.
+
+> **Names and descriptions are written in place**, over the bytes they already occupy, so each
+> is capped to the slot the disc reserves for it (the field shows the cap and refuses anything
+> longer rather than truncating). Where the disc stores one string **twice** — 27 descriptions
+> and 43 names, e.g. *Kite* the rune and *Kite* the spell it grants, or the Wind Amulet and its
+> spell — an edit writes **every copy**, and the field says so.
 
 **Field character — run around the map as someone else.** The on-field avatar is the
 **party-leader byte** in your save, and that byte names a *model*.
