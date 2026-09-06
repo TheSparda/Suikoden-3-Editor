@@ -1148,6 +1148,7 @@
     ]);
     const rooms = await grabOpt("../Editor/s3_rooms.json");        // per-area encounter rates
     const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
+    const bgm = await grabOpt("../Editor/s3_bgm.json");            // music cues + per-room audio
     const uniteChars = await grabOpt("../Editor/s3_unite_chars.json");  // who is in each unite
     const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
     const shops = await grabOpt("../Editor/s3_shops.json");        // shop counter map + town names
@@ -1166,7 +1167,7 @@
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
-            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources,
+            enemyPacks, warUnits, warRef, rooms, subfiles, bgm, uniteChars, itemSources,
             runeFood, runeOwner, shops };
     return REF;
   }
@@ -2325,7 +2326,7 @@
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
-      ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, and every packed sub-file on the disc. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
+      ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, every packed sub-file on the disc, and where the game decides which music plays. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
       changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
     };
     q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
@@ -6485,6 +6486,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
     mountref: "Reference (read-only): the mount system as decoded off this disc — what each model can do, which areas carry a mount, and the battle mechanics that aren't exposed as editable fields.",
     files: "Reference (read-only): every packed sub-file on the disc — which archive holds it, where it starts, how big it is, and what it turned out to be.",
+    bgm: "Reference (read-only): where the game decides which music plays — every cue in the event scripts and the BGM/ambient pair on every room record. Read-only because the track ids have no names yet.",
   };
   let RUNE_GROUP = "";     // Runes browser: family filter chip ("" = all)
   let SKILL_TYPE = "";     // Skills browser: type filter chip ("" = all)
@@ -6985,6 +6987,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     ["files", "Files", () => { const sf = subfileIndex(); return (sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0).toLocaleString(); }, drawFiles],
     ["places", "Pickups", () => ((REF.itemSources && REF.itemSources.places) || []).length, drawPickups],
     ["mountref", "Mounts", () => MOUNTREF.riders.length + MOUNTREF.mounts.length, drawMountRef],
+    ["bgm", "Music", () => { const b = bgmIndex(); return b ? b.script.length.toLocaleString() : 0; }, drawBgmRef],
   ];
   function refTabs() {
     return `<div class="subtabs" style="margin-bottom:10px">${REF_MODES.map(([k, label, count]) =>
@@ -7179,6 +7182,102 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${tbl(["Finding", "Why it isn't editable", "Address"],
         MOUNTREF.notEditable.filter((r) => hit(...r)).map((r) =>
           `<tr><td>${esc2(r[0])}</td><td class="muted">${esc2(r[1])}</td><td class="sl">${esc2(r[2])}</td></tr>`))}`;
+    wireRefTabs(host);
+  }
+
+  // ---- Music reference (read-only) -------------------------------------------
+  // Music is not a table in the executable. Two places pick a track — the event-script sound
+  // command (opcode 59/60, an 18-byte instruction whose w2 operand is the track) and the room
+  // record's +0x22 — and both are indexed in Editor/s3_bgm.json by build_bgm_index.py.
+  //
+  // READ-ONLY on purpose, and the reason is worth stating rather than implying: every cue's
+  // offset is known and a track id is a single u16, so the *edit* is trivial. What's missing
+  // is meaning — the 13 ids have no names, and there is no name table on the disc to find, so
+  // an editor here would be a dropdown of numbers to guess between. Naming them needs a
+  // patched disc and an emulator. Until then this shows what the disc actually says.
+  const BGM_UNRESOLVED = [
+    ["What the track ids sound like",
+     "13 ids and no name table anywhere on the disc — the only way to map an id to a song is to patch a disc and listen. Nothing here guesses at a name.",
+     "—"],
+    ["What track 0x0200 really is",
+     "It is 465 of the script cues AND the dominant room-record value, which reads as “this map’s own theme” rather than one specific song. The 0x0113–0x0129 band behaves like real per-song ids; 0x0200 probably does not.",
+     "—"],
+    ["Replacing the music itself",
+     "The audio lives in the SD/STR.BIN SCEI container. The area archives carry no Sony audio headers at all (SShd/SSbd/VAGp/SEQp: zero hits), so only which id is requested can ever be changed here — not what it sounds like.",
+     "SD/STR.BIN"],
+    ["Adding a cue where the script has none",
+     "The sound command is a fixed 18 bytes, so retargeting a track or silencing it (id 0) is an in-place 2-byte write. Inserting a new cue would mean lengthening the script, which is a different and much riskier problem.",
+     "0x17AF1A8"],
+  ];
+  function bgmIndex() {
+    const idx = (typeof window !== "undefined" && window.S3_TEST_BGM) || (REF && REF.bgm);
+    return idx && Array.isArray(idx.script) && Array.isArray(idx.rooms) ? idx : null;
+  }
+  function drawBgmRef(host) {
+    const idx = bgmIndex();
+    if (!idx) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_bgm.json</code>; it didn't load.</div>`;
+      wireRefTabs(host);
+      return;
+    }
+    const q2 = SEARCH, hit = (...xs) => !q2 || xs.join(" ").toLowerCase().includes(q2);
+    const tbl = (head, rows) => `<table class="invtbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
+      rows.join("") || `<tr><td colspan="${head.length}" class="muted">no matches</td></tr>`}</tbody></table>`;
+    const tid = (t) => (t === 0 ? "silence" : "0x" + hex(t, 4));
+
+    // Tally once: per track (cues, rooms, which areas) and per area (its tracks and ambience).
+    const trk = new Map(), area = new Map();
+    const bump = (m, k, f) => { if (!m.has(k)) m.set(k, f()); return m.get(k); };
+    const A = (a) => bump(area, a, () => ({ cues: new Map(), bgm: new Map(), se: new Map(), rooms: 0 }));
+    const T = (t) => bump(trk, t, () => ({ cues: 0, rooms: 0, areas: new Set() }));
+    const inc = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+    idx.script.forEach((c) => { const r = T(c.track); r.cues++; r.areas.add(c.archive); inc(A(c.archive).cues, c.track); });
+    idx.rooms.forEach((r) => { const a = A(r.archive); a.rooms++; inc(a.bgm, r.bgm); inc(a.se, r.se);
+      const t = T(r.bgm); t.rooms++; t.areas.add(r.archive); });
+    const seIds = new Set(idx.rooms.map((r) => r.se).filter(Boolean));
+    const fmt = (m) => [...m.entries()].sort((x, y) => y[1] - x[1]).map(([k, n]) => `${tid(k)}×${n}`).join(", ");
+
+    // Naming all 23 areas for the ubiquitous tracks buries the signal, which is *which* places
+    // use the distinctive ones — so past a handful, the count says more than the list.
+    const areaList = (set) => {
+      const ns = [...set].sort().map((a) => archName(a) || a);
+      return ns.length > 6 ? `${ns.length} areas — effectively everywhere` : ns.join(", ");
+    };
+    const trkRows = [...trk.entries()].sort((a, b) => (b[1].cues + b[1].rooms) - (a[1].cues + a[1].rooms))
+      .filter(([t, v]) => hit(tid(t), String(t), [...v.areas].join(" "), [...v.areas].map(archName).join(" ")))
+      .map(([t, v]) => `<tr><td class="sl">${tid(t)}</td><td class="sl">${t}</td><td>${v.cues.toLocaleString()}</td><td>${
+        v.rooms.toLocaleString()}</td><td class="muted">${esc2(areaList(v.areas))}</td></tr>`);
+    const areaRows = [...area.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .filter(([a, v]) => hit(a, archName(a), fmt(v.cues), fmt(v.bgm)))
+      .map(([a, v]) => `<tr><td>${esc2(archName(a) || "—")}<div class="muted">${esc2(a)}</div></td><td class="sl">${
+        esc2(fmt(v.cues) || "—")}</td><td class="sl">${esc2(fmt(v.bgm))}</td><td class="sl">${
+        esc2(fmt(v.se))}</td><td>${v.rooms}</td></tr>`);
+
+    host.innerHTML = refTabs() +
+      `<div class="muted" style="margin:0 0 10px">Music is <b>not</b> a table in the executable — two
+        places pick a track, and this is both of them, decoded off this disc.
+        <b>${idx.script.length.toLocaleString()}</b> script cues (event-script opcode 59/60, an 18-byte
+        instruction whose third halfword is the track) and <b>${idx.rooms.length.toLocaleString()}</b> room
+        records, each carrying a BGM id at <code>+0x22</code> and an ambient sound effect at
+        <code>+0x24</code> — which is why ambience reads 0 indoors and non-zero on field maps.
+        <b>${trk.size}</b> distinct track ids in all.</div>
+      <div class="muted" style="margin:0 0 10px">The request function is <code>0x17AEA38</code>; kind 1 is
+        BGM because its tag in the table at <code>0x1983020</code> is <code>0x1000</code>, exactly the bit
+        masked off before the current-track comparison. A raw scan for the opcode also matches ordinary
+        data, so a cue counts only if the operand words that are zero in every disassembler-confirmed
+        instruction are zero in it too — that keeps 91% of raw hits and drops the obvious garbage.
+        Every offset in the index re-reads the value it stores.</div>
+      <div class="bag-h">Track ids — what asks for what</div>
+      ${tbl(["Track", "Decimal", "Script cues", "Rooms", "Areas that use it"], trkRows)}
+      <div class="bag-h" style="margin-top:14px">By area — what each place plays</div>
+      ${tbl(["Area", "Script cues", "Room BGM", "Room ambience", "Rooms"], areaRows)}
+      <div class="bag-h" style="margin-top:14px">What is not resolved</div>
+      ${tbl(["Finding", "Where it stands", "Address"],
+        BGM_UNRESOLVED.filter((r) => hit(...r)).map((r) =>
+          `<tr><td>${esc2(r[0])}</td><td class="muted">${esc2(r[1])}</td><td class="sl">${esc2(r[2])}</td></tr>`))}
+      <div class="muted" style="margin:10px 0 0">${seIds.size} distinct ambient sound effects across the
+        room records. Rebuild this index from a pristine disc with
+        <code>python3 Editor/build_bgm_index.py &lt;iso&gt;</code>.</div>`;
     wireRefTabs(host);
   }
 
