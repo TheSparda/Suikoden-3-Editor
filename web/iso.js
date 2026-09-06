@@ -683,15 +683,26 @@
   // another support-rune id. Whatever grants the EXP bonus does not ask the question the other
   // 22 ask.
   const PS_YES = 0x0004102B;          // sltu $v0,$zero,$a0 — yes, for an occupied party slot
+  // `proof` is the same per-item confidence marker the Mounts and Movement tabs carry, and for the
+  // same reason: a decoded, byte-verified site and a site somebody has actually watched working
+  // are not the same class of fact, and the tab should not let a reader mistake one for the other.
+  // "confirmed" is only ever set from a real play report, never from a passing test.
   const PASSIVES = [
-    { id: 0x1B9, where: "field",
+    { id: 0x1B9, where: "field", proof: "untested",
       what: "The whole rune. The field encounter roll (VA 0x1702740) walks party slots 1–6 asking "
         + "this and turns on the weak-foe skip if any of them says yes, so one answer covers the party.",
+      note: "Decoded and byte-verified, but nobody has yet walked around with it on to see weak "
+        + "encounters stop. The same patch shape as Sunbeam, which is confirmed — so this is expected "
+        + "to work rather than a guess, but expected is not confirmed.",
       sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
-    { id: 0x1BD, where: "field",
+    { id: 0x1BD, where: "field", proof: "confirmed",
       what: "The walking half only — the field heal loop (VA 0x17029A0), which heals each party "
         + "slot that answers yes. The “15HP each combat turn” half is a battle site and is "
         + "listed below with the rest, unswitched.",
+      note: "CONFIRMED IN PLAY (2026-09-06): toggled on, the party heals by walking with no Sunbeam "
+        + "Rune equipped by anyone. That settles more than this one rune — it is the first evidence "
+        + "that the whole approach works, i.e. that dropping the equipped-rune call and answering "
+        + "yes in the word it vacated really does turn a passive on.",
       sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" }] },
   ];
   // Decoded, verified, and deliberately NOT offered — see "WHY ONLY THE FIELD ONES" above. Kept
@@ -2716,7 +2727,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
-      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Both switchable sites are byte-checked against a pristine disc, but neither has been watched working in play. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
+      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Sunbeam is CONFIRMED IN PLAY (2026-09-06): switched on, the party heals by walking with nobody carrying the rune \u2014 which is also the first evidence that the approach itself works. Champion\u2019s is the identical patch shape one function away and is expected to work, but is still marked untested until somebody plays it. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -7385,8 +7396,19 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     mixed: ["PARTLY ON", "some of this rune's sites are forced and some are stock — tick it, or untick it, to make them agree"],
     unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
   };
-  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what].join(" ").toLowerCase();
+  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what,
+    p.proof || "", p.note || ""].join(" ").toLowerCase();
   const psSiteCount = (p) => `${p.sites.length} site${p.sites.length > 1 ? "s" : ""}`;
+  // The badge beside each rune. Same vocabulary the Mounts tab uses, so "confirmed" means the same
+  // thing on both tabs: somebody played it, not that a test passed.
+  const PS_PROOF = {
+    confirmed: ["confirmed", "var(--ok)", "watched working in game"],
+    untested: ["untested", "var(--warn)", "decoded and byte-verified, but not yet watched working in game"],
+  };
+  function psProofHTML(p) {
+    const m = PS_PROOF[p.proof] || PS_PROOF.untested;
+    return `<span class="u" style="color:${m[1]}" title="${esc2(p.note || m[2])}">${m[0]}</span>`;
+  }
 
   let rfOpen = false;
   function rfCard() {
@@ -7467,9 +7489,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const [pill, why] = PS_STATE_LABEL[st];
       return `<tr>
         <td><input type="checkbox" class="psOn" data-id="${p.id}"${st === "forced" ? " checked" : ""}${st === "unknown" ? " disabled" : ""}></td>
-        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · id ${hex(p.id, 3)}</div></td>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · id ${hex(p.id, 3)}
+          · ${psProofHTML(p)}</div></td>
         <td>${esc2(info.text || "—")}</td>
-        <td class="muted">${esc2(p.what)}</td>
+        <td class="muted">${esc2(p.what)}<div style="margin-top:4px">${esc2(p.note || "")}</div></td>
         <td><span class="u" title="${esc2(why)}">${pill}</span></td>
       </tr>`;
     }).join("");
@@ -7511,10 +7534,14 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
               decoded.` : ""}
         Every write is two instruction words per site and shows up per site in the <b>Changes</b> tab, under
         “Passive runes”.</div>
-      <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Both sites are
-        decoded from a pristine USA SLUS-20387 and byte-checked before they are written, and unticking restores the
-        stock instructions exactly. What is untested is the <i>result</i>: neither forced passive has been watched
-        running in game. Keep a backup disc.</div>
+      <div class="okbox" style="margin:12px 0 10px"><b>Sunbeam is confirmed in play (2026-09-06):</b> switched on, the
+        party heals by walking with nobody carrying the rune. That is the first evidence the whole approach works —
+        dropping the equipped-rune call and answering yes in the word it vacated really does turn a passive on — so
+        <b>Champion's</b>, which is the identical patch shape on the identical helper one function away, is now
+        <i>expected</i> rather than a guess. It is still marked <b>untested</b> until someone walks past a weak
+        encounter with it on, and this tab will not upgrade a marker on a passing test — only on a play report.
+        Both sites are decoded from a pristine USA SLUS-20387 and byte-checked before they are written, and
+        unticking restores the stock instructions exactly. Keep a backup disc anyway.</div>
       ${rfCard()}
       <details class="card"><summary><b>The in-battle passives</b>
         <span class="u">decoded — ${PS_BATTLE.length} runes, ${nBattle} sites — and deliberately not switchable</span></summary>
@@ -7885,9 +7912,18 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     ["What track 0x0200 really is",
      "It is 465 of the script cues AND the dominant room-record value, which reads as “this map’s own theme” rather than one specific song. The 0x0113–0x0129 band behaves like real per-song ids; 0x0200 probably does not.",
      "—"],
+    ["Which stream a track id means",
+     "The 29 streams below are located and playable, but nothing found so far joins a track id to one of them — so they are listed separately rather than behind a ▶ on the id. Listening is how that gets settled.",
+     "—"],
+    ["Most of the soundtrack is not in STR.BIN",
+     "The OST is 76 tracks and about 2½ hours; these 29 streams total 15.7 minutes, so at most ~10% of the music is streamed. The rest must be sequenced — and SD.BIN holds only instrument banks (Vagi/Smpl/Sset/Prog), with no sequence data in it. Where the sequences live is not known.",
+     "/SD/SD.BIN"],
     ["Replacing the music itself",
-     "The audio lives in the SD/STR.BIN SCEI container. The area archives carry no Sony audio headers at all (SShd/SSbd/VAGp/SEQp: zero hits), so only which id is requested can ever be changed here — not what it sounds like.",
-     "SD/STR.BIN"],
+     "Playing a stream is one thing; substituting one is another. A replacement would have to be PS-ADPCM at the same rate and fit the space the disc already reserves, and nothing here writes audio back.",
+     "/SD/STR.BIN"],
+    ["What the streams are",
+     "Not all 29 are music. #5 is 5.8s (a sting, too short for a loop) and #22 and #28 read as ambience or noise beds. Stream #27 runs 7:02.6, which matches the OST's “To Peaceful Days (Staff Roll BGM)” at 7:01 — the one track a duration alone can identify, since every other stream is under 41s and the shortest OST track is 21s.",
+     "—"],
     ["Adding a cue where the script has none",
      "The sound command is a fixed 18 bytes, so retargeting a track or silencing it (id 0) is an in-place 2-byte write. Inserting a new cue would mean lengthening the script, which is a different and much riskier problem.",
      "0x17AF1A8"],
@@ -7895,6 +7931,53 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   function bgmIndex() {
     const idx = (typeof window !== "undefined" && window.S3_TEST_BGM) || (REF && REF.bgm);
     return idx && Array.isArray(idx.script) && Array.isArray(idx.rooms) ? idx : null;
+  }
+
+  // ---- playing the streamed audio --------------------------------------------
+  // The decode itself lives in web/svag-core.js so it can be unit-tested without a browser
+  // (web/tests/svag-core.mjs). This half is only the I/O: read the bytes off the open disc,
+  // hand them to the decoder, push the result at Web Audio.
+  //
+  // A 21 MB stream (#27, the 7-minute one) would decode to ~150 MB of Float32, so cap what
+  // we decode rather than the browser's memory; the row says when a track is cut short.
+  const PLAY_CAP_SEC = 100;
+
+  let AUDIO = null, PLAYING = null;      // AudioContext + the live source node
+  function stopStream() {
+    if (PLAYING) { try { PLAYING.stop(); } catch (e) { /* already ended */ } PLAYING = null; }
+  }
+  async function playStream(st, onState) {
+    stopStream();
+    if (!isoFile) { onState("no disc"); return; }
+    onState("reading…");
+    // Only read what we will actually decode, rounded to whole interleave blocks.
+    const capBytes = Math.ceil(PLAY_CAP_SEC * st.rate * 16 / 28) * st.ch;
+    const want = Math.min(st.bytes, Math.floor(capBytes / (st.inter * st.ch)) * st.inter * st.ch);
+    const bytes = new Uint8Array(await isoFile.slice(st.off, st.off + want).arrayBuffer());
+    onState("decoding…");
+    const chans = SvagCore.decodeSvag(bytes, st.ch, st.inter);
+    // A short read (a truncated disc, or an index built for a different one) decodes to
+    // nothing, and createBuffer throws on a zero length — say which it is instead.
+    if (!chans[0].length) { onState(`no audio at 0x${st.off.toString(16)}`); return; }
+    AUDIO = AUDIO || new (window.AudioContext || window.webkitAudioContext)();
+    if (AUDIO.state === "suspended") await AUDIO.resume();
+    const buf = AUDIO.createBuffer(st.ch, chans[0].length, st.rate);
+    for (let c = 0; c < st.ch; c++) buf.copyToChannel(chans[c], c);
+    // What actually got decoded, for the headless test — "playing" on its own would also
+    // be true of a buffer full of silence, which is exactly how a decode bug would look.
+    let peak = 0;
+    for (let c = 0; c < st.ch; c++) {
+      const d = chans[c];
+      for (let i = 0; i < d.length; i += 97) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+    }
+    window.__s3audio = { rate: st.rate, frames: buf.length, ch: st.ch, peak };
+    const src = AUDIO.createBufferSource();
+    src.buffer = buf;
+    src.connect(AUDIO.destination);
+    src.onended = () => { if (PLAYING === src) { PLAYING = null; onState("done"); } };
+    src.start();
+    PLAYING = src;
+    onState("playing");
   }
   function drawBgmRef(host) {
     const idx = bgmIndex();
@@ -7943,7 +8026,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         instruction whose third halfword is the track) and <b>${idx.rooms.length.toLocaleString()}</b> room
         records, each carrying a BGM id at <code>+0x22</code> and an ambient sound effect at
         <code>+0x24</code> — which is why ambience reads 0 indoors and non-zero on field maps.
-        <b>${trk.size}</b> distinct track ids in all.</div>
+        <b>${trk.size}</b> distinct track ids in all, and the <b>${(idx.streams || []).length}</b>
+        streamed tracks the disc actually carries \u2014 playable below.</div>
       <div class="muted" style="margin:0 0 10px">The request function is <code>0x17AEA38</code>; kind 1 is
         BGM because its tag in the table at <code>0x1983020</code> is <code>0x1000</code>, exactly the bit
         masked off before the current-track comparison. A raw scan for the opcode also matches ordinary
@@ -7954,6 +8038,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${tbl(["Track", "Decimal", "Script cues", "Rooms", "Areas that use it"], trkRows)}
       <div class="bag-h" style="margin-top:14px">By area — what each place plays</div>
       ${tbl(["Area", "Script cues", "Room BGM", "Room ambience", "Rooms"], areaRows)}
+      <div class="bag-h" style="margin-top:14px">Streamed audio — playable from your disc</div>
+      ${streamSection(idx, hit)}
       <div class="bag-h" style="margin-top:14px">What is not resolved</div>
       ${tbl(["Finding", "Where it stands", "Address"],
         BGM_UNRESOLVED.filter((r) => hit(...r)).map((r) =>
@@ -7961,7 +8047,51 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       <div class="muted" style="margin:10px 0 0">${seIds.size} distinct ambient sound effects across the
         room records. Rebuild this index from a pristine disc with
         <code>python3 Editor/build_bgm_index.py &lt;iso&gt;</code>.</div>`;
+    wireStreams(host);
     wireRefTabs(host);
+  }
+
+  // The 29 streams are listed SEPARATELY from the track ids, and not joined to them,
+  // because nothing on the disc joins them yet. Putting a ▶ next to id 0x0124 would claim
+  // a mapping that has not been established — and most ids probably refer to sequenced
+  // music, which is not in this file and cannot be played at all.
+  const STREAM_NOTE = "The music itself. /SD/STR.BIN is 29 <code>Svag</code> streams — Sony "
+    + "interleaved VAG, i.e. plain PS-ADPCM — located by a 29-record table in "
+    + "<code>MODULES/SD_CALL.IRX</code> whose every entry lands exactly on a stream header. "
+    + "Decoded in the browser, straight off your open disc; nothing is uploaded.";
+  function streamSection(idx, hit) {
+    const sts = (idx.streams || []).filter((s) =>
+      hit(`stream ${s.i}`, String(s.i), s.rate + "hz", s.ch === 2 ? "stereo" : "mono"));
+    if (!(idx.streams || []).length) {
+      return `<div class="muted">This index predates stream extraction — rebuild
+        <code>Editor/s3_bgm.json</code> to enable playback.</div>`;
+    }
+    const mm = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+    const rows = sts.map((s) => {
+      const capped = s.secs > PLAY_CAP_SEC;
+      return `<tr><td class="sl">${s.i}</td><td class="sl" style="white-space:nowrap">${mm(s.secs)}${
+        capped ? `<div class="muted">plays first ${PLAY_CAP_SEC}s</div>` : ""}</td><td class="sl" style="white-space:nowrap">${
+        (s.rate / 1000).toFixed(1)} kHz ${s.ch === 2 ? "stereo" : "mono"}</td><td class="sl" style="white-space:nowrap">${
+        (s.bytes / 1048576).toFixed(2)} MB</td><td style="width:99%"><button type="button" class="chip" data-play="${s.i}"
+        ${isoFile ? "" : "disabled"}>▶ Play</button> <span class="muted" data-pstate="${s.i}"></span></td></tr>`;
+    });
+    return `<div class="muted" style="margin:0 0 10px">${STREAM_NOTE}</div>
+      ${!isoFile ? `<div class="warnbox">Playback needs the open ISO.</div>` : ""}
+      <div style="margin:0 0 8px"><button type="button" class="chip" data-stopall>■ Stop</button></div>
+      <table class="invtbl"><thead><tr><th>Stream</th><th>Length</th><th>Format</th><th>Size</th><th></th></tr></thead>
+      <tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table>`;
+  }
+  function wireStreams(host) {
+    const idx = bgmIndex();
+    const stop = q("[data-stopall]", host);
+    if (stop) stop.onclick = () => { stopStream(); qa("[data-pstate]", host).forEach((e) => (e.textContent = "")); };
+    qa("[data-play]", host).forEach((b) => (b.onclick = async () => {
+      const st = (idx.streams || []).find((s) => s.i === +b.dataset.play);
+      const cell = q(`[data-pstate="${st.i}"]`, host);
+      qa("[data-pstate]", host).forEach((e) => (e.textContent = ""));
+      try { await playStream(st, (m) => { if (cell) cell.textContent = m; }); }
+      catch (e) { if (cell) cell.textContent = "failed: " + e.message; }
+    }));
   }
 
   function drawItemsRef(host) {

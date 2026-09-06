@@ -192,9 +192,13 @@ to. The other 21 runes (and Sunbeam's in-battle half) are decoded, listed at the
 with what each does, and **deliberately not switchable**: a call site frees one instruction word
 for the answer, which is enough for *yes* and not enough for *yes, if this is Hugo*, and the
 battle-side lookup never receives the character at all — it resolves whichever unit is acting, so
-forcing one would arm **every unit in the fight, enemies included**. Both switchable sites are
-byte-checked against a pristine disc before anything is written and untick back to stock exactly,
-but neither has been watched working in play — it's experimental, keep a backup. *Fortune* is
+forcing one would arm **every unit in the fight, enemies included**. *Sunbeam* is **confirmed in play**
+(2026-09-06): switched on, the party heals by walking with nobody carrying the rune — which is
+also the first evidence that the approach itself works. *Champion's* is the identical patch shape
+one function away, so it's expected to work, but it stays marked **untested** until someone plays
+it; markers here move on a play report, not on a passing test. Both sites are byte-checked against
+a pristine disc before anything is written and untick back to stock exactly — keep a backup
+anyway. *Fortune* is
 listed and cannot be forced; its effect doesn't ask the question the other 22 ask, and the
 searches that came up empty are recorded in the offsets doc so nobody repeats them. The same tab
 also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
