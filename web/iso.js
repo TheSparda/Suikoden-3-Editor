@@ -222,6 +222,45 @@
         [69, "Sharon", "battle only"],
       ],
       STOCK: { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 },
+      // Ids the clamp admits once it is widened (see horseClamp). Every one of them is in
+      // the ground-ride saddle-offset table at 0x16E85E8, so the engine has a seat height
+      // for each. Ruby (42) and mskn (209) are NOT here: they sit below the clamp's 308
+      // base, which the widening moves the top of, not the bottom.
+      WIDE_VALID: [[325, "Karaya horse"], [353, "Karaya horse #2"],
+                   [359, "Le Buque horse"], [360, "Le Buque horse #2"]],
+    },
+
+    // ---- the clamp that limits the assigned horse to 308/309 -------------------
+    // `hasAssignedHorse` reads the u16 and then throws away anything outside a window two
+    // wide:
+    //
+    //     016C76E4  lhu   $a1, 0x66($v1)
+    //     016C76E8  addiu $v0, $a1, -0x134      ; -308
+    //     016C76EC  sltiu $v0, $v0, 2           ; 308 or 309, nothing else
+    //
+    // Six sites do it, all the same shape, and they are the only `addiu -0x134` / `sltiu`
+    // pairs in the whole PT_LOAD. Raising the 2 to 0x100 widens the window to 308-563,
+    // which brings in the Karaya horses and the Le Buque pair.
+    //
+    // Why this matters for Hugo specifically: his `+0x66` is 0 — he has no assigned horse
+    // at all, and rides only where a scene stages a `krum` and names it. His horse IS the
+    // Karaya horse: the RideOn handler at 0x179ED2C carries a fix-up written for exactly
+    // one pair, rider model 1 on mount 325/353, stripping his Fubar-rigged clip copies so
+    // the horse-rigged ones resolve. 325 is on the wrong side of the clamp.
+    //
+    // Inert on its own. Only six characters have a nonzero +0x66 and all are 308/309, every
+    // one of which stays inside the widened window — nothing changes until a wider id is
+    // actually picked on the Mounts tab.
+    horseClamp: {
+      WIDE: 0x0100,
+      sites: [
+        { off: 0x10EEEC, stock: 0x2C420002, alt: 0x2C420100 },   // hasAssignedHorse
+        { off: 0x10EF0C, stock: 0x2C630002, alt: 0x2C630100 },   // ...its second path ($v1)
+        { off: 0x146EDC, stock: 0x2C420002, alt: 0x2C420100 },   // party helpers
+        { off: 0x14711C, stock: 0x2C420002, alt: 0x2C420100 },
+        { off: 0x1471A8, stock: 0x2C420002, alt: 0x2C420100 },   // PartyPut position 7-12 guard
+        { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
+      ],
     },
 
     // ---- what actually happens when a pair mounts, in battle -------------------
@@ -3659,8 +3698,9 @@
     const horseOff = (roster) => l2base + roster * l2stride + MOUNTS.horse.off;
     const horseRows = MOUNTS.horse.riders.map(([rid, nm, cap]) => {
       const off = horseOff(rid), cur = r16(off), stock = MOUNTS.horse.STOCK[rid] || 0;
-      const known = MOUNTS.horse.VALID.some(([v]) => v === cur);
-      const opts = MOUNTS.horse.VALID.map(([v, lbl]) =>
+      const valid = horseValidOptions();
+      const known = valid.some(([v]) => v === cur);
+      const opts = valid.map(([v, lbl]) =>
         `<option value="${v}"${v === cur ? " selected" : ""}>${esc2(lbl)}${v === stock && v ? " (stock)" : ""}</option>`)
         .concat(known ? [] : [`<option value="${cur}" selected>${cur} — not honoured by the game</option>`]).join("");
       return `<label class="field"><span>${esc2(nm)} <span class="muted">${esc2(cap)}</span></span>
@@ -3734,24 +3774,34 @@
       </div>
       <div id="mountCards">${cards}</div>
       <div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · grants permission, doesn't stage the horse</span></div>
+        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · stages a horse beside them</span></div>
         <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route: each character's own
           record can name a horse, and both the field and the battle gate honour it without the horse being in
           your party. Stock, this is what puts the six Zexen Knights on horseback — Chris on her own horse,
           the other five on the knight horse.</div>
-        <div class="warnbox" style="margin:0 0 8px"><b>This grants permission — it does not by itself put
-          anyone on a horse.</b> These horses are ordinary NPC models, not party members, so they hold no
-          battle slot: the <i>scene</i> still has to stage one. That is why Chris rides in some battles and
-          not others even though her record has always said 309. Setting this on a new character makes them
-          eligible wherever the game already stages a horse; it cannot add a horse to a fight that has none.
-          To <i>force</i> a horse in battle, use <b>Ruby</b> in the pair table above — she is a party member,
-          so she brings her own battle slot.</div>
+        <div class="muted" style="margin:0 0 8px"><b>It really does stage the horse.</b> When the party is
+          formed, <code>PartyPut</code> reads this value and writes the horse into the party list
+          <b>six positions along</b> — so party slot 3 gets a horse at position 9 — and scene setup then
+          builds it as a real actor standing next to them. A script mounts them by naming the rider with
+          bit <code>0x4000</code> set, which the engine resolves to "that actor's own horse". You can see
+          the result in the <b>Save Editor's party list</b>, in the Mount column.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>What it cannot do is write the script.</b> On the
+          field a mount only ever happens because a scene <i>asks</i> for one, so this makes a character
+          eligible everywhere and mounted only where a scene mounts the player. That is why Chris rides in
+          some scenes and not others. Two more things bite: the horse appears only once the party is
+          <b>re-formed</b> (the party list is saved state), and the model has to be loadable in the area
+          you are in. To <i>force</i> a mount in battle instead, use <b>Ruby</b> in the pair table above —
+          she is a party member, so she brings her own battle slot.</div>
         <div class="grid eq">${horseRows}</div>
         <details class="note"><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
             <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
-              are honoured</b>. Any other mount id is read and silently discarded — which is why the Karaya horse
-              and the flyers aren't offered here.</li>
+              are honoured</b> and any other mount id is read and silently discarded. That window is six
+              identical <code>sltiu</code> instructions, and the <b>Test</b> tab can widen it to 308–563 —
+              which adds the <b>Karaya horses</b> (325, 353) and the Le Buque pair. 325 is the one worth
+              having: Hugo ships with no assigned horse at all, and the Karaya horse is the mount the engine
+              was written around for him. The flyers stay out of reach either way — there is no ground saddle
+              offset for a griffon or a dragon.</li>
             <li>The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
               character, so it always has a battle slot and the pairing fires from party membership alone —
               that is why a re-paired Chris+Bright works in any fight with both deployed. An assigned horse
@@ -3949,12 +3999,29 @@
     };
   }
 
+  // ---- assigned-horse clamp (shared by the Mounts tab and the Test toggle) ----
+  // Read the live bytes rather than a flag, so the Mounts dropdown and the Test toggle can
+  // never disagree about whether the wider list is actually in the buffer.
+  function horseClampState() {
+    const st = MOUNTS.horseClamp.sites;
+    if (st.some((c) => !inBlk(c.off, 4))) return "absent";
+    const cur = st.map((c) => r32(c.off) >>> 0);
+    if (cur.every((v, i) => v === st[i].stock)) return "stock";
+    if (cur.every((v, i) => v === st[i].alt)) return "wide";
+    return "unknown";          // partially applied, or not this disc's code
+  }
+  function horseValidOptions() {
+    return horseClampState() === "wide"
+      ? MOUNTS.horse.VALID.concat(MOUNTS.horse.WIDE_VALID)
+      : MOUNTS.horse.VALID;
+  }
+
   // ---- Test: experiments that are not known to work ---------------------------
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "avatar";
-  const TESTS = [["avatar", "Field character"]];
+  const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"]];
   function drawTest(host) {
     host.innerHTML = `
       <div class="warnbox" style="margin:0 0 12px">
@@ -3971,6 +4038,64 @@
       <div id="testView"></div>`;
     qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
     if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
+    else if (TESTVIEW === "horse") drawHorseClamp(q("#testView", host));
+  }
+
+  // ---- Assigned horse: widen the clamp ----------------------------------------
+  function drawHorseClamp(host) {
+    const st = horseClampState();
+    if (st === "absent" || st === "unknown") {
+      host.innerHTML = `<div class="warnbox">The assigned-horse clamp isn't where this build expects
+        it, or is only half-applied — no edit offered. Expected six <code>sltiu</code> sites at
+        ${MOUNTS.horseClamp.sites.map((c) => "0x" + c.off.toString(16).toUpperCase()).join(", ")}.</div>`;
+      return;
+    }
+    const on = st === "wide";
+    const rows = MOUNTS.horseClamp.sites.map((c) => {
+      const cur = r32(c.off) >>> 0;
+      return `<tr><td class="sl">0x${c.off.toString(16).toUpperCase()}</td>
+        <td><code>${cur.toString(16).padStart(8, "0")}</code></td>
+        <td>${cur === c.stock ? '<span class="dim">stock · limit 2</span>'
+                              : '<span class="tag acc2">widened · limit 256</span>'}</td></tr>`;
+    }).join("");
+    host.innerHTML = `
+      <div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Assigned horse — wider list <span class="u">patches game code · not played</span></div>
+        <div class="muted" style="margin:0 0 8px">A character's <b>assigned horse</b> lives in one
+          u16 on the <b>Mounts</b> tab. The engine throws away any value outside a window two ids
+          wide, so stock you can only pick the two Zexen horses:
+          <code>addiu $v0, $a1, -0x134</code> then <code>sltiu $v0, $v0, 2</code>. This raises the
+          <code>2</code> to <code>256</code> at all six sites, widening the window to 308–563.</div>
+        <div class="muted" style="margin:0 0 8px">That adds the <b>Karaya horses</b> (325, 353) and
+          the <b>Le Buque pair</b> (359, 360) to the dropdown. The one that matters is 325:
+          <b>Hugo has no assigned horse at all</b>, and the Karaya horse is the mount he was
+          authored for — the RideOn handler carries a clip fix-up written for exactly one pair,
+          rider model 1 on mount 325/353. Ruby and <code>mskn</code> stay out of reach; they sit
+          below the window's base, which this does not move.</div>
+        <div class="muted" style="margin:0 0 8px"><b>What it does on its own: nothing.</b> Only six
+          characters ship a nonzero value and all are 308 or 309, well inside the widened window.
+          Nothing changes until you pick a wider horse on the Mounts tab.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>Untested in play.</b> The staging chain is
+          read off the disassembly and confirmed against save data — a real save shows Chris at
+          party position 3 with her horse at position 9, which is the <code>pos + 6</code> layout
+          this relies on. What has <i>not</i> been played is a character being given a horse they
+          do not ship with. Two things to expect: the horse only appears once the party is
+          <b>re-formed</b> (the list is saved state, and it is written when the party is built),
+          and the model still has to be loadable in the area you are standing in.</div>
+        <label class="field" style="max-width:420px">
+          <span>Assigned-horse list</span>
+          <select id="hcSel">
+            <option value="0"${on ? "" : " selected"}>Stock — Zexen horses only (308, 309)</option>
+            <option value="1"${on ? " selected" : ""}>Widened — also Karaya + Le Buque (325, 353, 359, 360)</option>
+          </select></label>
+        <table class="invtbl" style="margin-top:10px"><thead><tr><th>Site</th><th>Word</th><th>State</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+    q("#hcSel", host).onchange = (e) => {
+      const wide = e.target.value === "1";
+      MOUNTS.horseClamp.sites.forEach((c) => writeW(c.off, 4, wide ? c.alt : c.stock));
+      drawView();
+    };
   }
 
   // ---- Field character --------------------------------------------------------
