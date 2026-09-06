@@ -743,9 +743,12 @@
   // `where` is where in the game the ask happens, because that is what a "yes" means: a field ask
   // runs once per party slot, a battle ask runs for whichever unit is acting.
   const PASSIVES = [
-    { id: 0x1B9, where: "field",
+    { id: 0x1B9, where: "field", proof: "expected",
       what: "The field encounter roll (VA 0x1702740) walks party slots 1–6 asking this, and turns on "
         + "the weak-foe skip if any of them says yes — so one chosen character covers the whole party.",
+      note: "The same site shape as Sunbeam's walk-heal, one function away, and Sunbeam has been "
+        + "watched working — so this is expected rather than a guess. Nobody has yet walked past a "
+        + "weak encounter with it on.",
       sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
     { id: 0x1BA, where: "battle",
       what: "Multiplies the high-damage-hit chance by 150/100, at both sites that roll it.",
@@ -758,9 +761,14 @@
               { off: 0x103D28, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" }] },
     { id: 0x1BC, where: "battle", what: "Multiplies SPD by 150/100.",
       sites: [{ off: 0x10FD28, jal: 0x0C5B2CE0, ds: 0x240501BC, k: "rec" }] },
-    { id: 0x1BD, where: "both",
+    { id: 0x1BD, where: "both", proof: "expected",
       what: "Both halves of the rune: the field walk-heal (VA 0x17029A0, once per party slot) and "
         + "the +15 HP a combat turn adds (the literal `addiu $v0,$v0,0xF` right after the check).",
+      note: "The walk-heal site is CONFIRMED IN PLAY (2026-09-06): forced to yes, the party healed "
+        + "by walking with nobody carrying the rune. That proves the site and the effect. What has "
+        + "changed since is only how the yes is delivered — a retargeted call into the relocated "
+        + "helper instead of a word written over the call — so the effect is proven and this "
+        + "delivery of it is not. The in-battle half has never been watched at all.",
       sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" },
               { off: 0x261184, jal: 0x0C5B2CE0, ds: 0x240501BD, k: "rec" }] },
     { id: 0x1BE, where: "battle",
@@ -2864,7 +2872,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
-      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Both switchable sites are byte-checked against a pristine disc, but neither has been watched working in play. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
+      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Sunbeam is CONFIRMED IN PLAY (2026-09-06): switched on, the party heals by walking with nobody carrying the rune \u2014 which is also the first evidence that the approach itself works. Champion\u2019s is the identical patch shape one function away and is expected to work, but is still marked untested until somebody plays it. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -7535,7 +7543,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
   };
   const PS_WHERE = { field: "asked on the field", battle: "asked in battle", both: "asked on the field and in battle" };
-  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what].join(" ").toLowerCase();
+  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what,
+    p.proof || "", p.note || ""].join(" ").toLowerCase();
   const psSiteCount = (p) => `${p.sites.length} site${p.sites.length > 1 ? "s" : ""}`;
   const psPickable = () => Array.from({ length: PS_HOOK.pickMax - PS_HOOK.pickMin + 1 }, (_, i) => i + PS_HOOK.pickMin);
   const psNameOf = (i) => ((REF.names && REF.names.list1) || {})[String(i)] || `record ${i}`;
@@ -7546,6 +7555,19 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return names.length > 5 ? `${names.slice(0, 5).join(", ")} +${names.length - 5} more` : names.join(", ");
   }
   let PS_OPEN = 0;                     // which rune's character picker is expanded, if any
+  // The badge beside each rune. Same vocabulary the Mounts tab uses, so "confirmed" means the same
+  // thing on both tabs: somebody played it, not that a test passed. "expected" is the tier this
+  // version needs and Mounts already has: the SITE has been watched working, but the mechanism
+  // that now answers it — a retargeted call rather than a word written over the call — has not.
+  const PS_PROOF = {
+    confirmed: ["confirmed", "var(--ok)", "watched working in game, through this mechanism"],
+    expected: ["expected", "var(--acc2)", "the site has been watched working, but not through the relocated helper"],
+    untested: ["untested", "var(--warn)", "decoded and byte-verified, but not yet watched working in game"],
+  };
+  function psProofHTML(p) {
+    const m = PS_PROOF[p.proof] || PS_PROOF.untested;
+    return `<span class="u" style="color:${m[1]}" title="${esc2(p.note || m[2])}">${m[0]}</span>`;
+  }
 
   let rfOpen = false;
   function rfCard() {
@@ -7614,6 +7636,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     };
   }
   function drawPassives(host) {
+    // The Rune power card remembers whether it was open in `rfOpen`, which its `toggle` handler
+    // sets — but `toggle` is dispatched on a later task, so an edit made in the same tick as the
+    // click that opened it would re-render against a stale `false` and collapse the card under
+    // the user's hands. Read the outgoing card's own state instead; it is synchronous and it is
+    // the truth.
+    { const live = q("#rfBox"); if (live) rfOpen = live.open; }
     const q2 = SEARCH;
     const keep = (p) => !q2 || psHaystack(p, runeInfo(p.id)).includes(q2);
     const rows = PASSIVES.filter(keep);
@@ -7640,9 +7668,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                    chosen.includes(i) ? " checked" : ""}> ${esc2(psNameOf(i))}</label>`).join("")}</div>`
             : `<button class="btn psPick" data-id="${p.id}">${esc2(psWhoText(chosen))}</button>`;
       return `<tr>
-        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · ${PS_WHERE[p.where]} · id ${hex(p.id, 3)}</div></td>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · ${PS_WHERE[p.where]} · id ${hex(p.id, 3)}
+          · ${psProofHTML(p)}</div></td>
         <td>${esc2(info.text || "—")}</td>
-        <td class="muted">${esc2(p.what)}</td>
+        <td class="muted">${esc2(p.what)}${p.note ? `<div style="margin-top:4px">${esc2(p.note)}</div>` : ""}</td>
         <td>${who}</td>
         <td><span class="u" title="${esc2(why)}">${pill}</span></td>
       </tr>`;
@@ -7695,11 +7724,18 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         (below), and the four dogs (Koichi, Connie, Kosanji, Kogoro) — they are list1 records 76–79 but the game
         keeps their character records in a separate block at VA <code>0x196560C</code>, outside the array this
         table indexes.</div>
+      <div class="okbox" style="margin:12px 0 10px"><b>One of these has been watched working (2026-09-06):</b>
+        Sunbeam's field walk-heal. Forced to yes, the party healed by walking with nobody carrying the rune —
+        which proves the <i>site</i> and the <i>effect</i>, and with them that answering this one question with a
+        yes is all a passive needs. It was proven with the previous patch shape, where the call was dropped and
+        the answer written into the word it vacated; this version answers the same question a different way, so
+        Sunbeam and Champion's are marked <b>expected</b> rather than confirmed, and everything else is
+        <b>untested</b>. This tab will not upgrade a marker on a passing test — only on a play report.</div>
       <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Every
         site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, the helper is
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
-        What is untested is the <i>result</i>: no forced passive has been watched running in game, and the
-        in-battle ones are new in this version. Keep a backup disc.</div>
+        What is untested is the <i>result</i>: no passive has been watched running in game <i>through the
+        relocated helper</i>, and the in-battle ones have never been watched at all. Keep a backup disc.</div>
       ${rfCard()}
       <details class="card"><summary><b>Fortune, and why it is not here</b>
         <span class="u">the one support rune with no decoded site</span></summary>
