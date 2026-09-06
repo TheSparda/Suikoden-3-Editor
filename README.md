@@ -196,7 +196,19 @@ forcing one would arm **every unit in the fight, enemies included**. Both switch
 byte-checked against a pristine disc before anything is written and untick back to stock exactly,
 but neither has been watched working in play — it's experimental, keep a backup. *Fortune* is
 listed and cannot be forced; its effect doesn't ask the question the other 22 ask, and the
-searches that came up empty are recorded in the offsets doc so nobody repeats them),
+searches that came up empty are recorded in the offsets doc so nobody repeats them. The same tab
+also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
+constants across 12 runes, read out of the instruction each rune runs right after it has asked
+whether you have it. *Sunbeam heals 15HP a combat turn and 1HP every 0.3 seconds of walking*, and
+both of those numbers are editable, as are Killer's and Counter's ×150%, Gale's SPD boost,
+Haziness' real dodge chance (30%, which its menu text never states), Drain's and Barrier's
+divisors, Hunter's damage clamp, Violence's half-HP trigger, and the doubling/halving shifts
+behind Wall, Double-Strike, Fire Sealing, Wizard and Warrior. These need **no switch** and work
+on a stock disc — every site sits inside the rune's own *if equipped* branch, so the rune still
+has to be equipped — but like every code constant here they are **global**: raising Killer raises
+it for everyone who wears one, enemies included. Each control rewrites only the value inside an
+instruction the game already runs, checks the site is still the shape it decoded before writing,
+and reverts byte-for-byte),
 **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, for any of the 49 runes that grant
