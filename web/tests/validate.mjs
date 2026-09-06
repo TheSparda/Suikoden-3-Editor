@@ -343,8 +343,30 @@ console.log("Guide overlays + xdelta:");
   const pyRuneStride = /RUNE_TBL_STRIDE\s*=\s*(0x[0-9A-Fa-f]+)/.exec(sp);
   (isoRune && pyRune && pyRuneStride && +isoRune[1] === +pyRune[1] && +isoRune[2] === +pyRuneStride[1]
     ? ok : bad)("iso.js RUNE_TBL and s3patch.py RUNE_TBL_FILE agree (live read vs baked JSON)");
-  (/function runeTblDesc/.test(iso) && /nameKey\(nm\) !== nameKey/.test(iso)
-    ? ok : bad)("iso.js validates each rune record's name before trusting its description");
+  // Every non-rune row in that table is zeroed, so a row is only believed when it still names
+  // the rune the item list says it is. Both the description AND the four spell slots go
+  // through runeRowTrusted() — four zeros in an unnamed row means "nothing to read here",
+  // not "this rune grants no spells".
+  (/function runeRowTrusted/.test(iso) && /function runeTblDesc/.test(iso)
+    && /runeRowTrusted\(id\)/.test(iso) && /nameKey\(strAt\(np\)\) === want/.test(iso)
+    ? ok : bad)("iso.js validates each rune record's name before trusting its contents");
+  // ...and it matches the name the row SHIPPED with too, or renaming a rune would make that
+  // rune's own fields vanish — the row stops matching the bundled item list at exactly the
+  // moment it is most certainly the right row.
+  (/nameKey\(strFrom\(ORIG, vaOff\(np\), origSlotLen\(np\)\)\) === want/.test(iso)
+    ? ok : bad)("iso.js keeps trusting a rune row after the rune is renamed");
+  // The rune->spell binding: RUNE_TBL +0x18 is four u16 1-based spell numbers (0 = a free
+  // slot). This is the fact the offsets doc spent three sessions hunting for in code, so a
+  // regression on the offset or the 1-based convention has to fail loudly rather than write
+  // a plausible-looking wrong number into a rune record.
+  (/spells: 0x18, slotCount: 4/.test(iso) ? ok : bad)("iso.js RUNE_TBL carries the four spell slots at +0x18");
+  (/function runeSpellIds/.test(iso) && /RUNE_TBL\.spells \+ k \* 2/.test(iso)
+    ? ok : bad)("iso.js reads a rune's granted spells off the disc, not a bundled list");
+  (!/const RUNE_SPELLS/.test(iso) ? ok : bad)("iso.js keeps no second, hardcoded copy of the rune->spell map");
+  (/spellSlotName = \(gid\) => \(gid \? spellRowName\(gid - 1\)/.test(iso)
+    ? ok : bad)("iso.js treats a spell slot as 1-based (0 = empty, not spell 0)");
+  (/select class="rspell"/.test(iso) && /reg\(off, 2, "spellid", itemName\(id\), `Spell slot/.test(iso)
+    ? ok : bad)("the Runes tab renders four editable spell slots and registers the write");
   (/function dropDescCaches/.test(iso) && (iso.match(/dropDescCaches\(\)/g) || []).length >= 5
     ? ok : bad)("iso.js drops the name->desc caches on every staged edit / undo / revert");
   // save editor (no ISO) uses the pre-extracted rune/food descriptions + rich skill effects
