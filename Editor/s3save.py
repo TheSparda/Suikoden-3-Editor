@@ -169,6 +169,16 @@ PARTY_SLOTS = 6
 PARTY_MOUNT_SLOTS = 6
 PARTY_MOUNT_OFF   = PARTY_OFF + PARTY_SLOTS * 2      # 0x3222
 
+# ...and positions 13-15 are a RESERVE list at 0x322E, which this editor does not write.
+# It matters for one reason: `AddPartyMember` (0x16FF6D8) bails out if the character it is
+# asked to add is ALREADY in the reserve list or in positions 1-6, and otherwise looks for a
+# free byte in the formation table at 0x3240 — `beqz $s1` returns 0 when all six are taken.
+# So a story join into a full party does nothing, and the "X joined your party!" line is a
+# separate script instruction that plays anyway. Real saves carry ids here (102, 134, 129 in
+# the corpus). Left alone deliberately: nothing is known about what puts a character in it.
+PARTY_RESERVE_OFF   = 0x322E
+PARTY_RESERVE_SLOTS = 3
+
 # Model id -> what it is, for display. Only 308/309 are reachable in a stock game: the
 # consumer clamps with `(v - 308) < 2` unsigned. The rest are the other ids the ground-ride
 # saddle-offset table (GetRiderOffset, 0x16E85E8) knows about, so a patched disc can show

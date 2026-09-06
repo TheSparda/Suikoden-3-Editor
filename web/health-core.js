@@ -234,6 +234,22 @@
                  ops: [{ kind: "party", slot: 0, value: eff.party[0] || 0 }] } });
       }
     }
+    // A FULL party silently swallows story joins, and that is engine behaviour, not a bug
+    // in the save. AddPartyMember (0x16FF6D8) walks the six formation bytes at 0x3240 looking
+    // for a zero, and `beqz $s1` returns 0 when it finds none — no join, no message. The
+    // "X joined your party!" line is a separate script instruction that runs regardless, so
+    // the game cheerfully announces someone it did not add. Reported as a note, not an error:
+    // 6/6 is a legal party the game writes itself. It is the one thing to check first when a
+    // character who is "supposed to" rejoin never turns up.
+    if (filled.length >= 6) {
+      add({ id: "party-full", sev: "note", group: "Party",
+        title: "The party is full — a story character who joins now will be silently dropped",
+        detail: "The engine looks for a free slot in the formation table at 0x3240 and gives up " +
+          "if all six are taken, returning without adding anyone. The dialogue that says they " +
+          "joined is a separate instruction and still plays, so the join looks like it worked. " +
+          "If someone is due to rejoin (Fubar, for instance), leave a slot open before the scene.",
+        where: { sub: "party", search: "" } });
+    }
     if (eff.partyLeader && filled.length && !filled.includes(eff.partyLeader)) {
       // This is a softlock, not a curiosity. A scene's actor records are built from the
       // PARTY LIST (0x1775DE8 loops 0x16FFD88, which reads 0x3216), and the engine finds
