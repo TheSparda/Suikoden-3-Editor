@@ -14,7 +14,10 @@ export const ELF_BASE = 0xA4800, ELF_END = 0x465DF0, ELF_VADDR = 0x165D000;
 // (8 bytes longer) keeps them inside its own record at +0x20+x. See iso.js SPELL/UNITE.
 export const SPELL = { off: 0x3EC2A0, stride: 0x20, elem: 0x24, radius: 0x21, chance: 0x26 };
 export const UNITE = { off: 0x3ECF90, stride: 0x28, radius: 0x21, chance: 0x24 };
-export const FOOD = { off: 0x3E91D0, stride: 0x48, heal: 0x14, proc: 0x1E, name: 0x44, desc: 0x00 };
+// A dish's NAME is one record behind the data it names (the displacement gear has too), so
+// these offsets are measured from the block holding the name: desc/heal/proc are in the next
+// one. The fixture has to plant it that way or the suite would keep proving the old reading.
+export const FOOD = { off: 0x3E91D0, stride: 0x48, name: 0x44, desc: 0x48, heal: 0x5C, proc: 0x66 };
 export const ENEMY = { off: 0x3E74E0, stride: 0x14, count: 100 };
 export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
 // Rune item table (iso.js RUNE_TBL): indexed by ITEM id, name ptr @+0 / desc ptr @+4. It is
@@ -322,7 +325,14 @@ export function buildSynthIso() {
     if (i === 2) { w32(o + 0x14, 0x00000500); w32(o + 0x18, 1 << 23); w16(o + SPELL.elem, 7); }
   });
   { const o = UNITE.off; w32(o + 8, put("Test Unite")); w32(o + 0x0C, put("coop")); w32(o + 0x10, 65); w32(o + 0x14, 0x00000200); w32(o + 0x1C, 200); }
-  { const o = FOOD.off; w32(o + FOOD.name, put("Medicine")); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100); }
+  // Two dishes, so a reader that is off by one lands on the wrong one instead of on zeroes.
+  let foodNameOff = 0;
+  { const o = FOOD.off;
+    const foodName = put("Medicine");
+    w32(o + FOOD.name, foodName); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100);
+    const o1 = FOOD.off + FOOD.stride;
+    w32(o1 + FOOD.name, put("Antitoxin")); w32(o1 + FOOD.desc, put("Cures poison")); w16(o1 + FOOD.heal, 10);
+    foodNameOff = foodName - ELF_VADDR + ELF_BASE; }
   // shop fixture: location 0, stages 0 and 1, on all three counters (+ one rarity each)
   const SHOP_FIXTURE = { loc: 0, stages: 2, chance: 40, stock: null };
   {
@@ -521,6 +531,7 @@ export function buildSynthIso() {
   mapping.statusfx = STATUSFX_SITES;
   mapping.shops = SHOP_FIXTURE;
   mapping.runes = runeRows;
+  mapping.food = { nameOff: foodNameOff, nameMax: "Medicine".length };
   mapping.balance = { ...balance, desc: "Maintains balance." };
 
   return { bytes, armor, mapping };
