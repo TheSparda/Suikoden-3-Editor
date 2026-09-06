@@ -2780,7 +2780,7 @@ still stop at 6, so that slot is neither shown nor counted.
 
 ---
 
-## Reading a tuning back OFF a disc (v1.93.0, 2026-09-06)
+## Reading a tuning back OFF a disc (v1.93.0 enemies, v1.94.0 encounter rates, 2026-09-06)
 
 A saved ISO records only the numbers a bulk multiplier produced, never the multiplier — so
 re-opening a disc whose enemy HP had been raised 20% showed the Enemies tab's bulk fields at
@@ -2810,6 +2810,17 @@ already baked into a file — previously impossible, because the file's own "ori
 the tuned numbers. A disc the index does not describe (different build, or edits no single
 scale explains) is reported as such and gets neither the stock-relative apply nor Restore.
 
-**Not done:** the per-area encounter rates in `s3_rooms.json` carry stock `rate`/`grace` the
-same way and have the same cross-save compounding in their area presets; nothing reads them
-yet. War units carry a stock baseline too, but the War tab has no bulk multipliers to prefill.
+**Same fix, encounter rates (v1.94.0).** `s3_rooms.json` is built the same way, so each room
+record carries the stock `rate`/`grace` beside its offsets. `detectRoomScale()` runs the same
+`fitScale()` recovery over the rate pairs — with the *grace* pairs riding along as
+corroboration, since nothing in this tab ever scales grace, so a wholesale mismatch there means
+these are not the tables the index describes. The Encounters tab now says "these rates are
+already scaled: the disc sits at 50% of the stock disc's rates", tags each area with its own
+scale (they can differ), marks every row whose rate no longer matches the stock disc with
+`stock N`, and scales the presets off the stock numbers — so **Stock is a real restore even in
+a file that was saved at another scale**, which it could not be before: the file's own
+"original" bytes were the scaled ones.
+
+**Still not done:** war units carry a stock baseline too, but the War tab has no bulk
+multipliers to prefill. The global encounter percentage needs none of this — it is a code
+patch decoded against a known stock immediate, so it already reads its real value back.

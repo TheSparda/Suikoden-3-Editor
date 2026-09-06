@@ -1890,6 +1890,51 @@ head("Per-area encounter rates — presets scale from the disc and never compoun
   await page.context().close();
 }
 
+head("Per-area encounter rates — a file already saved at 50% says so, and Stock still restores");
+{ // The rates on the "disc" are halved; the room index still carries the stock ones. Nothing in
+  // the file records the halving, so the tab has to recover it by comparison.
+  const halved = Uint8Array.from(bytes);
+  { const dv = new DataView(halved.buffer);
+    for (const t of ROOM_TEST_INDEX.areas[0].tables) for (const r of t.rooms)
+      dv.setUint16(r.rateOff, Math.round(r.rate * 0.5), true); }
+  const readOn = (img, writes) => { const at = (pos) => { const w = writes.find((x) => pos >= x.pos && pos < x.pos + x.data.length); return w ? w.data[pos - w.pos] : img[pos]; };
+    return { u16: (q) => at(q) | (at(q + 1) << 8) }; };
+  const page = await newPage();
+  setServed(halved);
+  await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("details.rarea", { timeout: 3000 });
+  const note = await page.textContent("#encRooms");
+  check("the tab says the rates are already scaled", /already scaled/.test(note) && /50%/.test(note), note.slice(0, 200));
+  check("...and the area is tagged with its own scale", /at 50% of stock/.test(await page.textContent("details.rarea summary")));
+  await page.click("details.rarea summary");
+  await page.waitForSelector("input.rm-f", { timeout: 3000 });
+  const rateVals = () => page.$$eval('input.rm-f[data-k="rate"]', (es) => es.map((e) => e.value).join(","));
+  check("rows decode the halved rates", (await rateVals()) === "2,0,5,1", await rateVals());
+  const rowText = await page.$$eval("details.rarea tbody tr", (rs) => rs.map((r) => r.textContent.replace(/\s+/g, " ").trim()).join(" | "));
+  check("each changed row shows what the stock disc holds", /stock 4/.test(rowText) && /stock 9/.test(rowText), rowText);
+  const preset = async (v) => { await page.click(`[data-rp="${v}"]`); await page.waitForTimeout(120); };
+  await preset(50);
+  check("re-applying Half is a no-op, not a quartering", (await rateVals()) === "2,0,5,1", await rateVals());
+  check("...and stages nothing", await nothingStaged(page));
+  await preset(200);
+  check("Double is 2× STOCK (8,0,18,4), not 2× the halved file", (await rateVals()) === "8,0,18,4", await rateVals());
+  await preset(100);
+  check("Stock restores the stock disc's rates", (await rateVals()) === "4,0,9,2", await rateVals());
+  check("...which this file does NOT hold, so it is staged", await somethingStaged(page));
+  await page.evaluate(() => { window.__writes = []; });
+  await page.click("#isoSaveBtn");
+  try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
+  await page.waitForSelector("#cfOk", { timeout: 3000 }); await page.click("#cfOk");
+  await page.waitForSelector("#pgClose:visible", { timeout: 5000 }); await page.click("#pgClose");
+  const r = readOn(halved, await getWrites(page));
+  check("stock rates written to both chapter tables", r.u16(ROOM_TABLE_A + 4) === 4 && r.u16(ROOM_TABLE_B + 4) === 4
+    && r.u16(ROOM_TABLE_A + 0x78 + 4) === 9 && r.u16(ROOM_TABLE_B + 0x78 + 4) === 2);
+  await page.context().close();
+  setServed(bytes);
+}
+
 head("Files browser — a Reference sub-tab, read-only, peeks real bytes");
 { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_SUBFILES = ${JSON.stringify(SUBFILE_TEST_INDEX)};`);
