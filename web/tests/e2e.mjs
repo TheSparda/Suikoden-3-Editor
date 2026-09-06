@@ -17,7 +17,9 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
-  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES, RUNEFX_SITES, RUNEFX_FLOAT } from "./synth-iso.mjs";
+  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES,
+  RUNEFX_SITES, RUNEFX_FLOAT,
+  SVAG_STREAM, SVAG_INTER, SVAG_BYTES } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -456,7 +458,13 @@ head("Passives view — force the out-of-battle support runes on");
   check("every switch starts off on a stock disc",
     (await page.$$("input.psOn:checked")).length === 0);
   { const txt = await page.textContent("#isoView");
-    check("it says plainly this is untested in play", /not yet seen working in play/i.test(txt));
+    // The confidence markers are the contract now that one of the two has a play report: the tab
+    // must not blur "watched working" and "decoded and byte-verified" back together.
+    check("Sunbeam is marked confirmed in play", /Sunbeam is confirmed in play \(2026-09-06\)/i.test(txt));
+    check("...with what was actually observed", /heals by walking with nobody carrying the rune/i.test(txt));
+    check("Champion's is still marked untested", /still marked <?b?>?untested/i.test(txt) || /untested<\/b> until someone walks/i.test(txt));
+    check("...and a passing test is explicitly not enough to upgrade it",
+      /will not upgrade a marker on a passing test/i.test(txt));
     check("it explains the field checks loop the party", /loops over party slots 1–6/i.test(txt));
     check("the in-battle sites are listed but not offered", /deliberately not switchable/i.test(txt));
     check("...with the per-unit limit spelled out", /cannot be made per-unit/i.test(txt));
@@ -1176,6 +1184,74 @@ head("Movement speed — restore covers speeds and classes together");
   await page.click("#spdChars > summary");
   check("...and Chris is back in her own class",
     (await page.inputValue('#isoView select.spd-cls[data-rec="2"]')) === String(MOVESPD_CLASS[2]));
+  await page.context().close();
+}
+
+head("Reference — Music: playing the streamed audio off the disc");
+{ const page = await newPage();
+  // A cut-down index whose one stream points at the planted Svag in the synth disc.
+  const BGM = { format: "s3bgm", schema: 1, kindBgm: 1,
+    script: [{ archive: "TEST", label: "t", op: 59, track: 0x200, fade: 64, tail: 16, trackOff: 0 }],
+    rooms: [{ archive: "TEST", area: 1, sub: 0, room: 1, bgmOff: 0, seOff: 0, bgm: 0x200, se: 0 }],
+    streams: [{ i: 0, sect: 0, sectors: 1, flags: 115, off: SVAG_STREAM + 0x800,
+                bytes: SVAG_BYTES, rate: 44100, ch: 2, inter: SVAG_INTER, secs: 0.16 }] };
+  await page.addInitScript(`window.S3_TEST_BGM = ${JSON.stringify(BGM)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
+  await page.click('[data-ref="bgm"]');
+  await page.waitForSelector("[data-play]", { timeout: 3000 });
+  const txt = await page.textContent("#isoView");
+  check("the streamed-audio section is present", /Streamed audio/.test(txt));
+  check("it says the decode happens locally", /nothing is uploaded/.test(txt));
+  // The honesty this section exists to preserve: no ▶ is attached to a track id, because
+  // nothing on the disc joins the two.
+  check("no play button sits on a track id row",
+    (await page.locator("table.invtbl").nth(0).locator("[data-play]").count()) === 0);
+  check("it states the id-to-stream link is unproven", /nothing found so far joins a track id/.test(txt));
+  check("it states most of the soundtrack is not streamed", /at most ~10% of the music/.test(txt));
+
+  await page.click('[data-play="0"]');
+  await page.waitForFunction(() => {
+    const e = document.querySelector('[data-pstate="0"]');
+    return e && /playing|done|failed|no disc/.test(e.textContent);
+  }, null, { timeout: 15000 });
+  const state = await page.textContent('[data-pstate="0"]');
+  check("clicking Play decodes and starts the stream", /playing|done/.test(state), state);
+  // It must really have produced audio, not just flipped a label.
+  const info = await page.evaluate(() => {
+    const c = window.__s3audio; return c ? { rate: c.rate, frames: c.frames, ch: c.ch, peak: c.peak } : null;
+  });
+  check("an AudioBuffer was built from the planted stream",
+    info && info.ch === 2 && info.rate === 44100 && info.frames === 14336, JSON.stringify(info));
+  check("the decoded buffer is not silence", info && info.peak > 0, JSON.stringify(info));
+  await page.click("[data-stopall]");
+  check("Stop clears the row state", (await page.textContent('[data-pstate="0"]')) === "");
+  check("playback stages nothing", await nothingStaged(page));
+  await page.context().close();
+}
+
+head("Reference — Music: a bad stream offset reports, it does not crash the page");
+{ const page = await newPage();
+  // An index pointing past the end of the disc — what a stale s3_bgm.json would look like.
+  const BGM = { format: "s3bgm", schema: 1, kindBgm: 1, script: [], rooms: [],
+    streams: [{ i: 0, sect: 0, sectors: 1, flags: 115, off: 0x7F000000,
+                bytes: SVAG_BYTES, rate: 44100, ch: 2, inter: SVAG_INTER, secs: 0.16 }] };
+  await page.addInitScript(`window.S3_TEST_BGM = ${JSON.stringify(BGM)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
+  await page.click('[data-ref="bgm"]');
+  await page.waitForSelector("[data-play]", { timeout: 3000 });
+  await page.click('[data-play="0"]');
+  await page.waitForFunction(() => {
+    const e = document.querySelector('[data-pstate="0"]');
+    return e && !/^(|reading…|decoding…)$/.test(e.textContent);
+  }, null, { timeout: 15000 });
+  const state = await page.textContent('[data-pstate="0"]');
+  check("it names the offset it found nothing at", /no audio at 0x7f000000/i.test(state), state);
+  // newPage() counts pageerror/console-error into `fails`, so a crash here fails the run.
+  check("the rest of the view still works", /Streamed audio/.test(await page.textContent("#isoView")));
   await page.context().close();
 }
 
