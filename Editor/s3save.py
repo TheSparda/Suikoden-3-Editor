@@ -1208,12 +1208,15 @@ def _clamp(v, width, cap=None):
 
 def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
                             party_edits=None, recruit_edits=None, gold=None,
-                            carryover=None, leader=None):
+                            carryover=None, leader=None, party_mount_edits=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
                              "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
     party_edits: {partySlot(0..5): charId} for the active-party composition.
+    party_mount_edits: {partySlot(0..5): mountModelId} for the horse staged beside that
+        member (party positions 7-12). 0 removes it. See the note at the write site: this
+        picks which model, the ISO's +0x66 decides whether one is staged at all.
     leader: party id for the leader / field avatar at 0x12 (see FIELD_AVATAR_IDS).
     carryover: {"s1": bool, "s2": bool} — the Suikoden I / II "data was loaded" flags.
     recruit_edits: {rosterIndex: value}, where value is a bool (recruit/un-recruit) OR a
@@ -1339,6 +1342,21 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         # The party list alone is a "Type Two" write — invisible in-game for a slot that was
         # empty. Re-derive the formation table so the game builds the party we just wrote.
         _rebuild_formation(b, old_party)
+    # Mount slots go in AFTER the rebuild, which shuffles them to follow their riders — write
+    # them first and a party edit in the same batch would move them out from under you.
+    #
+    # What this actually controls: the value here is the MODEL the scene stages, but whether
+    # it is staged at all is gated on the RIDER's assigned-horse field in the ISO
+    # (HorseActorPos @ 0x16FFEE0 returns pos+6 only when list2 +0x66 is set). So this picks
+    # WHICH horse, and +0x66 decides IF. Useful because the model is read straight out of this
+    # list without the `(v - 308) < 2` clamp the ISO field is subject to — any mount model can
+    # go here. It is not durable on its own, though: PartyPut rewrites the slot from +0x66 the
+    # next time the party is formed.
+    for slot, mid in (party_mount_edits or {}).items():
+        slot = int(slot)
+        if 0 <= slot < PARTY_MOUNT_SLOTS:
+            struct.pack_into("<H", b, PARTY_MOUNT_OFF + slot * 2, _clamp(mid, 2))
+            changed += 1
     if gold is not None:
         struct.pack_into("<I", b, GOLD_OFF, _clamp(gold, 4)); changed += 1
     if leader is not None:
@@ -1361,17 +1379,19 @@ def _backup_once(path, make_backup):
 
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
                      party_edits=None, recruit_edits=None, gold=None, carryover=None,
-                     leader=None):
+                     leader=None, party_mount_edits=None):
     """Apply edits to one save's gamedata, in place, for any supported container
     (memory card, .psu export, or raw gamedata). Fixes the save checksum (and, for
     memory cards, per-page ECC). Backs up the file first by default."""
     fmt = _sniff_format(path)
     if fmt in ("psu", "gamedata"):
         return _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
-                                      party_edits, recruit_edits, gold, carryover, leader)
+                                      party_edits, recruit_edits, gold, carryover, leader,
+                                      party_mount_edits=party_mount_edits)
     if fmt in ("cbs", "sharkport", "psv"):
         return _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
-                                      party_edits, recruit_edits, gold, carryover, leader)
+                                      party_edits, recruit_edits, gold, carryover, leader,
+                                      party_mount_edits=party_mount_edits)
     card = load_card(path)
     # locate the folder + its gamedata
     target = None
@@ -1384,7 +1404,8 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     if gd is None:
         return {"error": "gamedata not found in save folder"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits,
-                                              recruit_edits, gold, carryover, leader)
+                                              recruit_edits, gold, carryover, leader,
+                                              party_mount_edits=party_mount_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
@@ -1399,7 +1420,8 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
 
 
 def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
-                           party_edits, recruit_edits, gold, carryover=None, leader=None):
+                           party_edits, recruit_edits, gold, carryover=None, leader=None,
+                           party_mount_edits=None):
     """Edit the S3 gamedata inside a .cbs / .sps / .xps file. SharkPort stores files
     uncompressed, so its gamedata is patched in place at its absolute offset.
     CodeBreaker is decompressed (RC4+zlib), patched, and re-encoded. The S3 checksum is
@@ -1416,7 +1438,8 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         gd = b[off:off + GAMEDATA_SIZE]
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
-                                                  carryover, leader)
+                                                  carryover, leader,
+                                                  party_mount_edits=party_mount_edits)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1437,7 +1460,8 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         off, gd = tgt
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
-                                                  carryover, leader)
+                                                  carryover, leader,
+                                                  party_mount_edits=party_mount_edits)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1461,7 +1485,8 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         return {"error": "gamedata payload not found in CodeBreaker save"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                               party_edits, recruit_edits, gold,
-                                              carryover, leader)
+                                              carryover, leader,
+                                                  party_mount_edits=party_mount_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     body[off:off + len(new_gd)] = new_gd
@@ -1776,7 +1801,8 @@ def _read_individual_save(path, fmt):
 
 
 def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
-                           party_edits, recruit_edits, gold, carryover=None, leader=None):
+                           party_edits, recruit_edits, gold, carryover=None, leader=None,
+                           party_mount_edits=None):
     """Write edits into a .psu export or a raw gamedata file. No ECC (neither format
     has it); the gamedata's own checksum is recomputed by apply_edits_to_gamedata.
     Same-length in-place write, so the container layout is untouched."""
@@ -1785,7 +1811,8 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
             gd = f.read()
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
-                                                  carryover, leader)
+                                                  carryover, leader,
+                                                  party_mount_edits=party_mount_edits)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1801,7 +1828,8 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
         return {"error": "gamedata not found in .psu"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                               party_edits, recruit_edits, gold,
-                                              carryover, leader)
+                                              carryover, leader,
+                                                  party_mount_edits=party_mount_edits)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if not psu.write_file("gamedata", new_gd):

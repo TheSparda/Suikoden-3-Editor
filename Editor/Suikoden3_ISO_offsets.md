@@ -2989,14 +2989,70 @@ also being the dominant value in the *room* records, is why `0x0200` is read as 
 own theme"** rather than one specific song — editing those 465 cues is the part most likely
 not to behave as a user expects. The `0x0113`–`0x0129` band is the meaningful set.
 
+### The streamed music — located and decodable (2026-09-06)
+
+`/SD/STR.BIN` (47,712,256 B @ ISO `0xE617C800`) is a concatenation of **29 `Svag` streams**:
+Sony interleaved VAG, which is plain **PS-ADPCM, 44.1 kHz stereo, 0x2000 interleave**. Each
+stream is a 0x400 header, a second copy of it, then the PCM at +0x800.
+
+**What locates them:** a table in `MODULES/SD_CALL.IRX` at file `0x4C8800 + 0x1A680`, 29
+records of `{u32 file, u32 startSector, u32 ?, u32 flags}`, sectors relative to STR.BIN. All
+29 starts land exactly on a `Svag` magic — that agreement across 29 independent values is
+what says it is the right table.
+
+> **The third word is NOT a length.** It disagrees with the actual data size on **9 of the
+> 29** — record 4 declares 282 sectors where the data needs 243, record 17 declares 452
+> where it needs 526. Trusting it truncates six tracks and runs two off their end. Sizes
+> come from each stream's own `Svag` header. (An earlier reading of this field as "sectors
+> until the next stream" happens to hold for records 0–3, which is exactly why it looked
+> right.)
+
+**Decoding**, now shipped in `web/svag-core.js` and unit-tested in `web/tests/svag-core.mjs`:
+16-byte frames, byte 0 = `shift | filter<<4`, byte 1 = flags, then 28 four-bit samples run
+through a 2-tap IIR (`f0 = [0,60,115,98,122]/64`, `f1 = [0,0,-52,-55,-60]/64`). Two details
+that are wrong-but-audible if missed:
+
+- **Clamp to int16 BEFORE storing to the filter history.** Feeding the unclamped value back
+  makes a resonant filter run away on a loud passage instead of saturating — it sounds like
+  distortion, not like a bug, so "it plays" does not catch it.
+- Nibbles are **4-bit two's complement** (0x8–0xF are negative) and the **low nibble is the
+  earlier sample**.
+
+Verified two ways: a JS and a Python implementation, written separately, agree on real disc
+bytes to 1.5e-5 (int16 rounding); and lag-1 autocorrelation of the output is 0.93–0.98 with
+1–4k zero-crossings/sec, where a mis-decode gives ~0 correlation and ~20k ZC.
+
+**Durations** run 5.8s–40.8s except stream 27 at **7m02.6s**, which matches the OST's
+*To Peaceful Days (Staff Roll BGM)* at 7:01 — the only stream a duration alone identifies,
+since every other one is shorter than all but one of the OST's 76 tracks (*Escape*, 0:21).
+
+**Not all 29 are music.** #5 is 5.8s (a sting), and #22 (54% silence, high zero-crossing
+rate) and #28 (low-level hiss) read as ambience or effect beds.
+
+### Where the rest of the music is NOT
+
+- **Not in STR.BIN.** The OST is 76 tracks / ~2.5 hours; these 29 streams total 15.7 minutes,
+  so **at most ~10% of the soundtrack is streamed**.
+- **Not in SD.BIN as sequences.** `/SD/SD.BIN` (8,638,464 B @ `0xE593F800`) holds **40 sound
+  banks**, each with `Vers`/`Head`/`Vagi`/`Smpl`/`Sset`/`Prog` sections — samples and
+  programs. Zero `SEQp`/`pQES`/`SShd`/`VAGp` magics anywhere in it.
+- **Not in the area archives.** Scanned the `data` sub-files of AKMT/MORI/SOGE/HGB1 for
+  `SShd`/`SSbd`/`VAGp`/`pGAV`/`SEQp`/`Svag`: **zero hits**.
+
+So the sequenced majority of the soundtrack is somewhere not yet found, and playing it would
+need a sequencer plus an SPU2 synth even once located. Recorded so the next round does not
+re-run these three scans.
+
 ### What is NOT resolved
 
 - **No id → song name.** 13 ids, no name table anywhere on the disc. Mapping them needs a
   patched disc and an emulator, not another scan.
-- **Where a track id becomes audio.** Area archives contain no Sony audio headers (`SShd`,
-  `SSbd`, `VAGp`, `SEQp` — checked across AKMT/MORI/SOGE/HGB1 `data` sub-files, zero hits), so
-  the music itself lives in `SD/STR.BIN` (the `SCEI`/`VerS` container). **Replacing the audio
-  is out of reach**; only re-pointing which id is requested is in scope.
+- **Which stream a track id means.** The 29 streams are located and playable, and the ids are
+  located, but nothing found so far joins the two — so the editor lists them separately rather
+  than putting a play button on an id. Most ids probably refer to the sequenced music, which is
+  not in STR.BIN at all.
+- **Replacing the audio** is still out of reach: a substitute would have to be PS-ADPCM at the
+  same rate and fit the space the disc reserves, and nothing writes audio back.
 - **Inserting new cues.** The 18-byte instruction means retargeting a track (2 bytes) or
   silencing it (track = 0) is free, but adding a music change where the script has none would
   need the script lengthened — a different and much riskier problem.
