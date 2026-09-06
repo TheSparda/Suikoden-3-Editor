@@ -154,11 +154,13 @@ def apply_edits(path, folder, payload_json):
     edits = {int(k): v for k, v in (p.get("edits") or {}).items()}
     inv   = {int(k): v for k, v in (p.get("invEdits") or {}).items()}
     party = {int(k): v for k, v in (p.get("partyEdits") or {}).items()}
+    pmount = {int(k): int(v) for k, v in (p.get("partyMountEdits") or {}).items()}
     rec   = {int(k): v for k, v in (p.get("recruitEdits") or {}).items()}
     res = s3save.write_save_edits(
         path, folder, edits, make_backup=False,
         inv_edits=inv or None, name_edits=(p.get("nameEdits") or None),
         party_edits=party or None, recruit_edits=rec or None, gold=p.get("gold"),
+        party_mount_edits=pmount or None,
         leader=p.get("leader"), carryover=(p.get("carryover") or None))
     return json.dumps(res)
 
@@ -433,7 +435,7 @@ async function pickupSharedFile() {
 
 // ---- top-level editor render ----------------------------------------------
 // Per-slot pending edits (reset when switching slots), mirroring the desktop editor.
-let EDITS, INV, NAMES, PARTY, RECRUIT, GOLD, LEADER, SUB, RECRUITED_ONLY, INVCAT, ADDED, SEARCH;
+let EDITS, INV, NAMES, PARTY, PMOUNT, RECRUIT, GOLD, LEADER, SUB, RECRUITED_ONLY, INVCAT, ADDED, SEARCH;
 // Who slot 1 held before the last field-character pick, so the UI can offer to drop them.
 let DISPLACED = 0;
 // Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
@@ -454,7 +456,7 @@ function renderEditor() {
 
 function drawSlot() {
   const s = saves[curSlot];
-  EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; RECRUIT = {}; GOLD = null; LEADER = null; CARRY = {};
+  EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; PMOUNT = {}; RECRUIT = {}; GOLD = null; LEADER = null; CARRY = {};
   SUB = "chars"; RECRUITED_ONLY = true; INVCAT = "regular"; ADDED = {}; SEARCH = "";
 
   const meta = s.meta || {};
@@ -1428,6 +1430,15 @@ function drawField() {
 // The ISO editor's Mounts tab can give the field to anyone, so this is "stock", not "all".
 const STOCK_HORSE_OWNERS = { 2: "Chris", 13: "Roland", 18: "Leo", 20: "Percival", 21: "Borus", 54: "Salome" };
 
+// Offered in the party editor's Mount column. The model id is read straight out of the party
+// list, without the `(v - 308) < 2` clamp the ISO's +0x66 field is subject to, so any of these
+// works — but only when the rider has +0x66 set at all, which is what makes the game look.
+const MOUNT_CHOICES = [
+  [0, "— none —"], [308, "Zexen-knight horse"], [309, "Chris's horse"],
+  [325, "Karaya horse"], [353, "Karaya horse #2"], [42, "Ruby"],
+  [359, "Le Buque horse"], [360, "Le Buque horse #2"],
+];
+
 const MOUNT_MODELS = {
   308: "Zexen-knight horse", 309: "Chris's horse", 325: "Karaya horse", 353: "Karaya horse #2",
   42: "Ruby", 209: "Le Buque horse (mskn)", 359: "Le Buque horse", 360: "Le Buque horse #2",
@@ -1469,19 +1480,20 @@ function drawParty() {
   const orphaned = mem.filter((cid, slot) => cid && posOf(slot) === undefined).length;
   const rows = mem.map((cid, slot) => {
     const now = eff(slot);
-    const mv = mounts[slot] || 0;
+    const mv = (PMOUNT[slot] !== undefined ? PMOUNT[slot] : mounts[slot]) || 0;
     // The mount belongs to whoever is in the slot *in the file*. If this slot has a pending
     // edit the pairing is about to be re-derived on Apply, so say so instead of implying
     // the horse now belongs to the new pick.
     const pending = PARTY[slot] !== undefined && PARTY[slot] !== cid;
-    const mountCell = mv
-      ? (pending ? `<span class="dim" title="This slot has an unapplied change; the mount is re-paired on Apply.">${
-              esc(mountLabel(mv))} <span class="dim">· re-paired on Apply</span></span>`
-                 : `<span class="tag">${esc(mountLabel(mv))} <span class="dim">#${mv}</span></span>`)
-      : !now ? '<span class="dim">—</span>'
-      : STOCK_HORSE_OWNERS[now]
-        ? `<span class="dim" title="This character ships with an assigned horse, but none is staged in this save. The game writes it when the party is formed.">none staged <span class="dim">· expected</span></span>`
-        : '<span class="dim">—</span>';
+    const known = MOUNT_CHOICES.some(([v]) => v === mv);
+    const dirtyM = PMOUNT[slot] !== undefined && PMOUNT[slot] !== (mounts[slot] || 0);
+    const hint = !mv && now && STOCK_HORSE_OWNERS[now] ? ' <span class="dim">· expected</span>' : "";
+    const mountCell = !now ? '<span class="dim">—</span>'
+      : pending ? `<span class="dim" title="This slot has an unapplied character change; the mount is re-paired on Apply.">${
+            mv ? esc(mountLabel(mv)) : "—"} <span class="dim">· re-paired on Apply</span></span>`
+      : `<select class="pmount${dirtyM ? " dirty" : ""}" data-pmount="${slot}">${
+            MOUNT_CHOICES.map(([v, lbl]) => `<option value="${v}"${v === mv ? " selected" : ""}>${esc(lbl)}</option>`).join("")
+          }${known ? "" : `<option value="${mv}" selected>model ${mv}</option>`}</select>${hint}`;
     const bp = posOf(slot);
     const fCell = !cid ? '<span class="dim">—</span>'
       : bp === undefined ? '<span class="tag bad" title="No formation entry — this member will not appear in battle.">not placed</span>'
@@ -1530,13 +1542,24 @@ function drawParty() {
         form.filter((v) => !v).length} of 6 free — a character who joins by story event needs one
         of these empty, or the join is silently dropped.</div></div>` : "") +
     (anyFilled ? `<div class="muted" style="margin:8px 0 0;font-size:12px">A <b>mount</b> is staged
-       in the same table, six positions along (save <code>0x3222</code>), written when the party is
-       formed from the character's assigned-horse field in the ISO. It is what puts a horse beside
-       them on the field. Removing a member takes their mount with them.${
+       in the same table, six positions along (save <code>0x3222</code>). Removing a member takes
+       their mount with them.
+       <br><b>Two halves decide whether a horse appears.</b> This dropdown picks <i>which</i> model
+       — read straight out of the party list, with none of the 308/309 clamp the ISO field has, so
+       any horse here is legal. Whether one is staged <i>at all</i> is the rider's assigned-horse
+       field in the ISO (<b>Mounts</b> tab): the game only looks six positions along when that is
+       set. Stock, only the six Zexen Knights have it.
+       <br><b>Not durable on its own.</b> The game rewrites this slot from that ISO field every
+       time the party is formed, so a model picked here survives until the next party change unless
+       the ISO agrees with it.${
          mounts.some((m) => m) ? ""
-           : " <b>Nothing is staged in this save</b> — none of these characters carries that field."
-             + " Stock it is only the six Zexen Knights; the ISO editor's Mounts tab can give it to"
-             + " anyone, and the horse then appears here once the party is next formed."}</div>` : "");
+           : " Nothing is staged in this save — none of these characters carries the field."}</div>` : "");
+  $$("select[data-pmount]").forEach((sel) => (sel.onchange = () => {
+    const slot = +sel.dataset.pmount;
+    const was = (saves[curSlot].partyMounts || [])[slot] || 0;
+    if (+sel.value === was) delete PMOUNT[slot]; else PMOUNT[slot] = +sel.value;
+    drawParty();
+  }));
   $$("[data-partydrop]").forEach((b) => (b.onclick = () => {
     PARTY[+b.dataset.partydrop] = 0;
     drawParty();
@@ -1687,7 +1710,7 @@ function syncQtyCell(btn, slot, id) {
 // ---- Write & download ------------------------------------------------------
 function hasChanges() {
   return Object.keys(EDITS).length || Object.keys(INV).length || Object.keys(NAMES).length ||
-    Object.keys(PARTY).length || Object.keys(RECRUIT).length || GOLD !== null ||
+    Object.keys(PARTY).length || Object.keys(PMOUNT).length || Object.keys(RECRUIT).length || GOLD !== null ||
     LEADER !== null || Object.keys(CARRY).length;
 }
 
@@ -1744,6 +1767,11 @@ function buildDiff() {
   Object.entries(PARTY).forEach(([slot, cid]) => {
     const old = (s.party || [])[+slot] || 0;
     if (cid !== old) rows.push({ g: "Party", t: `Slot ${+slot + 1}: ${charLabel(old)} → ${charLabel(cid)}` });
+  });
+  Object.entries(PMOUNT).forEach(([slot, mid]) => {
+    const old = (s.partyMounts || [])[+slot] || 0;
+    const nm = (m) => (m ? (MOUNT_MODELS[m] || `model ${m}`) : "none");
+    if (mid !== old) rows.push({ g: "Party", t: `Slot ${+slot + 1} mount: ${nm(old)} → ${nm(mid)}` });
   });
   Object.entries(INV).forEach(([slot, ent]) => {
     const old = invBySlot[slot] || { id: 0, qty: 0 };
@@ -1970,6 +1998,7 @@ async function doApply(mode) {
   const py = PY; if (!py) return setStatus("Engine not ready.", "err");
   const s = saves[curSlot];
   const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY,
+                    partyMountEdits: PMOUNT,
                     recruitEdits: RECRUIT, gold: GOLD, leader: LEADER, carryover: CARRY };
   setStatus("Applying…", "");
   let res;
