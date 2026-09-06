@@ -139,7 +139,17 @@ The list is limited to names that never occur inside a longer word, since a same
 would corrupt those too — which is why *Luc* isn't offered: "Lucia", "Luck"),
 **Growth** (stat-growth rates, fixed skills, and the 43-skill maximum-level caps with
 one-click presets: *Set to guide caps*, *Max all*, *Clear*), **Support**, **Weapons** (ATK
-across all 16 sharpen levels), **Shops**, **Spells** (power / cast / element / target / AOE /
+across all 16 sharpen levels), **Shops**,
+**Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows for
+it, and edit the status or enhance effect it carries — plus which spells it grants, who carries
+it and where it drops. Names and menu text are rewritten in place, so each is capped to the slot
+the disc already reserves for it, and both are **mirrored across every copy**: the 20 attack
+runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well —
+*Kite* the rune and *Kite* the spell it grants each hold their own — so one edit keeps the rune
+menu, the battle command and the item list agreeing. A rename shows up immediately in every
+picker, tooltip and list in the editor for that ISO, and the rune stays findable under its
+original name),
+**Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, and optional description rewrites),
 **Unites**, **Mounts** (both of the game's mount systems — the per-character **assigned horse**
