@@ -111,6 +111,64 @@ export const encMoveWord = (imm, opc, negated) =>
 // FindActorByCharId's miss-exit (vaddr 0x17B5A38): `jr $ra` + `move $v0,$zero`. The Test
 // tab can rewrite it to tail-jump at the player lookup so an actor nobody can find resolves
 // to you — the scene-softlock experiment.
+// Passive support runes (Passives tab): the 51 `jal <equipped-rune lookup>` + delay-slot word
+// pairs the tab neutralises, as [offset, jal, delaySlot]. Seeded stock so the tab renders every
+// rune as "off" and a tick has real stock words to replace. Kept in step with iso.js by
+// validate.mjs, which parses both.
+export const PASSIVE_SITES = [
+  [0x149F90, 0x0C5B2D0E, 0x240501B9],
+  [0x10407C, 0x0C5B2CE0, 0x240501BA],
+  [0x10413C, 0x0C5B2CE0, 0x240501BA],
+  [0x1038E0, 0x0C5B2CE0, 0x240501BB],
+  [0x103B54, 0x0C5B2CE0, 0x02228821],
+  [0x103D28, 0x0C5B2CE0, 0x02228821],
+  [0x10FD28, 0x0C5B2CE0, 0x240501BC],
+  [0x14A1B4, 0x0C5B2D0E, 0x240501BD],
+  [0x261184, 0x0C5B2CE0, 0x240501BD],
+  [0x104368, 0x0C5B2CE0, 0x02129821],
+  [0x110F74, 0x0C5B2D0E, 0x240501BE],
+  [0x25C844, 0x0C606CEC, 0x240501BE],
+  [0x25C8F8, 0x0C606CEC, 0x240501BE],
+  [0x25CA60, 0x0C606CEC, 0x240501BE],
+  [0x25CB18, 0x0C606CEC, 0x240501BE],
+  [0x25CBBC, 0x0C606CEC, 0x240501BE],
+  [0x25CC54, 0x0C606CEC, 0x240501BE],
+  [0x25CC9C, 0x0C606CEC, 0x240501BE],
+  [0x25CD5C, 0x0C606CEC, 0x240501BE],
+  [0x1037F4, 0x0C5B2CE0, 0x240501BF],
+  [0x245D6C, 0x0C606CEC, 0x240501C0],
+  [0x105200, 0x0C5B2CE0, 0x0200202D],
+  [0x1100AC, 0x0C5B2CE0, 0x240501C2],
+  [0x1100E0, 0x0C5B2CE0, 0x240501C2],
+  [0x104858, 0x0C5B2CE0, 0x240501C3],
+  [0x104FC0, 0x0C5B2CE0, 0x240501C3],
+  [0x10544C, 0x0C5B2CE0, 0x240501C3],
+  [0x1115C4, 0x0C5B2CE0, 0xAFA40000],
+  [0x22E694, 0x0C606CEC, 0x240501C4],
+  [0x22EB04, 0x0C606CEC, 0x240501C4],
+  [0x230B44, 0x0C606CEC, 0x240501C4],
+  [0x230B64, 0x0C606CEC, 0x240501C5],
+  [0x23AC20, 0x0C606CEC, 0x240501C5],
+  [0x23B9CC, 0x0C606CEC, 0x240501C6],
+  [0x259C48, 0x0C606CEC, 0x240501C6],
+  [0x1047BC, 0x0C5B2CE0, 0x240501C7],
+  [0x1047D0, 0x0C5B2CE0, 0x240501C7],
+  [0x10FD64, 0x0C5B2CE0, 0x240501C8],
+  [0x10FD9C, 0x0C5B2CE0, 0x240501C8],
+  [0x10FDBC, 0x0C5B2CE0, 0x240501C9],
+  [0x10FDF4, 0x0C5B2CE0, 0x240501C9],
+  [0x244B1C, 0x0C606CEC, 0x240501CA],
+  [0x25DFC8, 0x0C606CEC, 0x240501CA],
+  [0x2611C8, 0x0C606CEC, 0x240501CB],
+  [0x105634, 0x0C5B2CE0, 0x240501CC],
+  [0x25DFE8, 0x0C606CEC, 0x240501CC],
+  [0x2610D0, 0x0C606CEC, 0x240501CC],
+  [0x244B3C, 0x0C606CEC, 0x240501CD],
+  [0x1035E0, 0x0C5B2CE0, 0x240501CE],
+  [0x104838, 0x0C5B2CE0, 0x240501CE],
+  [0x2463CC, 0x0C606CEC, 0x240501CE],
+];
+
 export const ACTORFB_SITES = [[0x1FD238, 0x03E00008, 0x085ED732], [0x1FD23C, 0x0000102D, 0x00000000]];
 // The four "the model has no such clip -> give up" branches. Retiring all of them is the
 // field-pickup fix; the last two are the ones whose success path marks the motion finished,
@@ -381,6 +439,7 @@ export function buildSynthIso() {
   STORY_CASES.forEach(([o, imm]) => w32(o, avatarWord(imm, "eq")));
   ENCMOVE_SITES.forEach(([o, imm, opc, neg]) => w32(o, encMoveWord(imm, opc, neg)));
   ACTORFB_SITES.forEach(([o, stock]) => w32(o, stock));
+  PASSIVE_SITES.forEach(([o, jal, ds]) => { w32(o, jal); w32(o + 4, ds); });
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];

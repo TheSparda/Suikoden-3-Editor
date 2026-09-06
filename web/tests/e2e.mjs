@@ -17,7 +17,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
-  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr } from "./synth-iso.mjs";
+  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -437,6 +437,68 @@ head("Armor sets view — decode, edit, byte-exact save");
   check("counter site B = slti 50", r.u32(SETS.counterSites[1]) === 0x28420032);
   check("heal bias = addiu +1", r.u32(SETS.healBias) === 0x26220001);
   check("heal shift = sra 1", r.u32(SETS.healShift) === 0x00021043);
+  await page.context().close();
+}
+
+head("Passives view — force the out-of-battle support runes on");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("input.psOn", { timeout: 3000 });
+  // Exactly two switches, and they are the two whose checks loop your party on the field.
+  // Anything else appearing here would be a battle check, which cannot be scoped to the party —
+  // that is the whole reason the tab is split, so it is asserted rather than assumed.
+  const boxes = await page.$$eval("input.psOn", (b) => b.map((x) => x.dataset.id));
+  check("exactly two runes are switchable", boxes.length === 2, boxes.join(","));
+  check("...and they are Champion's (0x1B9) and Sunbeam (0x1BD)",
+    boxes.sort().join(",") === "441,445", boxes.join(","));
+  check("every switch starts off on a stock disc",
+    (await page.$$("input.psOn:checked")).length === 0);
+  { const txt = await page.textContent("#isoView");
+    check("it says plainly this is untested in play", /not yet seen working in play/i.test(txt));
+    check("it explains the field checks loop the party", /loops over party slots 1–6/i.test(txt));
+    check("the in-battle sites are listed but not offered", /deliberately not switchable/i.test(txt));
+    check("...with the per-unit limit spelled out", /cannot be made per-unit/i.test(txt));
+    check("...and what forcing them would do to enemies", /enemies included/i.test(txt));
+    check("Sunbeam's battle half is named as held back", /Sunbeam's other half/.test(txt));
+    check("Fortune is listed as the one with no site at all", /no site found/.test(txt)); }
+  check("the held-back runes have no checkbox of their own",
+    (await page.$$("input.psOn")).length === 2);
+
+  await page.click('input.psOn[data-id="441"]');           // Champion's
+  await page.waitForTimeout(60);
+  check("ticking it stages something", await somethingStaged(page));
+  check("the row now reads ALWAYS ON", /ALWAYS ON/.test(await page.textContent("#isoView")));
+
+  // Unticking must restore the stock pair byte-for-byte — a tab that can only be applied in one
+  // direction is a trap. Checked BEFORE saving, because saving makes the patched words the new
+  // pristine baseline and the badge would then be measuring the wrong thing.
+  await page.click('input.psOn[data-id="441"]');
+  await page.waitForTimeout(60);
+  check("unticking it clears every staged byte", await nothingStaged(page));
+
+  await page.click('input.psOn[data-id="441"]');
+  await page.waitForTimeout(60);
+  { const r = await save(page);
+    const YES = 0x0004102B;                                 // sltu $v0,$zero,$a0
+    const site = PASSIVE_SITES.find(([o]) => o === 0x149F90);
+    check("the delay slot moved up into the jal's word", r.u32(0x149F90) === site[2] >>> 0);
+    check("...and the answer went into the word it vacated", r.u32(0x149F94) === YES);
+    check("no other passive site moved anywhere",
+      PASSIVE_SITES.filter(([o]) => o !== 0x149F90)
+        .every(([o, jal, ds]) => r.u32(o) === jal >>> 0 && r.u32(o + 4) === ds >>> 0)); }
+
+  // A disc whose code is not what we decoded is read-only, never overwritten.
+  { const patched = Uint8Array.from(bytes);
+    new DataView(patched.buffer).setUint32(0x149F90, 0xDEADBEEF, true);
+    setServed(patched);
+    const p2 = await newPage(); await loadIso(p2);
+    await p2.click('#isoTabs [data-v="passives"]');
+    await p2.waitForSelector("input.psOn", { timeout: 3000 });
+    check("a drifted site makes its rune read-only, not writable",
+      await p2.isDisabled('input.psOn[data-id="441"]'));
+    check("...and only that rune", !(await p2.isDisabled('input.psOn[data-id="445"]')));
+    await p2.context().close();
+    setServed(bytes); }
   await page.context().close();
 }
 
@@ -3644,8 +3706,12 @@ head("Runes tab — rename and menu text");
   await loadIso(page);
   const tabs = await page.$$eval("#isoTabs [data-v]", (b) => b.map((x) => x.dataset.v));
   check("Runes is a top-level tab", tabs.includes("runes"));
-  check("it sits immediately before Spells", tabs[tabs.indexOf("runes") + 1] === "spells",
-    tabs.slice(0, 8).join(","));
+  // Runes -> Passives -> Spells: the rune's text, then its engine-side effect, then the spells
+  // it grants. Passives was slotted in between in v1.105.0, so this is an ordering check, not
+  // an adjacency one.
+  check("it sits between Shops and Passives, with Spells after that",
+    tabs[tabs.indexOf("runes") - 1] === "shops" && tabs[tabs.indexOf("runes") + 1] === "passives"
+      && tabs[tabs.indexOf("runes") + 2] === "spells", tabs.slice(0, 9).join(","));
   await page.click('#isoTabs [data-v="runes"]');
   await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
   await page.waitForTimeout(120);
