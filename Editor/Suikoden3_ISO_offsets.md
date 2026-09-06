@@ -2824,3 +2824,51 @@ a file that was saved at another scale**, which it could not be before: the file
 **Still not done:** war units carry a stock baseline too, but the War tab has no bulk
 multipliers to prefill. The global encounter percentage needs none of this — it is a code
 patch decoded against a known stock immediate, so it already reads its real value back.
+
+## The food table's NAME is one record behind its data (2026-09-06)
+
+**Symptom.** The ISO editor's Food tab showed every dish's name against the *previous* dish's
+heal, proc and description — so editing "Fried Ice Cream" wrote Tomato Ice Cream — and the
+save editor's item pickers showed 49 of 60 dishes with the wrong heal.
+
+**The old reading, and why it looked solid.** The v12 note read:
+
+> name/desc/stats are SAME-record aligned (60/60 desc "Heals NNN HP" == heal field; no
+> off-by-one)
+
+That check is real but it cannot decide the question. The description and the heal field are
+in one record under *both* readings, so their agreeing proves only that they belong together —
+it is 59/59 either way and says nothing about where the **name** belongs. The one field that
+was never cross-checked is the one that moved.
+
+**What settles it.** The item table is what the game actually shows the player: `getDesc(id)`
+→ `itemRecord(id)` → band 0 (ids 1–160, base `0x3E8CBC`, stride `0x24`), **name @+0, desc @+4**
+in a single record. Pair each dish's name against that:
+
+| pairing | descriptions matching the item table | heal disagreeing with the item text |
+|---|---|---|
+| name@i with data@i (old) | **11 / 60** | 44 |
+| name@i with data@i+1 (correct) | **59 / 59** | 0 |
+
+The boundary agrees too: dish 59 *Salad Platter* takes block 60 ("Heals 380HP"), which is
+exactly what item `0x09C` reads — and blocks 60/61 carry *Sacrificial Jizo* and *Escape
+Scroll*, the two non-recipe items the old comment had already noticed sitting past the table.
+
+**The layout**, with every offset measured from the block holding the NAME:
+
+| field | offset | note |
+|---|---|---|
+| name | `+0x44` | u32 → string. Same pointer the item band uses — all 60 share it |
+| description | `+0x48` | u32 → string (= next block `+0x00`) |
+| heal | `+0x5C` | u16 HP (= next block `+0x14`) |
+| proc | `+0x66` | u16 % (= next block `+0x1E`) |
+
+This is the **same displacement gear has** — a gear name pointer sits at `+0x40` of the
+preceding record — and the same shape as the spell table's three tail fields, which ride one
+record ahead. Three tables on this disc now, so it is the house style rather than an oddity:
+when a record's name is at the far end of its block, check which block the data belongs to.
+
+**Side finding.** Food items are *not* missing a name↔description record, which is what
+`build_item_desc_extra.py` was written to work around. They are ordinary band-0 items with
+name @+0 and desc @+4; the food table only adds the heal and proc numbers. The regenerated
+`s3_rune_food_desc.json` now agrees with the item table 60/60.
