@@ -179,6 +179,23 @@ input.search, input.picker-search {
 .starsbar { height:9px; border:1px solid var(--line); border-radius:999px; background:var(--changed-bg); overflow:hidden; margin:6px 0 4px; }
 .starsbar span { display:block; height:100%; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .25s; }
 .opt-tag { font-size:11px; color:var(--mut); white-space:nowrap; }
+/* "next in guide order" — the first optional star still missing, i.e. what to go and do */
+.nextup { font-size:12px; margin-top:8px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; }
+.nextup .muted { display:block; margin-top:2px; }
+/* the checklist runs in the recruitment guide's order: # is that position, Star the Star of Destiny name */
+.starstbl td.ordn, .starstbl th.ordn { width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+.starstbl td.sod { font-size:11px; letter-spacing:.03em; white-space:nowrap; }
+/* stage headers: one per block of the guide's order, with that stage's own progress */
+.starstbl tr.phaserow td { background:var(--changed-bg); border-top:1px solid var(--line); padding:8px; }
+.starstbl tr.phaserow.off td { opacity:.72; }
+.phasetog { background:transparent; border:0; padding:0; color:inherit; font-size:13px; cursor:pointer; }
+.phasetog b { font-family:var(--titlefont); letter-spacing:.02em; }
+.phprog { font-size:12px; color:var(--mut); margin-left:8px; font-variant-numeric:tabular-nums; }
+.phbar { display:inline-block; vertical-align:middle; width:70px; height:5px; margin-left:8px;
+  border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+.phbar > span { display:block; height:100%; background:linear-gradient(90deg,var(--acc),var(--acc2)); }
+.phnote { color:var(--mut); font-size:11px; line-height:1.4; margin-top:3px; max-width:80ch; }
+.phextra { color:var(--acc2); cursor:help; }
 .starstbl .ok { color:var(--ok); font-size:12px; white-space:nowrap; }
 .starstbl .miss { color:var(--mut); font-size:12px; white-space:nowrap; }
 .starstbl tr.howrow td { padding-top:0; border-top:0; }
