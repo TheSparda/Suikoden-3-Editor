@@ -127,7 +127,23 @@
   // (the passive support runes — Balance, Fury, Fortune … — which have no spell-table entry
   // at all, which is why they used to show nothing). Records for non-rune ids are zeroed, so
   // every read is guarded by a name check against the item list before its desc is trusted.
-  const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, lo: 317, hi: 462 };
+  //
+  // The rest of the record is the rune→spell binding the offsets doc spent three sessions
+  // hunting through the ELF for. It was never in code: **+0x18 is four u16 spell numbers**,
+  // 1-based into the spell table (0 = an unused slot), and that IS the list of spells the rune
+  // grants. All 49 spell-granting runes decode exactly, including every count the game uses —
+  // Fire = 1,2,3,4 (Flaming Arrows … Explosion), True Fire = 3,4,5,6 (the sliding window
+  // Suikosource documents), Blinking = 35,36,37,0 (three spells), Sword of Rage = 38,39,0,0
+  // (two), Kite = 78,0,0,0 (one attack and three FREE slots). The 23 passive support runes
+  // carry four zeros, which is why they have no battle menu at all. So a rune granting fewer
+  // than four spells is not a special case in the engine — it is zero-padding, and writing a
+  // spell number into a zero slot is the whole of "give this rune another spell".
+  //   +0x0C u32 shop price (0 = never sold)
+  //   +0x10 u32 slot mask (7 = Head/Right/Left, 1 = Pale Gate, head only, 2 = Drain)
+  //   +0x14 u16 element family — the same numbering as ELEMENTS below
+  //   +0x16 u16 category: 0 = magic/support, 2 = special-attack rune
+  const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, lo: 317, hi: 462,
+                     price: 0x0C, slotMask: 0x10, elem: 0x14, cat: 0x16, spells: 0x18, slotCount: 4 };
   const ENEMY = { off: 0x3E74E0, count: 100, stride: 0x14 };   // names only (no editable stat table)
 
   // ---- Armor sets (see Editor/Suikoden3_ISO_offsets.md "Armor sets ... CRACKED") ----
@@ -773,31 +789,34 @@
   const GEAR_STAT_SELECTOR = { 0: "PWR", 1: "SKL", 2: "MAG", 3: "REP", 4: "PDF", 5: "MDF", 6: "SPD", 7: "LUK" };
   const GEAR_TYPE_PARAM = { 2: "stat", 5: "skill" };   // type -> what `param` means
 
-  // Rune -> ordered spell names it grants (resolved to table indices by name at runtime).
-  const RUNE_SPELLS = {
-    fire: ["Flaming Arrows", "Dancing Flames", "Blazing Wall", "Explosion"],
-    rage: ["Dancing Flames", "Blazing Wall", "Explosion", "Final Flame"],
-    truefire: ["Blazing Wall", "Explosion", "Final Flame", "Hellfire"],
-    lightning: ["Thunder Runner", "Berserk Blow", "Soaring Bolt", "Furious Blow"],
-    thunder: ["Berserk Blow", "Soaring Bolt", "Furious Blow", "Thunder Storm"],
-    truelightning: ["Soaring Bolt", "Furious Blow", "Thunder Storm", "Hammer of Raijin"],
-    wind: ["Wind of Sleep", "Healing Wind", "The Shredding", "Funeral Wind"],
-    cyclone: ["Healing Wind", "The Shredding", "Funeral Wind", "Shining Wind"],
-    truewind: ["The Shredding", "Funeral Wind", "Shining Wind", "Eternal Wind"],
-    water: ["Kindness Drops", "Breath of Ice", "Kindness Rain", "Silent Lake"],
-    flowing: ["Breath of Ice", "Kindness Rain", "Silent Lake", "Mother Ocean"],
-    truewater: ["Kindness Rain", "Silent Lake", "Mother Ocean", "Heavenly Drops"],
-    earth: ["Clay Guardian", "Vengeful Child", "Guardian Earth", "Earthquake"],
-    motherearth: ["Vengeful Child", "Guardian Earth", "Earthquake", "Canopy Defense"],
-    trueearth: ["Guardian Earth", "Earthquake", "Canopy Defense", "Land of Eternity"],
-    shield: ["Battle Oath", "Great Blessing", "Battlefield"],
-    blinking: ["Ready!", "Set!", "Go!"],
-    jongleur: ["Song of Skylark", "Song of Serenity", "Song of Madness", "Song of a Hero"],
-    palegate: ["Open Gate", "Royal Passage", "Pale Palace", "Empty World"],
-    swordofrage: ["Sword of Rage", "Fire Amulet"],
-    swordofthunder: ["Sword of Thunder", "Thunder Amulet"],
-    swordofcyclone: ["Sword of Cyclone", "Wind Amulet"],
-  };
+  // Which spells a rune grants, read live off the loaded disc — RUNE_TBL +0x18, four u16
+  // spell numbers. This used to be a hardcoded name->name map covering only the 22 magic
+  // runes, because the binding was believed to live in code; it does not, so there is no
+  // second copy of this fact any more. Reading it off the disc also means the answer follows
+  // an edit: reassign Kite's slots and every place that says what Kite grants agrees.
+  //
+  // Slot numbers are 1-BASED (the same convention the engine uses to index the spell table,
+  // `rec = 0x019A4A88 + id*0x20`), so slot value N is this editor's spell row N-1. 0 is an
+  // empty slot, not spell 0 — Flaming Arrows is 1.
+  function runeSpellIds(id) {
+    const rec = RUNE_TBL.off + id * RUNE_TBL.stride, out = [];
+    for (let k = 0; k < RUNE_TBL.slotCount; k++) {
+      const o = rec + RUNE_TBL.spells + k * 2;
+      out.push(BUF && inBlk(o, 2) ? r16(o) : 0);
+    }
+    return out;
+  }
+  const spellRowName = (row) => (BUF && row >= 0 && row < SPELL.count
+    ? strAt(r32(SPELL.off + row * SPELL.stride + 0x08)) : "");
+  // A slot's 1-based number as a name. A real disc has 14 spell rows (80..93) that are fully
+  // formed records with null name pointers — spare slots — so "in the table" and "has a name"
+  // are different questions and the label says which one failed.
+  const spellSlotName = (gid) => (gid ? spellRowName(gid - 1) || `(unnamed #${gid - 1})` : "");
+  // How a slot reads in the picker. The record stores a 1-BASED number but every other tab
+  // labels a spell by its 0-based row (`#2` on the Spells tab, `data-i="2"` in its card), so
+  // the label shows the row — otherwise "#3 Blazing Wall" here and "#2 Blazing Wall" there
+  // are the same spell under two numbers and the link between them looks wrong.
+  const spellSlotLabel = (gid) => (gid ? `${spellSlotName(gid)} (#${gid - 1})` : "\u2014 empty \u2014");
 
   // ---- field schemas for the character/growth/support/weapon record tables ----
   // [label, offsetInRecord, widthBytes, kind]  (kind: item | skill | rank | num)
@@ -1288,9 +1307,10 @@
     if (kind === "imm16") return String(v & 0xFFFF);   // a patched MIPS word: only the immediate moved
     if (kind === "f32") { const f = f32Of(v); return Number.isFinite(f) ? String(+f.toFixed(3)) : "?"; }
     if (kind === "spellid") {                          // ...and that immediate is a 1-based spell number
-      const i = (v & 0xFFFF) - 1;
-      const nm = i >= 0 && i < SPELL.count ? strAt(r32(SPELL.off + i * SPELL.stride + 0x08)) : "";
-      return nm ? `${nm} (#${i})` : `spell no. ${v & 0xFFFF}`;
+      const gid = v & 0xFFFF;
+      if (!gid) return "\u2014 empty \u2014";           // a rune's unused spell slot; never a real spell
+      const i = gid - 1, nm = spellRowName(i);
+      return nm ? `${nm} (#${i})` : `spell no. ${gid}`;
     }
     return String(v);
   }
@@ -2292,7 +2312,7 @@
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
-      runes: "Every rune in the game \u2014 rename it and rewrite the menu text the game shows for it. What each rune DOES lives in the spells it grants, so those are links straight into the Spells tab with the record open, rather than a second set of the same fields here. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
+      runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -2536,12 +2556,26 @@
   // unused rows are zeroed, so we only trust a record whose name string still matches the item
   // (case/punctuation-insensitive — the disc writes "Sword of Rage", the id list "Sword Of Rage").
   const nameKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-  function runeTblDesc(id) {
-    if (id < RUNE_TBL.lo || id > RUNE_TBL.hi) return "";
+  // Is the row at this item id really that rune's record? The table has a row per ITEM id and
+  // every non-rune row is zeroed, so this is what separates "this rune grants nothing" from
+  // "there is nothing here to read". The description AND the spell slots are both gated on it.
+  //
+  // It matches on the name the row shipped with as well as the one it holds now, because the
+  // editor can rewrite that name in place: keying only on the current bytes made a rune's own
+  // fields disappear the moment it was renamed — the row stopped matching the bundled item
+  // list, which is precisely when the row is most certainly the right one.
+  function runeRowTrusted(id) {
+    if (!BUF || id < RUNE_TBL.lo || id > RUNE_TBL.hi) return false;
     const o = RUNE_TBL.off + id * RUNE_TBL.stride;
-    if (!inBlk(o, RUNE_TBL.stride)) return "";
-    const nm = strAt(r32(o + RUNE_TBL.name));
-    if (!nm || nameKey(nm) !== nameKey(REF.items[id] || "")) return "";
+    if (!inBlk(o, RUNE_TBL.stride)) return false;
+    const np = r32(o + RUNE_TBL.name), want = nameKey(REF.items[id] || "");
+    if (!np || !want) return false;
+    if (nameKey(strAt(np)) === want) return true;
+    return nameKey(strFrom(ORIG, vaOff(np), origSlotLen(np))) === want;
+  }
+  function runeTblDesc(id) {
+    if (!runeRowTrusted(id)) return "";
+    const o = RUNE_TBL.off + id * RUNE_TBL.stride;
     return strAt(r32(o + RUNE_TBL.desc));
   }
   function runeDesc(id) {
@@ -2549,9 +2583,13 @@
     const nm = REF.items[id]; if (!nm) return "";
     const own = runeTblDesc(id);                          // what the game prints in the rune menu
     const byName = spellDescByName();
-    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");   // magic rune → RUNE_SPELLS
-    const set = RUNE_SPELLS[key];
-    if (set && set.length) {                              // magic rune: name the spells it grants
+    // What it grants comes off the rune's own record (+0x18, four 1-based spell numbers), so
+    // this one-liner follows a reassignment instead of repeating a bundled list back. A rune
+    // whose slots are all zero — every passive support rune — has nothing to name here.
+    const set = runeRowTrusted(id) ? runeSpellIds(id).filter(Boolean).map(spellSlotName).filter(Boolean) : [];
+    // An attack rune's single spell carries the rune's own name, so "Kite — Grants Kite" is
+    // noise; only spell it out when the list says something the name doesn't.
+    if (set.length && !(set.length === 1 && nameKey(set[0]) === nameKey(nm))) {
       const grants = `Grants ${set.join(", ")}`;
       if (own) return `${own} — ${grants}`;
       const d0 = byName[set[0]];
@@ -3234,7 +3272,13 @@
   function drawSpells(host) {
     const upd = spDescOn;
     const jump = SPELL_JUMP; SPELL_JUMP = null;
-    const runeOpts = Object.keys(RUNE_SPELLS).map((r) => `<option value="${r}">${r}</option>`).join("");
+    // Every rune that actually grants something, read off this disc's rune table rather than a
+    // bundled list of 22. That adds the 27 special-attack runes — Kite, Phoenix, Goss — which
+    // were unreachable from here before, and it follows a reassignment: change what a rune
+    // grants on the Runes tab and this card reskins the new set.
+    const runeOpts = runeIds().map((id) => [id, itemName(id), runeSpellIds(id).filter(Boolean)])
+      .filter(([, , ids]) => ids.length)
+      .map(([id, nm, ids]) => `<option value="${id}">${esc2(nm)} (${ids.length})</option>`).join("");
     const elemOptsBlank = `<option value="">— no change —</option>` + Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
     const statOptsBlank = `<option value="">— no change —</option>` + ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}">${s}</option>`).join("");
     const reskin = `<details class="card fold" id="spReskinBox" style="margin:0 0 12px"${spReskinOpen ? " open" : ""}>
@@ -3328,7 +3372,8 @@
       }
       setStatus("Preset filled — pick a rune and click “Apply to rune”.", "ok");
     }));
-    q("#rsRune", host).onchange = () => { const el = q("#rsInfo", host); el.textContent = "→ " + RUNE_SPELLS[q("#rsRune", host).value].join(", "); };
+    q("#rsRune", host).onchange = () => { const el = q("#rsInfo", host);
+      el.textContent = "→ " + runeSpellIds(+q("#rsRune", host).value).filter(Boolean).map(spellSlotName).join(", "); };
     q("#rsRune", host).dispatchEvent(new Event("change"));
 
     qa(".sp", host).forEach((el) => (el.onchange = () => {
@@ -3400,9 +3445,12 @@
     }
   }
   function runeReskin() {
-    const rune = q("#rsRune").value, idx = spellNameIndex();
-    const targets = (RUNE_SPELLS[rune] || []).map((n) => idx[n]).filter((v) => v != null);
-    if (!targets.length) return setStatus("Could not resolve that rune's spells in this ISO.", "err");
+    const id = +q("#rsRune").value, rune = itemName(id);
+    // Slots are 1-based spell numbers, so row = slot - 1. Resolving by NUMBER rather than by
+    // name also settles the duplicates a name lookup could not: "Shining Wind" is two separate
+    // records (the Cyclone rune's spell and Ace's attack) and only one of them is meant.
+    const targets = runeSpellIds(id).filter(Boolean).map((g) => g - 1).filter((i) => i >= 0 && i < SPELL.count);
+    if (!targets.length) return setStatus("That rune grants no spells on this disc — nothing to reskin.", "err");
     const f = {}, num = (id) => q(id).value;
     if (num("#rsPower") !== "") f.power = +num("#rsPower");
     if (num("#rsCast") !== "") f.cast = +num("#rsCast");
@@ -6604,10 +6652,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const nm = REF.items[id] || "";
     const fb = (REF.runeFood && REF.runeFood[String(id)]) || "";
     const m = /^(.*?)\s*—\s*Grants\s+(.+)$/.exec(fb);
-    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");
-    // An attack rune's spell carries the rune's own name (Kite -> "Kite"), so it has no
-    // RUNE_SPELLS entry and no "— Grants" clause; fall back to the rune name so those runes
-    // reach the effect editor too. Resolved against the loaded disc, not a bundled list.
     // The rune's own NAME string, as a pointer + the slot the disc already reserves, so the
     // browser can rewrite it in place. 43 names on this disc are stored twice — a rune and the
     // spell it grants each hold their own copy of "Kite" — so a rename has to write both or
@@ -6616,15 +6660,16 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const inTbl = BUF && id >= RUNE_TBL.lo && id <= RUNE_TBL.hi && inBlk(rec, RUNE_TBL.stride);
     const np = inTbl ? r32(rec + RUNE_TBL.name) : 0;
     const liveName = np ? strAt(np) : "";
-    let grants = RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []);
-    // Resolve the attack-rune fallback against the name the disc CURRENTLY holds first. A
-    // rename renames the rune's spell along with it, so keying only on the bundled name would
-    // make the effect editor vanish from every rune the moment it was renamed.
-    if (!grants.length && BUF) {
-      const idx = spellNameIndex();
-      if (liveName && liveName in idx) grants = [liveName];
-      else if (nm && nm in idx) grants = [nm];
-    }
+    // The four spell slots, straight off the record — but only for a row this disc still
+    // NAMES as the rune it should be. That is the same trust check runeTblDesc() makes before
+    // believing a description, and for the same reason: the table has a row per item id and
+    // the non-rune ones are zeroed, so four zeros read out of an unnamed row means "nothing
+    // here to read", not "this rune grants nothing". Untrusted rows fall back to the bundled
+    // "— Grants a, b, c" clause, which is prose and so never reaches the editor.
+    const trusted = inTbl && runeRowTrusted(id);
+    const slotIds = trusted ? runeSpellIds(id) : [0, 0, 0, 0];
+    const grants = trusted ? slotIds.filter(Boolean).map(spellSlotName)
+      : (m ? m[2].split(/\s*,\s*/) : []);
     // The rune's own desc string, as a pointer + slot cap, so the browser can edit it in place.
     // This is the copy the game's rune menu actually reads (getDesc VA 0x16DBE48 -> itemRecord
     // VA 0x16DBCD8 -> RUNE_TBL +4), and until now nothing in the editor could write it: the
@@ -6642,7 +6687,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       descPtr: own ? dp : 0,                       // 0 when this row has no trustworthy record
       descMax: own ? origSlotLen(dp) : 0,
       descCopies: own ? descCopyCount(vaOff(dp)) : 1,
-      grants,
+      grants, slotIds, editable: trusted,
       owner: runeOwners()[nameKey(nm)] || "",
       holders: runeHolders()[nameKey(nm)] || [],
       sources: sourceRows(id),
@@ -6683,20 +6728,26 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     host.innerHTML = chips +
       `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
         grants, and who carries it. Names and descriptions come off <b>this</b> disc's rune table, so an edit
-        made here or on the Text tab shows everywhere the editor names that rune. <b>Grants</b> lists the spells a magic rune unlocks as its mastery level rises;
-        the Spells tab is where those are edited. Rows in the last column are tagged
+        made here or on the Text tab shows everywhere the editor names that rune.
+        <b>Spells granted</b> is the rune's own record, not a lookup: every rune holds
+        <b>four spell slots</b>, and a rune with fewer spells than that is padded with empty ones.
+        Kite grants one attack and has three slots free; the Fire Rune fills all four. Pick any of
+        the game's spells in any slot — that is how a rune is given a spell it never had. The spell's
+        own numbers (power, cast, element, target, area, status) live on the Spells tab, one click away
+        on each filled slot, and stay the single place they are edited.
+        Rows in the last column are tagged
         <span class="srctag guide">guide</span> when they come from the Suikosource rune-slot and character
         guides and <span class="srctag disc">disc</span> when decoded from this disc's enemy drop tables.
         The menu text box writes the rune's description straight into the table the game reads for it, capped
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
-        Every spell a rune grants is a <b>link to that spell's own record</b> on the Spells tab, opened and
-        ready to edit — power, cast, element, target, area, status. That is the one place a spell is edited,
-        so there is no second copy of those fields here to disagree with it. It is also the only route from an
-        attack rune to its numbers: Kite and Phoenix carry no status effect, so nothing else in this row would
-        ever have pointed at them. The passive support runes (Fortune, Balance, Fury…) list nothing to link,
-        because they have no spell record at all — what they do is engine code, not a row.
+        The passive support runes (Fortune, Balance, Fury…) ship with all four slots empty — what they do
+        is engine code, not a spell — so their slots are shown but writing one is untested territory,
+        unlike the magic and special-attack runes, where the game already reads every count from one
+        spell to four. Whichever slots you use, the levels a character has to reach before the later ones
+        unlock are <b>not</b> in this record and are not editable yet; test a reassigned rune in game
+        before building a run around it.
         Which rune a character has equipped is set on the <b>Characters</b> tab.</div>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
@@ -6709,17 +6760,24 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
             ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text ${slotNoteHTML(r.descPtr)}</span>
                <input type="text" class="rdesc" data-id="${r.id}" maxlength="${r.descMax}" value="${esc2(r.text)}"></label>`
             : `<div class="muted">${esc2(r.text || "—")}</div>`}
-            ${r.grants.length ? `<div class="grants">${r.grants.map((s) => {
-              // A chip only becomes a link when the spell it names is really in the table.
-              // The 23 support runes (Fortune, Balance, Fury...) have no spell record at all —
-              // their effect is engine code, not a row — so linking them would promise a
-              // destination that does not exist. Those stay plain chips.
-              const si = spellNameIndex()[s];
-              return si == null
-                ? `<span class="spellchip" title="no spell record on this disc — this rune's effect is engine code">${esc2(s)}</span>`
-                : `<button class="spellchip link" data-spjump="${esc2(s)}" data-spi="${si}"
-                     title="Open ${esc2(s)} on the Spells tab — power, cast, element, target, area and status">${esc2(s)}</button>`;
-            }).join("")}</div>` : ""}
+            ${r.editable
+              // Four slots, always all four, because that is what the record holds: a rune
+              // with one spell is three ZEROS, not a shorter list, so an empty slot is a
+              // control to fill in rather than something the row has to hide. Each filled
+              // slot keeps its link to the spell's own record — the one place a spell's
+              // power/cast/element/target/status is edited.
+              ? `<div class="runeslots"><div class="muted" style="margin:8px 0 2px">Spells granted
+                   <span class="u">four slots · empty ones are free</span></div>
+                 ${r.slotIds.map((gid, k) => `<div class="slotrow">
+                    <span class="slotn">${k + 1}</span>
+                    <select class="rspell" data-id="${r.id}" data-k="${k}"
+                      title="Which spell this rune grants in slot ${k + 1}"><option value="${gid}"
+                      >${esc2(spellSlotLabel(gid))}</option></select>
+                    ${gid ? `<button class="spellchip link" data-spjump="${esc2(spellSlotName(gid))}" data-spi="${gid - 1}"
+                        title="Open this spell's record on the Spells tab — power, cast, element, target, area and status">edit ↗</button>` : ""}
+                  </div>`).join("")}</div>`
+              : r.grants.length ? `<div class="grants">${r.grants.map((s) =>
+                  `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
           </td>
           <td>${runeWhoHTML(r)}</td></tr>`).join("")
         || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
@@ -6736,6 +6794,41 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const box = q("#isoSearch"); if (box) box.value = b.dataset.spjump;
       drawView();
     }));
+    // Spell slots. Each select ships with ONE option — the value it already holds — and is
+    // filled with the full 94-spell list the first time it is touched. Rendering all of them
+    // up front is ~1MB of HTML for 72 runes, and the filter box re-renders this whole tab on
+    // every keystroke, so the eager version would make typing in it stutter.
+    let SLOT_OPTS = null;
+    const slotOptions = () => (SLOT_OPTS || (SLOT_OPTS = `<option value="0">— empty —</option>` +
+      Array.from({ length: SPELL.count }, (_, i) => {
+        const nm = spellRowName(i);
+        // Rows 80..93 on a real disc are complete records with no name — spare slots. Say so,
+        // rather than offering 14 identical blanks that look like a bug.
+        return `<option value="${i + 1}">${esc2(nm || "(unused spell slot)")} (#${i})</option>`;
+      }).join("")));
+    qa("select.rspell", host).forEach((el) => {
+      const id = +el.dataset.id, k = +el.dataset.k;
+      const off = RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.spells + k * 2;
+      if (!inBlk(off, 2)) { el.disabled = true; return; }
+      markField(el, off, 2, "spellid");
+      let filled = false;
+      const fill = () => {
+        if (filled) return;
+        filled = true;
+        const cur = el.value; el.innerHTML = slotOptions(); el.value = cur;
+      };
+      el.addEventListener("pointerdown", fill);   // mouse: fires before the popup opens
+      el.addEventListener("focus", fill);         // keyboard: tabbing straight into it
+      el.onchange = () => {
+        const gid = clampInt(+el.value || 0, 0, 0xFFFF);
+        writeW(off, 2, gid);
+        reg(off, 2, "spellid", itemName(id), `Spell slot ${k + 1}`);
+        setStatus(gid
+          ? `${itemName(id)} slot ${k + 1} now grants ${spellSlotName(gid)}. Review, then Save.`
+          : `${itemName(id)} slot ${k + 1} emptied. Review, then Save.`, "ok");
+        drawRunes(host);
+      };
+    });
     // In-place rename. Same write as the menu text below: the string is overwritten where it
     // already sits and null-padded, so no pointer on the disc moves and every menu that names
     // the rune reads through the one pointer it always did. An empty box would leave the rune
