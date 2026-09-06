@@ -90,7 +90,12 @@ Editable per save:
   plus enemy drops with the enemy, level, odds and area, and treasure chests), the **potch price
   measured against your purse**, and any star you have to **bring along or recruit first**, with
   a ✓/✗ for whether you already have them. Where nothing is known it says so rather than
-  guessing. It reflects staged edits live, so it doubles as a worklist for a completion run.
+  guessing. Each of those can also be **handed over**: an item goes into the bag of the party
+  the save is currently playing (derived from the field-leader byte and that character's team —
+  before the parties merge each protagonist carries their own bag, so "your inventory" is not
+  one place), and a potch price is topped up by exactly the shortfall. Both only stage the
+  change, so they still go through **Review changes**. It reflects staged edits live, so it
+  doubles as a worklist for a completion run.
 - **Party** — the active battle party (up to 6), by character name.
 - **Inventory** — every bag, split into Party Items vs Key/Valuables, with name-resolved
   item pickers, quantities, add and remove. The bag layout follows the save: before the
