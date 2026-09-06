@@ -1327,15 +1327,25 @@ head("Assigned horse — the per-character list2 field, field + battle");
   // field bank but no battle one, which is exactly the distinction this section exists to make
   check("Geddoe is offered an assigned horse", (await page.$(sel(3))) !== null);
   check("Geddoe is labelled field-only", /Geddoe[\s\S]{0,80}field/.test(await page.textContent("#isoView")));
-  // the card must not imply that setting this alone puts someone on a horse in battle
-  { const txt = await page.textContent("#isoView");
-    check("it says the flag grants permission, not a horse", /does not by itself put\s+anyone on a horse/.test(txt.replace(/\s+/g, " ")));
-    check("it points at Ruby to actually force one", /use <?b?>?Ruby<?\/?b?>?/.test(txt) || /Ruby/.test(txt));
-    check("it explains why Chris rides in some battles only", /some battles\s+and\s+not others/.test(txt.replace(/\s+/g, " "))); }
-  // only 308/309 are honoured by the game, so only those may be offered
+  // The card used to say this flag "does not by itself put anyone on a horse". That was wrong
+  // and the copy was corrected: PartyPut reads +0x66 and writes the horse into the party list
+  // six positions along, which a real save corroborates (Chris at party position 3, her horse
+  // at 9). What it genuinely cannot do is make a scene ASK for a mount. These assertions track
+  // the corrected claims, so the card cannot quietly drift back to the old one.
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("it says the field really does stage a horse", /really does stage the horse/.test(txt));
+    check("it explains the pos\u002B6 staging", /six positions along/.test(txt));
+    check("it says the limit is the script, not the flag", /cannot do is write the script/.test(txt));
+    check("it points at Ruby to force one in battle", /Ruby/.test(txt));
+    check("it explains why Chris rides only sometimes", /some scenes and not others/.test(txt));
+    check("it warns the party must be re-formed", /re-formed/.test(txt));
+    check("it points at the Test tab for the wider list", /Test<\/b>? ?tab can widen|Test tab can widen/.test(txt)); }
+  // Only 308/309 are honoured while the clamp is stock, so only those may be offered. The Test
+  // tab can widen the clamp, and the dropdown then grows — this asserts the DEFAULT, which is
+  // what a freshly loaded ISO must show.
   const optVals = await page.$$eval(sel(1), (els) => Array.from(els[0].options).map((o) => o.value));
-  check("only none/308/309 are offered", JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]),
-    optVals.join(","));
+  check("only none/308/309 are offered while the clamp is stock",
+    JSON.stringify(optVals) === JSON.stringify(["0", "308", "309"]), optVals.join(","));
   await page.selectOption(sel(1), "308");     // give Hugo a knight horse
   await page.selectOption(sel(2), "0");       // take Chris's away
   const r = await save(page);
