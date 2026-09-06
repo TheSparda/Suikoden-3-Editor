@@ -159,7 +159,16 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
     : "iso.js RUNEFX lists every site with its stock word");
   // A rune-power site must never land on an equipped-check word pair or a status constant:
   // both tables write, and the second writer would silently eat the first.
+  // This reads the equipped-check addresses back out of iso.js by SHAPE, so it has to prove it
+  // actually parsed them before it can claim they don't clash. If the passive tables are ever
+  // restructured — the site descriptor gaining a field, `jal` ceasing to be the second key —
+  // this regex quietly matches nothing, `psOffs` is empty, and the overlap check below passes
+  // while checking NOTHING. That is the dangerous way for a guard to fail, so count first.
   const psOffs = [...iso.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal:/g)].map((m) => parseInt(m[1], 16));
+  (psOffs.length === 51 ? ok : bad)(psOffs.length === 51
+    ? "the overlap check can still see all 51 equipped-check sites"
+    : `the equipped-check parser found ${psOffs.length} sites, not 51 — the passive site descriptor `
+      + `changed shape, so the overlap check below is not actually checking anything. Fix this regex.`);
   const clash = all.filter(([o]) => psOffs.some((p) => o >= p && o < p + 8)
     || STATUSFX_SITES.some(([s]) => s === o) || MOUNT_SITES.includes(o));
   (clash.length ? bad : ok)(clash.length
@@ -176,6 +185,18 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
     "RF_KIND still defines all four value shapes (imm / sa / f32hi / f32)");
   (/rfSiteOk\(off, stock, e\.kind\)/.test(iso) ? ok : bad)(
     "rfWrite re-checks each site's stock shape before writing it");
+  // The card is rendered and wired from inside drawPassives, and those two call sites are the
+  // ONLY coupling between Rune power and the rest of the tab. A rewrite of drawPassives that
+  // does not carry them forward drops the whole feature silently: RUNEFX, RF_KIND and every
+  // helper still exist and still parse, so nothing above this line notices. The e2e catches it
+  // (#rfBox stops existing) but the e2e is slow and not always run — catch it in the fast suite.
+  (/\$\{rfCard\(\)\}/.test(iso) ? ok : bad)(
+    "drawPassives still renders the Rune power card (${rfCard()})");
+  // Match the CALL, not the declaration — `function wireRf(host) {` also contains "wireRf(host)",
+  // so a looser regex stays green with the call site deleted, which is the exact failure this
+  // check exists to catch.
+  (/\n\s*wireRf\(host\);/.test(iso) ? ok : bad)(
+    "drawPassives still wires the Rune power controls (a wireRf(host); call, not just the declaration)");
 }
 {
   const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);
@@ -261,6 +282,19 @@ console.log("Passive rune sites:");
 
     // The answer the patch writes, spelled out so a typo fails here rather than in the game.
     (/const PS_YES = 0x0004102B;/.test(iso) ? ok : bad)("PS_YES is sltu $v0,$zero,$a0 (0x0004102B)");
+
+    // Every switchable rune must carry a confidence marker, and only the two words the tab knows
+    // how to render. A rune added later with no marker would silently show as "untested", which
+    // is the safe direction but hides the omission — so require it explicitly.
+    const proofs = [...sw.matchAll(/proof: "(\w+)"/g)].map((m) => m[1]);
+    (proofs.length === swIds.length ? ok : bad)(`every switchable rune carries a proof marker (${proofs.length}/${swIds.length})`);
+    const badProof = proofs.filter((x) => x !== "confirmed" && x !== "untested");
+    (badProof.length ? bad : ok)(badProof.length
+      ? `unknown proof marker(s): ${badProof.join(", ")} — the tab only renders confirmed/untested`
+      : `proof markers are all confirmed/untested (${proofs.join(", ")})`);
+    // Sunbeam's walk-heal was played on 2026-09-06; that report is the only thing that may set it.
+    (/id: 0x1BD, where: "field", proof: "confirmed"/.test(sw) ? ok : bad)("Sunbeam is marked confirmed in play");
+    (/id: 0x1B9, where: "field", proof: "untested"/.test(sw) ? ok : bad)("Champion's is still marked untested");
     (/psWrite/.test(iso) && !/PS_BATTLE\.forEach\([^)]*psWrite/.test(iso) ? ok : bad)("nothing writes the held-back sites");
   }
 }
