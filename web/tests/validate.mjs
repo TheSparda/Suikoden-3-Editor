@@ -625,10 +625,13 @@ console.log("Guide overlays + xdelta:");
       const ranks = new Set(Object.values(sr).flatMap((s) => (s.effects || []).flatMap((e) => Object.keys(e.ranks || {}))));
       const rankOpts = new Set([...iso.matchAll(/\[\d, "(E|D|C|B\+?|A\+?|S)"\]/g)].map((m) => m[1]));
       ([...ranks].every((g) => rankOpts.has(g)) ? ok : bad)(`guide ranks are all in RANK_OPTS (${[...ranks].join(" ")})`); }
-    (/function drawRunes/.test(iso) && refMode("runes") &&
-      /function drawSkillsRef/.test(iso) && refMode("skills") &&
+    (/function drawSkillsRef/.test(iso) && refMode("skills") &&
       refMode("items") && /function drawItemsRef/.test(iso) ? ok : bad)(
-      "iso.js registers the Items, Rune and Skill reference browsers");
+      "iso.js registers the Items and Skill reference browsers");
+    // Runes left Reference in v1.97.0: renaming a rune and rewriting its menu text are edits,
+    // not reference, and nobody could find them buried under a tab whose hint said read-only.
+    (/function drawRunes/.test(iso) && /\["runes", "Runes"\]/.test(iso) && !refMode("runes") ? ok : bad)(
+      "the Runes browser is a top-level tab, not a Reference sub-tab");
     (/s3_rune_food_desc\.json/.test(iso) && /s3_rune_owner\.json/.test(iso) ? ok : bad)(
       "iso.js loadRef fetches the rune description + owner tables");
     const areas = rm.areas.map((a) => a.area);
@@ -671,6 +674,18 @@ console.log("In-ELF text heuristic:");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/TextCore\.scanStrings\(ORIG, ELF_BASE\)/.test(iso) ? ok : bad)("iso.js scans ORIG (stable slot lengths), not BUF");
   (/\["text", "Text"\]/.test(iso) ? ok : bad)("iso.js registers the Text view");
+  // The Runes browser stopped being read-only in v1.58.0 — it owns the rune's menu text and
+  // its status effect, and is the ONLY place either can be edited. Its hint went on claiming
+  // "Reference (read-only)" for 36 releases, which is a real reason someone would never look
+  // there for the one field that fixes a rune description. Pin the correction.
+  const runesHint = /\n\s*runes: "([^"]*)"/.exec(iso);
+  (runesHint && !/read-only\)/.test(runesHint[1]) ? ok : bad)("the Runes tab is not advertised as read-only");
+  (runesHint && /rename it/.test(runesHint[1]) ? ok : bad)("the Runes tab hint says a rune can be renamed");
+  // A rune name and its description are each written in place through setDescText, which
+  // mirrors every copy. Both fields have to exist or half the surface is unreachable again.
+  (/input type="text" class="rname"/.test(iso) ? ok : bad)("the Runes tab renders a rename field");
+  (/input type="text" class="rdesc"/.test(iso) ? ok : bad)("the Runes tab renders a menu-text field");
+  (/qa\("input\.rname"/.test(iso) ? ok : bad)("the rename field is wired to a write");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
