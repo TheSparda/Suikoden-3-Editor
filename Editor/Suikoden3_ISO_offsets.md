@@ -2990,3 +2990,141 @@ opcodes to one address, and unrelated helper functions sit *between* handlers �
 call site by scanning back to its `addiu $sp, $sp, -N` prologue, not by taking the nearest
 preceding handler entry. The nearest-entry shortcut put the room-audio consumer inside op
 65/66 and was wrong.
+
+---
+
+## Passive support runes — how the engine asks, and how to answer for it (2026-09-06)
+
+The 23 support runes (item ids **440–462**, `0x1B8`–`0x1CE`: Fortune, Champion's, Killer,
+Counter, Gale, Sunbeam, Wall, Haziness, Drain, Barrier, Balance, Fire Sealing, Skunk, Firefly,
+Medicine, Double-Strike, Wizard, Warrior, Waking, Alertness, Fury, Violence, Hunter) grant no
+spells and have no battle command, so nothing in the spell or unite tables describes them.
+What they are instead is **one question, asked 51 times**: *does this character have item N
+equipped?* Answer it with yes and the passive is on without the rune.
+
+**The three helpers.** All of them walk the same seven equip slots — 1–6 gear, slot 7 being
+the three rune slots read through `0x16DD9F8(char, slot, sub)` — and return the slot number
+that holds the wanted item id, or 0.
+
+| VA | file | signature | notes |
+|---|---|---|---|
+| `0x16CB380` | `0x112B80` | `FindEquipSlot(charRecord, itemId)` | 25 rune sites. Opens with `beqz <record> → return 0` |
+| `0x16CB438` | `0x112C38` | `FindEquipSlot(charId, itemId)` | 3 rune sites. Resolves the id (`0x16C6D08`) then tail-calls the above |
+| `0x181B3B0` | `0x262BB0` | `UnitHasItem(unit, itemId)` | 23 rune sites. **Ignores `$a0`** — `0x181B738` fetches the ACTING unit itself, maps it to a record via `0x17BBB20`, then calls `0x16CB270`, a second copy of the same seven-slot walk |
+
+Located by scanning the whole `PT_LOAD` for `jal` instructions whose `$a1` is an
+`addiu $a1,$zero,imm` with `imm` in `0x1B8..0x1CE` and no intervening write to `$a1`. That
+yields exactly 51 sites across 22 runes — see `web/iso.js:PASSIVES`, which carries every
+offset with its stock `jal` word and delay slot, and `web/tests/validate.mjs`, which re-decodes
+each `jal` and asserts it still names the helper its entry claims.
+
+**The patch shape.** A site is two words: `jal <helper>` and its branch delay slot, with the
+result tested in `$v0` immediately after. Removing the call frees both, so:
+
+```
+word[off]     := <the delay-slot instruction>      # it still has to run
+word[off + 4] := <the answer>                      # into $v0, for the test that follows
+```
+
+Order is preserved and nothing is inserted, which matters more than it looks: at **five** of
+the 51 sites the delay slot is not the argument setup, and at three of those it is arithmetic
+whose result the very next instruction consumes — e.g. Counter at file `0x103B54`,
+
+```
+016BC34C  div   $zero,$v0,$s2
+016BC350  mflo  $v0
+016BC354  jal   0x16CB380
+016BC358  addu  $s1,$s1,$v0     <- the mflo result, not the rune id
+```
+
+Writing the answer into the jal's word instead would feed `$s1` a 1. The other two are
+`move $a0,$s0` (Barrier, `0x105200`) and `sw $a0,($sp)` (Fire Sealing, `0x1115C4`).
+
+**Two answers, not one.** They are not interchangeable:
+
+* `0x16CB380` sites → `sltu $v0,$zero,$a0` (`0x0004102B`) — *yes, if `$a0` is a real character
+  record*. That reproduces the helper's own opening guard, and several of these sites feed it
+  the result of `0x17BBB20` (unit → record), which returns 0 for a unit that is not a
+  character. Without the guard a forced passive would fire on things the engine does not
+  consider characters at all.
+* `0x16CB438` / `0x181B3B0` sites → `addiu $v0,$zero,1` (`0x24020001`) — unconditional yes.
+  `$a0` is a character id or a unit handle here, not a record; `0x181B3B0` does not even read it.
+
+Verified against a pristine SLUS-20387: all 51 stock word pairs match byte-for-byte, every
+`jal` decodes to the helper its entry names, all sites are inside `[0xA4800, 0x465DF0)`, and no
+two are within 8 bytes of each other. No site's delay-slot word is the target of any branch or
+jump in the image (three sites' `jal` words are, which is harmless — order is preserved).
+
+**What the sites do**, read off the code around them — this is where the rune's own menu text
+can be checked against the engine:
+
+| rune | sites | what a "yes" does |
+|---|---|---|
+| Champion's `0x1B9` | 1 | the field encounter roll (`0x1702740`) loops party slots 1–6; one yes enables the weak-foe skip |
+| Killer `0x1BA` | 2 | crit chance × `150/100` |
+| Counter `0x1BB` | 3 | counter chance × `150/100` |
+| Gale `0x1BC` | 1 | SPD × `150/100` |
+| Sunbeam `0x1BD` | 2 | field walk-heal loop over party slots 1–6, and the literal `addiu $v0,$v0,0xF` a combat turn adds |
+| Wall `0x1BE` | 10 | PDF doubled (`sll ...,1`) at the damage site; the other eight are battle-action gates — the "no other movement" half |
+| Haziness `0x1BF` | 1 | opens the dodge roll; the code right after is `rand(100) < 30`, so 30% is the rune's real number |
+| Drain `0x1C0` | 1 | the critical-hit self-heal |
+| Barrier `0x1C1` | 1 | the magic-reflect roll |
+| Balance `0x1C2` | 2 | clears status bit `0x10` (unbalance) in both places the state is rebuilt |
+| Fire Sealing `0x1C3` | 4 | one element's incoming damage zeroed, another doubled |
+| Skunk `0x1C4` | 3 | target picker: single-target attacks may not land here |
+| Firefly `0x1C5` | 2 | the same picker, preferred target |
+| Medicine `0x1C6` | 2 | the auto-item action, planned and issued |
+| Double-Strike `0x1C7` | 2 | damage dealt AND taken doubled — attacker's copy and defender's |
+| Wizard `0x1C8` | 2 | half the SKL figure into MGC |
+| Warrior `0x1C9` | 2 | half of REP into PWR |
+| Waking `0x1CA` | 2 | asleep at battle start, berserk on waking |
+| Alertness `0x1CB` | 1 | the turn-4 wake-up |
+| Fury `0x1CC` | 3 | always berserk: one stat site, two battle-state sites |
+| Violence `0x1CD` | 1 | the berserk-on-heavy-damage trigger |
+| Hunter `0x1CE` | 3 | clamps the damage dealt (a literal 5 is written over it) and turns on the item-drop side |
+
+**Only the two field sites are shipped as switches, and the reason is scope.**
+
+One word for the answer is enough for *yes* and not enough for *yes, if this is Hugo*: reading
+the character id off the record, comparing it and normalising the result to a boolean is three
+instructions at best, and a call site frees at most two (one of which must keep the delay-slot
+instruction). The battle-side helper is worse — it never receives the character at all, it
+resolves whichever unit is acting. So an in-battle passive **cannot be made per-unit at these
+sites**, and forcing one would arm every unit in the fight, enemies included: Wall would lock
+the whole battlefield in place, Hunter would clamp everyone's damage to nothing.
+
+The two **field** sites have no such problem. Both live in the field-step module and both are
+loops over party slots 1–6 (`0x16FFCA8(slot)`), asking once per slot:
+
+| file | VA | what a yes does |
+|---|---|---|
+| `0x149F90` | `0x1702790` | Champion's — `movn $s1,$s3,$v0`; any yes turns on the weak-foe skip |
+| `0x14A1B4` | `0x17029B4` | Sunbeam's **walk-heal** — a yes heals that slot via `0x16C8790` |
+
+so a forced yes means "everyone in your party has it", which is what the rune does when six
+people wear one, and there are no enemies on the field to leak to. Both are written with
+`sltu $v0,$zero,$a0` rather than a bare 1: `$a0` is the slot handle `0x16FFCA8` just returned
+and it is 0 for an empty slot — the walk-heal site tests exactly that itself two instructions
+earlier (`beqz $s0`) — so an empty slot still answers no.
+
+Reaching the other 49 properly means relocating code into free space in the ELF and calling out
+to it, which is a different job from flipping a word in place. Everything needed for that is in
+the table above and in `web/iso.js:PS_BATTLE`, which carries all 49 with their stock words so
+the Changes-tab audit can still report a disc that has them patched some other way.
+
+**Still untested in play.** Both switchable sites are decoded and byte-verified; neither has
+been watched working in game. The tab says so.
+**Fortune `0x1B8` is not here at all — WHERE IT IS NOT.** "Doubles experience value gained" is the
+one support rune with no decoded site, and three exhaustive searches came up empty, so
+nobody should repeat them: (a) its id 440 appears as an instruction immediate exactly eight
+times anywhere in `PT_LOAD`, and every one is a struct displacement (`addiu $s0,$v1,0x1B8` at
+`0x17B7F1C`, six more of the same shape) or a stack offset — never an argument; (b) no call to
+any of the three helpers passes it, with `$a1` immediate or otherwise (the full caller lists are
+27 / 3 / 28, and every one is accounted for); (c) no `u16` in the image holds 440 next to another
+support-rune id, so there is no "special runes" table it could be read from. Whatever grants the
+EXP bonus does not ask the question the other 22 ask.
+
+Shipped as the ISO editor's **Passives** tab (`web/iso.js:drawPassives`): two checkboxes above,
+the 49 held-back sites listed below them with what each does and why it has no switch. Both
+words of a written site are registered in the Changes tab under "Passive runes", and all 51 —
+written or not — are audited against their stock values by `chgCodeAudit`.

@@ -120,6 +120,88 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   else ok(`mount pair sites (${MOUNT_SITES.length} code sites in block)`);
 }
 
+// Passives tab: the 51 decoded equipped-rune checks. TWO of them are switchable (the field
+// party loops); the other 49 are listed as PS_BATTLE and deliberately never written. Both tables
+// get the same structural checks, because "decoded but not offered" still has to be right — the
+// tab names those sites, and the Changes-tab audit compares a disc against their stock words.
+// Each site is TWO words — the `jal` and its delay slot — so the bound is 8 bytes, and two sites
+// landing within 8 bytes of each other would have one silently overwrite the other. The jal word
+// is decoded here rather than trusted: it must still target the helper its `k` claims, which is
+// the check that catches a site copied to the wrong address or a `k` typo.
+console.log("Passive rune sites:");
+{
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const DELTA = 0x15B8800;                                  // ISO offset -> ELF vaddr
+  const HELPER = { rec: 0x16CB380, id: 0x16CB438, unit: 0x181B3B0 };
+  const BAND = [0x1B8, 0x1CE];                              // the support-rune item ids
+  const FIELD = [0x149F90, 0x14A1B4];                        // the only two that may be written
+  const grab = (name) => (iso.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n  \\];`)) || [])[1];
+  const sw = grab("PASSIVES"), bt = grab("PS_BATTLE");
+  const unmapped = (iso.match(/const PS_UNMAPPED = \[([^\]]*)\]/) || [])[1];
+  if (!sw || !bt || unmapped === undefined) bad("could not read PASSIVES / PS_BATTLE / PS_UNMAPPED out of iso.js");
+  else {
+    const idsOf = (b) => [...b.matchAll(/\{ id: (0x[0-9A-Fa-f]+),/g)].map((m) => parseInt(m[1], 16));
+    const sitesOf = (b) => [...b.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal: (0x[0-9A-Fa-f]+), ds: (0x[0-9A-Fa-f]+), k: "(\w+)" \}/g)]
+      .map((m) => ({ off: parseInt(m[1], 16), jal: parseInt(m[2], 16) >>> 0, ds: parseInt(m[3], 16) >>> 0, k: m[4] }));
+    const swIds = idsOf(sw), btIds = idsOf(bt);
+    const gaps = unmapped.split(",").map((x) => parseInt(x.trim(), 16)).filter((n) => !isNaN(n));
+    const swSites = sitesOf(sw), btSites = sitesOf(bt), sites = swSites.concat(btSites);
+    (sites.length === 51 ? ok : bad)(`${sites.length} call sites parsed (expected 51)`);
+
+    // The switchable half is exactly the two field sites, and nothing else may creep in: every
+    // other site is about the acting unit in battle, which cannot be scoped to your party.
+    const swOffs = swSites.map((s) => s.off).sort((a, b) => a - b);
+    (swOffs.length === 2 && swOffs.every((o, i) => o === FIELD[i]) ? ok : bad)(
+      swOffs.length === 2 && swOffs.every((o, i) => o === FIELD[i])
+        ? "the switchable sites are exactly the two field party loops (0x149F90, 0x14A1B4)"
+        : `switchable sites drifted: ${swOffs.map((o) => "0x" + o.toString(16)).join(", ")}`);
+    (swSites.every((s) => s.k === "id") ? ok : bad)("both field sites go through 0x16CB438 (charId form)");
+    (btSites.some((s) => s.off === 0x261184) ? ok : bad)("Sunbeam's in-battle half is held back, not switched");
+
+    // Every support rune is accounted for exactly once, as switchable, held back, or a named gap.
+    const band = [];
+    for (let i = BAND[0]; i <= BAND[1]; i++) band.push(i);
+    const seen = [...swIds, ...btIds, ...gaps];
+    const uniq = new Set(seen);
+    const missing = band.filter((i) => !uniq.has(i));
+    const stray = [...uniq].filter((i) => i < BAND[0] || i > BAND[1]);
+    // Sunbeam is the one rune that appears in BOTH tables — its two halves land on different
+    // sides of the split — so the count is 23 distinct ids across 24 entries.
+    const dupes = seen.filter((v, i) => seen.indexOf(v) !== i);
+    (missing.length || stray.length || dupes.length !== 1 || dupes[0] !== 0x1BD ? bad : ok)(
+      missing.length || stray.length || dupes.length !== 1 || dupes[0] !== 0x1BD
+        ? `the support-rune band 0x1B8..0x1CE is not covered as expected: missing ${missing.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, `
+          + `stray ${stray.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, repeated ${dupes.map((i) => "0x" + i.toString(16)).join(", ") || "none"} (only Sunbeam 0x1bd may repeat)`
+        : `every support rune 0x1B8..0x1CE is switchable, held back or a named gap (${uniq.size} ids, Sunbeam split across both)`);
+
+    const oobP = sites.filter((s) => s.off < ELF_BASE || s.off + 8 > ELF_END);
+    (oobP.length ? bad : ok)(oobP.length
+      ? `passive sites out of block: ${oobP.map((s) => "0x" + s.off.toString(16)).join(", ")}`
+      : `all ${sites.length} passive sites (2 words each) stay in the read block`);
+
+    // No two sites may share, or straddle, each other's word pair.
+    const sorted = sites.map((s) => s.off).sort((a, b) => a - b);
+    const clash = sorted.filter((o, i) => i && o - sorted[i - 1] < 8);
+    (clash.length ? bad : ok)(clash.length
+      ? `passive sites overlap at ${clash.map((o) => "0x" + o.toString(16)).join(", ")} — one patch would eat the other`
+      : "no two passive sites are within 8 bytes of each other");
+
+    // The jal word must still name the helper its kind claims.
+    const wrong = sites.filter((s) => {
+      const va = s.off + DELTA;
+      return (s.jal >>> 26) !== 3
+        || (((va & 0xF0000000) | ((s.jal & 0x03FFFFFF) << 2)) >>> 0) !== HELPER[s.k];
+    });
+    (wrong.length ? bad : ok)(wrong.length
+      ? `${wrong.length} passive site(s) don't jal the helper their kind names: ${wrong.map((s) => "0x" + s.off.toString(16)).join(", ")}`
+      : `every site's jal decodes to the helper its kind names (${Object.keys(HELPER).join(" / ")})`);
+
+    // The answer the patch writes, spelled out so a typo fails here rather than in the game.
+    (/const PS_YES = 0x0004102B;/.test(iso) ? ok : bad)("PS_YES is sltu $v0,$zero,$a0 (0x0004102B)");
+    (/psWrite/.test(iso) && !/PS_BATTLE\.forEach\([^)]*psWrite/.test(iso) ? ok : bad)("nothing writes the held-back sites");
+  }
+}
+
 // 2b) shop counter index: the JSON the Shops tab labels itself from must agree with the
 // offsets above, and must not name a location that has no stock on the disc.
 console.log("Shop counter index:");

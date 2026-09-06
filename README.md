@@ -167,7 +167,8 @@ spare. Each filled slot is also a **link straight into the Spells tab with that 
 which stays the one place a spell's own power / cast / element / target / status is edited —
 and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
 status effect for an effect editor to hang off. The passive support runes ship with all four
-slots empty: what they do is engine code, not a spell. Two caveats, both written into the tab:
+slots empty: what they do is engine code, not a spell — and the **Passives** tab is where that
+code is reached. Two caveats, both written into the tab:
 the character levels that gate a rune's later spells are **not** in this record and are not
 editable yet, and whether an attack rune will surface more than one spell is untested on
 hardware — try a reassigned rune in game before building a run around it. Names and menu text
@@ -178,6 +179,22 @@ runes and 7 magic scrolls store their description twice, and 43 names are stored
 menu, the battle command and the item list agreeing. A rename shows up immediately in every
 picker, tooltip and list in the editor for that ISO, and the rune stays findable under its
 original name),
+**Passives** (the passive **support runes** that work **outside battle** — *Champion's* (no
+encounters with weaker foes) and *Sunbeam's* walk-heal — forced on *without equipping them*, and
+without spending a rune slot. A support rune grants no spells and has no battle command: each is
+one question the engine asks at the moment it matters, *“does this character have item N
+equipped?”*, always through the same three seven-slot equipment lookups. Both field checks are
+**loops over party slots 1–6**, so answering yes there means everyone in your party has the rune
+— exactly what it does when six people wear one, and there are no enemies on the field to leak it
+to. The other 21 runes (and Sunbeam's in-battle half) are decoded, listed at the bottom of the tab
+with what each does, and **deliberately not switchable**: a call site frees one instruction word
+for the answer, which is enough for *yes* and not enough for *yes, if this is Hugo*, and the
+battle-side lookup never receives the character at all — it resolves whichever unit is acting, so
+forcing one would arm **every unit in the fight, enemies included**. Both switchable sites are
+byte-checked against a pristine disc before anything is written and untick back to stock exactly,
+but neither has been watched working in play — it's experimental, keep a backup. *Fortune* is
+listed and cannot be forced; its effect doesn't ask the question the other 22 ask, and the
+searches that came up empty are recorded in the offsets doc so nobody repeats them),
 **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, for any of the 49 runes that grant
