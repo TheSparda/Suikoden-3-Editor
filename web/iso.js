@@ -93,7 +93,30 @@
   const splitImm = (w, op) => (((w >>> 0) & 0xFFFF0000) === op ? (w & 0xFFFF) : null);
   // 60 recipe/dish records (0..59). Records 60-61 name-resolve to consumable ITEMS (Sacrificial
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
-  const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
+  //
+  // The NAME is one record BEHIND the data it names — the same displacement gear has (see GEAR:
+  // its name pointer sits at +0x40 of the preceding record). A dish's name is at +0x44 of block
+  // i and its description, heal and proc are in block i+1, so every offset below is measured
+  // from the block that holds the NAME.
+  //
+  // This corrects a reading that stood since v12 and was wrong. The old note said food was
+  // "SAME-record aligned (60/60 desc 'Heals NNN HP' == heal field; no off-by-one)" — but desc
+  // and heal sit in the same record under BOTH readings, so agreeing with each other proves
+  // only that, and says nothing about where the name belongs. It is 59/59 either way.
+  //
+  // What settles it is the item table, which is what the game actually shows the player:
+  // getDesc(id) -> itemRecord(id) -> band0 record, name @+0 / desc @+4. Compare each dish's
+  // name against that:
+  //     name@i paired with data@i    — 11/60 descriptions match the item table
+  //     name@i paired with data@i+1  — 59/59 match, and the heal number disagrees with the
+  //                                    item text 44 times under the first reading, 0 under this
+  // The boundary agrees too: dish 59 "Salad Platter" takes block 60 ("Heals 380HP"), which is
+  // exactly what item 0x09C reads, and blocks 60/61 carry Sacrificial Jizo and Escape Scroll —
+  // the two non-recipe items the old comment had already noticed sitting past the table.
+  //
+  // Consequence of the old reading, and why this matters: the Food tab showed every dish's name
+  // against the PREVIOUS dish's numbers, so editing "Fried Ice Cream" wrote Tomato Ice Cream.
+  const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, name: 0x44, desc: 0x48, heal: 0x5C, proc: 0x66 };
   // Equipment records, 0x44 apart. These offsets are relative to the STATS record, which sits
   // one record after the one carrying the name pointer — so the name pointer reads back at
   // base-0x04 (= +0x40 of the preceding record). scanGear explains how a record is anchored.
@@ -1037,6 +1060,17 @@
   // both indexes cannot mix them, and one lookup then serves every in-place string write.
   const descCopies = (off) => strAlias("desc").get(off) || strAlias("name").get(off) || [off];
   const descCopyCount = (off) => descCopies(off).length;
+  // The cap, and — when the disc stores this string more than once — the fact that one edit
+  // writes every copy. 27 descriptions and 43 names are duplicated (a rune and the spell it
+  // grants, a magic scroll and the spell it casts, the Wind Amulet and its spell), and a
+  // mirrored write is a feature when the field says so and a surprise when it doesn't.
+  function slotNoteHTML(ptr) {
+    const cop = descCopies(vaOff(ptr)), n = cop.length;
+    const title = n > 1
+      ? ` title="Stored ${n} times on this disc (${cop.map((o) => "0x" + hex(o, 6)).join(", ")}). Editing this writes them all."`
+      : "";
+    return `<span class="u"${title}>max ${origSlotLen(ptr)}${n > 1 ? ` \u00b7 ${n} copies, mirrored` : ""}</span>`;
+  }
   // Write one description's bytes to every copy of it, and register each so the review list and
   // the dirty badge account for both. Callers have already length-checked against the slot; the
   // index guarantees the other copies share that length.
@@ -2543,12 +2577,19 @@
   }
   function foodDesc(id) {
     if (!BUF || REF.cats[id] !== "Food Items") return "";
-    const nm = REF.items[id]; return nm ? (foodDescByName()[nm.toLowerCase()] || "") : "";
+    // Keyed on the name the DISC currently holds, falling back to the bundled one. The map is
+    // built from the food table's own names, so after a rename the retail name is not in it and
+    // the dish would silently lose its description in every picker — the same trap the rune
+    // grants lookup had.
+    const m = foodDescByName();
+    const live = discItemName(id);
+    return (live && m[live.toLowerCase()]) || m[(REF.items[id] || "").toLowerCase()] || "";
   }
   // Both maps above are keyed by a name string read out of the ISO, so a staged edit can change
   // either side of the pair. Every edit funnels through commitEdit/undo/redo, which calls this —
   // the next picker or tooltip then rebuilds from the current bytes (94 + 60 records, cheap).
-  // Rune and gear text is read per call, so it needs no cache to drop.
+  // Rune and gear text is read per call, so it needs no cache to drop; the item-name map is
+  // a cache and does, or a rename would not reach the pickers until the next disc load.
   // CLASS_NAMES reads strings out of BUF, so a staged edit to a class word must drop it too.
   // DESC_ALIAS is keyed on ORIG and so never goes stale mid-session — only on a new ISO (below).
   function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; CLASS_NAMES = null; ITEM_NAMES = null; }
@@ -3467,15 +3508,24 @@
       const heal = off + FOOD.heal, proc = off + FOOD.proc, dptr = r32(off + FOOD.desc);
       const dmax = origSlotLen(dptr), dcur = strAt(dptr);
       const descCell = dmax > 0
-        ? `<td><input type="text" class="fddesc" maxlength="${dmax}" style="min-width:150px" value="${esc2(dcur)}" data-dptr="${dptr}" data-g="${esc2(name)}" title="max ${dmax} chars"></td>`
+        ? `<td><label class="field" style="margin:0"><span class="muted">${slotNoteHTML(dptr)}</span>
+             <input type="text" class="fddesc" maxlength="${dmax}" style="min-width:150px" value="${esc2(dcur)}" data-dptr="${dptr}" data-g="${esc2(name)}"></label></td>`
         : `<td class="muted">${esc2(dcur)}</td>`;
-      rows.push(`<tr><td class="sl">${i}</td><td class="acc2">${esc2(name || "#" + i)}</td>
+      // Renaming a dish is the same in-place write its description is. A dish's name string is
+      // the very one the item table points at (all 60 share the pointer), so there is no second
+      // copy to drift: the recipe list, the item menu and every picker move together.
+      const nptr = r32(off + FOOD.name), nmax = origSlotLen(nptr);
+      const nameCell = nmax > 0
+        ? `<td><label class="field" style="margin:0"><span class="muted">${slotNoteHTML(nptr)}</span>
+             <input type="text" class="fdname" maxlength="${nmax}" style="min-width:120px" value="${esc2(name)}" data-nptr="${nptr}" data-g="${esc2(name)}"></label></td>`
+        : `<td class="acc2">${esc2(name || "#" + i)}</td>`;
+      rows.push(`<tr><td class="sl">${i}</td>${nameCell}
         <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(heal)}" data-off="${heal}" data-dptr="${dptr}" data-kind="heal" data-g="${esc2(name)}" data-l="Heal HP"></td>
         <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-dptr="${dptr}" data-kind="proc" data-g="${esc2(name)}" data-l="Proc %"></td>
         ${descCell}</tr>`);
     }
     host.innerHTML = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
-      <div style="overflow-x:auto"><table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th><th>Description</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table></div>`;
+      <div style="overflow-x:auto"><table class="invtbl"><thead><tr><th>#</th><th>Name</th><th>Heal HP</th><th>Proc %</th><th>Description</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table></div>`;
     q("#fUpd", host).onchange = (e) => { foodDescOn = e.target.checked; };
     // reflect a food row's description string back into its editable cell (+ highlight)
     const refreshFoodDesc = (dptr, row) => {
@@ -3490,6 +3540,21 @@
         if (foodDescOn && inp.dataset.dptr) { rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description"); refreshFoodDesc(+inp.dataset.dptr, inp.closest("tr")); }
       };
       markField(inp, off, 2, "num");
+    });
+    // In-place rename, same rules as everywhere else: over its own bytes, NUL-padded, capped to
+    // the slot, and refused when empty rather than leaving the dish nameless in every list.
+    qa("input.fdname", host).forEach((el) => {
+      const nptr = +el.dataset.nptr, noff = vaOff(nptr), nmax = origSlotLen(nptr);
+      el.onchange = () => {
+        const want = el.value.trim();
+        if (!want) { el.value = strFrom(BUF, noff, nmax); return setStatus("An item needs a name — left unchanged.", "warn"); }
+        const res = setDescText(nptr, want, el.dataset.g, "Name");
+        if (res.tooLong) setStatus(`"${want}" is too long — this name slot holds ${res.max} characters.`, "warn");
+        else if (res.skip) setStatus("This item's name can't be written on this disc.", "err");
+        el.value = strFrom(BUF, noff, nmax);
+        markField(el, noff, nmax, "text");
+      };
+      markField(el, noff, nmax, "text");
     });
     // manual, length-capped description edit per food item
     qa("input.fddesc", host).forEach((el) => {
@@ -4614,9 +4679,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
           <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
         </div>
-        <label class="field" style="margin-top:8px"><span>Name (${nameMax} char slot)</span>
+        <label class="field" style="margin-top:8px"><span>Name ${slotNoteHTML(nptr)}</span>
           <input type="text" class="ge-name" maxlength="${nameMax}" value="${esc2(nm)}" data-nptr="${nptr}" data-iid="${iid}" data-g="${esc2(nm)}"></label>
-        <label class="field" style="margin-top:8px"><span>Description (${descMax} char slot)</span>
+        <label class="field" style="margin-top:8px"><span>Description ${slotNoteHTML(dptr)}</span>
           <input type="text" class="ge-desc" maxlength="${descMax}" value="${esc2(descStr)}" data-dptr="${dptr}" data-g="${esc2(nm)}"></label>
         <h4>Effect slots</h4>${effs}</div></details>`);
     }
@@ -6637,13 +6702,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
           <td>${r.nameMax > 0
-            ? `<label class="field" style="margin:0 0 4px"><span class="muted">Name
-                 <span class="u">max ${r.nameMax}${r.nameCopies > 1 ? ` \u00b7 ${r.nameCopies} copies, mirrored` : ""}</span></span>
+            ? `<label class="field" style="margin:0 0 4px"><span class="muted">Name ${slotNoteHTML(r.namePtr)}</span>
                <input type="text" class="rname" data-id="${r.id}" maxlength="${r.nameMax}" value="${esc2(r.name)}"></label>`
             : esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
           <td>${r.descMax > 0
-            ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text
-                 <span class="u">max ${r.descMax}${r.descCopies > 1 ? ` · ${r.descCopies} copies, mirrored` : ""}</span></span>
+            ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text ${slotNoteHTML(r.descPtr)}</span>
                <input type="text" class="rdesc" data-id="${r.id}" maxlength="${r.descMax}" value="${esc2(r.text)}"></label>`
             : `<div class="muted">${esc2(r.text || "—")}</div>`}
             ${r.grants.length ? `<div class="grants">${r.grants.map((s) => {
