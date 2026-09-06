@@ -2941,11 +2941,14 @@ head("Recruit section (save editor, Pyodide stubbed)");
 head("108 Stars dashboard (save editor, Pyodide stubbed)");
 { const page = await newPage();
   // Same stub shape as the Recruit section. Hugo/Geddoe/Rico recruited; Chris (story),
-  // Jeane + Lulu are optional recruits that should land in the "missing" worklist.
+  // Jeane + Lulu are optional recruits that should land in the "missing" worklist. Augustine
+  // and Watari are there for the prerequisite chips: an item with a real source, and a potch
+  // price this save (1,000 gold) cannot meet.
   await page.addInitScript(`
     const CHARS = [
       ['Hugo','Hugo',true], ['Chris','',false], ['Jeane','',false],
-      ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false]
+      ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false],
+      ['Augustine','',false], ['Watari','',false]
     ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
       level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
       stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
@@ -2986,8 +2989,16 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
     .map((t) => (t.trim() === "–" ? Infinity : +t.trim()));
   check("rows run in guide order", ord.length >= 2 && ord.every((n, i) => i === 0 || ord[i - 1] <= n));
   check("Star of Destiny names are shown", /^[A-Z][a-z]+$/.test((await page.locator(".starstbl td.sod").first().textContent()).trim()));
-  // "next up" points at the first OPTIONAL star still missing (Chris is a story join)
-  check("next-up names the first gettable star", /Jeane/.test(await page.textContent(".nextup")));
+  // "next up" points at the first OPTIONAL star still missing in guide order — Augustine (#27),
+  // not Chris (a story join) and not Jeane (#35, further down the guide)
+  check("next-up names the first gettable star", /Augustine/.test(await page.textContent(".nextup")));
+  // under a how-to, what that errand needs: where the item comes from, and the potch you are short of
+  await until(page, () => document.querySelectorAll(".starstbl .need").length >= 2);
+  const needs = (await page.locator(".starstbl .need").allTextContents()).join(" | ");
+  check("an item need names its source and stock stage",
+    /Rose Brooch/.test(needs) && /Iksay Village's Item Shop/.test(needs) && /stages 1-3 of 3/.test(needs));
+  check("a potch need is measured against this save's purse", /100,000 potch — you have 1,000/.test(needs));
+  check("...and is flagged as unaffordable", (await page.locator(".starstbl .need.short").count()) === 1);
   // a stage folds away, taking its rows with it
   const rowsBefore = await page.locator(".starstbl tbody tr:not(.phaserow)").count();
   await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);
