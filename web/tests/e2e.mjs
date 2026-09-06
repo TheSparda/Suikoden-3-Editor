@@ -458,7 +458,13 @@ head("Passives view — force the out-of-battle support runes on");
   check("every switch starts off on a stock disc",
     (await page.$$("input.psOn:checked")).length === 0);
   { const txt = await page.textContent("#isoView");
-    check("it says plainly this is untested in play", /not yet seen working in play/i.test(txt));
+    // The confidence markers are the contract now that one of the two has a play report: the tab
+    // must not blur "watched working" and "decoded and byte-verified" back together.
+    check("Sunbeam is marked confirmed in play", /Sunbeam is confirmed in play \(2026-09-06\)/i.test(txt));
+    check("...with what was actually observed", /heals by walking with nobody carrying the rune/i.test(txt));
+    check("Champion's is still marked untested", /still marked <?b?>?untested/i.test(txt) || /untested<\/b> until someone walks/i.test(txt));
+    check("...and a passing test is explicitly not enough to upgrade it",
+      /will not upgrade a marker on a passing test/i.test(txt));
     check("it explains the field checks loop the party", /loops over party slots 1–6/i.test(txt));
     check("the in-battle sites are listed but not offered", /deliberately not switchable/i.test(txt));
     check("...with the per-unit limit spelled out", /cannot be made per-unit/i.test(txt));
