@@ -496,10 +496,10 @@ there is no ground-ride entry for a griffon or dragon to borrow.
 
 **Can Hugo ride on multiple maps? Can Chris?**
 
-> **Extended by §14 (2026-09-06).** The answer below is about *asset residency* and is
-> still right. What it was missing is the other half: which scenes actually issue a mount,
-> and what selects the horse. Both are now known — see §14, which also gives the two
-> concrete levers.
+> **Superseded by §14 (2026-09-06).** The answer below reasons from *asset residency*, and
+> playtesting has since shown that test is not decisive: Chris rides despite `s2um`
+> appearing complete in no area archive. Read §14 instead — the question turns on which
+> scenes issue a mount and what selects the horse, not on which archive names a model.
 Hugo already does: three areas ship the full `krum` set. Adding a fourth means getting `krum`
 into that area's archive, which runs into the repacking blocker documented in
 `ETC_BIN_MODEL_RESEARCH.md` (compressed variable-length payloads, no offset table found).
@@ -1065,11 +1065,25 @@ mounted the thing that walks is the mount:
 `actor_str` used to print `0x5400` as a bare `PLAYER`, hiding the bit; it now suffixes
 `.mount`.
 
-### 14d. So what actually blocks Hugo and Chris
+### 14d. What blocks Hugo — and why nothing blocks Chris
 
-Not permission, and not the script. Two things:
+> **Corrected 2026-09-06, same day, by playtest report.** An earlier revision of this
+> section argued that Chris never rides because `s2um` is not resident in any area archive.
+> **She does ride** — confirmed from play, in Brass Castle and elsewhere — so the model
+> loads fine and the residency argument was wrong. The `cha_` census in §6 measures what an
+> archive *names*, which is evidently not the same as what a scene can *load*. Hugo
+> likewise already rides in the plains from chapter 3–4. Nothing is broken; "sometimes"
+> simply means "the scenes that contain the instruction". The lever that survives is
+> §14e, and it is about Hugo, who has no assigned horse at all.
 
-**1. The clamp.** `hasAssignedHorse` honours only two ids:
+
+The asymmetry between the two is one byte. **Chris carries `+0x66 = 309` and Hugo carries
+`0`** — so Chris has a horse staged beside her in the party actor block on every map, and
+Hugo has none. His plains riding comes the other way, from scenes that stage a `krum` as a
+scene object and name it explicitly in `RideOn`; that is why it is confined to the scenes
+that were built for it.
+
+The clamp is what stops him being given one properly:
 
 ```
 016C76E4  lhu   $a1, 0x66($v1)
@@ -1077,30 +1091,17 @@ Not permission, and not the script. Two things:
 016C76EC  sltiu $v0, $v0, 2          ; 308 or 309, nothing else
 ```
 
-**2. Asset residency.** 308 is `zkum`, complete **only in ZKTR**. 309 is `s2um`, complete
-**nowhere on the disc** — AKMT carries the single record `cha_s2um_172` and that is all
-(§6). Meanwhile `krum` **325** ships complete in HGB1, HNKT and KRVI, and `GetRiderOffset`
-already gives it a saddle offset (§3a, preset P1).
+308 is `zkum` and 309 is `s2um` — the two Zexen horses. **Hugo's horse is `krum`, 325**, and
+the engine says so itself: the `RideOn` handler at `0x179ED2C` carries a fix-up written for
+exactly one pair, rider model **1** on mount **325**/**353**, stripping the Fubar-rigged
+copies of `ride_neutral`, `rdwalk*` and `rdrun*` from his clump so the horse-rigged ones
+resolve (§3a). Hugo is authored for the Karaya horse and no other, and 325 is on the wrong
+side of the clamp.
 
-Those two facts together explain the retail behaviour without any new assumption:
-**Chris's assigned horse does not exist on the disc.** Her record has said 309 all along,
-and 58 script sites in Brass Castle say "mount the player on their horse", and she still
-does not ride there — because 309 has no model in ZKTR. The four knights carry 308, which
-does.
+### 14e. The lever: give Hugo an assigned horse
 
-### 14e. Two levers, in order of cost
-
-**Lever 1 — data only, no code patch.** Change Chris's `+0x66` from 309 to 308:
-
-| what | ISO offset | now | to |
-|---|---|---|---|
-| Chris (roster 2) `+0x66` | `0x3E14A6` | `35 01` (309) | `34 01` (308) |
-
-She then carries the horse the four knights carry, which is resident and complete in ZKTR —
-the area holding 58 player self-mounts. This costs one u16 and touches no instruction.
-
-**Lever 2 — widen the clamp, then `+0x66 = 325`.** Six sites, all the same
-`sltiu rX, rY, 2`, each preceded by `addiu rX, rY, -0x134`:
+Widen the clamp, then set `+0x66 = 325`. Six sites, all the same `sltiu rX, rY, 2`, each
+preceded by `addiu rX, rY, -0x134`:
 
 | ISO | bytes | function |
 |---|---|---|
@@ -1112,14 +1113,23 @@ the area holding 58 player self-mounts. This costs one u16 and touches no instru
 | `0x14762C` | `02 00 42 2C` | party helpers |
 
 The immediate is the low u16, little-endian in the first two bytes of the word — the same
-shape the Mounts tab already edits. Raising it to `0x100` admits 308–563, which brings in
-`krum` 325, `kru2` 353, `msx1` 359, `msx2` 360. With `+0x66 = 325`, **Hugo** (ISO
-`0x3E1422`, currently 0) gets a Karaya horse staged beside him — and HNKT is the one
-archive carrying both a complete `krum` *and* Hugo's full `07x`/`97x` ground bank, *and*
-three player self-mounts.
+shape the Mounts tab already edits. Raising it to `0x100` admits 308–563, bringing in
+`krum` 325, `kru2` 353, `msx1` 359, `msx2` 360. Then Hugo's `+0x66` (ISO `0x3E1422`,
+currently `00 00`) becomes `45 01`.
 
-The patch is inert until something writes a new `+0x66`: only six characters have a nonzero
-one today and all are 308/309, every one of which stays inside the widened window.
+He then carries a Karaya horse in the party actor block the way Chris carries hers, instead
+of only where a scene stages one — so every player self-mount site (§14c) reaches him,
+including the three in Budehuc Castle.
+
+The clamp patch is inert on its own: only six characters have a nonzero `+0x66` today, all
+308/309, every one of which stays inside the widened window.
+
+**The 308 shortcut, and why not to take it.** Hugo could be given 308 with no code patch at
+all, since it is already inside the clamp. Predicted failure: the `0x179ED2C` fix-up fires
+only for mount 325/353, so on `zkum` it would not strip his Fubar-rigged duplicates and the
+clump's clip lookup would resolve `ride_neutral`/`rdwalk*`/`rdrun*` to the griffon-rigged
+copies — Hugo sitting on a horse in a griffon pose. That is a cheap, falsifiable test of
+whether the strip does what §3a says, and a bad way to actually ship him a horse.
 
 ### 14f. What this does not reach, and what is still unplayed
 
@@ -1134,6 +1144,14 @@ one today and all are 308/309, every one of which stays inside the widened windo
   The specific thing to watch on a first test is whether a mounted player breaks the
   scene's own choreography, since the `op 157` moves target `PLAYER.mount` and will now
   find one.
+- **The `rides` census undercounts.** `RideOn(h, 0)` is a second self-mount spelling: the
+  handler at `0x179ED10` defaults a zero mount operand to `rider + 0x180`. `cmd_rides` only
+  matches `h | 0x4000`, so 136 is a floor. The zero form was not scanned because `op 22`
+  followed by a zero word is indistinguishable from filler without chain validation.
+- **§6's archive census measures naming, not loadability.** Chris rides despite `s2um`
+  appearing in no area archive as a complete set, so a scene can evidently load a model the
+  `cha_` scan does not attribute to it. Every residency argument in this document is
+  weakened by that and should not be used to predict that something *cannot* appear.
 - Whether the clamp's six sites are the *only* 308/309 gates. They are the only
   `addiu −0x134` / `sltiu` pairs in `PT_LOAD`, but a gate written some other way would not
   show up in that scan.
