@@ -705,12 +705,6 @@
   const F18_NOTE = "Which element or status an effect applies is data and editable here. " +
     "How much it is WORTH is a code constant, editable under \u201cStatus effect strength\u201d on the " +
     "Spells tab \u2014 but globally, not per rune. How long it lasts still isn\u2019t reachable.";
-  const decodeF18Plain = (v) => {
-    if (!v) return "no status effect";
-    const out = [];
-    for (let b = 0; b < 32; b++) if ((v >>> b) & 1) out.push(F18_TEXT[b] || F18_BITS[b] || `unknown bit ${b}`);
-    return out.length > 6 ? "restores HP and clears all status" : out.join(", ");
-  };
   const RANK_OPTS = [[0, "— (not learned)"], [1, "E"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [7, "A+"], [8, "S"]];
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
   const MAX_BY_GRADE = {}; MAX_OPTS.forEach(([v, l]) => (MAX_BY_GRADE[l] = v));   // "B+"->5, "A+"->1, "S"->7
@@ -1449,7 +1443,7 @@
     resetTables();                              // deferred tables belong to the disc being replaced
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = NAME_ALIAS = null; RUNE_FX_OPEN = new Set(); resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = NAME_ALIAS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
@@ -2265,7 +2259,7 @@
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
-      runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and edit the status or enhance effect it carries. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: which spells a rune grants, who carries it and where it drops.",
+      runes: "Every rune in the game \u2014 rename it and rewrite the menu text the game shows for it. What each rune DOES lives in the spells it grants, so those are links straight into the Spells tab with the record open, rather than a second set of the same fields here. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -3196,8 +3190,10 @@
       setStatus("Damage+heal restored to this disc's own wiring.", "ok");
     };
   }
+  let SPELL_JUMP = null;    // a spell index the Runes tab asked to land on, consumed on draw
   function drawSpells(host) {
     const upd = spDescOn;
+    const jump = SPELL_JUMP; SPELL_JUMP = null;
     const runeOpts = Object.keys(RUNE_SPELLS).map((r) => `<option value="${r}">${r}</option>`).join("");
     const elemOptsBlank = `<option value="">— no change —</option>` + Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
     const statOptsBlank = `<option value="">— no change —</option>` + ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}">${s}</option>`).join("");
@@ -3246,7 +3242,7 @@
         ? `<label class="field" style="margin:0 0 10px"><span>Description <span class="muted">(max ${dmax} chars)</span></span>
              <input type="text" class="spdesc" data-i="${i}" maxlength="${dmax}" value="${esc2(dcur)}"></label>`
         : `<div class="muted" style="margin:0 0 8px">${esc2(dcur)}</div>`;
-      return `<details class="char" data-i="${i}"><summary>
+      return `<details class="char" data-i="${i}"${i === jump ? " open" : ""}><summary>
           <span class="chev">▸</span><span class="nm">${esc2(name || "#" + i)}</span><span class="muted">#${i}</span>
           <span class="lv sp-sum">${elemName(elVal)} · pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}${f18 ? " · " + decodeF18(f18) : ""}</span></summary>
         <div class="char-body">
@@ -6552,48 +6548,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // What a rune is and does. The menu text is read off the LOADED disc (RUNE_TBL), so a rewrite
   // on the Text tab shows up here immediately; s3_rune_food_desc.json is the fallback, and it
   // also carries the "— Grants a, b, c" spell list that the disc's own one-liner leaves out.
-  // Rune -> the spell records that carry its status/enhance bits, read live off the disc. This is
-  // the mapping that used to be missing: "Sword of Cyclone" and "Wind Amulet" are spell records,
-  // and without this you had to already know that to find them. Bits are decoded in plain
-  // language so the row says what the rune does before you open the editor.
-  function runeEffects(grants) {
-    if (!BUF || !grants.length) return [];
-    const idx = spellNameIndex();
-    return grants.map((n) => {
-      const i = idx[n];
-      if (i == null) return null;
-      const f18 = r32(SPELL.off + i * SPELL.stride + 0x18) >>> 0;
-      return { spell: n, i, f18, text: decodeF18Plain(f18) };
-    }).filter(Boolean).filter((e) => e.f18);          // only spells that actually carry an effect
-  }
-  // The effect editor, inline in the rune row. Same flags18 checkbox set the Spells tab uses
-  // (so there is one implementation of "which bits are set"), plus the two other numbers that
-  // actually change what an enhance/status rune does: how often it lands and how hard it hits.
-  // Strength and duration of a status are engine-coded and deliberately absent — see F18_NOTE.
-  const F18_SWORD = { 22: "fire", 23: "lightning", 24: "wind" };
-  const F18_RESIST = { 25: "fire", 26: "lightning", 27: "wind" };
-  function runeFxHTML(e) {
-    const off = SPELL.off + e.i * SPELL.stride, canTail = e.i + 1 < SPELL.count;
-    const swordChips = Object.entries(F18_SWORD).map(([b, el]) =>
-      `<button class="chip mini" data-fxpreset="sword:${b}" data-i="${e.i}"
-        title="Set the sword-enhance element to ${el}, clearing the other two">adds ${el}</button>`).join("");
-    const resistChips = `<button class="chip mini" data-fxpreset="resist:all" data-i="${e.i}"
-        title="Set all three elemental-resist bits">resists all three</button>`;
-    const num = (k, label, val, cap) => `<label class="field"><span>${label}</span>
-        <input type="number" class="rfx" data-i="${e.i}" data-k="${k}" min="0" max="${cap}" value="${val}" ${canTail || k === "power" ? "" : "disabled"}></label>`;
-    return `<details class="runefx" data-i="${e.i}"${RUNE_FX_OPEN.has(e.i) ? " open" : ""}>
-      <summary><span class="chev">▸</span> <b>${esc2(e.spell)}</b>
-        <span class="muted">${esc2(e.text)}</span></summary>
-      <div class="char-body">
-        <div class="subtabs" style="margin:0 0 8px">${swordChips}${resistChips}
-          <button class="chip mini" data-fxpreset="none" data-i="${e.i}">no status</button></div>
-        <div class="grid">
-          ${num("chance", "Chance it lands %", canTail ? r16(off + SPELL.chance) : 0, 100)}
-          ${num("power", "Power", r32(off + 0x1C), 99999)}
-          ${f18CtlHTML(e.i, r32(off + 0x18) >>> 0)}
-        </div></div></details>`;
-  }
-  let RUNE_FX_OPEN = new Set();          // which effect editors stay open across a redraw
   function runeInfo(id) {
     const nm = REF.items[id] || "";
     const fb = (REF.runeFood && REF.runeFood[String(id)]) || "";
@@ -6637,7 +6591,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       descMax: own ? origSlotLen(dp) : 0,
       descCopies: own ? descCopyCount(vaOff(dp)) : 1,
       grants,
-      effects: runeEffects(grants),
       owner: runeOwners()[nameKey(nm)] || "",
       holders: runeHolders()[nameKey(nm)] || [],
       sources: sourceRows(id),
@@ -6686,11 +6639,13 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
-        Where a rune carries a status or enhance effect — Sword of Rage/Thunder/Cyclone, the Fire/Thunder/Wind
-        Amulets, the poison and sleep runes — the effect is named in plain language and is <b>editable right
-        here</b>: open it to tick any combination of effects, change how often it lands, and change its power.
-        You don't need to know which spell record backs a rune. ${esc2(F18_NOTE)}
-        Which rune a character has equipped is still set on the <b>Characters</b> tab.</div>
+        Every spell a rune grants is a <b>link to that spell's own record</b> on the Spells tab, opened and
+        ready to edit — power, cast, element, target, area, status. That is the one place a spell is edited,
+        so there is no second copy of those fields here to disagree with it. It is also the only route from an
+        attack rune to its numbers: Kite and Phoenix carry no status effect, so nothing else in this row would
+        ever have pointed at them. The passive support runes (Fortune, Balance, Fury…) list nothing to link,
+        because they have no spell record at all — what they do is engine code, not a row.
+        Which rune a character has equipped is set on the <b>Characters</b> tab.</div>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
@@ -6704,18 +6659,30 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                  <span class="u">max ${r.descMax}${r.descCopies > 1 ? ` · ${r.descCopies} copies, mirrored` : ""}</span></span>
                <input type="text" class="rdesc" data-id="${r.id}" maxlength="${r.descMax}" value="${esc2(r.text)}"></label>`
             : `<div class="muted">${esc2(r.text || "—")}</div>`}
-            ${r.grants.length ? `<div class="grants">${r.grants.map((s) =>
-              `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
-            ${r.effects.map(runeFxHTML).join("")}
-            ${r.effects.length ? `<div class="srcrow"><button class="chip mini" data-spjump="${esc2(r.effects[0].spell)}"
-                title="Open the full spell record on the Spells tab">Open on Spells tab</button></div>` : ""}</td>
+            ${r.grants.length ? `<div class="grants">${r.grants.map((s) => {
+              // A chip only becomes a link when the spell it names is really in the table.
+              // The 23 support runes (Fortune, Balance, Fury...) have no spell record at all —
+              // their effect is engine code, not a row — so linking them would promise a
+              // destination that does not exist. Those stay plain chips.
+              const si = spellNameIndex()[s];
+              return si == null
+                ? `<span class="spellchip" title="no spell record on this disc — this rune's effect is engine code">${esc2(s)}</span>`
+                : `<button class="spellchip link" data-spjump="${esc2(s)}" data-spi="${si}"
+                     title="Open ${esc2(s)} on the Spells tab — power, cast, element, target, area and status">${esc2(s)}</button>`;
+            }).join("")}</div>` : ""}
+          </td>
           <td>${runeWhoHTML(r)}</td></tr>`).join("")
         || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
     qa("[data-rgrp]", host).forEach((b) => (b.onclick = () => { RUNE_GROUP = b.dataset.rgrp; drawRunes(host); }));
-    // "Open on Spells tab" hands off with the search box already narrowed to that spell, for the
-    // fields the inline editor doesn't carry (element, target, radius, description).
+    // A granted-spell chip hands off to the Spells tab with the search box already narrowed
+    // AND the record itself open, so a rune whose whole content is one attack — Kite, Phoenix —
+    // lands you on the fields the rune row cannot carry (power, cast, element, target, radius,
+    // description) rather than on a filtered list you still have to click into. The jump
+    // carries the spell's INDEX as well as its name: a rename can make two rows match the same
+    // search, and the index says which one was meant.
     qa("[data-spjump]", host).forEach((b) => (b.onclick = () => {
       VIEW = "spells"; SEARCH = b.dataset.spjump.toLowerCase();
+      SPELL_JUMP = b.dataset.spi == null ? null : +b.dataset.spi;
       const box = q("#isoSearch"); if (box) box.value = b.dataset.spjump;
       drawView();
     }));
@@ -6751,51 +6718,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         drawRunes(host);
       };
     });
-    // ---- inline effect editing -------------------------------------------------
-    // Two runes can grant the same spell (Phoenix and Mallet both grant spell 51), so a mask is
-    // always rebuilt from the boxes inside THIS <details> — never from every box with that
-    // data-i, which would OR a stale sibling group back in.
-    qa("details.runefx", host).forEach((d) => (d.ontoggle = () => {
-      const i = +d.dataset.i; d.open ? RUNE_FX_OPEN.add(i) : RUNE_FX_OPEN.delete(i);
-    }));
-    const maskOf = (d) => {
-      let m = 0;
-      qa("input.sp18", d).forEach((c) => { if (c.checked) m |= (1 << +c.dataset.b); });
-      return m >>> 0;
-    };
-    qa("input.sp18", host).forEach((el) => (el.onchange = () => {
-      const d = el.closest("details.runefx");
-      applySpell(+el.dataset.i, { statusMask: maskOf(d) }, false);
-      drawRunes(host);
-    }));
-    qa("input.sp18hex", host).forEach((el) => (el.onchange = () => {
-      const i = +el.dataset.i, raw = el.value.trim().replace(/^0x/i, "");
-      if (!/^[0-9a-f]{1,8}$/i.test(raw)) {
-        setStatus(`“${el.value}” isn't a hex mask — use up to 8 hex digits, e.g. 1DE7.`, "err");
-        return drawRunes(host);
-      }
-      applySpell(i, { statusMask: parseInt(raw, 16) }, false);
-      setStatus("", ""); drawRunes(host);
-    }));
-    qa("input.rfx", host).forEach((el) => (el.onchange = () => {
-      const k = el.dataset.k, f = {};
-      f[k] = Math.max(0, +el.value || 0);
-      applySpell(+el.dataset.i, f, false);
-      drawRunes(host);
-    }));
-    qa("[data-fxpreset]", host).forEach((b) => (b.onclick = () => {
-      const i = +b.dataset.i, p = b.dataset.fxpreset;
-      let m = r32(SPELL.off + i * SPELL.stride + 0x18) >>> 0;
-      if (p === "none") m = 0;
-      else if (p === "resist:all") m |= (1 << 25) | (1 << 26) | (1 << 27);
-      else if (p.startsWith("sword:")) {                       // one element, not three
-        const keep = +p.slice(6);
-        m &= ~((1 << 22) | (1 << 23) | (1 << 24));
-        m |= (1 << keep);
-      }
-      applySpell(i, { statusMask: m }, false);
-      RUNE_FX_OPEN.add(i); drawRunes(host);
-    }));
   }
 
   // ---- Skills browser --------------------------------------------------------

@@ -143,9 +143,13 @@ multiplies every character's growth rate at once and carries the idempotent *Tou
 Brutal* difficulty presets, optionally scoped to whatever the filter box is showing),
 **Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**,
-**Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows for
-it, and edit the status or enhance effect it carries — plus which spells it grants, who carries
-it and where it drops. Names and menu text are rewritten in place, so each is capped to the slot
+**Runes** (every rune in the game: **rename** it and rewrite the **menu text** the game shows
+for it. What a rune *does* lives in the spells it grants, so each of those is a **link straight
+into the Spells tab with that record open** rather than a second copy of the same fields — which
+is also the only route from an attack rune to its numbers, since Kite and Phoenix carry no status
+effect for an effect editor to hang off. The passive support runes link to nothing, because they
+have no spell record at all: what they do is engine code, not a row. Names and menu text are
+rewritten in place, so each is capped to the slot
 the disc already reserves for it, and both are **mirrored across every copy**: the 20 attack
 runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well —
 *Kite* the rune and *Kite* the spell it grants each hold their own — so one edit keeps the rune
