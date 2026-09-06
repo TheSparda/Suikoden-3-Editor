@@ -32,7 +32,14 @@ check("the drifted 'Sword of Rage' entry was blanked in s3_item_desc.json",
   !idesc[String(idOf("Rage"))]);
 check("Fire rune lists its spell set", /Flaming Arrows/.test(itemDesc(idOf("Fire"))));
 check("a command rune shows its spell effect (Phoenix)", /DMG/.test(itemDesc(idOf("Phoenix"))));
-check("food shows its heal (Scrambled Eggs \u2192 Heals 80HP)", itemDesc(idOf("Scrambled Eggs")) === "Heals 80HP");
+// The food table's NAME sits one record behind the data it names (same displacement gear has),
+// so every dish here used to carry the PREVIOUS dish's heal — 49 of the 60 were wrong. The
+// authority is the item table, which is what getDesc shows the player: Egg Roll heals 80,
+// Scrambled Eggs 100. Pinning two adjacent dishes is what catches a reintroduced off-by-one,
+// since one value alone is just the neighbour's.
+check("food shows its heal (Scrambled Eggs \u2192 Heals 100HP)", itemDesc(idOf("Scrambled Eggs")) === "Heals 100HP");
+check("...and the dish before it is not the same value (off-by-one guard)",
+  itemDesc(idOf("Egg Roll")) === "Heals 80HP");
 check("a plain equipment desc still comes from the pool", /\(/.test(itemDesc(idOf("Wooden Shield")) || "(") );
 
 // The support runes (Balance, Fury, Fortune, ...) have no spell-table entry, so until the rune
