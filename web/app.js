@@ -235,10 +235,10 @@ const AVATAR_NOTES = {
 // that isn't offerable is kept rather than dropped, or Apply would silently rewrite it.
 function avatarList(curId) {
   const named = (id) => REF.charById[id] || "id " + id + " (guest/NPC)";
-  // Map coverage is the other thing that decides whether a pick works, so it rides on the
-  // row rather than being a separate lookup the user has to do.
-  const cover = (id) => { const a = avatarAreaInfo(id);
-    return a ? ` · field model ships in ${a.areas.length}/${a.total} maps${a.areas.length ? ": " + a.areas.join(", ") : ""}` : ""; };
+  // The rows used to carry a per-area coverage note ("ships in N/28 maps"), on the theory
+  // that a model the area archive doesn't ship wouldn't load. Play testing says otherwise:
+  // every one of these worked in every area it was tried in, so the note is gone rather
+  // than left to scare people off picks that work.
   const list = (REF.fieldAvatars || []).map((id) => {
     const n = AVATAR_NOTES[id];
     return { id, name: named(id),
@@ -247,7 +247,7 @@ function avatarList(curId) {
       desc: (n ? n.long
                : STORY_SAFE.has(id) ? "a protagonist — scenes are written for them"
                : "the game ships this one; scenes work once it's in party slot 1 with the "
-                 + "stand-in removed") + cover(id) };
+                 + "stand-in removed") };
   });
   if (curId && !list.some((c) => c.id === curId))
     list.unshift({ id: curId, name: named(curId), cat: "current", desc: "this save's current value" });
@@ -809,20 +809,6 @@ let RTEAM = "Hugo";                 // default team applied when a character is 
 let STARS_FILTER = "missing";       // 108-Stars dashboard: all | recruited | missing
 let STARS_KIND = "all";             // all | optional | story
 let RECRUIT_META = null;            // name -> {auto, how}: story auto-join vs optional recruit
-// modelId -> which DATA/*.BIN area archives ship that character's field model. Optional:
-// without it the Field character picker just drops the coverage note.
-let AVATAR_AREAS = null;
-async function loadAvatarAreas() {
-  if (AVATAR_AREAS) return AVATAR_AREAS;
-  try { AVATAR_AREAS = await (await fetch("../Editor/s3_avatar_areas.json")).json(); }
-  catch (e) { AVATAR_AREAS = { archives: [], byModel: {} }; }
-  return AVATAR_AREAS;
-}
-const avatarAreaInfo = (id) => {
-  const m = AVATAR_AREAS && AVATAR_AREAS.byModel && AVATAR_AREAS.byModel[String(id)];
-  if (!m || !Array.isArray(m.areas)) return null;
-  return { areas: m.areas, total: (AVATAR_AREAS.archives || []).length };
-};
 async function loadRecruitMeta() {
   if (RECRUIT_META) return RECRUIT_META;
   try { RECRUIT_META = await (await fetch("../Editor/s3_recruit_meta.json")).json(); }
@@ -1122,7 +1108,6 @@ function drawField() {
       This is the party-leader byte at <b>0x12</b>. The picker offers the ${ship.length} the
       game hands you itself — ${ship.map((id) => esc(REF.charById[id] || "id " + id)).join(", ")}
       — because those are the only ids whose field model the engine will load.
-      <div id="leadercover" style="margin:4px 0 0"></div>
       <div id="leaderparty" style="margin:4px 0 0;color:var(--acc2)"></div></div>
     <h3 class="sec">How it works</h3>
     <div class="muted" style="font-size:12px">
@@ -1161,10 +1146,12 @@ function drawField() {
       configuration that freezes scenes. Nothing is written until <b>Apply</b>, and the battle
       formation is re-derived from the party list on save, so the two can never disagree.</p>
 
-      <p style="margin:0 0 4px"><b>5 · The model still has to be in the area.</b> Field models
-      ship per area archive, and most characters are in only a handful of them — the line under
-      the picker says how many. A character whose model is not loaded where you are standing
-      will not appear correctly.</p>
+      <p style="margin:0 0 4px"><b>5 · The area does not limit the pick.</b> Field models ship
+      per area archive, and most characters are in only a handful of them, which looked like a
+      second condition to satisfy. In play it is not one: every character the picker offers
+      worked everywhere it was tried. <code>ETC.BIN</code> carries all of them too, and a model
+      already resident is not evicted on an area change — so the tab no longer warns about
+      coverage.</p>
 
       <p style="margin:0"><b>6 · Blank dialogue is a different problem.</b> The leader byte also
       selects <i>whose</i> events and dialogue a town loads. Luc, Koroku, Sarah and Masked Luc
@@ -1207,14 +1194,6 @@ function drawField() {
       protagonist to collect. The write-up is in
       <code>docs/FIELD_CHARACTER_RESEARCH.md</code>.
     </div>`;
-  const cover = (id) => {
-    const el = $("#leadercover"); if (!el) return;
-    const a = avatarAreaInfo(id);
-    el.textContent = a
-      ? `This character's field model ships in ${a.areas.length} of ${a.total} area archives${a.areas.length ? ` (${a.areas.join(", ")})` : ""}.`
-      : "";
-  };
-  loadAvatarAreas().then(() => { if (SUB === "field") cover(+$("#leaderfld").dataset.val); });
   $("#leaderfld").onclick = () => {
     const btn = $("#leaderfld"), cur = +btn.dataset.val;
     openPicker("Field character", avatarList(cur), cur, (id) => {
@@ -1261,7 +1240,6 @@ function drawField() {
         };
         paint(r.note, !!DISPLACED);
       }
-      cover(id);
     }, (id) => String(id).padStart(3, "0"));
   };
 }
