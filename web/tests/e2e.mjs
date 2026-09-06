@@ -1374,6 +1374,77 @@ head("Enemies bulk tuning — idempotent multipliers + reset");
   await page.context().close();
 }
 
+head("Enemies — a disc that was already tuned reads its own multiplier back");
+{ // The state a re-opened tuned ISO is in: the bytes on the disc are scaled, and the pack
+  // index still carries the STOCK numbers it was built from. Nothing in the file records the
+  // multiplier, so the editor has to recover it by comparing the two.
+  const V = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
+  const scaled = (img, f) => { const t = Uint8Array.from(img), dv = new DataView(t.buffer);
+    for (const rec of [ENEMY_REC_A, ENEMY_REC_B]) {
+      dv.setUint16(rec + 48, f(V.hp, -1), true); dv.setUint16(rec + 50, f(V.hp, -1), true);
+      V.stats.forEach((sv, i) => dv.setUint16(rec + 32 + i * 2, f(sv, i), true));
+    }
+    return t; };
+  const tuned = scaled(bytes, (n) => Math.round(n * 1.2));
+  // A redraw keeps an expanded pack expanded, so clicking the summary again would CLOSE it.
+  const openPack = async (pg) => { const det = await pg.$("details.epack");
+    if (!(await det.evaluate((d) => d.open))) await det.evaluate((d) => d.querySelector("summary").click());
+    await pg.waitForSelector('input.en-num[data-f="hp"]'); };
+  const readOn = (img, writes) => { const at = (pos) => { const w = writes.find((x) => pos >= x.pos && pos < x.pos + x.data.length); return w ? w.data[pos - w.pos] : img[pos]; };
+    return { u16: (q) => at(q) | (at(q + 1) << 8) }; };
+  const page = await newPage();
+  setServed(tuned);
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("#ebApply", { timeout: 3000 });
+  check("HP multiplier prefills to the ×1.2 already on the disc", (await page.inputValue("#ebHp")) === "1.2");
+  check("stat multiplier prefills to ×1.2", (await page.inputValue("#ebStats")) === "1.2");
+  check("untouched fields still read ×1", (await page.inputValue("#ebLv")) === "1" && (await page.inputValue("#ebSp")) === "1");
+  const note = await page.textContent("#isoView");
+  check("says the disc is already tuned", /already tuned/.test(note) && /HP ×1\.2/.test(note));
+  check("prefilling stages nothing on its own", await nothingStaged(page));
+  // Re-applying what the disc already carries must be a no-op, not ×1.44.
+  await page.click("#ebApply"); await page.waitForTimeout(120);
+  check("re-applying the detected ×1.2 changes nothing", await nothingStaged(page));
+  // A NEW multiplier is measured from the stock numbers, not from the tuned disc.
+  await page.fill("#ebHp", "1.5"); await page.dispatchEvent("#ebHp", "change");
+  await page.click("#ebApply"); await page.waitForTimeout(120);
+  await openPack(page);
+  check("×1.5 is 1.5× STOCK (60), not 1.5× the tuned disc (72)", (await page.inputValue('input.en-num[data-f="hp"]')) === "60");
+  // Restore puts the stock numbers back — the only way to undo a scale already saved into a file.
+  await page.click("#ebStockRestore"); await page.waitForTimeout(150);
+  await openPack(page);
+  check("restore stock returns HP to 40", (await page.inputValue('input.en-num[data-f="hp"]')) === "40");
+  check("restore stock returns PWR to 11", (await page.inputValue('input.en-num[data-f="stat0"]')) === "11");
+  await page.evaluate(() => { window.__writes = []; });
+  const r = readOn(tuned, await (async () => { await page.click("#isoSaveBtn");
+    try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
+    await page.waitForSelector("#cfOk", { timeout: 3000 }); await page.click("#cfOk");
+    await page.waitForSelector("#pgClose:visible", { timeout: 5000 }); await page.click("#pgClose");
+    return getWrites(page); })());
+  check("stock HP saved to both copies", r.u16(ENEMY_REC_A + 48) === 40 && r.u16(ENEMY_REC_B + 48) === 40
+    && r.u16(ENEMY_REC_A + 50) === 40);
+  await page.context().close();
+
+  // A disc the index does NOT describe: no single ratio explains it, so the editor must say so
+  // and must not offer to write the index's numbers over someone else's data.
+  const foreign = scaled(bytes, (n, i) => [99, 3, 77, 5, 41, 9, 60, 2][i] || 4321);
+  const p2 = await newPage();
+  setServed(foreign);
+  await p2.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await loadIso(p2);
+  await p2.click('#isoTabs [data-v="enemies"]');
+  await p2.waitForSelector("#ebApply", { timeout: 3000 });
+  const note2 = await p2.textContent("#isoView");
+  check("unrecognised disc is reported, not guessed at", /don't line up with the stock USA disc/.test(note2));
+  check("no stock-relative toggle on an unrecognised disc", (await p2.$("#ebStock")) === null);
+  check("no restore-stock button on an unrecognised disc", (await p2.$("#ebStockRestore")) === null);
+  check("multipliers stay at ×1 when nothing was detected", (await p2.inputValue("#ebHp")) === "1");
+  await p2.context().close();
+  setServed(bytes);
+}
+
 head("Zones & formations — decode, edit, write-through both copies");
 { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
