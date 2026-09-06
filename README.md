@@ -218,11 +218,13 @@ slot 1 **and removes the stand-in**, and says what it did. The alternative — k
 is still one click away, labelled with the fact that it freezes scenes. The **Health** tab
 flags a save that's already in the broken state, with the same one-click fix.
 
-**Which maps carry which character.** A field model has to be in the area you're standing in,
-and the per-area sets are small — a median of **4 of the 28** area archives. The picker says so
-up front: *"Luc's field model ships in 9/28 maps: AKVI, CVIS, FAKE, …"*. Thomas is in 5, Koroku
-in 6. Measured from the disc, and phrased as *ships in* rather than *works in*, because
-`ETC.BIN` carries every model too and a resident one isn't evicted when you change area.
+**The area doesn't limit the pick.** Field models ship per area archive and the per-area sets
+are small — a median of **4 of the 28** — so the editor used to print a coverage figure next to
+each character ("ships in 9/28 maps"). Playing them retired it: **every character the picker
+offers worked in every area it was taken to**, which is what `ETC.BIN` carrying all of them and
+a resident model not being evicted on an area change would predict. The figure is gone from
+both tabs; the measured table is kept as research in
+[`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md) §6.
 
 **Whose story you get — the Story content tab.** The leader byte is also *which team's events
 and dialogue load*. One switch turns it into a team index, and Luc, Koroku, Sarah and Masked Luc

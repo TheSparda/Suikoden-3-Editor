@@ -1100,7 +1100,6 @@
     const shops = await grabOpt("../Editor/s3_shops.json");        // shop counter map + town names
     const runeFood = await grabOpt("../Editor/s3_rune_food_desc.json");    // rune/food menu text + spell lists
     const runeOwner = await grabOpt("../Editor/s3_rune_owner.json");       // whose rune each signature rune is
-    const avatarAreas = await grabOpt("../Editor/s3_avatar_areas.json");   // which maps carry each field model
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -1115,7 +1114,7 @@
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
             enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources,
-            runeFood, runeOwner, shops, avatarAreas };
+            runeFood, runeOwner, shops };
     return REF;
   }
 
@@ -2264,7 +2263,7 @@
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
-      test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
+      test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -4000,17 +3999,6 @@
     return true;
   }
 
-  // Which area archives ship this model's cha_ records. Absence is a warning, not a verdict
-  // — ETC.BIN carries every one of them too, and a resident model is not evicted on an area
-  // change — so the readout says "ships in", never "will not work".
-  function avatarAreas(id) {
-    const m = REF && REF.avatarAreas && REF.avatarAreas.byModel && REF.avatarAreas.byModel[String(id)];
-    return m && Array.isArray(m.areas) ? m.areas : null;
-  }
-  function avatarAreaCount() {
-    const a = REF && REF.avatarAreas && REF.avatarAreas.archives;
-    return Array.isArray(a) ? a.length : 0;
-  }
   // The team index 0x177FEB4 resolves for this id, read back from the patched bytes.
   // Anything with no live case falls through the switch's default, which is index 0 (Hugo).
   function storyIndexOf(id) {
@@ -4045,17 +4033,15 @@
     const actorFbOn = !fbBad && fbSites.every((f) => r32(f.off) === f.alt);
     const stock = new Set(AVATAR.STOCK_SET);
     const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
-    const nArch = avatarAreaCount();
+    // Chips used to carry per-area model coverage as well. Play testing retired it: the
+    // characters the game ships worked in every area they were tried in, so the only thing
+    // worth flagging per id is whose story content it gets.
     const chip = (id) => {
-      const ar = avatarAreas(id), si = storyIndexOf(id);
-      const maps = ar ? ` · ${ar.length}/${nArch} maps` : "";
+      const si = storyIndexOf(id);
       const story = si === 0 ? "" : ` · story ${si}`;
-      const title = ar
-        ? `field model ships in ${ar.length} of ${nArch} area archives: ${ar.join(", ") || "none"}`
-             + (si ? ` — uses its own story content (team index ${si})` : " — uses Hugo's story content")
-        : "";
-      return `<span class="tag${stock.has(id) ? "" : " acc2"}"${title ? ` title="${esc2(title)}"` : ""}>${
-        esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}${maps}${story}</span></span>`;
+      const title = si ? `uses its own story content (team index ${si})` : "uses Hugo's story content";
+      return `<span class="tag${stock.has(id) ? "" : " acc2"}" title="${esc2(title)}">${
+        esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}${story}</span></span>`;
     };
 
     // Character options for the single-id slots: the 75 battle characters, then the two
@@ -4088,10 +4074,11 @@
           or the scripts changes: this only stops the loader from refusing the id.
         </div>
         <div class="warnbox" style="margin:0 0 10px">
-          Two things bite beyond the whitelist. The model has to be <b>resident in the area you
-          are standing in</b> — coverage is on each chip below — and a <b>scripted scene can
-          hang</b> whoever you pick, including the eight the game ships: Koroku is one of them and
-          hangs. Being able to load a model is not the same as the game knowing what to do with it.
+          What bites beyond the whitelist is scripts, not loading: a <b>scripted scene can hang</b>
+          whoever you pick, including the eight the game ships — Koroku is one of them and hangs.
+          Being able to load a model is not the same as the game knowing what to do with it.
+          (Area coverage used to be listed here as a second condition. It isn't one — the shipped
+          characters played fine in every area they were tried in.)
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
           <button id="avWide" class="chip${isWide ? " on" : ""}">Allow every battle character</button>
