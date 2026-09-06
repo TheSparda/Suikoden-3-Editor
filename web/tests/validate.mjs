@@ -261,6 +261,19 @@ console.log("Passive rune sites:");
 
     // The answer the patch writes, spelled out so a typo fails here rather than in the game.
     (/const PS_YES = 0x0004102B;/.test(iso) ? ok : bad)("PS_YES is sltu $v0,$zero,$a0 (0x0004102B)");
+
+    // Every switchable rune must carry a confidence marker, and only the two words the tab knows
+    // how to render. A rune added later with no marker would silently show as "untested", which
+    // is the safe direction but hides the omission — so require it explicitly.
+    const proofs = [...sw.matchAll(/proof: "(\w+)"/g)].map((m) => m[1]);
+    (proofs.length === swIds.length ? ok : bad)(`every switchable rune carries a proof marker (${proofs.length}/${swIds.length})`);
+    const badProof = proofs.filter((x) => x !== "confirmed" && x !== "untested");
+    (badProof.length ? bad : ok)(badProof.length
+      ? `unknown proof marker(s): ${badProof.join(", ")} — the tab only renders confirmed/untested`
+      : `proof markers are all confirmed/untested (${proofs.join(", ")})`);
+    // Sunbeam's walk-heal was played on 2026-09-06; that report is the only thing that may set it.
+    (/id: 0x1BD, where: "field", proof: "confirmed"/.test(sw) ? ok : bad)("Sunbeam is marked confirmed in play");
+    (/id: 0x1B9, where: "field", proof: "untested"/.test(sw) ? ok : bad)("Champion's is still marked untested");
     (/psWrite/.test(iso) && !/PS_BATTLE\.forEach\([^)]*psWrite/.test(iso) ? ok : bad)("nothing writes the held-back sites");
   }
 }
