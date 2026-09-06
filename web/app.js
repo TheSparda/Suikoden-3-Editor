@@ -1303,7 +1303,12 @@ function drawParty() {
   const battlePos = {};                   // member index -> 1-based battle position
   form.forEach((mi, pos) => { if (mi && battlePos[mi] === undefined) battlePos[mi] = pos + 1; });
   const posOf = (slot) => (dense[slot] ? battlePos[dense[slot]] : undefined);
-  const aligned = mem.every((cid, slot) => !cid || posOf(slot) === slot + 1);
+  // A member with NO position is the real fault — the game builds the party from this table,
+  // so they simply will not appear. A member at a position other than their slot number is
+  // NOT a fault: the six positions are a battle layout, and the game itself writes reordered
+  // ([1,3,4,2,6,5]) and spread ([1,0,3,0,2,0]) tables. An earlier build of this view warned
+  // on those, which fires on perfectly healthy saves.
+  const orphaned = mem.filter((cid, slot) => cid && posOf(slot) === undefined).length;
   const rows = mem.map((cid, slot) => {
     const now = eff(slot);
     const mv = mounts[slot] || 0;
@@ -1317,9 +1322,8 @@ function drawParty() {
       : `<span class="tag">${esc(mountLabel(mv))} <span class="dim">#${mv}</span></span>`;
     const bp = posOf(slot);
     const fCell = !cid ? '<span class="dim">—</span>'
-      : bp === undefined ? '<span class="tag bad">not in the formation</span>'
-      : bp === slot + 1 ? `<span class="dim">${bp}</span>`
-      : `<span class="tag acc2" title="This member stands at battle position ${bp}, not ${slot + 1}.">${bp}</span>`;
+      : bp === undefined ? '<span class="tag bad" title="No formation entry — this member will not appear in battle.">not placed</span>'
+      : `<span class="dim">${bp}</span>`;
     return `<tr>
       <td class="sl">Slot ${slot + 1}${slot === 0 ? ' <span class="dim">· leader</span>' : ""}</td>
       <td><div class="party-row">
@@ -1340,12 +1344,27 @@ function drawParty() {
        (save <code>0x3216</code>) — who is in your party, in order. It is not the <b>battle
        formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
        re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
-    (anyFilled && !aligned ? `<div class="warnbox">This save's <b>battle formation</b> is not in party
-       order — at least one member stands at a different position from their party slot (see the
-       Battle pos. column). That is a legitimate layout the game writes when you reorder in the
-       tavern, so it is shown rather than corrected. Changing the party <i>size</i> re-derives the
-       table into party order on Apply; a same-size swap keeps the custom order.</div>` : "") +
+    (orphaned ? `<div class="warnbox">${orphaned} party member${orphaned === 1 ? " has" : "s have"}
+       no place in the battle formation, so ${orphaned === 1 ? "they" : "they"} will not appear in
+       battle. Run the health check — it can rebuild the table.</div>` : "") +
     `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th><th>Battle pos.</th><th>Mount</th></tr></thead><tbody>${rows}</tbody></table>` +
+    (anyFilled ? `<div class="card" style="margin:12px 0 0">
+      <div class="bag-h">Battle formation <span class="u">save 0x3240 · six positions</span></div>
+      <div class="muted" style="margin:0 0 8px">A <b>separate table</b> from the party list, and the
+        one the game actually reads to build the party. Each position holds the <i>index</i> of a
+        party member, so gaps and reordering are normal — the game writes both. It is also what a
+        story join looks at for free space, not the party list.</div>
+      <table class="invtbl"><thead><tr><th>Position</th><th>Who stands there</th></tr></thead><tbody>${
+        form.slice(0, 6).map((mi, pos) => {
+          const slot = mi ? mem.findIndex((c, k) => dense[k] === mi) : -1;
+          const who = mi && slot >= 0 ? charLabel(eff(slot))
+                    : mi ? `<span class="tag bad">member ${mi} — no such party member</span>`
+                    : '<span class="dim">empty</span>';
+          return `<tr><td class="sl">${pos + 1}</td><td>${who}</td></tr>`;
+        }).join("")}</tbody></table>
+      <div class="muted" style="margin:8px 0 0;font-size:12px">${
+        form.filter((v) => !v).length} of 6 free — a character who joins by story event needs one
+        of these empty, or the join is silently dropped.</div></div>` : "") +
     (mounts.some((m) => m) ? `<div class="muted" style="margin:8px 0 0;font-size:12px">A <b>mount</b>
        is staged in the same table, six positions along (save <code>0x3222</code>), and the game
        fills it when the party is formed from the character's assigned-horse field. It is what
