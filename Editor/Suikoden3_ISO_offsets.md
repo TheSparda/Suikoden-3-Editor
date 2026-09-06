@@ -2777,3 +2777,39 @@ class with them.
 **Side finding:** the character skill array is **7 slots**, not 6 — the game reads `i < 7`, and
 Guillaume and Rody both use the 7th pair (list1 `+24/+25`). `LIST1_FIELDS` and `skillHoldersLive()`
 still stop at 6, so that slot is neither shown nor counted.
+
+---
+
+## Reading a tuning back OFF a disc (v1.93.0, 2026-09-06)
+
+A saved ISO records only the numbers a bulk multiplier produced, never the multiplier — so
+re-opening a disc whose enemy HP had been raised 20% showed the Enemies tab's bulk fields at
+×1, with nothing anywhere saying the disc was already tuned. Apply then measured ×1.5 from the
+*tuned* numbers, so a second session silently compounded to ×1.8.
+
+**The baseline was already in the repo.** `build_enemy_index.py` runs against a PRISTINE USA
+disc and writes each variant's stock `lv/hp/stats/exp/sp/potch/drops` into
+`s3_enemy_packs.json` (and `s3_war_units.json`) *next to* the offsets. Those values were only
+ever documentation; nothing read them. They are a stock fingerprint of every editable enemy
+number on the disc — 1,961 non-war variants, ~15k values.
+
+**Recovering the multiplier** (`detectStockScale` in `web/iso.js`): per field group
+(HP, the 8 stats, level, EXP, SP, potch, drop weights) collect every `(stock, disc)` pair with
+`stock > 0`, take the **median** of `disc/stock` — which survives up to half the values being
+hand-edited — and score candidates (that median snapped to 0.05 / 2dp / 3dp, plus ×1 first) by
+**replaying the multiply**: a ratio only explains a value if `clamp(round(stock × r))` equals
+the byte on the disc, rounding and clamps included. A group is called at ≥90% explained; the
+disc as a whole is treated as "the one this index describes" when ≥90% of all values across
+all groups are explained. On a real tuned disc the surviving unexplained values are exactly
+the per-enemy hand edits.
+
+**What that buys:** the bulk fields open prefilled with what the disc carries (×1.2 shows as
+×1.2), Apply multiplies the STOCK numbers instead of the file's, so re-applying is idempotent
+across saves rather than compounding, and "Restore stock values" can undo a scale that is
+already baked into a file — previously impossible, because the file's own "originals" were
+the tuned numbers. A disc the index does not describe (different build, or edits no single
+scale explains) is reported as such and gets neither the stock-relative apply nor Restore.
+
+**Not done:** the per-area encounter rates in `s3_rooms.json` carry stock `rate`/`grace` the
+same way and have the same cross-save compounding in their area presets; nothing reads them
+yet. War units carry a stock baseline too, but the War tab has no bulk multipliers to prefill.
