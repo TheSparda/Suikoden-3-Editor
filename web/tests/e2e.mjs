@@ -17,7 +17,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
-  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES } from "./synth-iso.mjs";
+  MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES, RUNEFX_SITES, RUNEFX_FLOAT } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Scratch dir for downloads/recipes. Per-process: a shared name in os.tmpdir() lets two
@@ -499,6 +499,100 @@ head("Passives view — force the out-of-battle support runes on");
     check("a drifted site makes its rune read-only, not writable",
       await p2.isDisabled('input.psOn[data-id="441"]'));
     check("...and only that rune", !(await p2.isDisabled('input.psOn[data-id="445"]')));
+    await p2.context().close();
+    setServed(bytes); }
+  await page.context().close();
+}
+
+head("Passives view — rune power: what a passive is worth once it fires");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("#rfBox", { timeout: 3000 });
+  // The card is a separate patch from the switches above it: these constants live INSIDE each
+  // rune's "if equipped" branch, so they work on a stock disc and need no switch. If that ever
+  // stops being said on the tab, the controls read as part of the forcing feature and someone
+  // will tick a box expecting them to do nothing without it.
+  { const txt = await page.textContent("#rfBox");
+    check("it says the switches and the numbers are separate things", /whether a passive runs/.test(txt));
+    check("...that the rune still has to be equipped", /still has to be equipped/.test(txt));
+    check("...and that these constants are global", /global/.test(txt));
+    check("Sunbeam's two numbers are named up front", /15 HP a combat turn and 1 HP every\s+0\.3 seconds/.test(txt)); }
+  check("the card starts collapsed", !(await page.locator('input.rf[data-k="sunTurn"]').isVisible()));
+  await page.click("#rfBox > summary");
+  const keys = await page.$$eval(".rf", (n) => n.map((x) => x.dataset.k));
+  check("every rune power control renders", keys.length === 15, keys.join(","));
+  check("...none of them read-only on a stock disc", (await page.$$(".rf:disabled")).length === 0);
+  check("the shift controls are dropdowns, not free numbers",
+    (await page.$$eval("select.rf", (n) => n.map((x) => x.dataset.k))).sort().join(",")
+      === "dblStrike,fireSeal,wall,warrior,wizard");
+  check("Sunbeam's turn heal starts at the stock 15",
+    (await page.inputValue('input.rf[data-k="sunTurn"]')) === "15");
+  check("...and its walk-heal interval at the stock 0.3",
+    (await page.inputValue('input.rf[data-k="sunWalk"]')) === "0.3");
+  check("Wall's multiplier starts at x2",
+    (await page.locator('select.rf[data-k="wall"] option:checked').textContent()) === "×2");
+
+  // An immediate write must move the LOW half-word and nothing else — the opcode and registers
+  // are what make the instruction still an instruction.
+  await page.fill('input.rf[data-k="sunTurn"]', "200");
+  await page.dispatchEvent('input.rf[data-k="sunTurn"]', "change"); await page.waitForTimeout(60);
+  // A shift write must move ONLY bits 10..6, at both of Double-Strike's sites.
+  await page.selectOption('select.rf[data-k="dblStrike"]', "3");
+  await page.waitForTimeout(60);
+  // ...and the interval is a float in the data pool, not an instruction at all.
+  await page.fill('input.rf[data-k="sunWalk"]', "0.05");
+  await page.dispatchEvent('input.rf[data-k="sunWalk"]', "change"); await page.waitForTimeout(60);
+  { const { r, review } = await saveAndReview(page);
+    check("Sunbeam now heals 200 HP a combat turn", r.u32(0x261198) === 0x244200C8,
+      r.u32(0x261198).toString(16));
+    check("...and only the immediate moved", (r.u32(0x261198) >>> 16) === 0x2442);
+    check("Double-Strike shifts by 3 at both sites",
+      r.u32(0x1047C8) === 0x001080C0 && r.u32(0x1047DC) === 0x001080C0,
+      r.u32(0x1047C8).toString(16));
+    check("...and only bits 10..6 moved",
+      ((r.u32(0x1047C8) & ~0x7C0) >>> 0) === ((0x00108040 & ~0x7C0) >>> 0));
+    { const dv = new DataView(new ArrayBuffer(4));
+      dv.setUint32(0, r.u32(RUNEFX_FLOAT.off), true);
+      check("the walk-heal interval is a float, written as one",
+        Math.abs(dv.getFloat32(0, true) - 0.05) < 1e-6, String(dv.getFloat32(0, true))); }
+    check("nothing else in the rune power table moved",
+      RUNEFX_SITES.filter((f) => !["sunTurn", "dblStrike"].includes(f.key))
+        .every((f) => r.u32(f.off) === (f.word >>> 0)));
+    check("no equipped-check word pair was touched",
+      PASSIVE_SITES.every(([o, jal, ds]) => r.u32(o) === jal >>> 0 && r.u32(o + 4) === ds >>> 0));
+    check("the review names them under Rune power", /Rune power/.test(review));
+    check("...and names the rune and the number", /Sunbeam — HP healed each combat turn/.test(review));
+    check("...and numbers a multi-site write", /site 2 of 2/.test(review)); }
+  await page.context().close();
+}
+
+head("Passives view — rune power reverts and refuses a drifted disc");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("#rfBox", { timeout: 3000 });
+  await page.click("#rfBox > summary");
+  await page.fill('input.rf[data-k="killer"]', "400");
+  await page.dispatchEvent('input.rf[data-k="killer"]', "change"); await page.waitForTimeout(60);
+  await page.selectOption('select.rf[data-k="wizard"]', "0");
+  await page.waitForTimeout(60);
+  check("editing stages something", await somethingStaged(page));
+  // "Restore all to stock" has to put back the exact bytes, not merely a value that reads the
+  // same — otherwise a round-trip leaves the disc quietly modified.
+  await page.click("#rfReset"); await page.waitForTimeout(80);
+  check("Restore all to stock clears every staged byte", await nothingStaged(page));
+
+  { const patched = Uint8Array.from(bytes);
+    new DataView(patched.buffer).setUint32(0x104088, 0xDEADBEEF, true);   // Killer, site 1 of 2
+    setServed(patched);
+    const p2 = await newPage(); await loadIso(p2);
+    await p2.click('#isoTabs [data-v="passives"]');
+    await p2.waitForSelector("#rfBox", { timeout: 3000 });
+    await p2.click("#rfBox > summary");
+    check("a drifted site makes its control read-only, not writable",
+      await p2.isDisabled('input.rf[data-k="killer"]'));
+    check("...and only that one", !(await p2.isDisabled('input.rf[data-k="counter"]')));
+    check("...and the card says how many are read-only",
+      /1<\/b> control\(s\) are read-only/.test(await p2.innerHTML("#rfBox")));
     await p2.context().close();
     setServed(bytes); }
   await page.context().close();
