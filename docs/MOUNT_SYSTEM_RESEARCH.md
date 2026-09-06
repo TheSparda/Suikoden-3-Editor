@@ -495,6 +495,11 @@ mount must be one of the eight whitelisted **horses** to get a correct saddle of
 there is no ground-ride entry for a griffon or dragon to borrow.
 
 **Can Hugo ride on multiple maps? Can Chris?**
+
+> **Extended by §14 (2026-09-06).** The answer below is about *asset residency* and is
+> still right. What it was missing is the other half: which scenes actually issue a mount,
+> and what selects the horse. Both are now known — see §14, which also gives the two
+> concrete levers.
 Hugo already does: three areas ship the full `krum` set. Adding a fourth means getting `krum`
 into that area's archive, which runs into the repacking blocker documented in
 `ETC_BIN_MODEL_RESEARCH.md` (compressed variable-length payloads, no offset table found).
@@ -657,6 +662,14 @@ to put it and what it can reach.
 
 ### 10a. Why `+0x1bc` cannot be forced on — it is a pointer, not an id
 
+> **Superseded by §14 (2026-09-06).** Everything below about the *type* of `+0x1bc` is
+> correct — it is an EOBJ pointer with no literal writer. The conclusion drawn from that
+> ("unforceable") is not. `0x180 + 0x3c = 0x1bc`, and `+0x3c` is the EOBJ pointer of an
+> actor record: **`+0x1bc` is simply the `+0x3c` of the actor six slots along**, which is
+> where the engine stages a character's assigned horse. It has no writer because it needs
+> none — the generic actor setup fills it. What forces it on is staging that horse actor,
+> and that *is* reachable from data. See §14.
+
 > **Corrects an earlier note.** A previous revision said "the only two literal writers
 > (`0x1712894`, `0x1713458`) clear the field-work global". Those two are on a **different struct
 > that merely shares the offset** and has nothing to do with mounting — see below. The mount
@@ -781,7 +794,13 @@ Compared with the three-pair table it is strictly more capable, and it is the me
 - **It reaches Geddoe.** He has the `97x` field bank but no mounted-battle bank, so the pair
   table can never help him — but an assigned horse puts him on horseback outside combat.
 
-### …and the matching limitation: it grants permission, it does not stage a horse
+### …and the matching limitation: what it does *not* reach
+
+> **Corrected 2026-09-06.** This section used to be titled "it grants permission, it does
+> not stage a horse", and that headline was wrong. `+0x66` **does** stage the horse: the
+> party-put path reads it and inserts the horse at party position `pos + 6` (§14). The
+> real limitation is narrower and is stated below — the horse still has to be a *model the
+> area archive carries*, and a script still has to issue the mount.
 
 The same property that gives this route its reach takes away its reliability, and the two routes
 fail in exactly opposite ways:
@@ -957,6 +976,167 @@ is not established**.
 - **Damage**: lands on one half only.
 - **A few specific skills/params**: summed, one halved, one OR'd.
 - **Everything else**: each half uses its own numbers.
+
+
+## 14. Forcing field horse mounting — the handle bit, and what actually blocks it
+
+Added 2026-09-06, after [`Editor/eds_dis.py`](../Editor/eds_dis.py) recovered the EDS
+encoding that §9 lacked. It supersedes §10a's "unforceable" verdict and corrects §11.
+
+### 14a. Handle bit `0x4000` means "that actor's own horse"
+
+The actor-handle decoder `0x17B5A40` is documented in
+[`FIELD_CHARACTER_RESEARCH.md`](FIELD_CHARACTER_RESEARCH.md) as a namespace split on bits
+10–13. Bit **14** is separate, and it is the whole field mount system:
+
+```
+017B5A7C  andi $v0, $s0, 0x4000
+017B5A84  andi $s3, $v0, 0xffff      ; remembered across the namespace dispatch
+   ...
+017B5BA0  addiu $v0, $s2, 0x180      ; $s2 = the resolved actor record
+017B5BA4  movz  $v0, $s2, $s3        ; bit clear -> the record itself
+```
+
+Actor records are **`0x40` bytes** — `MakeActorRecord` @ `0x1775AA0` does
+`bzero(rec, 0x40)` then writes `+0x06 = charId`, `+0x01 = 4`, `+0x02 = 0x13`. So
+`0x180 = 6 × 0x40`, and **`handle | 0x4000` resolves to the actor six slots later**.
+
+That is the actor block's reserved range: party actors occupy 0–5 and their mounts 6–11,
+which is exactly the window `FindActorByCharId` declines to search (`i - 6 <u 6`). It also
+retires §10a: `+0x1bc` is `0x180 + 0x3c`, i.e. the `+0x3c` EOBJ pointer **of the mount
+actor**, not a mystery field. The one instruction that reads it (`0x178CD18`, the dead
+debug toggle) is asking "does the actor six slots along have an EOBJ yet".
+
+### 14b. `+0x66` stages the horse — §11's headline was wrong
+
+Two functions close the loop, and neither needs a scene-supplied pointer:
+
+```
+HorseActorPos(partyPos)                         ; 0x16FFEE0
+    if ((partyPos - 1) <u 6)                    ; real party positions only
+        if (hasAssignedHorse(charAt(partyPos)))  ; 0x16C76B8 -> list2 +0x66
+            return partyPos + 6
+    return 0
+
+PartyPut(charId, pos)                           ; 0x16FF8xx
+    s2 = hasAssignedHorse(charId)
+    place(charId, pos)
+    if (s2) place(s2, 1, pos + 6)               ; 0x16FFAB4 — the HORSE, at pos+6
+```
+
+and `StageActor` @ `0x1791B58` then recurses into that position to build the horse as a
+real actor (`0x16FFEE0` → `0x16FFCA8` → `MakeActorRecord`). Its teardown twin at
+`0x1791DF0` is the tell: on `hasAssignedHorse`, it also tears down `rec + 0x180`.
+
+So `+0x66` is not a permission flag that waits for a scene to cooperate. **It is the switch
+that makes the horse exist**, and it is one u16 of ordinary list2 data.
+
+### 14c. The scripts already say "mount the player on their own horse"
+
+`RideOn(h, h | 0x4000)` — self-mount — needs no chain validation to find: requiring
+`param2 == param1 | 0x4000` with a valid namespace is a coincidence in the millions, which
+is why this finds signal where §9's raw opcode search found only noise.
+`python3 Editor/eds_dis.py rides` reproduces it. **136 self-mounts in `town` scripts**, and
+the rider is the *player* in four areas:
+
+| area | `RideOn(PLAYER, PLAYER.mount)` | complete ground horse in that archive |
+|---|---|---|
+| **ZKTR** · Brass Castle | **58** | `zkum` **308** ✔ |
+| **MORI** · Zexen Forest | 10 | none (`guli_005` only) |
+| **VDZK** · Vinay del Zexay | 9 | none (`guli_005/080` only) |
+| **HNKT** · Budehuc Castle | 3 | **`krum` 325** ✔ |
+
+The rest are `objA:N` self-mounts — staged scene NPCs — in ZKTR (17), LZVI (16), KRVI (7),
+SOGE (4), AKMT (3), HNKT (3, plus one `charId:2`), MORI (1), VDZK (4).
+
+They are unambiguously code. The Budehuc block at ISO `0x903B401A` mounts the player and
+three scene objects, then drives them with `op 157` moves carrying round coordinates and
+speeds — and the moves address `0x5400`, i.e. **the player's horse**, because when you are
+mounted the thing that walks is the mount:
+
+```
+903B401A  op  22 RideOnSetS  [0x1400 0x5400 0xfffe]   PLAYER  PLAYER.mount
+903B4022  op  22 RideOnSetS  [0x0801 0x4801 0x0017]   objA:1  objA:1.mount
+903B403A  op 155             [0x000f 0x4052]
+903B4064  op 157             [0x5400 0x000f 0x0000 0x04b0 0x0002 0x0a8c]  PLAYER.mount …
+903B407A  op 157             [0x4801 0x5400 0x0000 0x05dc 0x0003 0x012c]
+```
+
+`actor_str` used to print `0x5400` as a bare `PLAYER`, hiding the bit; it now suffixes
+`.mount`.
+
+### 14d. So what actually blocks Hugo and Chris
+
+Not permission, and not the script. Two things:
+
+**1. The clamp.** `hasAssignedHorse` honours only two ids:
+
+```
+016C76E4  lhu   $a1, 0x66($v1)
+016C76E8  addiu $v0, $a1, -0x134     ; -308
+016C76EC  sltiu $v0, $v0, 2          ; 308 or 309, nothing else
+```
+
+**2. Asset residency.** 308 is `zkum`, complete **only in ZKTR**. 309 is `s2um`, complete
+**nowhere on the disc** — AKMT carries the single record `cha_s2um_172` and that is all
+(§6). Meanwhile `krum` **325** ships complete in HGB1, HNKT and KRVI, and `GetRiderOffset`
+already gives it a saddle offset (§3a, preset P1).
+
+Those two facts together explain the retail behaviour without any new assumption:
+**Chris's assigned horse does not exist on the disc.** Her record has said 309 all along,
+and 58 script sites in Brass Castle say "mount the player on their horse", and she still
+does not ride there — because 309 has no model in ZKTR. The four knights carry 308, which
+does.
+
+### 14e. Two levers, in order of cost
+
+**Lever 1 — data only, no code patch.** Change Chris's `+0x66` from 309 to 308:
+
+| what | ISO offset | now | to |
+|---|---|---|---|
+| Chris (roster 2) `+0x66` | `0x3E14A6` | `35 01` (309) | `34 01` (308) |
+
+She then carries the horse the four knights carry, which is resident and complete in ZKTR —
+the area holding 58 player self-mounts. This costs one u16 and touches no instruction.
+
+**Lever 2 — widen the clamp, then `+0x66 = 325`.** Six sites, all the same
+`sltiu rX, rY, 2`, each preceded by `addiu rX, rY, -0x134`:
+
+| ISO | bytes | function |
+|---|---|---|
+| `0x10EEEC` | `02 00 42 2C` | `hasAssignedHorse` |
+| `0x10EF0C` | `02 00 63 2C` | `hasAssignedHorse`, second path |
+| `0x146EDC` | `02 00 42 2C` | party helpers |
+| `0x14711C` | `02 00 42 2C` | party helpers |
+| `0x1471A8` | `02 00 42 2C` | `PartyPut` position 7–12 guard |
+| `0x14762C` | `02 00 42 2C` | party helpers |
+
+The immediate is the low u16, little-endian in the first two bytes of the word — the same
+shape the Mounts tab already edits. Raising it to `0x100` admits 308–563, which brings in
+`krum` 325, `kru2` 353, `msx1` 359, `msx2` 360. With `+0x66 = 325`, **Hugo** (ISO
+`0x3E1422`, currently 0) gets a Karaya horse staged beside him — and HNKT is the one
+archive carrying both a complete `krum` *and* Hugo's full `07x`/`97x` ground bank, *and*
+three player self-mounts.
+
+The patch is inert until something writes a new `+0x66`: only six characters have a nonzero
+one today and all are 308/309, every one of which stays inside the widened window.
+
+### 14f. What this does not reach, and what is still unplayed
+
+- **MORI and VDZK** hold 19 player self-mounts between them and **no complete ground horse
+  in either archive**. Those need a model added to the archive, which is the repacking
+  blocker in [`ETC_BIN_MODEL_RESEARCH.md`](ETC_BIN_MODEL_RESEARCH.md), not a constant.
+- **HGB1 and KRVI** carry a complete `krum` but **no player self-mount at all** (KRVI's
+  seven are `objA:N`). Reaching those means editing a rider handle in a script from
+  `objA:N` to `0x1400`, an in-place u16 — cheap, but it takes the horse away from the NPC
+  the scene staged it for.
+- **None of §14 has been played.** It is static analysis over the ELF plus a disc census.
+  The specific thing to watch on a first test is whether a mounted player breaks the
+  scene's own choreography, since the `op 157` moves target `PLAYER.mount` and will now
+  find one.
+- Whether the clamp's six sites are the *only* 308/309 gates. They are the only
+  `addiu −0x134` / `sltiu` pairs in `PT_LOAD`, but a gate written some other way would not
+  show up in that scan.
 
 
 ## Not established
