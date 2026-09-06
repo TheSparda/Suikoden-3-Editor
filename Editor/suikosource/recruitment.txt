@@ -1,0 +1,154 @@
+9/6/26, 1:59 PM                                                                                            S3 Recruitment Guide - Suikosource
+
+
+
+           Recruitment Guide
+           This is a complete list of all of the Stars of Destiny (recruitable characters) in Suikoden III. It details where they're found and how to get them.
+
+           Highlighted characters are optional and will not join you automatically.
+
+           Striped rows are not recruitable characters but instead tasks you need to perform in order to recruit a character later. (only available in Suikoden 2 guide as of now)
+
+           This guide is not formatted like a recruitment walkthrough, but more of a reference. If you are looking to recruit all 108 characters, especially on your first playthrough, we recommend
+           either using the walkthrough from the sidebar or scanning ahead in the guide before moving along in the story.
+
+           Warning: As with most guides on Suikosource, this guide contains spoilers; if you are using it to get all 108 stars on your first playthrough, beware.
+           Stars of Destiny for S3
+
+
+                    Name                 Star              How to Recruit
+                  1 Chris Lightfellow    Tenbi             You control Chris during Chris' chapters.
+                  2 Geddoe               Tenjyu            You control Geddoe during Geddoe's chapters.
+                  3 Hugo (S3)            Tensyo            You control Hugo during Hugo's chapters.
+                  4 Thomas               Tenkai            You control Thomas during Thomas' chapters. If you do not play his chapters, he will join automatically in Chapter 4.
+                  5 Fubar                Tenku             Joins automatically during Hugo's Chapter 1.
+                  6 Sgt. Jordi (Joe)     Tenko             Joins automatically during Hugo's Chapter 1.
+                  7 Borus Redrum         Chimou            Joins automatically during Chris' Chapter 1.
+                  8 Leo Gallen           Chisyu            Joins automatically during Chris' Chapter 1.
+                  9 Louis Keeferson      Chisyu            Joins automatically during Chris' Chapter 1.
+              10 Percival Fraulein       Chiki             Joins automatically during Chris' Chapter 1.
+              11 Roland Lesaurus         Chiin             Joins automatically during Chris' Chapter 1.
+              12 Salome Harras           Tenki             Joins automatically during Chris' Chapter 1.
+              13 Ace                     Tenhei            Joins automatically during Geddoe's Chapter 1.
+              14 Jacques                 Chisin            Joins automatically during Geddoe's Chapter 1.
+              15 Joker                   Chitai            Joins automatically during Geddoe's Chapter 1.
+              16 Queen                   Tenson            Joins automatically during Geddoe's Chapter 1.
+              17 Aila                    Teni              Joins automatically during Geddoe's Chapter 1, after Karaya Village is destroyed.
+              18 Cecile                  Tentai            Joins automatically during Thomas' Chapter 1.
+              19 Eike                    Chisui            Joins automatically during Thomas' Chapter 1.
+              20 Juan                    Tenman            Joins automatically during Thomas' Chapter 1.
+              21 Martha                  Chizen            Joins automatically during Thomas' Chapter 1.
+              22 Muto                    Chison            Joins automatically during Thomas' Chapter 1.
+              23 Piccolo                 Chiken            Joins automatically during Thomas' Chapter 1.
+              24 Sebastian               Chihi             Joins automatically during Thomas' Chapter 1.
+              25 Shizu                   Chisou            Joins automatically at the end of Thomas' Chapter 1.
+              26 Arthur                  Chiyou            Speak to him in the Mess Hall at Brass Castle. Examine the big oven in the kitchen. Go through the path. (This scene is different if Hugo does the recruiting.)
+              27 Augustine Nabor         Chichin           Speak to him with the Rose Brooch in your inventory.
+              28 Belle                   Chikei            Get a Screw from a monster in Amur Plains. Give it to her, then ask her to join. (This scene is different if Hugo does the recruiting.)
+              29 Billy                   Chisyu            Place an S statue (Hex Doll S, Knight Status S, etc.) in the statue room on the 2nd floor of Budehuc Castle. Leave, re-enter, and win a game of Goppu with
+                                                           Billy. (Save first!)
+              30 Dominic                 Chiyu             Buy the Mole Armor from him.
+              31 Ernie                   Tenkoku           Speak to her in Brass Castle's Education Center. Answer all of her questions correctly.
+
+https://www.suikosource.com/games/sod.php?pf=S3                                                                                                                                                                              1/3
+9/6/26, 1:59 PM                                                                                      S3 Recruitment Guide - Suikosource
+              32 Gadget Z                Chisyun    Joins with Belle.
+              33 Gordon (S3)             Chikou     Bring one of the following parties to Iksay Village's item shop:
+                                                    1. An all-male party
+                                                    2. Your main character and Augustine
+                                                    3. Chris plus whomever
+              34 Goro                    Chiretsu   Speak to him in the Zexen Forest with someone in your party who has the Appraisal skill.
+              35 Jeane                   Chiketsu   Go to Brass Castle's rune shop and ask her to join.
+              36 Kathy                   Chisatsu   Speak to her at Amur Plains North. Tell her how many horses she has.
+              37 Kidd                    Chiyu      Talk to him at Duck Village's Inn. Assist him in his case.
+              38 Koroku                  Chima      At Mt. Hei-Tou, take the first left, then the next left. Speak to the dog hiding on the left side of the screen.
+              39 Mel                     Chiku      Speak to her outside of Iksay Village's inn.
+              40 Mike                    Chisu      Speak to him in Caleria's Trade Post and win 20,000 at Kabu.
+              41 Mio                     Chirei     Speak to Mio and Tuta on the second floor of Iksay Village's inn.
+              42 Nadir                   Chisei     Speak to him on the top floor of Caleria's Inn with 3 men, 2 women, and 1 child in your active party (support doesn't count).
+              43 Nei                     Chiraku    Speak to her on the screen to the right of the Guild Hall in Vinay del Zexay. Fight Guillaume in front of the Guild Hall. Ask her to join.
+              44 Peggi                   Chiko      Get the Iron Hammer from a man in the trading center in Great Hollow, then give it to Peggi in the Blacksmith in Great Hollow.
+              45 Sanae                   Chikei     After recruiting at least 50 Stars, resolve her conflict behind the Duck Village Inn.
+              46 Scott                   Tenbou     Speak to Scott on the left side of Brass Castle, then give him a Deer Antler (from the Vinay del Zexay trading post).
+              47 Shabon                  Chiyu      Joins with Nei.
+              48 Toppo                   Chian      Joins with Nei.
+              49 Twaikin                 Chibun     Take the southeastern exit in the main Great Hollow room, follow the path, and speak to the dwarf in the next room. Then, say "Nothing" to the guard. Then
+                                                    ask him to join.
+              50 Watari                  Chikou     Find him behind a house on the right side of Iksay Village. Pay him 100,000 potch.
+              51 Ayame                   Chikyou    Speak to Watari after recruiting him until you see a scene of North Cavern, then bring Watari to the end of the North Cavern. Watari must defeat her in a
+                                                    duel.
+              52 Elliot                  Tenpai     Joins with Melville.
+              53 Kenji                   Chihi      First speak with a soldier inside Brass Castle who mentions seeing a man defeating monsters with cartwheels. Then find him in Yaza Plains exercising.
+                                                    Exercise with him, and then ask for a glass of water.
+              54 Melville                Tenken     Must have completed Hugo Chapter 1. After recruiting Billy, speak with him until he mentions his son in Vinay del Zexay, then speak with Melville and Elliot
+                                                    in the alley of Vinay del Zexay.
+              55 Alanis                  Tenzai     Speak to her in front of the fountain at Great Hollow with Melville and Elliot in your party.
+              56 Barts                   Chitou     Next to Iksay Village's windmill, give him a Grapes item (not Grape Seeds). You can buy Grapes C in Vinay del Zexay's trading post.
+              57 Edge                    Tenan      Fight him in a duel outside Le Buque's Rune Shop/Education Center.
+              58 Emily                   Chiaku     Bring a party with more than 600 combined STR to [Chisha Villages]'s Tavern. Beat her at arm-wrestling.
+              59 Estella                 Tenkyu     After the events at Alma Kinan, speak to her at Alma Kinan's Inn. Agree to help her. Speak to a girl at Alma Kinan's ceremonial cite, and then speak to
+                                                    Estella again.
+              60 Guillaume               Chizoku    After stopping him from chasing Shabon, beat him in a duel in front of the Sindar Gate in the Ancient Highway.
+              61 Landis                  Chido      Leave one slot in your active party open and fight in the second screen (coming from Duck Village) of Kuput Forest. He'll just appear in your party without
+                                                    notice. This may take a while.
+              62 Mamie                   Chizou     Upstairs in Duck Village's appraisal shop, give her a Crab Rice Bowl.
+              63 Rody                    Chimou     Joins with Estella.
+              64 Wan Fu                  Chiman     Talk to him downstairs from Chisha Village's Item Shop. Pay 3000 potch for his food.
+              65 Lilly Pendragon         Chikyu     Joins automatically during Hugo 2.
+              66 Reed                    Chisa      Joins automatically during Hugo 2.
+              67 Samus                   Chiyu      Joins automatically during Hugo 2.
+              68 Hallec                  Tensatsu   Joins automatically during Hugo 3.
+              69 Mua                     Chisatsu   Joins automatically during Hugo 3.
+
+
+https://www.suikosource.com/games/sod.php?pf=S3                                                                                                                                                                    2/3
+9/6/26, 1:59 PM                                                                                    S3 Recruitment Guide - Suikosource
+              70 Nash Latkje             Tensoku    Joins automatically during Chris 2.
+              71 Fred                    Chii       Automatically joins during Chris 3.
+              72 Rico                    Chiei      Automatically joins during Chris 3.
+              73 Yun                     Tensyo     Joins automatically during Chapter 5.
+              74 Anne                    Chisou     Joins automatically during Chapter 4.
+              75 Apple                   Chifuku    Joins automatically during Chapter 4.
+              76 Bazba                   Tenritsu   Joins automatically during Chapter 4.
+              77 Beechum                 Chiziku    Joins automatically during Chapter 4.
+              78 Caesar Silverberg       Tenki      Joins automatically during Chapter 4.
+              79 Dupa                    Tenyu      Joins automatically during Chapter 4.
+              80 Jimba                   Tenfu      Joins automatically during Chapter 4.
+              81 Luce                    Chiin      Joins automatically during Chapter 4.
+              82 Lucia                   Teni       Joins automatically during Chapter 4.
+              83 Shiba                   Tenmou     Joins automatically during Chapter 4.
+              84 Bright                  Chikyou    Joins with Futch.
+              85 Futch                   Chibi      Speak to him on the mountain path to Caleria. Agree to help him find Sharon. Chase Sharon around Caleria, and he will join.
+              86 Hortez VII              Chikou     Speak to him at Duck Village, Chisha Village and then Caleria. Speak to him in Duck Village again, and give him the wrong directions.
+              87 Jefferson               Chibaku    Leave Budehuc through the front gate with neither Juan nor Cecile in your party.
+              88 Rhett                   Chikaku    Speak to him at Duck Village with [Sgt. Joe] in your party.
+              89 Sharon                  Chii       Joins with Futch.
+              90 Tuta                    Chijyu     Bring Mio to Chisha Village. Go to the underground portion of the village and talk to Tuta in the middle room.
+              91 Viki                    Chitatsu   Enter the Mountain Path from Karaya Village. Let her stay at Budehuc.
+              92 Wilder                  Chitan     Joins with Rhett.
+              93 Viki (young)            Chisoku    Enter the Mountain Path from Karaya Village with Viki in the party. Let her stay at Budehuc.
+              94 Koichi                  N/A        After recruiting Koroku and your Flame Champion moves into Budehuc, find him in North Cavern (second hallway screen from entrance). Koichi is not a
+                                                    star.
+              95 Connie                  N/A        After recruiting Koichi, find her in the Great Hollow monster area (the hallway that Geddoe did not access in his Chapter 1). Connie is not a star.
+              96 Kosanji                 N/A        After recruiting Connie, find him in the Mt. Senai (hanging off the edge of the open deadend area). Kosanji is not a star.
+              97 Kogoro                  N/A        After recruiting Kosanji, find him in the Sindar Ruins within Ancient Highway (from the entrance, make a left then an immediate left to a dead end, his tail is
+                                                    visible in the upper right corner of the area). Kogoro is not a star.
+              98 Yuiri                   Tenei      Joins automatically during Chapter 5.
+              99 Yumi                    Tenyu      Joins automatically during Chapter 5.
+            100 Duke                     Chikatsu   Joins during Geddoe Chapter 5 if you don't run away.
+            101 Elaine                   Chimei     Joins during Geddoe Chapter 5 if you don't run away.
+            102 Franz                    Tenrou     Joins during Geddoe Chapter 5 if you don't run away.
+            103 Gau (S3)                 Chikai     Joins during Geddoe Chapter 5 if you don't run away.
+            104 Iku                      Tensui     Joins during Geddoe Chapter 5 if you don't run away.
+            105 Nicolas                  Chiri      Joins during Geddoe Chapter 5 if you don't run away.
+            106 Ruby                     Chihei     Joins during Geddoe Chapter 5 if you don't run away.
+            107 Dios                     Tenkou     Joins automatically during Chapter 5.
+            108 Sasarai                  Tengou     Joins automatically during Chapter 5.
+            109 Albert                   Chikai     Joins automatically during Chapter 6. You must have all other stars recruited.
+            110 Luc                      Tenkai     Joins automatically during Chapter 6. You must have all other stars recruited.
+            111 Sarah (S3)               Chizen     Joins automatically during Chapter 6. You must have all other stars recruited.
+            112 Yuber                    Tenyu      Joins automatically during Chapter 6. You must have all other stars recruited.
+
+
+https://www.suikosource.com/games/sod.php?pf=S3                                                                                                                                                                       3/3
+
