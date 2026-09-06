@@ -466,14 +466,27 @@ export function buildSynthIso() {
   const twinRune = catItems("Runes").find((r) => r.name === "Great Hawk") || balance;
   {
     const o = RUNE_TBL.off + twinRune.id * RUNE_TBL.stride;
-    w32(o + RUNE_TBL.name, put(twinRune.name));
+    const runeNameCopy = put(twinRune.name);
+    w32(o + RUNE_TBL.name, runeNameCopy);
     const runeCopy = put(TWIN_TEXT);                    // copy A — what the game's rune menu reads
     w32(o + RUNE_TBL.desc, runeCopy);
-    const so = SPELL.off + 3 * SPELL.stride;            // spell #3, its own separate allocation
+    // Spell #4, which exists only for this fixture. Spells 0-3 are the Fire rune's set and the
+    // reskin test rewrites all four by name, so the twin cannot borrow one of them: renaming
+    // spell #3 to the rune's name would silently drop it out of that group.
+    const TWIN_SPELL = 4;
+    const so = SPELL.off + TWIN_SPELL * SPELL.stride;   // its own separate allocation
     const spellCopy = put(TWIN_TEXT);                   // copy B — sorts first in the Text tab
     w32(so + 0x0C, spellCopy);
+    w32(so + 0x10, 50); w32(so + 0x14, 0x00000A00); w32(so + 0x1C, 100);   // a plausible record
+    // NAMES duplicate the same way and for the same reason: an attack rune and the spell it
+    // grants each hold their own copy of the rune's name (43 such groups on a real disc), so a
+    // rename that wrote only one would leave the battle command showing the old one. Give the
+    // spell its own allocation of the rune's name — same text, different address.
+    const spellNameCopy = put(twinRune.name);
+    w32(so + 8, spellNameCopy);
     mapping.twin = { text: TWIN_TEXT, rune: twinRune,
-      runeOff: runeCopy - ELF_VADDR + ELF_BASE, spellOff: spellCopy - ELF_VADDR + ELF_BASE, spellIdx: 3 };
+      runeOff: runeCopy - ELF_VADDR + ELF_BASE, spellOff: spellCopy - ELF_VADDR + ELF_BASE, spellIdx: TWIN_SPELL,
+      runeNameOff: runeNameCopy - ELF_VADDR + ELF_BASE, spellNameOff: spellNameCopy - ELF_VADDR + ELF_BASE };
   }
   // ---- war-battle class fixture -----------------------------------------------------------
   // There is no class byte: the game derives a unit's class from the character's own skills

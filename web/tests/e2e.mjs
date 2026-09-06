@@ -2119,11 +2119,10 @@ head("Reference — pickup locations, disc census vs guide chests");
   await page.context().close();
 }
 
-head("Reference — rune lookup: families, granted spells, who has it");
+head("Runes — families, granted spells, who has it");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="ref"]');
-  await page.waitForSelector('[data-ref="runes"]', { timeout: 3000 });
-  await page.click('[data-ref="runes"]');
+  // Top-level tab since v1.97.0; it used to be a Reference sub-tab (`[data-ref="runes"]`).
+  await page.click('#isoTabs [data-v="runes"]');
   await page.waitForSelector("table.invtbl", { timeout: 3000 });
   const all = +(await page.textContent('[data-rgrp=""]')).replace(/\D+/g, "");
   check("every rune in the game is listed", all === 72, `All (${all})`);
@@ -2134,11 +2133,18 @@ head("Reference — rune lookup: families, granted spells, who has it");
   await page.fill("#isoSearch", "true fire"); await page.waitForTimeout(150);
   const tf = await page.textContent("#isoView");
   check("a magic rune lists the spells it grants", /Hellfire/.test(tf) && /Blazing Wall/.test(tf), tf.slice(0, 200));
+  // A rune whose row the disc names renders that name in the rename INPUT, and an input's
+  // value is not part of textContent — so the view has to be read as text plus field values
+  // or every one of these filter checks would silently pass on the wrong evidence.
+  const viewText = () => page.evaluate(() => {
+    const v = document.querySelector("#isoView");
+    return (v.textContent || "") + " " + [...v.querySelectorAll("input")].map((i) => i.value).join(" ");
+  });
   // the filter reaches past the name into owners, spells and drop sources
   await page.fill("#isoSearch", "sasarai"); await page.waitForTimeout(150);
-  check("filtering finds a rune by who carries it", /True Earth/.test(await page.textContent("#isoView")));
+  check("filtering finds a rune by who carries it", /True Earth/.test(await viewText()));
   await page.fill("#isoSearch", "hellfire"); await page.waitForTimeout(150);
-  check("filtering finds a rune by a spell it grants", /True Fire/.test(await page.textContent("#isoView")));
+  check("filtering finds a rune by a spell it grants", /True Fire/.test(await viewText()));
   await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
   // the family chips actually narrow the table, and the support runes are reachable in one click
   await page.click('[data-rgrp="support"]'); await page.waitForTimeout(150);
@@ -2149,13 +2155,13 @@ head("Reference — rune lookup: families, granted spells, who has it");
   const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
   check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
   check("the view stages nothing", await nothingStaged(page));
-  // The browser is no longer read-only — it now owns the rune's menu text (issue #11: the only
-  // copy of it the game actually reads) and its effect bits (issue #12). It must still stage
-  // nothing until touched, and it must carry ONLY those fields: any other input here would be
-  // an accident, since every other rune property belongs to another tab.
+  // The tab is no longer read-only — it owns the rune's NAME, its menu text (issue #11: the
+  // only copy of it the game actually reads) and its effect bits (issue #12). It must still
+  // stage nothing until touched, and it must carry ONLY those fields: any other input here
+  // would be an accident, since every other rune property belongs to another tab.
   const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable fields are menu text and effect bits",
-    kinds.every((k) => /^(rdesc|sp18|sp18hex|rfx)$/.test(k)), kinds.join(" | "));
+  check("the only editable fields are name, menu text and effect bits",
+    kinds.every((k) => /^(rname|rdesc|sp18|sp18hex|rfx)$/.test(k)), kinds.join(" | "));
   // A rune is only editable when its table row still names it — the same check runeTblDesc()
   // makes before trusting a record. The fixture fills a handful of the 72 rows; the rest are
   // zeroed and stay read-only, so the editor never writes into a row it can't vouch for.
@@ -2463,9 +2469,7 @@ head("Duplicated descriptions — one edit writes both copies (issue #11)");
 { const page = await newPage(); await loadIso(page);
   const T = mapping.twin;
   const read = (r, off, n) => { let s = ""; for (let i = 0; i < n; i++) { const c = r.at(off + i); if (!c) break; s += String.fromCharCode(c); } return s; };
-  await page.click('#isoTabs [data-v="ref"]');
-  await page.waitForSelector('[data-ref="runes"]', { timeout: 3000 });
-  await page.click('[data-ref="runes"]'); await page.waitForSelector("input.rdesc", { timeout: 5000 });
+  await page.click('#isoTabs [data-v="runes"]'); await page.waitForSelector("input.rdesc", { timeout: 5000 });
   await page.fill("#isoSearch", T.rune.name.toLowerCase()); await page.waitForTimeout(100);
   const box = page.locator(`input.rdesc[data-id="${T.rune.id}"]`);
   check("the rune browser offers an editable menu text", (await box.count()) === 1);
@@ -3363,6 +3367,77 @@ head("Sideways overscroll can't navigate away from the editor");
   await page.context().close();
 }
 
+
+
+// ---- Runes tab: rename + menu text, both mirrored ------------------------------------------
+// Runes were a Reference SUB-TAB until v1.97.0, behind a hint that said "read-only" — while
+// being the only place the rune menu text could be edited at all. Now it is a top-level tab
+// that also renames. Both fields write in place through setDescText, which mirrors every copy
+// of the string: the description is stored twice for the 20 attack runes, and so is the NAME
+// (a rune and the spell it grants each hold their own "Kite"), so a rename that wrote one copy
+// would leave the battle command showing the old name.
+head("Runes tab — rename and menu text");
+{
+  const page = await newPage();
+  await loadIso(page);
+  const tabs = await page.$$eval("#isoTabs [data-v]", (b) => b.map((x) => x.dataset.v));
+  check("Runes is a top-level tab", tabs.includes("runes"));
+  check("it sits immediately before Spells", tabs[tabs.indexOf("runes") + 1] === "spells",
+    tabs.slice(0, 8).join(","));
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
+  await page.waitForTimeout(120);
+  const before = await page.evaluate(() => {
+    const i = document.querySelector("#isoView input.rname");
+    return i ? { name: i.value, max: i.maxLength, note: i.closest("label").querySelector(".u").textContent } : null;
+  });
+  check("the rune row offers a rename field", !!before, JSON.stringify(before));
+  check("capped to the on-disc slot", !!before && before.max === mapping.twin.rune.name.length);
+  check("and says the name is stored twice", !!before && /2 copies, mirrored/.test(before.note), before?.note);
+
+  const NEW = "Zap!";                                   // shorter than the slot: NUL-padded
+  await page.fill("#isoView input.rname", NEW);
+  await page.dispatchEvent("#isoView input.rname", "change");
+  await page.waitForTimeout(150);
+  // Read the result back through the Changes tab's staged list rather than any internals.
+  await page.click('#isoTabs [data-v="changes"]');
+  await page.waitForTimeout(150);
+  const stagedRows = await page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /Staged, not yet saved/.test(x.textContent));
+    return c ? [...c.querySelectorAll("tbody tr")].map((r) => [...r.cells].map((x) => x.textContent.trim()).join(" | ")) : [];
+  });
+  check("the rename stages BOTH copies", stagedRows.filter((r) => /Name \(copy \d of 2\)/.test(r)).length === 2,
+    stagedRows.join(" // "));
+  check("each staged row shows old → new", stagedRows.every((r) => !/copy/.test(r) || r.includes(NEW)),
+    stagedRows.join(" // "));
+
+  // A rename must reach every menu in the editor for this ISO, not just the box you typed in.
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.fill("#isoSearch", NEW.toLowerCase());
+  await page.waitForTimeout(150);
+  const inRef = await page.evaluate((nm) => (document.querySelector("#isoView")?.textContent || "").includes(nm), NEW);
+  check("the new name shows in the Reference item browser (itemName reads the disc)", inRef);
+  await page.click('#isoTabs [data-v="spells"]');
+  await page.waitForTimeout(150);
+  const inSpells = await page.evaluate((nm) => (document.querySelector("#isoView")?.textContent || "").includes(nm), NEW);
+  check("the spell that shares the name was renamed too", inSpells);
+
+  // Searching the retail name must still find the row you just renamed.
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
+  await page.waitForTimeout(150);
+  const stillThere = await page.evaluate((nm) => {
+    const i = document.querySelector("#isoView input.rname"); return i ? i.value : null; }, NEW);
+  check("the row is still findable under its original name", stillThere === NEW, String(stillThere));
+
+  // An empty name would leave the rune nameless in every list — refused, not written.
+  await page.fill("#isoView input.rname", "");
+  await page.dispatchEvent("#isoView input.rname", "change");
+  await page.waitForTimeout(120);
+  const afterBlank = await page.evaluate(() => document.querySelector("#isoView input.rname")?.value);
+  check("an empty name is refused", afterBlank === NEW, String(afterBlank));
+  await page.context().close();
+}
 
 // ---- Changes tab: what is already on the disc ----------------------------------------------
 // The one thing this tab does that nothing else can: report a change nobody staged this

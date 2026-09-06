@@ -980,9 +980,17 @@
   // text and linking it would make editing one spell silently rewrite three others. On a
   // pristine disc the cross-table rule finds all 27 real groups and nothing else (0 same-table
   // groups), every group is exactly 2 copies, and every pair shares its slot length.
-  let DESC_ALIAS = null;            // Map<fileOff, fileOff[]> — every offset holding that string
-  function descAlias() {
-    if (DESC_ALIAS) return DESC_ALIAS;
+  let DESC_ALIAS = null, NAME_ALIAS = null;   // Map<fileOff, fileOff[]> — every offset holding that string
+  //
+  // NAMES duplicate exactly the same way, for exactly the same reason: 43 groups on a pristine
+  // disc (42 pairs + "Gadget", which is a rune, a spell and a unite), and every one of them is
+  // genuinely the same thing named twice — Kite the rune and Kite the spell it grants, a magic
+  // scroll and the spell it casts, a rune and its unite. So renaming a rune has to rename the
+  // spell as well, or the battle command keeps the old name. Same builder, same cross-table
+  // rule, same equal-slot guard; only the field offset differs.
+  function strAlias(kind) {
+    const cached = kind === "name" ? NAME_ALIAS : DESC_ALIAS;
+    if (cached) return cached;
     const byText = new Map(), tableOf = new Map();
     const note = (table, va) => {
       if (!va) return;
@@ -995,12 +1003,15 @@
       let k = tableOf.get(off); if (!k) tableOf.set(off, (k = new Set()));
       k.add(table);
     };
+    // name @+0 / desc @+4 in every item band; +0x08 / +0x0C in a spell or unite record.
+    const bandOff = kind === "name" ? 0 : 4, castOff = kind === "name" ? 0x08 : 0x0C;
+    const foodOff = kind === "name" ? FOOD.name : FOOD.desc;
     DESC_BANDS.forEach(([lo, hi, base, stride], n) => {
-      for (let id = lo; id <= hi; id++) { const o = base + id * stride + 4; if (inBlk(o, 4)) note("band" + n, o32(o)); }
+      for (let id = lo; id <= hi; id++) { const o = base + id * stride + bandOff; if (inBlk(o, 4)) note("band" + n, o32(o)); }
     });
-    for (let i = 0; i < SPELL.count; i++) note("spell", o32(SPELL.off + i * SPELL.stride + 0x0C));
-    for (let i = 0; i < UNITE.count; i++) note("unite", o32(UNITE.off + i * UNITE.stride + 0x0C));
-    for (let i = 0; i < FOOD.count; i++) note("food", o32(FOOD.off + i * FOOD.stride + FOOD.desc));
+    for (let i = 0; i < SPELL.count; i++) note("spell", o32(SPELL.off + i * SPELL.stride + castOff));
+    for (let i = 0; i < UNITE.count; i++) note("unite", o32(UNITE.off + i * UNITE.stride + castOff));
+    for (let i = 0; i < FOOD.count; i++) note("food", o32(FOOD.off + i * FOOD.stride + foodOff));
     const m = new Map();
     for (const offs of byText.values()) {
       if (offs.length < 2) continue;
@@ -1011,11 +1022,12 @@
       if (offs.some((o) => origSlotLen(offVa(o)) !== len)) continue;   // never mirror unequal slots
       for (const o of offs) m.set(o, offs);
     }
-    return (DESC_ALIAS = m);
+    return kind === "name" ? (NAME_ALIAS = m) : (DESC_ALIAS = m);
   }
-  // Every offset holding the same original description as `off`, itself included. One entry
-  // when the string is unique, which is the case for all but 27 of them.
-  const descCopies = (off) => descAlias().get(off) || [off];
+  // Every offset holding the same original string as `off`, itself included. A given offset is
+  // a name slot or a description slot, never both — they are different strings — so consulting
+  // both indexes cannot mix them, and one lookup then serves every in-place string write.
+  const descCopies = (off) => strAlias("desc").get(off) || strAlias("name").get(off) || [off];
   const descCopyCount = (off) => descCopies(off).length;
   // Write one description's bytes to every copy of it, and register each so the review list and
   // the dirty badge account for both. Callers have already length-checked against the slot; the
@@ -1100,7 +1112,33 @@
   }
 
   // ---- label / option helpers ------------------------------------------------
-  const itemName = (id) => gearName(id) || REF.items[id] || "#" + id;
+  // What the GAME calls this item, read off the loaded disc, so a rename made on the Runes or
+  // Gear tab immediately shows up in every picker, tooltip, shop row, review line and Changes
+  // row for that ISO — not just in the field you typed it into.
+  //
+  // Two guards. A band record for an id the game never uses is zeroed, so a null pointer falls
+  // through to the bundled list. And ten live slots hold Shift-JIS placeholder text for unused
+  // entries (id 21 is "(\u672a\u4f7f\u7528)", "unused") which would render as mojibake, so a name is
+  // only trusted when it is printable ASCII. Where the two disagree on a real item the disc
+  // wins and is the better reading: "Stone of Power" on the disc vs "Stone Of Power" bundled,
+  // 7 of the 25 differences.
+  let ITEM_NAMES = null;
+  function discItemName(id) {
+    if (!BUF || !REF) return "";
+    if (!ITEM_NAMES) {
+      ITEM_NAMES = {};
+      for (const [lo, hi, base, stride] of DESC_BANDS)
+        for (let i = lo; i <= hi; i++) {
+          const rec = base + i * stride;
+          if (!inBlk(rec, 4)) continue;
+          const p = r32(rec);
+          const nm = p ? strAt(p) : "";
+          if (nm && /^[\x20-\x7E]+$/.test(nm)) ITEM_NAMES[i] = nm;
+        }
+    }
+    return ITEM_NAMES[id] || "";
+  }
+  const itemName = (id) => gearName(id) || discItemName(id) || REF.items[id] || "#" + id;
   const skillName = (id) => REF.skills[id] || "#" + id;
   const itemLabel = (id) => id ? `${hex(id, 3)} · ${itemName(id)}` : "— none —";
   const skillLabel = (id) => id ? `${hex(id, 2)} · ${skillName(id)}` : "— none —";
@@ -1397,7 +1435,7 @@
     resetTables();                              // deferred tables belong to the disc being replaced
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
-    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = null; RUNE_FX_OPEN = new Set(); resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
+    gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = NAME_ALIAS = null; RUNE_FX_OPEN = new Set(); resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {};
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
@@ -2130,7 +2168,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["runes", "Runes"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["balance", "Balance"], ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
 
@@ -2210,7 +2248,8 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
+      runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and edit the status or enhance effect it carries. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: which spells a rune grants, who carries it and where it drops.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -2224,7 +2263,7 @@
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
-      ref: "Reference (read-only): searchable item, rune and skill lookups, where each item comes from, and every packed sub-file on the disc.",
+      ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, and every packed sub-file on the disc. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
       changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
     };
     q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
@@ -2240,6 +2279,7 @@
     else if (VIEW === "shops") drawShops(host);
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
+    else if (VIEW === "runes") drawRunes(host);
     else if (VIEW === "mounts") drawMounts(host);
     else if (VIEW === "movement") drawMoveSpeed(host);
     else if (VIEW === "story") drawStory(host);
@@ -2504,7 +2544,7 @@
   // Rune and gear text is read per call, so it needs no cache to drop.
   // CLASS_NAMES reads strings out of BUF, so a staged edit to a class word must drop it too.
   // DESC_ALIAS is keyed on ORIG and so never goes stale mid-session — only on a new ISO (below).
-  function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; CLASS_NAMES = null; }
+  function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; CLASS_NAMES = null; ITEM_NAMES = null; }
   // Equipment carries its description in its own gear record, so read that live too — a
   // description rewritten on the Gear tab then shows up in every picker and tooltip. The
   // bundled s3_item_desc.json stays as the fallback for items scanGear can't pin down.
@@ -6193,7 +6233,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // thing they share; what you're looking at differs a lot between them.
   const REF_HINT = {
     items: "Reference (read-only): every item id on the disc, with its category and description.",
-    runes: "Reference (read-only): every rune — what it does, the spells it grants, who carries it and where it drops.",
     classes: "Reference (read-only): the war-battle class each unit shows — and why there is no class field to edit. It is derived from the character's skills.",
     skills: "Reference (read-only): every skill — what each rank is worth, who can learn it and how far, and who has it on this disc.",
     sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
@@ -6412,19 +6451,36 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     // An attack rune's spell carries the rune's own name (Kite -> "Kite"), so it has no
     // RUNE_SPELLS entry and no "— Grants" clause; fall back to the rune name so those runes
     // reach the effect editor too. Resolved against the loaded disc, not a bundled list.
+    // The rune's own NAME string, as a pointer + the slot the disc already reserves, so the
+    // browser can rewrite it in place. 43 names on this disc are stored twice — a rune and the
+    // spell it grants each hold their own copy of "Kite" — so a rename has to write both or
+    // the battle command keeps the old one. setDescText mirrors them.
+    const rec = RUNE_TBL.off + id * RUNE_TBL.stride;
+    const inTbl = BUF && id >= RUNE_TBL.lo && id <= RUNE_TBL.hi && inBlk(rec, RUNE_TBL.stride);
+    const np = inTbl ? r32(rec + RUNE_TBL.name) : 0;
+    const liveName = np ? strAt(np) : "";
     let grants = RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []);
-    if (!grants.length && BUF && nm && nm in spellNameIndex()) grants = [nm];
+    // Resolve the attack-rune fallback against the name the disc CURRENTLY holds first. A
+    // rename renames the rune's spell along with it, so keying only on the bundled name would
+    // make the effect editor vanish from every rune the moment it was renamed.
+    if (!grants.length && BUF) {
+      const idx = spellNameIndex();
+      if (liveName && liveName in idx) grants = [liveName];
+      else if (nm && nm in idx) grants = [nm];
+    }
     // The rune's own desc string, as a pointer + slot cap, so the browser can edit it in place.
     // This is the copy the game's rune menu actually reads (getDesc VA 0x16DBE48 -> itemRecord
     // VA 0x16DBCD8 -> RUNE_TBL +4), and until now nothing in the editor could write it: the
     // Text tab's prose filter rejects every one of these strings ("DMGx0.4" trips its
     // letter-then-digit reject), so the only editable copy was the spell record's — the wrong
     // one. That is issue #11. Edits here go through setDescText, which mirrors both copies.
-    const dp = BUF && id >= RUNE_TBL.lo && id <= RUNE_TBL.hi && inBlk(RUNE_TBL.off + id * RUNE_TBL.stride, RUNE_TBL.stride)
-      ? r32(RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.desc) : 0;
+    const dp = inTbl ? r32(rec + RUNE_TBL.desc) : 0;
     const own = dp ? runeTblDesc(id) : "";
     return {
-      id, name: nm, group: runeGroupOf(id),
+      id, name: liveName || nm, group: runeGroupOf(id),
+      namePtr: liveName ? np : 0,
+      nameMax: liveName ? origSlotLen(np) : 0,
+      nameCopies: liveName ? descCopyCount(vaOff(np)) : 1,
       text: (BUF && runeTblDesc(id)) || (m ? m[1] : fb),
       descPtr: own ? dp : 0,                       // 0 when this row has no trustworthy record
       descMax: own ? origSlotLen(dp) : 0,
@@ -6436,7 +6492,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       sources: sourceRows(id),
     };
   }
-  const runeHaystack = (r) => [r.name, hex(r.id, 3), r.text, runeGroupLabel(r.group), r.grants.join(" "), r.owner,
+  // The name the disc ships with is in the haystack alongside the one it currently holds, so
+  // renaming a rune while filtering for it does not make the row you are typing in disappear —
+  // and someone who only knows the rune by its retail name can still find it afterwards.
+  const runeHaystack = (r) => [r.name, REF.items[r.id] || "", hex(r.id, 3), r.text, runeGroupLabel(r.group), r.grants.join(" "), r.owner,
     r.holders.map((h) => h.ch + " " + h.slot).join(" "),
     r.sources.map((s) => s.what + " " + s.detail).join(" ")].join(" ").toLowerCase();
 
@@ -6465,14 +6524,14 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       <button class="chip${RUNE_GROUP ? "" : " on"} mini" data-rgrp="">All (${all.length})</button>
       ${RUNE_GROUPS.map(([k, label, , , note]) => `<button class="chip${RUNE_GROUP === k ? " on" : ""} mini"
         data-rgrp="${k}" title="${esc2(note)}">${esc2(label)} (${tally(k)})</button>`).join("")}</div>`;
-    host.innerHTML = refTabs() + chips +
+    host.innerHTML = chips +
       `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
-        grants, and who carries it. Descriptions come off <b>this</b> disc's rune table, so an edit on the
-        Text tab shows here. <b>Grants</b> lists the spells a magic rune unlocks as its mastery level rises;
+        grants, and who carries it. Names and descriptions come off <b>this</b> disc's rune table, so an edit
+        made here or on the Text tab shows everywhere the editor names that rune. <b>Grants</b> lists the spells a magic rune unlocks as its mastery level rises;
         the Spells tab is where those are edited. Rows in the last column are tagged
         <span class="srctag guide">guide</span> when they come from the Suikosource rune-slot and character
         guides and <span class="srctag disc">disc</span> when decoded from this disc's enemy drop tables.
-        The <b>menu text</b> box writes the rune's description straight into the table the game reads for it, capped
+        The menu text box writes the rune's description straight into the table the game reads for it, capped
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
@@ -6484,7 +6543,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
-          <td>${esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
+          <td>${r.nameMax > 0
+            ? `<label class="field" style="margin:0 0 4px"><span class="muted">Name
+                 <span class="u">max ${r.nameMax}${r.nameCopies > 1 ? ` \u00b7 ${r.nameCopies} copies, mirrored` : ""}</span></span>
+               <input type="text" class="rname" data-id="${r.id}" maxlength="${r.nameMax}" value="${esc2(r.name)}"></label>`
+            : esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
           <td>${r.descMax > 0
             ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text
                  <span class="u">max ${r.descMax}${r.descCopies > 1 ? ` · ${r.descCopies} copies, mirrored` : ""}</span></span>
@@ -6505,6 +6568,25 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const box = q("#isoSearch"); if (box) box.value = b.dataset.spjump;
       drawView();
     }));
+    // In-place rename. Same write as the menu text below: the string is overwritten where it
+    // already sits and null-padded, so no pointer on the disc moves and every menu that names
+    // the rune reads through the one pointer it always did. An empty box would leave the rune
+    // nameless in every list, so it is refused rather than written.
+    qa("input.rname", host).forEach((el) => {
+      const id = +el.dataset.id, nptr = r32(RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.name);
+      markField(el, vaOff(nptr), origSlotLen(nptr), "text");
+      el.onchange = () => {
+        const want = el.value.trim();
+        if (!want) { el.value = strAt(nptr); return setStatus("A rune needs a name — left unchanged.", "warn"); }
+        const res = setDescText(nptr, want, itemName(id), "Name");
+        if (res.tooLong) { setStatus(`"${want}" is too long — this rune's name slot holds ${res.max} characters.`, "warn"); return drawRunes(host); }
+        if (res.skip) return setStatus("That rune's name can't be written on this disc.", "err");
+        setStatus(res.copies > 1
+          ? `Renamed — written to all ${res.copies} copies, so the spell it grants is renamed too.`
+          : "Renamed.", "ok");
+        drawRunes(host);
+      };
+    });
     // In-place rune menu text. Writes RUNE_TBL's copy — the one the game reads — and
     // setDescText mirrors it onto the spell record's copy for the 20 attack runes.
     qa("input.rdesc", host).forEach((el) => {
@@ -6563,7 +6645,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       applySpell(i, { statusMask: m }, false);
       RUNE_FX_OPEN.add(i); drawRunes(host);
     }));
-    wireRefTabs(host);
   }
 
   // ---- Skills browser --------------------------------------------------------
@@ -6682,7 +6763,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // references resolve fine.
   const REF_MODES = [
     ["items", "Items", () => Object.keys(REF.items).length, drawItemsRef],
-    ["runes", "Runes", () => runeIds().length, drawRunes],
     ["classes", "Classes", () => CLASS_TYPES, drawClassesRef],
     ["skills", "Skills", () => Object.keys(REF.skills).length, drawSkillsRef],
     ["sources", "Item sources", () => Object.keys((REF.itemSources && REF.itemSources.items) || {}).length, drawSources],
