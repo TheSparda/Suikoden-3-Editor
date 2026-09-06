@@ -69,9 +69,10 @@ async function newPage(viewport) {
   await page.addInitScript(fakeHandle());
   return page;
 }
-// The full-screen boot gate covers the mode tabs until Pyodide is up, and these tests abort
-// the Pyodide CDN on purpose — so take the gate down first. That button exists for real users
-// too: the ISO editor needs no Python. web/tests/boot-gate.mjs is what tests the gate itself.
+// The boot gate covers the save loader card until Pyodide is up, and these tests abort the
+// Pyodide CDN on purpose, so it would sit there for the whole run. It no longer covers the
+// mode tabs — clicking through to the ISO editor works with it up — but taking it down keeps
+// these tests off the gate's geometry entirely. web/tests/boot-gate.mjs tests the gate itself.
 async function dismissBoot(page) {
   const b = await page.$("#bootHide");
   if (b) await b.click().catch(() => {});   // may have self-closed already (stubbed engine)
