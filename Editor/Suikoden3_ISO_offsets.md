@@ -461,8 +461,29 @@ DRIFTS and produced wrong results (e.g. "Medicine D :: Performs an accidental
 attack") — so they are intentionally left blank rather than shown incorrectly.
 Correct-or-blank, never wrong.
 
+## Gear +0x08 is a price TIER, not potch (2026-09-06)
+The field the gear record carries at +0x08 was labelled "price" and shown as potch by the
+Shops and Gear tabs — which printed "Mole Armor · 3p". It is an index into the **shared
+15-step price ladder** at 0x3C963C, and the indexing is **1-based**:
+
+    01773390  lui   $v0, 0x198          ; the price routine's ladder case
+    01773394  sll   $v1, $s0, 2         ; tier * 4
+    01773398  addiu $v0, $v0, 0x1e38    ; 0x1981E38 == ladder VA (0x1981E3C) - 4
+    0177339C  addu  $v1, $v1, $v0
+    017733A4  lw    $v0, ($v1)          ; ladder[tier - 1]
+
+Corroboration: the field only ever holds 2..5 across all 156 records in the band (300 / 600 /
+1500 / 2700 potch), the routine's own bounds check is `bgez $s0` + `slti $s0, 0xe`, and it
+otherwise calls the assert at 0x1712238. Rune records are different — the u32 at +0x0C there
+is real potch (600, 1200, 1800 … max 17000). Mole Armor (id 194) is tier 3 = **600 potch**,
+which is what Dominic charges you to join.
+
+`shopPrice()` in web/iso.js resolves the tier through the ladder, and the Gear tab labels the
+field "Price tier" with the resolved potch beside it. Editor/build_recruit_needs.py uses the
+same resolution to price the one recruit errand that is a purchase.
+
 ## Equipment effects — mapped + editable (2026-08-09)
-Gear record (stride 0x44): desc ptr +0x00, price u32 +0x08, DEF u16 +0x10,
+Gear record (stride 0x44): price TIER u32 +0x08 (see above), desc ptr +0x00, DEF u16 +0x10,
 name ptr +0x40. Effect slots: up to 5, each 8 bytes at +0x14,+0x1C,+0x24,+0x2C,+0x34
 = (type u16, value u16, skill_id u16, pad u16). Effect types (verified vs
 descriptions across 148 gear records):
