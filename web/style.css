@@ -200,6 +200,15 @@ input.search, input.picker-search {
 .starstbl .miss { color:var(--mut); font-size:12px; white-space:nowrap; }
 .starstbl tr.howrow td { padding-top:0; border-top:0; }
 .howto { color:var(--mut); font-size:11px; line-height:1.4; max-width:70ch; }
+/* what a how-to makes you bring: the item's real source, the potch against your purse, the
+   star you need along first. ✓/✗ marks the ones this save can already answer. */
+.needs { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:4px; max-width:80ch; }
+.needlbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); }
+.need { font-size:11px; line-height:1.35; color:var(--ink); border:1px solid var(--line);
+  border-radius:6px; padding:2px 7px; background:var(--input-bg); }
+.need.n-gate { font-style:italic; color:var(--mut); }
+.need.short { border-color:var(--warnbd); color:var(--warn); }
+.need .ok, .need .miss { font-size:11px; }
 /* team pills: single-letter team badges (Hugo/Chris/Geddoe/Thomas/Shared) */
 .tpill { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:5px; font-size:11px;
   font-weight:700; color:var(--accink); border:1px solid transparent; }
