@@ -610,8 +610,10 @@ function showSub() {
       `Team only matters before the parties merge (Flame Champion); after that it's cosmetic. Changes are staged until you Apply.`;
     drawRecruit();
   } else if (SUB === "stars") {
-    $("#subhint").innerHTML = `Recruitment completion across the <b>108 Stars of Destiny</b>. ` +
-      `Filter to <b>missing</b> to see who's left, with the guide's <i>how-to-recruit</i> for each optional star. ` +
+    $("#subhint").innerHTML = `Recruitment completion across the <b>108 Stars of Destiny</b>, in the ` +
+      `<b>recruitment guide's order</b> — the order you can actually get them in — grouped into that ` +
+      `order's stages, each with its own progress. Filter to <b>missing</b> to see who's left, with the ` +
+      `guide's <i>how-to-recruit</i> for each optional star. ` +
       `Team pills show which protagonist(s) a recruited star is on (a star can be on several at once).`;
     drawStars();
   } else if (SUB === "party") {
@@ -809,15 +811,42 @@ let RTEAM = "Hugo";                 // default team applied when a character is 
 let STARS_FILTER = "missing";       // 108-Stars dashboard: all | recruited | missing
 let STARS_KIND = "all";             // all | optional | story
 let RECRUIT_META = null;            // name -> {auto, how}: story auto-join vs optional recruit
+// The Suikosource recruitment guide's own table: {phases, chars:{name -> {n, star, how, phase}},
+// extras}. It is what puts the 108-Stars checklist in recruitment order instead of roster order.
+let RECRUIT_ORDER = null;
+let STARS_COLLAPSED = {};           // guide stage key -> folded away in the checklist?
 async function loadRecruitMeta() {
   if (RECRUIT_META) return RECRUIT_META;
   try { RECRUIT_META = await (await fetch("../Editor/s3_recruit_meta.json")).json(); }
   catch (e) { RECRUIT_META = {}; }   // story/optional shading just stays off if the file is missing
   return RECRUIT_META;
 }
-// Story characters (Automatic: Yes in the guide) auto-join — recruiting/un-recruiting them
-// manually is pointless and can soft-lock. This tool is meant for OPTIONAL recruits.
-const isStoryAuto = (name) => !!(RECRUIT_META && RECRUIT_META[name] && RECRUIT_META[name].auto);
+async function loadRecruitOrder() {
+  if (RECRUIT_ORDER) return RECRUIT_ORDER;
+  try { RECRUIT_ORDER = await (await fetch("../Editor/s3_recruit_order.json")).json(); }
+  catch (e) { RECRUIT_ORDER = { phases: [], chars: {}, extras: [] }; }   // falls back to one flat list
+  return RECRUIT_ORDER;
+}
+// Story characters auto-join — recruiting/un-recruiting them manually is pointless and can
+// soft-lock. This tool is meant for OPTIONAL recruits.
+//
+// Two guides speak to this and they disagree about eleven characters, so a star only counts as
+// story when BOTH agree: the character FAQ's "Automatic: Yes" field, and the stage the
+// recruitment guide files them under. Where they differ the missable reading wins — Rhett and
+// Wilder, whom you have to go and talk to, and Geddoe's Chapter 5 group, who leave for good if
+// you run from that fight, stay on the worklist rather than being faded out as "arrives anyway".
+const guideStar = (name) => (RECRUIT_ORDER && RECRUIT_ORDER.chars && RECRUIT_ORDER.chars[name]) || null;
+function guideStageKind(name) {
+  const g = guideStar(name);
+  const p = g && (RECRUIT_ORDER.phases || []).find((ph) => ph.key === g.phase);
+  return p ? p.kind : "";
+}
+function isStoryAuto(name) {
+  const inMeta = !!(RECRUIT_META && name in RECRUIT_META);
+  const metaAuto = inMeta ? !!RECRUIT_META[name].auto : true;    // unknown to the FAQ: no veto
+  const kind = guideStageKind(name);
+  return kind ? (kind === "story" && metaAuto) : (inMeta && metaAuto);
+}
 const recruitHow = (name) => (RECRUIT_META && RECRUIT_META[name] && RECRUIT_META[name].how) || "";
 
 // recruit staging math lives in recruit-core.js (shared with the Node tests); thin wrappers
@@ -877,22 +906,41 @@ function charByRoster(ri) { return saves[curSlot].characters.find((c) => c.roste
 // A recruitment-completion tracker over the Stars of Destiny: who's in, who's left,
 // which team(s) each recruited star sits on, and the guide's how-to for missing
 // optional stars. Reflects staged (un)recruits live, so it doubles as a worklist.
+//
+// It is laid out in the Suikosource *recruitment guide's* order — the order you can actually
+// get people in — cut into that order's stages (Chapter 1's parties, the Budehuc-era optional
+// recruits, each story block, the Chapter 6 four). Roster order, which is what the save
+// happens to store, tells a player nothing about what to do next; guide order reads top to
+// bottom as a walkthrough. The ordering/grouping math is in recruit-core.js (unit-tested);
+// this half is the panel. Without s3_recruit_order.json the table still renders, as one
+// ungrouped list — the checklist never depends on the guide file being there.
 function drawStars() {
   if (RECRUIT_META === null) loadRecruitMeta().then(() => { if (SUB === "stars") drawStars(); });
+  if (RECRUIT_ORDER === null) loadRecruitOrder().then(() => { if (SUB === "stars") drawStars(); });
   const s = saves[curSlot];
-  // The tracked set = characters the guide knows as recruitable stars (in the meta),
-  // plus anyone actually recruited in this save (covers roster/name drift either way).
-  const stars = s.characters.filter((c) => (RECRUIT_META && c.name in RECRUIT_META) || c.recruited);
-  const rows0 = stars.map((c) => ({ c, st: recState(c), story: isStoryAuto(c.name), how: recruitHow(c.name) }));
+  // The tracked set = characters either guide knows as recruitable stars, plus anyone actually
+  // recruited in this save (covers roster/name drift either way).
+  const known = (c) => (RECRUIT_ORDER && RECRUIT_ORDER.chars && c.name in RECRUIT_ORDER.chars)
+    || (RECRUIT_META && c.name in RECRUIT_META);
+  const stars = s.characters.filter((c) => known(c) || c.recruited);
+  // guide order (n/star/phase land on each row) — everything below reads in this order
+  const rows0 = RecruitCore.orderStars(
+    stars.map((c) => ({ c, st: recState(c), story: isStoryAuto(c.name), how: recruitHow(c.name) })),
+    RECRUIT_ORDER);
 
-  const total = rows0.length;
-  const got = rows0.filter((x) => x.st.recruited).length;
+  // The headline is the 108 — count only rows the guide lists as Stars of Destiny, so a roster
+  // entry that isn't one (Lulu) can't inflate it. Still listed below, just under its own stage.
+  const scored = rows0.filter((x) => x.n !== null);
+  const counted = scored.length ? scored : rows0;    // no guide file: fall back to everything tracked
+  const total = counted.length;
+  const got = counted.filter((x) => x.st.recruited).length;
   const pct = total ? Math.round((got / total) * 100) : 0;
-  const missingOpt = rows0.filter((x) => !x.st.recruited && !x.story).length;
+  const missingOpt = counted.filter((x) => !x.st.recruited && !x.story).length;
   const multi = rows0.filter((x) => x.st.recruited && x.st.teams.length > 1).length;
   const { counts } = RecruitCore.teamCounts(stars, RECRUIT);
+  const next = RecruitCore.nextStar(rows0);      // first optional star still missing, in guide order
 
-  const rows = rows0.filter((x) => {
+  const shown = rows0.filter((x) => {
     if (STARS_FILTER === "recruited" && !x.st.recruited) return false;
     if (STARS_FILTER === "missing" && x.st.recruited) return false;
     if (STARS_KIND === "optional" && x.story) return false;
@@ -900,12 +948,13 @@ function drawStars() {
     if (SEARCH && !x.c.name.toLowerCase().includes(SEARCH) && String(x.c.rosterIndex) !== SEARCH) return false;
     return true;
   });
+  const groups = RecruitCore.groupStars(rows0, shown, RECRUIT_ORDER);
 
   const teamPills = (st) => st.teams.length
     ? st.teams.map((t) => `<span class="tpill t${t[0]}">${t[0]}</span>`).join("")
     : `<span class="tpill tS" title="shared / story">S</span>`;
 
-  const body = rows.map((x) => {
+  const starRow = (x) => {
     const rec = x.st.recruited;
     const kind = x.story ? `<span class="story-tag" title="Joins automatically via the story">⚠ story</span>` : `<span class="opt-tag">optional</span>`;
     const status = rec ? `<span class="ok">✓ recruited</span>` : `<span class="miss">✗ missing</span>`;
@@ -914,26 +963,54 @@ function drawStars() {
       ? `<button class="chip mini" data-starsadd="${x.c.rosterIndex}" title="Stage recruit (default team: ${RTEAM || "shared"})">＋ recruit</button>` : "";
     const dirty = (x.c.rosterIndex in RECRUIT) ? "dirtyrow " : "";
     const main = `<tr class="${dirty}${x.story ? "story-auto" : ""}">
+        <td class="sl ordn" title="roster slot #${x.c.rosterIndex}">${x.n === null ? "–" : x.n}</td>
         <td><span>${esc(x.c.name)}</span> ${kind}</td>
-        <td class="sl">#${x.c.rosterIndex}</td>
+        <td class="ty sod">${esc(x.star || "")}</td>
         <td>${status}</td>
         <td class="teamcell">${teamCell}</td>
         <td>${addBtn}</td>
       </tr>`;
-    // guide how-to spans the full table width so it reads cleanly at any pane size
-    const howRow = (!rec && !x.story && x.how)
-      ? `<tr class="${dirty}howrow"><td colspan="5"><div class="howto">${esc(x.how)}</div></td></tr>` : "";
+    // The recruitment guide's how-to is the one written for this exact job; the character FAQ's
+    // blurb is the fallback for anyone the guide doesn't cover. Full table width so it reads
+    // cleanly at any pane size.
+    const how = (!rec && !x.story) ? (x.guideHow || x.how) : "";
+    const howRow = how
+      ? `<tr class="${dirty}howrow"><td colspan="6"><div class="howto">${esc(how)}</div></td></tr>` : "";
     return main + howRow;
-  }).join("") || `<tr><td colspan="5" class="muted">no stars match this filter</td></tr>`;
+  };
+
+  // A stage header: its own progress, so "Chapter 4 story 10/10, optional 6/14" is readable at
+  // a glance, and a fold so a finished stretch can be pushed out of the way.
+  const groupHead = (g) => {
+    const off = !!STARS_COLLAPSED[g.key];
+    const gpct = g.total ? Math.round((g.got / g.total) * 100) : 0;
+    const extra = g.extras.length
+      ? ` <span class="phextra" title="${esc(g.extras.map((e) => e.how).join(" "))}">+ ${g.extras.length} non-star helper${g.extras.length === 1 ? "" : "s"}: ${esc(g.extras.map((e) => e.name).join(", "))}</span>` : "";
+    return `<tr class="phaserow${off ? " off" : ""}"><td colspan="6">
+        <button class="phasetog" data-starsp="${g.key}" aria-expanded="${off ? "false" : "true"}">${off ? "▸" : "▾"} <b>${esc(g.label)}</b></button>
+        <span class="phprog">${g.got}/${g.total}</span>
+        <span class="phbar"><span style="width:${gpct}%"></span></span>
+        <div class="phnote">${esc(g.note || "")}${extra}</div>
+      </td></tr>`;
+  };
+
+  const body = groups.map((g) =>
+    groupHead(g) + (STARS_COLLAPSED[g.key] ? "" : g.rows.map(starRow).join(""))
+  ).join("") || `<tr><td colspan="6" class="muted">no stars match this filter</td></tr>`;
 
   const fbtn = (v, l) => `<button class="chip${STARS_FILTER === v ? " on" : ""}" data-starsf="${v}">${l}</button>`;
   const kbtn = (v, l) => `<button class="chip${STARS_KIND === v ? " on" : ""}" data-starsk="${v}">${l}</button>`;
+  const nextUp = next
+    ? `<div class="nextup">Next in guide order: <b>${esc(next.c.name)}</b>
+         <span class="ordn">#${next.n === null ? "?" : next.n}</span>
+         <span class="muted">${esc(next.guideHow || next.how || "")}</span></div>` : "";
 
   $("#subview").innerHTML = `
     <div class="starshead">
       <div class="starsnum"><b>${got}</b> / ${total} <span class="muted">stars recruited</span></div>
       <div class="starsbar"><span style="width:${pct}%"></span></div>
       <div class="muted" style="font-size:12px">${pct}% · ${missingOpt} optional star${missingOpt === 1 ? "" : "s"} still gettable · ${multi} on multiple teams</div>
+      ${nextUp}
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;margin:2px 0 4px">
       <span class="muted">Team spread:</span>
@@ -946,11 +1023,20 @@ function drawStars() {
     <div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0 10px">
       <span class="row" style="gap:4px">${fbtn("all", "All")}${fbtn("recruited", "Recruited")}${fbtn("missing", "Missing")}</span>
       <span class="row" style="gap:4px">${kbtn("all", "Any")}${kbtn("optional", "Optional")}${kbtn("story", "Story")}</span>
+      <button class="chip" id="starsfold">${groups.every((g) => STARS_COLLAPSED[g.key]) ? "Expand all" : "Collapse all"}</button>
     </div>
-    <table class="invtbl starstbl"><thead><tr><th>Star</th><th>#</th><th>Status</th><th>Team(s)</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+    <table class="invtbl starstbl"><thead><tr><th class="ordn" title="position in the Suikosource recruitment guide">#</th><th>Character</th><th>Star</th><th>Status</th><th>Team(s)</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
 
   $$("[data-starsf]").forEach((b) => (b.onclick = () => { STARS_FILTER = b.dataset.starsf; drawStars(); }));
   $$("[data-starsk]").forEach((b) => (b.onclick = () => { STARS_KIND = b.dataset.starsk; drawStars(); }));
+  $$("[data-starsp]").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.starsp; STARS_COLLAPSED[k] = !STARS_COLLAPSED[k]; drawStars();
+  }));
+  $("#starsfold").onclick = () => {
+    const allOff = groups.every((g) => STARS_COLLAPSED[g.key]);
+    groups.forEach((g) => { STARS_COLLAPSED[g.key] = !allOff; });
+    drawStars();
+  };
   $$("[data-starsadd]").forEach((b) => (b.onclick = () => {
     const c = charByRoster(+b.dataset.starsadd); setRecruit(c, true, RTEAM ? [RTEAM] : []); drawStars();
   }));
