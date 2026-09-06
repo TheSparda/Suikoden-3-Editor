@@ -154,6 +154,41 @@ ROSTER_IDS = [
 PARTY_OFF   = 0x3216
 PARTY_SLOTS = 6
 
+# ...and positions 7-12 of the SAME table hold the MOUNT of positions 1-6.
+#
+# Not a guess. `PartyPut` (0x16FF8xx) reads the character's assigned horse from their list2
+# record at +0x66 and places it at party position `pos + 6`; `HorseActorPos` (0x16FFEE0)
+# returns `pos + 6` for positions 1..6 when that field is set; and the script actor handle
+# bit 0x4000 resolves to "the actor six slots along" (decoder 0x17B5A40, records are 0x40
+# bytes, +0x180 = 6 records). See docs/MOUNT_SYSTEM_RESEARCH.md S14.
+#
+# Confirmed against the extracted save corpus: in `gamedata`/`gamedata_u04` the party is
+# Hugo, Fubar, Chris, Geddoe, Thomas, Emily and position 9 holds 309 — Chris sits at
+# position 3, her horse `s2um` at 3+6. The value is a MODEL id (308 zkum, 309 s2um), not a
+# party id, because the actor is built from it directly.
+PARTY_MOUNT_SLOTS = 6
+PARTY_MOUNT_OFF   = PARTY_OFF + PARTY_SLOTS * 2      # 0x3222
+
+# ...and positions 13-15 are a RESERVE list at 0x322E, which this editor does not write.
+# It matters for one reason: `AddPartyMember` (0x16FF6D8) bails out if the character it is
+# asked to add is ALREADY in the reserve list or in positions 1-6, and otherwise looks for a
+# free byte in the formation table at 0x3240 — `beqz $s1` returns 0 when all six are taken.
+# So a story join into a full party does nothing, and the "X joined your party!" line is a
+# separate script instruction that plays anyway. Real saves carry ids here (102, 134, 129 in
+# the corpus). Left alone deliberately: nothing is known about what puts a character in it.
+PARTY_RESERVE_OFF   = 0x322E
+PARTY_RESERVE_SLOTS = 3
+
+# Model id -> what it is, for display. Only 308/309 are reachable in a stock game: the
+# consumer clamps with `(v - 308) < 2` unsigned. The rest are the other ids the ground-ride
+# saddle-offset table (GetRiderOffset, 0x16E85E8) knows about, so a patched disc can show
+# one here and it should still be named rather than printed as a bare number.
+MOUNT_MODEL_NAMES = {
+    308: "Zexen-knight horse", 309: "Chris's horse", 325: "Karaya horse",
+    353: "Karaya horse #2", 42: "Ruby", 209: "Le Buque horse (mskn)",
+    359: "Le Buque horse", 360: "Le Buque horse #2",
+}
+
 # ---------------------------------------------------------------------------
 # The party id space. This is a THIRD numbering, and getting it wrong is invisible:
 # both the wrong read and the wrong write are self-consistent, so the editor shows you
@@ -261,11 +296,19 @@ def _rebuild_formation(b, old_party):
     new_ids = [p for p in new_party if p]
     # Real saves keep their members in slots 0..n-1; a gap left mid-list is not a shape the
     # game builds, and it would make "member index" ambiguous. Compact before deriving.
+    #
+    # Each member's MOUNT lives six positions along (see PARTY_MOUNT_SLOTS), so compacting
+    # the members alone would leave a horse pointing at whoever slid into that slot — Chris
+    # dropped from slot 3 would hand her horse to the next member. Carry the pairs together.
+    mounts = [struct.unpack_from("<H", b, PARTY_MOUNT_OFF + k * 2)[0]
+              for k in range(PARTY_MOUNT_SLOTS)]
+    kept = [(pid, mounts[k] if k < len(mounts) else 0)
+            for k, pid in enumerate(new_party) if pid]
     for k in range(PARTY_SLOTS):
-        struct.pack_into("<H", b, PARTY_OFF + k * 2, new_ids[k] if k < len(new_ids) else 0)
+        struct.pack_into("<H", b, PARTY_OFF + k * 2, kept[k][0] if k < len(kept) else 0)
+    for k in range(PARTY_MOUNT_SLOTS):
+        struct.pack_into("<H", b, PARTY_MOUNT_OFF + k * 2, kept[k][1] if k < len(kept) else 0)
     old_form = list(b[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS])
-    if len(old_ids) == len(new_ids) and formation_is_valid(new_party, old_form):
-        return                      # same size, table already consistent -> leave the order alone
     # old 1-based member index -> new 1-based member index, for the members that survived.
     # Matched by identity in order of occurrence, so a party holding the same character twice
     # (which the health check flags, but the file can hold) still pairs up one-to-one.
@@ -277,17 +320,25 @@ def _rebuild_formation(b, old_party):
                 survived[i] = j
                 remaining.pop(k)
                 break
-    order, seen = [], set()
-    for v in old_form:              # walk positions, keeping the surviving members' order
-        j = survived.get(v)
-        if j and j not in seen:
-            order.append(j); seen.add(j)
-    for j in range(1, len(new_ids) + 1):
-        if j not in seen:
-            order.append(j); seen.add(j)
+    # Update the table IN PLACE rather than re-deriving it. The six entries are battle
+    # positions, and the game writes reordered ([1,3,4,2,6,5]) and spread ([1,0,3,0,2,0])
+    # layouts of its own — a real card has [1,0,3,0,2,0] for a three-member party. Rebuilding
+    # densely from position 0, which this used to do on any size change, silently flattened
+    # that. So: everyone who survives keeps the position they were standing in, a removed
+    # member's position is freed, and anyone new drops into the first free one. A stale entry
+    # pointing at a member who no longer exists maps to nothing and is cleared, which repairs
+    # the older-build tables that block story joins.
     form = [0] * FORMATION_SLOTS
-    for pos, j in enumerate(order[:FORMATION_SLOTS]):
-        form[pos] = j
+    for pos, v in enumerate(old_form):
+        j = survived.get(v)
+        if j and j not in form:
+            form[pos] = j
+    for j in range(1, len(new_ids) + 1):
+        if j in form:
+            continue
+        if 0 not in form:
+            break                       # no free position; cannot happen for <= 6 members
+        form[form.index(0)] = j
     b[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS] = bytes(form)
 
 
@@ -961,6 +1012,23 @@ def decode_party(gamedata):
     return [struct.unpack_from("<H", gamedata, PARTY_OFF + k*2)[0] for k in range(PARTY_SLOTS)]
 
 
+def decode_party_mounts(gamedata):
+    """The mount staged for each active-party position, as MODEL ids (0 = none).
+
+    Index k is the mount of party slot k. See the PARTY_MOUNT_SLOTS comment for why the
+    two are six apart, and `mount_model_name` for turning a value into a label.
+    """
+    return [struct.unpack_from("<H", gamedata, PARTY_MOUNT_OFF + k*2)[0]
+            for k in range(PARTY_MOUNT_SLOTS)]
+
+
+def mount_model_name(model_id):
+    """A label for a mount model id, or None for 0/unknown."""
+    if not model_id:
+        return None
+    return MOUNT_MODEL_NAMES.get(model_id) or f"model {model_id}"
+
+
 # Item-id category boundaries (from the herrvillain "Item Digits" grouping + the ISO's
 # own item table): consumables/curatives < 0xA0, wearable equipment 0xA0-0x1FF, and
 # 0x200+ are the "key/valuable" goods — seeds, medals, recipes, trade items, old books,
@@ -1106,6 +1174,8 @@ def decode_save(gamedata, meta=None):
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
             "party": decode_party(gamedata),
+            "partyMounts": decode_party_mounts(gamedata),
+            "formation": decode_formation(gamedata),
             "partyFormation": decode_formation(gamedata),
             "characters": chars,
             "inventory": inv,
