@@ -645,8 +645,9 @@ Editor/
   s3patch.py        ISO reader library + verified field tables. Its one consumer is
                     build_item_desc_extra.py; it is not a second editor.
   build_*.py        regenerate the guide reference data (skills, caps, growth, rune slots,
-                    bestiary, recruit flags, recruitment order and prerequisites, rune/food descriptions, room
-                    and sub-file indexes) from a pristine disc + the saved guide text
+                    bestiary, recruit flags, recruitment order and prerequisites, rune/food
+                    descriptions, room, sub-file and BGM indexes) from a pristine disc + the
+                    saved guide text
   suikosource/      saved Suikosource guide text the generators parse
   s3_*.json / *_ids.txt    verified id->name / description / guide reference data
   Suikoden3_ISO_offsets.md the reverse-engineering notebook — the source of truth for offsets
