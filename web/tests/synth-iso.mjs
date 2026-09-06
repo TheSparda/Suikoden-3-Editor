@@ -23,7 +23,7 @@ export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [
 // Rune item table (iso.js RUNE_TBL): indexed by ITEM id, name ptr @+0 / desc ptr @+4. It is
 // the only source of text for the passive support runes, so the fixture plants one of those
 // (Balance) alongside the magic runes in the character's slots.
-export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04 };
+export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, spells: 0x18 };
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
 // War-battle class reference (iso.js CLASS_POOL / CLASS_TBL): a pool of 78 string pointers and
 // a 43x47 table of (type, modifier) pool indices. Indexed [skillA-1][skillB-1]; column == skill id.
@@ -459,11 +459,20 @@ export function buildSynthIso() {
   // also carry a "Grants <spells>" tail) plus Balance, a passive support rune with no spell
   // entry anywhere — before the rune table was read it showed nothing at all in the picker.
   const balance = catItems("Runes").find((r) => r.name === "Balance");
+  // Each row also gets the four spell slots the real record carries at +0x18 — 1-based spell
+  // numbers, 0 = free. The three counts the disc actually uses are all represented, because
+  // they are three different things to render: full (four spells), partly filled (an empty
+  // slot mid-record) and the Kite shape (one spell, three slots free) that the slot editor
+  // exists for. Balance keeps four zeros — a passive rune grants nothing.
   const runeRows = [...runes.map((r, i) => ({ ...r, desc: `Rune slot ${i} text.` })),
-    { ...balance, desc: "Maintains balance." }];
+    { ...balance, desc: "Maintains balance.", spells: [0, 0, 0, 0] }];
+  runeRows[0].spells = [1, 2, 3, 4];        // all four, like a magic rune
+  runeRows[1].spells = [2, 3, 0, 0];        // two spells, two free
+  runeRows[2].spells = [1, 0, 0, 0];        // one spell, three free — Kite's shape
   for (const r of runeRows) {
     const o = RUNE_TBL.off + r.id * RUNE_TBL.stride;
     w32(o + RUNE_TBL.name, put(r.name)); w32(o + RUNE_TBL.desc, put(r.desc));
+    (r.spells || [0, 0, 0, 0]).forEach((gid, k) => w16(o + RUNE_TBL.spells + k * 2, gid));
   }
   // ---- duplicated description fixture (issue #11) -----------------------------------------
   // On a real disc 27 descriptions are stored TWICE, at two addresses reached from two
@@ -494,6 +503,9 @@ export function buildSynthIso() {
     // spell its own allocation of the rune's name — same text, different address.
     const spellNameCopy = put(twinRune.name);
     w32(so + 8, spellNameCopy);
+    // ...and the rune points AT that spell, the way every real attack rune does: slot 1 holds
+    // its own attack (1-based, so TWIN_SPELL + 1) and the other three are free.
+    w16(o + RUNE_TBL.spells, TWIN_SPELL + 1);
     mapping.twin = { text: TWIN_TEXT, rune: twinRune,
       runeOff: runeCopy - ELF_VADDR + ELF_BASE, spellOff: spellCopy - ELF_VADDR + ELF_BASE, spellIdx: TWIN_SPELL,
       runeNameOff: runeNameCopy - ELF_VADDR + ELF_BASE, spellNameOff: spellNameCopy - ELF_VADDR + ELF_BASE };
