@@ -1797,6 +1797,41 @@ head("Shops — a gap in a stock list is called out");
   await page.context().close();
 }
 
+// A dish's NAME is one record behind the data it names, so the row for dish i must show dish
+// i's own heal — not the previous dish's. That was wrong from v12 until now: the tab paired
+// each name with the block it sat in, so editing "Fried Ice Cream" wrote Tomato Ice Cream.
+// The fixture plants two dishes precisely so an off-by-one lands on the other one instead of
+// on zeroes, which a single-row fixture would have hidden.
+head("Food — each dish's name lines up with its own record");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
+  const grid = await page.evaluate(() => [...document.querySelectorAll("#isoView tbody tr")].slice(0, 2).map((r) => ({
+    name: r.querySelector("input.fdname")?.value ?? r.cells[1].textContent.trim(),
+    heal: r.querySelector('input[data-kind="heal"]')?.value,
+    desc: r.querySelector("input.fddesc")?.value,
+  })));
+  check("dish 0 is Medicine, healing 100", grid[0] && grid[0].name === "Medicine" && grid[0].heal === "100",
+    JSON.stringify(grid));
+  check("...with its own description", grid[0] && grid[0].desc === "Heals 100HP", JSON.stringify(grid));
+  check("dish 1 is Antitoxin, healing 10 — not Medicine's numbers",
+    grid[1] && grid[1].name === "Antitoxin" && grid[1].heal === "10" && grid[1].desc === "Cures poison",
+    JSON.stringify(grid));
+
+  // Renaming a dish: in place, capped, refused when empty — same contract as gear and runes.
+  const nm = "input.fdname >> nth=0";
+  check("a dish can be renamed", await page.isVisible(nm));
+  check("the rename is capped to the on-disc slot (8)", +(await page.getAttribute(nm, "maxlength")) === 8);
+  await page.fill(nm, "Potion"); await page.dispatchEvent(nm, "change"); await page.waitForTimeout(80);
+  check("the new name sticks", (await page.inputValue(nm)) === "Potion");
+  await page.fill(nm, ""); await page.dispatchEvent(nm, "change"); await page.waitForTimeout(80);
+  check("an empty name is refused", (await page.inputValue(nm)) === "Potion");
+  const saved = await save(page);
+  check("the rename is written NUL-padded over the old bytes",
+    [...Array(8)].map((_, i) => saved.at(mapping.food.nameOff + i)).join(",") === [80, 111, 116, 105, 111, 110, 0, 0].join(","),
+    [...Array(8)].map((_, i) => saved.at(mapping.food.nameOff + i)).join(","));
+  await page.context().close();
+}
+
 head("Food description — editable, auto-updates on heal, length-capped");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
