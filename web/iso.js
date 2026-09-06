@@ -2977,9 +2977,22 @@
     return m ? m.name : `Location ${loc} (unidentified)`;
   };
   // Buy price, when the item has a gear record. Consumables have none, so they show "—".
+  //
+  // The gear field is a price TIER, not potch: it only ever holds 2..5 across the whole band,
+  // and the disc's price routine (VA 0x1773390) reads `ladder[tier - 1]` from the 15-step
+  // shared ladder — it materialises the ladder's address minus one word, then indexes by
+  // tier*4, which is the 1-based idiom. So resolve it rather than printing a "price" of 3.
+  function priceLadder() {
+    const [base, n, w] = PRICE_LADDER;
+    return Array.from({ length: n }, (_, i) => readW(base + i * w, w));
+  }
+  function tierPotch(tier) {
+    const lad = priceLadder();
+    return tier >= 1 && tier <= lad.length ? lad[tier - 1] : null;
+  }
   function shopPrice(id) {
     const g = id && scanGear()[id];
-    return g ? readW(g + GEAR.price, 4) : null;
+    return g ? tierPotch(readW(g + GEAR.price, 4)) : null;
   }
 
   function drawShops(host) {
@@ -4912,10 +4925,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const effs = GEAR.effs.map((eo) => effectSlotHTML(nm, base, eo)).join("");
       rows.push(`<details class="char" data-base="${base}"><summary><span class="chev">▸</span>
           <span class="nm">${esc2(nm)}</span><span class="muted">${hex(iid, 3)}</span>
-          <span class="lv">DEF ${r16(def)} · ${r32(price)}p</span></summary>
+          <span class="lv">DEF ${r16(def)} · tier ${r32(price)}${tierPotch(r32(price)) !== null ? ` = ${tierPotch(r32(price))}p` : ""}</span></summary>
         <div class="char-body"><div class="grid">
           <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
-          <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
+          <label class="field"><span>Price tier <span class="dim">1-15 on the shared ladder${tierPotch(r32(price)) !== null ? `, ${tierPotch(r32(price))} potch` : ""}</span></span>
+            <input type="number" class="gr" min="0" max="15" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price tier"></label>
         </div>
         <label class="field" style="margin-top:8px"><span>Name ${slotNoteHTML(nptr)}</span>
           <input type="text" class="ge-name" maxlength="${nameMax}" value="${esc2(nm)}" data-nptr="${nptr}" data-iid="${iid}" data-g="${esc2(nm)}"></label>
