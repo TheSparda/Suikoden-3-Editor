@@ -166,7 +166,8 @@ original byte length), **Balance** (idempotent hard-mode multiplier presets), **
 (a global **random-encounter rate** as a plain percentage, plus the three per-movement
 multipliers it is made of — see below), **Enemies** (the full
 per-area enemy editor — stats, rewards, drops, bulk multipliers, and each zone's spawns &
-formations; see below), **War** (every war/major-battle unit on the disc; see below) and
+formations; see below), **War** (every war/major-battle unit on the disc, per unit or in bulk;
+see below) and
 **Reference** — the read-only half, with sub-tabs for item and skill id → name lists, **Item
 sources** (where each item comes from), **Mounts** (the decoded mount system — rider and mount
 capability, which areas bundle a mount, and the mechanics that can't be exposed as fields) and
@@ -433,10 +434,21 @@ Suikosource bestiary at 97%+ on potch/SP), and lets you edit per variant:
 
 **Bulk tuning** sits at the top of the tab: multipliers for HP / stats / level / EXP / SP /
 potch / drop weights, applied to every variant (or only the packs matching the filter box —
-type `LAST` to buff just the final dungeon). Every value recomputes from the disc's original
-numbers, so Apply is idempotent: running it twice changes nothing, and ×3 after ×2 gives ×3
-of the original, not ×6. Fields left at ×1 aren't touched, and a Reset button returns the
-scope to the disc's own values.
+type `LAST` to buff just the final dungeon). Every value recomputes from a fixed base, so
+Apply is idempotent: running it twice changes nothing, and ×3 after ×2 gives ×3 of the
+original, not ×6. Fields left at ×1 aren't touched, and a Reset button returns the scope to
+the disc's own values.
+
+That base is normally the **stock disc's** numbers, not the file's. The pack index is built
+from a pristine USA disc and stores each variant's stock lv/hp/stats/rewards/drops next to
+its offsets, so re-opening an ISO you already tuned recovers what was done to it: a whole
+field group sitting at one consistent ratio *is* the multiplier that was applied. The tab
+says so ("already tuned: HP ×1.2"), prefills the boxes with it, and keeps multiplying the
+stock numbers — so re-applying ×1.2 stays ×1.2 instead of stacking to ×1.44, and **Restore
+stock values** writes the original numbers back, which is the only way to undo a scale that
+is already saved into a file. On a disc the index doesn't describe (a different build, or
+values hand-edited outside a multiplier) the editor says so and falls back to this file's own
+values rather than writing someone else's numbers over yours.
 
 **Spawn zones & formations** turn the same tab into an encounter designer. Each map zone
 (shown under the game's own names — `mori_101`, `icew_105` …) has **spawn slots** (which
@@ -489,6 +501,18 @@ edited in the Save Editor instead; the RPGClassics army-skill list (Riding / Tac
 Valor / Control and rune skills per character) ships as a read-only reference, since war
 skills are embedded in code rather than data. War-unit edits ride the same machinery as
 everything else: staged, undoable, written to every copy, and exportable in a recipe.
+
+**Bulk tuning** works here too — the same engine as the Enemies tab, over the war half of the
+packs, with **HP / all 8 stats / level** multipliers (war battles pay no EXP/SP/potch and drop
+nothing, so those fields don't exist). Because the whole army you fight is in these records
+and yours is not, one Apply is the difficulty dial for every major battle in the game. Scope
+picks which half of the opposition moves: *all war units*, *packs matching filter* (one
+region's battles), *leader units only* — the boss units a war battle turns on, Leo/Franz/Ruby/
+Sarah and the unidentified `Unit #N` records — or *soldier tiers & war monsters only*, the
+generic Zexen/Karaya/Lizard/Duck/Mantor/Harmonian troops. Level alone is the gentlest knob;
+HP makes battles longer, the 8 stats make them harder. Everything else is as on the Enemies
+tab: idempotent, recomputed from the stock disc, prefilled from whatever the file is already
+carrying, and undoable with Restore stock values.
 
 **Guide overlays.** Fields show verified reference data inline: per-character skill caps and
 Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food

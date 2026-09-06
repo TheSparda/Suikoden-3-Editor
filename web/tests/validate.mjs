@@ -461,6 +461,24 @@ console.log("Guide overlays + xdelta:");
       "war spot-check: shared ETC pack has the 12-tier ZxnInf table");
     (/s3_war_units\.json/.test(iso) && /S3_TEST_WAR_UNITS/.test(iso) && /function drawWar/.test(iso) &&
       /\["war", "War"\]/.test(iso) ? ok : bad)("iso.js loads war units and renders the War tab");
+    // The War view's bulk tuner multiplies the STOCK numbers stored beside each offset and
+    // offers "Restore stock values" off the same field. A variant missing lv/hp/stats would
+    // silently fall back to this file's own values (compounding on re-apply), so the baseline
+    // has to be complete before the feature can be trusted.
+    { const wv = w.packs.flatMap((p) => p.enemies).flatMap((e) => e.variants);
+      const full = wv.filter((v) => Number.isFinite(v.lv) && Number.isFinite(v.hp)
+        && Array.isArray(v.stats) && v.stats.length === 8 && v.stats.every(Number.isFinite));
+      (full.length === wv.length ? ok : bad)(
+        `every war variant carries a stock lv/hp/8-stat baseline (${full.length}/${wv.length})`); }
+    // The bulk scopes split leaders from soldier tiers on the id boundary build_war_index.py
+    // documents (below 0x100 = the game's actor enum). Both sides must be populated, or one
+    // of the two scopes silently selects nothing.
+    { const ids = new Set(w.packs.flatMap((p) => p.enemies).map((e) => e.id));
+      const lead = [...ids].filter((i) => i < 0x100), troop = [...ids].filter((i) => i >= 0x100);
+      (lead.length && troop.length ? ok : bad)(
+        `war units split into leader and soldier scopes (${lead.length} leader ids, ${troop.length} soldier/monster ids)`); }
+    (/WAR_BULK/.test(iso) && /bulkCardHtml\(WAR_BULK/.test(iso) && /wireBulkCard\(WAR_BULK/.test(iso) ? ok : bad)(
+      "iso.js renders and wires the War bulk-tuning card");
     // Room index (per-area encounter rates). Same rules as the enemy index: every offset
     // must be on-disc and OUT of the ELF block, or the editor's in-block buffer would
     // double-edit it. Offsets must also be unique — two rows writing one byte desync.
