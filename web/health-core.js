@@ -228,11 +228,32 @@
           title: `The battle formation lists ${vals.length} member${vals.length === 1 ? "" : "s"}, but the party holds ${filled.length}`,
           detail: "The formation table at 0x3240 is what the game reads to build the party. " +
             "Where it disagrees with the party list, the extra members simply don't appear — " +
-            "no error, just empty slots. Saves edited by an older build of this editor have this.",
+            "no error, just empty slots. Saves edited by an older build of this editor have this. " +
+            "It also BLOCKS STORY JOINS: AddPartyMember (0x16FF758) looks for a free slot by " +
+            "scanning these six bytes, not the party list, so leftover entries make the game " +
+            "think the party is full even when it looks half empty — the character is never " +
+            "added and the \u201cthey joined\u201d line plays anyway. If someone who is supposed " +
+            "to rejoin never turns up, fix this first.",
           where: { sub: "party", search: "" },
           fix: { label: "Rebuild the formation",
                  ops: [{ kind: "party", slot: 0, value: eff.party[0] || 0 }] } });
       }
+    }
+    // A FULL party silently swallows story joins, and that is engine behaviour, not a bug
+    // in the save. AddPartyMember (0x16FF6D8) walks the six formation bytes at 0x3240 looking
+    // for a zero, and `beqz $s1` returns 0 when it finds none — no join, no message. The
+    // "X joined your party!" line is a separate script instruction that runs regardless, so
+    // the game cheerfully announces someone it did not add. Reported as a note, not an error:
+    // 6/6 is a legal party the game writes itself. It is the one thing to check first when a
+    // character who is "supposed to" rejoin never turns up.
+    if (filled.length >= 6) {
+      add({ id: "party-full", sev: "note", group: "Party",
+        title: "The party is full — a story character who joins now will be silently dropped",
+        detail: "The engine looks for a free slot in the formation table at 0x3240 and gives up " +
+          "if all six are taken, returning without adding anyone. The dialogue that says they " +
+          "joined is a separate instruction and still plays, so the join looks like it worked. " +
+          "If someone is due to rejoin (Fubar, for instance), leave a slot open before the scene.",
+        where: { sub: "party", search: "" } });
     }
     if (eff.partyLeader && filled.length && !filled.includes(eff.partyLeader)) {
       // This is a softlock, not a curiosity. A scene's actor records are built from the
