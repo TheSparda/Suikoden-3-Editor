@@ -399,6 +399,9 @@ console.log("Guide overlays + xdelta:");
   // ...and under each how-to, what that errand needs and where it comes from
   (/s3_recruit_needs\.json/.test(app) && /needChips/.test(app) && /class="needs"/.test(app)
     ? ok : bad)("108-Stars checklist says what each errand needs");
+  // ...and hands it over: item into the current party's bag, potch topped up by the shortfall
+  (/data-needitem/.test(app) && /bagForNeeds/.test(app) && /data-needgold/.test(app)
+    ? ok : bad)("108-Stars checklist can stage the item and the potch it needs");
   try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8"));
     const items = Object.values(j.chars).flatMap((c) => c.items || []);
     const rose = (j.chars["Augustine"].items || [])[0];
