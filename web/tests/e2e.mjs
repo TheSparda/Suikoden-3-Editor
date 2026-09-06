@@ -14,7 +14,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
-  WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B,
+  WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
   MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr } from "./synth-iso.mjs";
@@ -1533,6 +1533,115 @@ head("War editor — decode, edit, write-through both copies, no reward fields")
     check(`${nm}: MAG stat = 111`, r.u16(rec + 32 + 4) === 111);
   }
   await page.context().close();
+}
+
+head("War bulk tuning — multiply the opposition, scoped to leaders or troops");
+{ // The same engine the Enemies view runs, over the war half of the packs. What has to be
+  // true here and isn't testable there: the reward/drop multipliers must NOT exist (war
+  // records carry no aux block), the leader/troop scopes must split on the unit id, and the
+  // two views' multipliers must stay independent of each other.
+  const page = await newPage();
+  await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
+  await page.addInitScript(`window.S3_TEST_WAR_UNITS = ${JSON.stringify(WAR_TEST_UNITS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="war"]');
+  await page.waitForSelector("#wbApply", { timeout: 3000 });
+  check("HP, stats and level multipliers are offered",
+    (await page.$("#wbHp")) !== null && (await page.$("#wbStats")) !== null && (await page.$("#wbLv")) !== null);
+  check("no reward or drop multipliers — war battles pay nothing",
+    (await page.$("#wbExp")) === null && (await page.$("#wbSp")) === null
+    && (await page.$("#wbPotch")) === null && (await page.$("#wbDropw")) === null);
+  // A redraw keeps an expanded pack expanded, so re-clicking a summary would CLOSE it.
+  const packField = async (i, f) => {
+    const det = (await page.$$("details.epack"))[i];
+    if (!(await det.evaluate((d) => d.open))) await det.evaluate((d) => d.querySelector("summary").click());
+    await page.waitForTimeout(60);
+    return (await det.$(`input.en-num[data-f="${f}"]`)).inputValue();
+  };
+  const troop = (f) => packField(0, f), leader = (f) => packField(1, f);
+  const apply = async (id, v) => { await page.fill(`#${id}`, String(v)); await page.dispatchEvent(`#${id}`, "change");
+    await page.click("#wbApply"); await page.waitForTimeout(120); };
+  await apply("wbHp", 2);
+  check("soldier tier HP ×2 = 460", (await troop("hp")) === "460");
+  check("leader unit HP ×2 = 1200", (await leader("hp")) === "1200");
+  await page.click("#wbApply"); await page.waitForTimeout(120);
+  check("re-apply does not compound", (await troop("hp")) === "460" && (await leader("hp")) === "1200");
+  await apply("wbStats", 1.5);
+  check("stats ×1.5 scales PWR (49 → 74)", (await troop("stat0")) === "74");
+  check("level left at ×1 is untouched", (await troop("lv")) === "20" && (await leader("lv")) === "23");
+  // Scope: leaders only. Everything is recomputed from the disc's opening values, so the
+  // soldier tier drops back to stock while the leader takes the new numbers.
+  await page.selectOption("#wbScope", "leaders"); await page.waitForTimeout(60);
+  await apply("wbHp", 3);
+  check("leaders-only scope: leader HP ×3 = 1800", (await leader("hp")) === "1800");
+  check("...and the soldier tier is out of scope (back to 460)", (await troop("hp")) === "460");
+  await page.selectOption("#wbScope", "troops"); await page.waitForTimeout(60);
+  await apply("wbLv", 2);
+  check("troops-only scope: soldier level ×2 = 40", (await troop("lv")) === "40");
+  check("...and the leader's level is untouched", (await leader("lv")) === "23");
+  // Apply always writes EVERY non-×1 multiplier over the current scope, from the stock base —
+  // so the ×3 typed while leaders were selected now reaches the soldier too (3×230), and the
+  // leader keeps the 1800 it was given rather than picking up the new level.
+  check("...but the ×3 HP still in the box now reaches the soldier (690)", (await troop("hp")) === "690");
+  check("...and the leader keeps its own 1800", (await leader("hp")) === "1800");
+  // The Enemies view has its own multipliers and its own packs — neither moved.
+  await page.click('#isoTabs [data-v="enemies"]');
+  await page.waitForSelector("#ebApply", { timeout: 3000 });
+  check("the Enemies multipliers are still ×1", (await page.inputValue("#ebHp")) === "1");
+  await page.click("details.epack summary"); await page.waitForSelector('input.en-num[data-f="hp"]');
+  check("...and no enemy pack was touched", (await page.inputValue('input.en-num[data-f="hp"]')) === "40");
+  const r = await save(page);
+  for (const [nm, rec] of [["copy A", WAR_REC_A], ["copy B", WAR_REC_B]]) {
+    check(`soldier ${nm}: HP saved = 690 (both fields)`, r.u16(rec + 48) === 690 && r.u16(rec + 50) === 690);
+    check(`soldier ${nm}: level saved = 40`, r.u16(rec + 64) === 40);
+    check(`soldier ${nm}: PWR saved = 74`, r.u16(rec + 32) === 74);
+  }
+  for (const [nm, rec] of [["copy A", WAR_LEAD_A], ["copy B", WAR_LEAD_B]]) {
+    check(`leader ${nm}: HP saved = 1800`, r.u16(rec + 48) === 1800 && r.u16(rec + 50) === 1800);
+    check(`leader ${nm}: level saved = 23 (out of every scope that moved it)`, r.u16(rec + 64) === 23);
+  }
+  await page.context().close();
+}
+
+head("War — a disc that was already tuned reads its own multiplier back");
+{ // Same recovery the Enemies view does, over the war index's stock baseline: the file records
+  // no multiplier, only the numbers it produced, so re-opening a doubled disc has to recover
+  // the scale by comparing against s3_war_units.json's stock lv/hp/stats.
+  const V0 = WAR_TEST_UNITS.packs[0].enemies[0].variants[0];
+  const V1 = WAR_TEST_UNITS.packs[1].enemies[0].variants[0];
+  const t = Uint8Array.from(bytes), dv = new DataView(t.buffer);
+  for (const [v, recs] of [[V0, [WAR_REC_A, WAR_REC_B]], [V1, [WAR_LEAD_A, WAR_LEAD_B]]])
+    for (const rec of recs) {
+      dv.setUint16(rec + 48, Math.round(v.hp * 1.2), true); dv.setUint16(rec + 50, Math.round(v.hp * 1.2), true);
+      v.stats.forEach((sv, i) => dv.setUint16(rec + 32 + i * 2, Math.round(sv * 1.2), true));
+    }
+  const page = await newPage();
+  setServed(t);
+  await page.addInitScript(`window.S3_TEST_WAR_UNITS = ${JSON.stringify(WAR_TEST_UNITS)};`);
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="war"]');
+  await page.waitForSelector("#wbApply", { timeout: 3000 });
+  check("war HP multiplier prefills to the ×1.2 already on the disc", (await page.inputValue("#wbHp")) === "1.2");
+  check("war stat multiplier prefills to ×1.2", (await page.inputValue("#wbStats")) === "1.2");
+  check("level, which nobody scaled, still reads ×1", (await page.inputValue("#wbLv")) === "1");
+  const note = await page.textContent("#isoView");
+  check("says the disc is already tuned", /already tuned/.test(note) && /HP ×1\.2/.test(note));
+  check("prefilling stages nothing on its own", await nothingStaged(page));
+  await page.click("#wbApply"); await page.waitForTimeout(120);
+  check("re-applying the detected ×1.2 changes nothing", await nothingStaged(page));
+  // A new multiplier measures from the STOCK numbers, not from the tuned disc (1.5×230 = 345,
+  // not 1.5×276 = 414).
+  await page.fill("#wbHp", "1.5"); await page.dispatchEvent("#wbHp", "change");
+  await page.click("#wbApply"); await page.waitForTimeout(120);
+  const det0 = async (f) => { const d = (await page.$$("details.epack"))[0];
+    if (!(await d.evaluate((x) => x.open))) await d.evaluate((x) => x.querySelector("summary").click());
+    await page.waitForTimeout(60); return (await d.$(`input.en-num[data-f="${f}"]`)).inputValue(); };
+  check("×1.5 is 1.5× STOCK (345), not 1.5× the tuned disc (414)", (await det0("hp")) === "345");
+  await page.click("#wbStockRestore"); await page.waitForTimeout(150);
+  check("restore stock returns war HP to 230", (await det0("hp")) === "230");
+  check("restore stock returns PWR to 49", (await det0("stat0")) === "49");
+  await page.context().close();
+  setServed(bytes);
 }
 
 head("Rune reskin + description rewrite");
