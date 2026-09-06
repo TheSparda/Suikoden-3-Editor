@@ -9,6 +9,7 @@
 // test-local one, so the two halves check each other.
 import fs from "fs";
 import path from "path";
+import os from "os";
 import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
@@ -24,7 +25,13 @@ const bad = (m) => { console.log("  ✗ " + m); fail++; };
 const chk = (m, c) => (c ? ok : bad)(m);
 const eq = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 
-const TMP = process.env.TMPDIR || "/tmp";
+// Every fixture below reuses a fixed filename, so the scratch dir has to be private to this
+// run. TMPDIR is shared by every shell and every concurrent session on the machine: two runs
+// at once used to overwrite each other's source/target files between the encode and the
+// decode, which surfaced as a random handful of "decodes under 4 encoder settings" failures
+// and a multi-window count of 1 — all of it looking like a decoder bug that was not there.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "vcdiff-test-"));
+process.on("exit", () => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch {} });
 let xdeltaOK = true; try { execFileSync("xdelta3", ["-V"], { stdio: "ignore" }); } catch { xdeltaOK = false; }
 
 // Deterministic bytes with NO long-range repeats. (A weak LCG in JS loses precision on the
