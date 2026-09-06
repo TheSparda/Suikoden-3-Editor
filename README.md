@@ -523,6 +523,27 @@ disc — see `Editor/Suikoden3_ISO_offsets.md`).
 **Undo/redo.** Every edit is undoable (toolbar ↶/↷ or Ctrl/Cmd+Z / Shift+Z), on top of the
 existing per-field **↺** restore and **Revert all**.
 
+**Changes — what is already on this disc.** Every other tab reports what *you* staged this
+session; the review list is built as you edit, so it is a history, not a map. Open a disc
+somebody patched last month — or last release — and the editor had nothing to say about it.
+The **Changes** tab answers that question instead: point it once at a **pristine** copy of the
+disc and it lists every byte that differs, decoded field by field — *"Kite · description:
+"For throwing-weapon user. DMGx0.4 to foes." → "…"*, *"Kite · power: 40 → 199"* — grouped by
+what they are, with the address, and a **↺** on each row that stages a revert back to the base
+disc's value. Bytes no known field claims are still listed, as hex, because a change the tab
+quietly omitted would defeat the point of consulting it. You can export the result as an
+`.s3mod` recipe to replay that disc's edits onto a clean one.
+
+Nothing about a stock disc ships with this editor — it is the game's own executable — so the
+base disc has to be your own pristine copy. It is opened read-only, never written to, and
+remembered for next time. Two halves work without one: the **staged** list (this session's
+unsaved edits) and a check of every **code patch site** against the stock word this repo has
+decoded for it, which names any code patch on the disc with no second file at all.
+
+Use it when a patched disc and the game disagree. That is exactly how the duplicated rune
+descriptions (issue #11) stayed invisible for a release: the edit was on the disc, just on the
+copy the rune menu doesn't read.
+
 **Share a mod without the disc.** Two export formats, both built from your staged edits (no
 need to write the ISO first):
 
