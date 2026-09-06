@@ -441,6 +441,12 @@ let DISPLACED = 0;
 // Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
 // flags are whole-save state, not a character field.
 let CARRY;
+// Carryover + names fold: whole-save state you set once and never touch again, so it starts
+// closed and stays as the user last left it across slot switches and Reset.
+let COFOLD = false;
+// Set by drawSlot; openCarryoverBonus ticks the s2 box from outside and has to keep the
+// collapsed header's edit count honest.
+let refreshCoFold = () => {};
 
 function renderEditor() {
   const ed = $("#editor");
@@ -483,6 +489,26 @@ function drawSlot() {
       <span class="muted" style="font-size:12px">${where} · ${esc(Object.values(f.names || {}).join(" / "))}${f.customNames ? "" : " (defaults)"}</span></label>`;
   };
 
+  // The collapsed header has to answer "do I need to open this?" on its own: the flag state,
+  // the two player-entered names, and — since a fold can hide staged edits — whether anything
+  // in there is currently dirty.
+  const coFoldSummary = () => {
+    const bits = ["s2", "s1"].filter((g) => co[g]).map((g) => {
+      const on = CARRY[g] !== undefined ? CARRY[g] : co[g].loaded;
+      return `${g === "s2" ? "Suikoden II" : "Suikoden I"} ${on ? "loaded" : "not loaded"}`;
+    });
+    ["flameChampion", "castle"].forEach((k) => {
+      const n = (s.names || []).find((x) => x.key === k);
+      const v = n && (NAMES[k] !== undefined ? NAMES[k] : n.value);
+      if (v) bits.push(v);
+    });
+    // Same no-op filter buildDiff() uses: a name typed back to what the save already holds
+    // is not an edit, and the header must not claim it is.
+    const edits = Object.keys(CARRY).length + Object.entries(NAMES)
+      .filter(([k, v]) => { const n = (s.names || []).find((x) => x.key === k); return n && v !== n.value; }).length;
+    return bits.map(esc).join(" · ") + (edits ? ` · <b class="fold-edited">${edits} edit(s)</b>` : "");
+  };
+
   const names = (s.names || []).map((n) =>
     `<label class="field"><span>${esc(n.label)}</span>
        <input type="text" maxlength="${n.max}" value="${esc(n.value || "")}"
@@ -511,20 +537,24 @@ function drawSlot() {
     ${warns}
     <div class="card">
       <div class="muted" style="margin:-2px 0 8px">${metaBits}</div>
-      <h3 class="sec">Suikoden I / II carryover</h3>
-      <div class="grid" id="carryover" style="gap:6px">
-        ${coRow("s2", "Suikoden II")}${coRow("s1", "Suikoden I")}
-      </div>
-      <div class="muted" style="font-size:12px;margin:6px 0 0">
-        Suikoden III only ever reads a <b>Suikoden II</b> memory-card save; the Suikoden I
-        hero and country come out of that save too, which is why both flags live together.
-        Ticking a box sets the bit the game's own scripts test — the carryover names below
-        are what it makes them say.
-        ${CR.chars.length ? `The import also upgrades ${CR.chars.map((c) => esc(c.name)).join(", ")}:` : ""}
-        <button id="coBonus" style="margin-left:4px">Suikoden II bonus…</button>
-      </div>
-      <h3 class="sec">Names</h3>
-      <div class="grid" id="names">${names}</div>
+      <details class="fold" id="cofold"${COFOLD ? " open" : ""}>
+        <summary class="bag-h"><span class="chev">▸</span>Suikoden I / II carryover &amp; names
+          <span class="u" id="cofoldsum">${coFoldSummary()}</span></summary>
+        <h3 class="sec" style="margin-top:6px">Carryover flags</h3>
+        <div class="grid" id="carryover" style="gap:6px">
+          ${coRow("s2", "Suikoden II")}${coRow("s1", "Suikoden I")}
+        </div>
+        <div class="muted" style="font-size:12px;margin:6px 0 0">
+          Suikoden III only ever reads a <b>Suikoden II</b> memory-card save; the Suikoden I
+          hero and country come out of that save too, which is why both flags live together.
+          Ticking a box sets the bit the game's own scripts test — the carryover names below
+          are what it makes them say.
+          ${CR.chars.length ? `The import also upgrades ${CR.chars.map((c) => esc(c.name)).join(", ")}:` : ""}
+          <button id="coBonus" style="margin-left:4px">Suikoden II bonus…</button>
+        </div>
+        <h3 class="sec">Names</h3>
+        <div class="grid" id="names">${names}</div>
+      </details>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"
@@ -567,14 +597,18 @@ function drawSlot() {
       </div>
     </div>`;
 
+  refreshCoFold = () => { const el = $("#cofoldsum"); if (el) el.innerHTML = coFoldSummary(); };
+  $("#cofold").ontoggle = (e) => { COFOLD = e.target.open; };
   $$("input[data-name]").forEach((inp) => (inp.oninput = () => {
     inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
     NAMES[inp.dataset.name] = inp.value;
+    refreshCoFold();
   }));
   $$("input[data-carry]").forEach((cb) => (cb.onchange = () => {
     const g = cb.dataset.carry, was = (s.carryover?.[g] || {}).loaded;
     if (cb.checked === was) delete CARRY[g]; else CARRY[g] = cb.checked;
     cb.classList.toggle("dirty", cb.checked !== was);
+    refreshCoFold();
   }));
   const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
   $("#goldfld").oninput = (e) => {
@@ -1886,6 +1920,7 @@ function openCarryoverBonus() {
     // NOT drawSlot() — that is the Reset button, and it would throw the staging away.
     const cb = $('input[data-carry="s2"]');
     if (cb && CARRY.s2 !== undefined) { cb.checked = CARRY.s2; cb.classList.add("dirty"); }
+    refreshCoFold();
     showSub(); refreshHealthBadge();
     setStatus(`Staged ${n} change(s) from the Suikoden II bonus — review before applying.`, "ok");
   };
