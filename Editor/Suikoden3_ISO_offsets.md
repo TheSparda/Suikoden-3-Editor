@@ -276,7 +276,7 @@ Kite  = item 365, record file 0x3EDD18, slots at 0x3EDD30
         07 00 00 00 | 00 00 02 00 | 4E 00 | 00 00 | 00 00 | 00 00
                                      ^Kite   ^^^^^^ three free slots
 ```
-Shipped in the web editor as four dropdowns per rune on the Runes tab (v2.0.0). The
+Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0). The
 old `RUNE_SPELLS` hardcoded name map is **deleted** — the binding is read off the disc,
 so there is no second copy to drift.
 
