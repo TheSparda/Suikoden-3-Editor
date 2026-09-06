@@ -1176,6 +1176,52 @@ chapter-partitioned, consistent with it being the area you ride *into*.
   show up in that scan.
 
 
+### 14g. Chris's areas, and the `070` signature
+
+Same containment test as §14f, for `syu2` and the two Zexen horses. Her ground-ride bank is
+the `07x` family (§5): `070` = `rideon_L/R` mount-up, `071` walk, `072` fastwalk, `073` run,
+`074` `ride_neutral`, `075` `rd_inanaki`.
+
+| archive | Chris's `07x` | ground horse in the same archive | chapters |
+|---|---|---|---|
+| **ZKTR** · Brass Castle | `070 071 072 073 074 075` | **`zkum` complete** | 0, 1, 2, 3, 4, 5 |
+| **HNKT** · Budehuc Castle | `070 071 072 073 074 075` | **`krum` complete** (`zkum` only `172`) | 0, 1, 2, 3, 4, 6 |
+| **LZVI** · Great Hollow | `070 071 072 073 074 075` | none (`guli_005` only) | 0, 1, 2, 3, 4, 5 |
+| **VDZK** · Vinay del Zexay | **`070` only** | none | 1, 2, 3 (+3 untagged) |
+| **LAST** · Ceremonial Site | `071 072 073 074 075` — **no `070`** | none | 0, 5 |
+| **ICEW** | `071 072 073 074 075` — **no `070`** | none | 0, 5 |
+
+**The presence or absence of `070` tells you what an area is for**, and it corroborates the
+persistence result independently:
+
+- **`071–075` without `070`** (LAST, ICEW) — every ride clip *except* mounting up. You
+  cannot mount there; you can only arrive already mounted and keep riding. That is the same
+  shape as HGB1 for Hugo, arrived at from clip containment rather than from play.
+- **`070` alone** (VDZK) — mount-up and nothing else: you get on and the scene takes you
+  out. VDZK also holds **9** `RideOn(PLAYER, PLAYER.mount)` sites (§14c), the second-highest
+  on the disc, which is exactly what that clip set implies.
+- **The full set** (ZKTR, HNKT, LZVI) — mount, ride and dismount locally.
+
+So Chris is bundled ride-ready in **six** areas to Hugo's three, but only **two** of them
+carry a ground horse: Brass Castle and Budehuc Castle. The other four depend on her arriving
+mounted, or on a horse the area archive does not name.
+
+**The unresolved piece is whether `ETC.BIN` can supply a mount.** Whole-ISO scans place a
+complete `s2um` — Chris's own horse, and the value in her `+0x66` — **only** in `ETC.BIN`,
+plus a single stray `cha_s2um_172` in AKMT. She demonstrably rides, so either `ETC.BIN` is
+reachable at run time or she is riding `zkum`/`krum` in practice. Two observations pull in
+opposite directions and neither settles it:
+
+- *Against* `ETC.BIN` being resident: `krum` is duplicated into HGB1, HNKT and KRVI even
+  though `ETC.BIN` already holds a complete copy. Duplication is pointless if the master is
+  always loaded.
+- *For* it: `ETC_BIN_MODEL_RESEARCH.md` describes bundle 0 as the **shared** field/character
+  bundle, holding `syu1`/`syu2`/`syu3` together.
+
+Until that is settled, every residency claim in this document is a statement about what an
+archive *names*, not a proof of what a scene can *load* — see the warning in §14f.
+
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
