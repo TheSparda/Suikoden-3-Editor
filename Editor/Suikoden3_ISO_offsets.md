@@ -461,8 +461,29 @@ DRIFTS and produced wrong results (e.g. "Medicine D :: Performs an accidental
 attack") — so they are intentionally left blank rather than shown incorrectly.
 Correct-or-blank, never wrong.
 
+## Gear +0x08 is a price TIER, not potch (2026-09-06)
+The field the gear record carries at +0x08 was labelled "price" and shown as potch by the
+Shops and Gear tabs — which printed "Mole Armor · 3p". It is an index into the **shared
+15-step price ladder** at 0x3C963C, and the indexing is **1-based**:
+
+    01773390  lui   $v0, 0x198          ; the price routine's ladder case
+    01773394  sll   $v1, $s0, 2         ; tier * 4
+    01773398  addiu $v0, $v0, 0x1e38    ; 0x1981E38 == ladder VA (0x1981E3C) - 4
+    0177339C  addu  $v1, $v1, $v0
+    017733A4  lw    $v0, ($v1)          ; ladder[tier - 1]
+
+Corroboration: the field only ever holds 2..5 across all 156 records in the band (300 / 600 /
+1500 / 2700 potch), the routine's own bounds check is `bgez $s0` + `slti $s0, 0xe`, and it
+otherwise calls the assert at 0x1712238. Rune records are different — the u32 at +0x0C there
+is real potch (600, 1200, 1800 … max 17000). Mole Armor (id 194) is tier 3 = **600 potch**,
+which is what Dominic charges you to join.
+
+`shopPrice()` in web/iso.js resolves the tier through the ladder, and the Gear tab labels the
+field "Price tier" with the resolved potch beside it. Editor/build_recruit_needs.py uses the
+same resolution to price the one recruit errand that is a purchase.
+
 ## Equipment effects — mapped + editable (2026-08-09)
-Gear record (stride 0x44): desc ptr +0x00, price u32 +0x08, DEF u16 +0x10,
+Gear record (stride 0x44): price TIER u32 +0x08 (see above), desc ptr +0x00, DEF u16 +0x10,
 name ptr +0x40. Effect slots: up to 5, each 8 bytes at +0x14,+0x1C,+0x24,+0x2C,+0x34
 = (type u16, value u16, skill_id u16, pad u16). Effect types (verified vs
 descriptions across 148 gear records):
@@ -3135,6 +3156,104 @@ the 49 held-back sites listed below them with what each does and why it has no s
 words of a written site are registered in the Changes tab under "Passive runes", and all 51 —
 written or not — are audited against their stock values by `chgCodeAudit`.
 
+---
+
+## Rune power — the magnitudes the passives are worth (2026-09-06)
+
+The section above answers *whether* the engine thinks you have a rune. This is the other
+question, and it turns out to be the easier one: **twelve of the 23 support runes compute their
+effect from a literal baked into the instruction stream immediately after the check**, so the
+magnitude is editable in place without touching the check at all. Every site below sits INSIDE
+the rune's `if (has rune)` branch — which is why the constant being global does not make the
+effect global. The rune still has to be equipped; the number is just what it is worth once it is.
+
+Found by walking forward from each of the 51 decoded call sites to the instructions the taken
+branch executes, and keeping the ones whose value is a literal rather than a runtime figure.
+All 23 are byte-verified against a pristine SLUS-20387, and none of them overlaps a call-site
+word pair, a `STATUSFX` constant or a mount site (`web/tests/validate.mjs` asserts all three).
+
+**Four shapes of value**, each with its own identity check, because writing one shape's value
+into another shape's word corrupts the instruction rather than the number:
+
+| shape | instruction | value lives in | guard |
+|---|---|---|---|
+| `imm` | `addiu $rt,$zero,N` / `slti $rt,$rs,N` | low half-word | high half-word must still match |
+| `sa` | `sll` / `srl $rd,$rt,N` | bits 10..6 | the rest of the word must still match |
+| `f32hi` | `lui $at,0x3F00` | top 16 bits of an IEEE-754 single | high half-word must still match |
+| `f32` | — (small-data literal pool) | the whole 4 bytes | value must be a finite positive float |
+
+### The 23 sites
+
+| rune | what the number is | stock | file offsets | stock word |
+|---|---|---|---|---|
+| Sunbeam `0x1BD` | walk-heal: 1 HP every N seconds | 0.3 | `0x42C3B0` | `3E99999A` (float, not code) |
+| Sunbeam `0x1BD` | HP added each combat turn | 15 | `0x261198` | `2442000F` |
+| Killer `0x1BA` | high-damage-hit chance × N/100 | 150 | `0x104088`, `0x104148` | `24020096` |
+| Counter `0x1BB` | counter chance × N/100 | 150 | `0x1038EC`, `0x103B60`, `0x103D34` | `24020096` |
+| Gale `0x1BC` | SPD × N/100 | 150 | `0x10FD34` | `24020096` |
+| Haziness `0x1BF` | the `rand(100) < N` dodge roll | 30 | `0x10380C` | `2842001E` (`slti`) |
+| Drain `0x1C0` | self-heal is damage ÷ N | 3 | `0x245D78` | `24020003` |
+| Barrier `0x1C1` | reflect chance is the stat ÷ N | 10 | `0x105218` | `2403000A` |
+| Hunter `0x1CE` | damage clamped to N | 5 | `0x1035E8` | `24030005` |
+| Violence `0x1CD` | berserk below N of max HP | 0.5f | `0x244B54` | `3C013F00` (`lui $at`) |
+| Wall `0x1BE` | PDF × 2^N | 1 | `0x104370` | `00131840` (`sll $v1,$s3,1`) |
+| Double-Strike `0x1C7` | damage dealt AND taken × 2^N | 1 | `0x1047C8`, `0x1047DC` | `00108040` |
+| Fire Sealing `0x1C3` | the doubled element's damage × 2^N | 1 | `0x104878`, `0x104FE0`, `0x10546C` | `00101040` / `00111040` |
+| Wizard `0x1C8` | the share moved: 1/2^N | 1 | `0x10FD84`, `0x10FDA8` | `00021042` / `00101042` (`srl`) |
+| Warrior `0x1C9` | the share moved: 1/2^N | 1 | `0x10FDDC`, `0x10FE00` | `00021042` / `00101042` |
+
+### Sunbeam's walk-heal, in full — the only non-code entry
+
+`0x1702954`..`0x17029DC` is the heal loop. It reads the frame delta (`0x17129D8`, which is
+nothing but `return *(float*)0x0196A3C0`), adds it to a running total at `0x0197A310+0xC0`,
+and compares against a **gp-relative float**:
+
+```
+01702960  lwc1  $f2,-31168($gp)      ; $gp = 0x019EC570 (ELF SHT_MIPS_REGINFO ri_gp_value)
+0170296C  add.s $f0,$f1,$f0          ; total += delta
+01702970  c.lt.s $f2,$f0             ; total > interval ?
+01702978  bc1f  0x01702998           ; no  -> heal 0
+0170297C  swc1  $f0,192($v0)         ; (delay) store the total back
+01702988  div.s $f0,$f0,$f2          ; yes -> ticks = total / interval
+0170298C  sw    $zero,192($v0)       ;        clear the total
+01702990  cvt.w.s $f1,$f0
+01702994  mfc1  $s2,$f1              ; $s2 = HP to heal, third arg to 0x16C8790
+```
+
+The interval is **0.3 s**, at VA `0x019E4BB0` / file `0x42C3B0`. `$gp` is not materialised
+anywhere in `PT_LOAD` (zero `lui $gp`) — it comes from the ELF's `SHT_MIPS_REGINFO` section
+(ELF offset `0x38E4D4`, `ri_gp_value` at `+0x14`), which is how the address was resolved.
+**Exactly one instruction in the whole image reads it**: this `lwc1`. No absolute `lui`+`addiu`
+pair materialises `0x019E4BB0` and no `u32` anywhere in the block holds it, so the constant is
+Sunbeam's alone and nothing else moves when it does.
+
+`$s2` is initialised to 0 before the loop and its only other use is `andi $a2,$s2,0xFFFF` — the
+heal amount — so a shorter interval scales the rate cleanly, including past one tick per frame.
+
+**Why the HP-per-tick is NOT exposed.** `mfc1 $s2,$f1` at `0x14A194` could be overwritten with
+`addiu $s2,$zero,N` for a flat heal, and it would be reversible and correctly scoped (the `bc1f`
+skips it, so an un-crossed interval still heals nothing). It is left alone because it buys
+nothing the interval does not already give and it throws away a computed value for a constant.
+
+### What has no number, and why
+
+Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness and Fury set a state bit or
+gate a branch — there is no literal at their sites to move. Fire Sealing's fourth site
+(`0x1115C4`) is rune-slot bookkeeping, not damage. Fortune has no site at all (see above).
+
+Two clamps sit *outside* the rune's branch and are therefore not rune power, but they bound it:
+Counter's first site runs into `slti $v1,$s1,0x60` / `addiu $v0,$zero,0x5F` / `movn` at
+`0x10390C`..`0x103914`, which pins any counter chance at or above 96 to **95** — so raising
+Counter past roughly 64% base stops moving that site. Gale's product is masked to 16 bits.
+
+Shipped as the **Rune power** card inside the Passives tab (`web/iso.js:rfCard` / `RUNEFX`).
+Each site is registered in the Changes tab under "Rune power" and audited against its stock
+word by `chgCodeAudit`, so a disc patched some other way still gets named.
+
+**Untested in play**, like the switches above it: all 23 are decoded, byte-verified and
+round-trip clean, but no altered number has been watched taking effect in game.
+
+---
 ## Passive support runes, part 2 — all 51 sites, per character (2026-09-06)
 
 The section above ends by saying the other 49 sites are out of reach because "a call site frees

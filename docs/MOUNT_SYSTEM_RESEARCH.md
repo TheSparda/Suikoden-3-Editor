@@ -495,6 +495,11 @@ mount must be one of the eight whitelisted **horses** to get a correct saddle of
 there is no ground-ride entry for a griffon or dragon to borrow.
 
 **Can Hugo ride on multiple maps? Can Chris?**
+
+> **Superseded by §14 (2026-09-06).** The answer below reasons from *asset residency*, and
+> playtesting has since shown that test is not decisive: Chris rides despite `s2um`
+> appearing complete in no area archive. Read §14 instead — the question turns on which
+> scenes issue a mount and what selects the horse, not on which archive names a model.
 Hugo already does: three areas ship the full `krum` set. Adding a fourth means getting `krum`
 into that area's archive, which runs into the repacking blocker documented in
 `ETC_BIN_MODEL_RESEARCH.md` (compressed variable-length payloads, no offset table found).
@@ -657,6 +662,14 @@ to put it and what it can reach.
 
 ### 10a. Why `+0x1bc` cannot be forced on — it is a pointer, not an id
 
+> **Superseded by §14 (2026-09-06).** Everything below about the *type* of `+0x1bc` is
+> correct — it is an EOBJ pointer with no literal writer. The conclusion drawn from that
+> ("unforceable") is not. `0x180 + 0x3c = 0x1bc`, and `+0x3c` is the EOBJ pointer of an
+> actor record: **`+0x1bc` is simply the `+0x3c` of the actor six slots along**, which is
+> where the engine stages a character's assigned horse. It has no writer because it needs
+> none — the generic actor setup fills it. What forces it on is staging that horse actor,
+> and that *is* reachable from data. See §14.
+
 > **Corrects an earlier note.** A previous revision said "the only two literal writers
 > (`0x1712894`, `0x1713458`) clear the field-work global". Those two are on a **different struct
 > that merely shares the offset** and has nothing to do with mounting — see below. The mount
@@ -781,7 +794,13 @@ Compared with the three-pair table it is strictly more capable, and it is the me
 - **It reaches Geddoe.** He has the `97x` field bank but no mounted-battle bank, so the pair
   table can never help him — but an assigned horse puts him on horseback outside combat.
 
-### …and the matching limitation: it grants permission, it does not stage a horse
+### …and the matching limitation: what it does *not* reach
+
+> **Corrected 2026-09-06.** This section used to be titled "it grants permission, it does
+> not stage a horse", and that headline was wrong. `+0x66` **does** stage the horse: the
+> party-put path reads it and inserts the horse at party position `pos + 6` (§14). The
+> real limitation is narrower and is stated below — the horse still has to be a *model the
+> area archive carries*, and a script still has to issue the mount.
 
 The same property that gives this route its reach takes away its reliability, and the two routes
 fail in exactly opposite ways:
@@ -959,6 +978,273 @@ is not established**.
 - **Everything else**: each half uses its own numbers.
 
 
+## 14. Forcing field horse mounting — the handle bit, and what actually blocks it
+
+Added 2026-09-06, after [`Editor/eds_dis.py`](../Editor/eds_dis.py) recovered the EDS
+encoding that §9 lacked. It supersedes §10a's "unforceable" verdict and corrects §11.
+
+### 14a. Handle bit `0x4000` means "that actor's own horse"
+
+The actor-handle decoder `0x17B5A40` is documented in
+[`FIELD_CHARACTER_RESEARCH.md`](FIELD_CHARACTER_RESEARCH.md) as a namespace split on bits
+10–13. Bit **14** is separate, and it is the whole field mount system:
+
+```
+017B5A7C  andi $v0, $s0, 0x4000
+017B5A84  andi $s3, $v0, 0xffff      ; remembered across the namespace dispatch
+   ...
+017B5BA0  addiu $v0, $s2, 0x180      ; $s2 = the resolved actor record
+017B5BA4  movz  $v0, $s2, $s3        ; bit clear -> the record itself
+```
+
+Actor records are **`0x40` bytes** — `MakeActorRecord` @ `0x1775AA0` does
+`bzero(rec, 0x40)` then writes `+0x06 = charId`, `+0x01 = 4`, `+0x02 = 0x13`. So
+`0x180 = 6 × 0x40`, and **`handle | 0x4000` resolves to the actor six slots later**.
+
+That is the actor block's reserved range: party actors occupy 0–5 and their mounts 6–11,
+which is exactly the window `FindActorByCharId` declines to search (`i - 6 <u 6`). It also
+retires §10a: `+0x1bc` is `0x180 + 0x3c`, i.e. the `+0x3c` EOBJ pointer **of the mount
+actor**, not a mystery field. The one instruction that reads it (`0x178CD18`, the dead
+debug toggle) is asking "does the actor six slots along have an EOBJ yet".
+
+### 14b. `+0x66` stages the horse — §11's headline was wrong
+
+Two functions close the loop, and neither needs a scene-supplied pointer:
+
+```
+HorseActorPos(partyPos)                         ; 0x16FFEE0
+    if ((partyPos - 1) <u 6)                    ; real party positions only
+        if (hasAssignedHorse(charAt(partyPos)))  ; 0x16C76B8 -> list2 +0x66
+            return partyPos + 6
+    return 0
+
+PartyPut(charId, pos)                           ; 0x16FF8xx
+    s2 = hasAssignedHorse(charId)
+    place(charId, pos)
+    if (s2) place(s2, 1, pos + 6)               ; 0x16FFAB4 — the HORSE, at pos+6
+```
+
+and `StageActor` @ `0x1791B58` then recurses into that position to build the horse as a
+real actor (`0x16FFEE0` → `0x16FFCA8` → `MakeActorRecord`). Its teardown twin at
+`0x1791DF0` is the tell: on `hasAssignedHorse`, it also tears down `rec + 0x180`.
+
+So `+0x66` is not a permission flag that waits for a scene to cooperate. **It is the switch
+that makes the horse exist**, and it is one u16 of ordinary list2 data.
+
+### 14c. The scripts already say "mount the player on their own horse"
+
+`RideOn(h, h | 0x4000)` — self-mount — needs no chain validation to find: requiring
+`param2 == param1 | 0x4000` with a valid namespace is a coincidence in the millions, which
+is why this finds signal where §9's raw opcode search found only noise.
+`python3 Editor/eds_dis.py rides` reproduces it. **136 self-mounts in `town` scripts**, and
+the rider is the *player* in four areas:
+
+| area | `RideOn(PLAYER, PLAYER.mount)` | complete ground horse in that archive |
+|---|---|---|
+| **ZKTR** · Brass Castle | **58** | `zkum` **308** ✔ |
+| **MORI** · Zexen Forest | 10 | none (`guli_005` only) |
+| **VDZK** · Vinay del Zexay | 9 | none (`guli_005/080` only) |
+| **HNKT** · Budehuc Castle | 3 | **`krum` 325** ✔ |
+
+The rest are `objA:N` self-mounts — staged scene NPCs — in ZKTR (17), LZVI (16), KRVI (7),
+SOGE (4), AKMT (3), HNKT (3, plus one `charId:2`), MORI (1), VDZK (4).
+
+They are unambiguously code. The Budehuc block at ISO `0x903B401A` mounts the player and
+three scene objects, then drives them with `op 157` moves carrying round coordinates and
+speeds — and the moves address `0x5400`, i.e. **the player's horse**, because when you are
+mounted the thing that walks is the mount:
+
+```
+903B401A  op  22 RideOnSetS  [0x1400 0x5400 0xfffe]   PLAYER  PLAYER.mount
+903B4022  op  22 RideOnSetS  [0x0801 0x4801 0x0017]   objA:1  objA:1.mount
+903B403A  op 155             [0x000f 0x4052]
+903B4064  op 157             [0x5400 0x000f 0x0000 0x04b0 0x0002 0x0a8c]  PLAYER.mount …
+903B407A  op 157             [0x4801 0x5400 0x0000 0x05dc 0x0003 0x012c]
+```
+
+`actor_str` used to print `0x5400` as a bare `PLAYER`, hiding the bit; it now suffixes
+`.mount`.
+
+### 14d. What blocks Hugo — and why nothing blocks Chris
+
+> **Corrected 2026-09-06, same day, by playtest report.** An earlier revision of this
+> section argued that Chris never rides because `s2um` is not resident in any area archive.
+> **She does ride** — confirmed from play, in Brass Castle and elsewhere — so the model
+> loads fine and the residency argument was wrong. The `cha_` census in §6 measures what an
+> archive *names*, which is evidently not the same as what a scene can *load*. Hugo
+> likewise already rides in the plains from chapter 3–4. Nothing is broken; "sometimes"
+> simply means "the scenes that contain the instruction". The lever that survives is
+> §14e, and it is about Hugo, who has no assigned horse at all.
+
+
+The asymmetry between the two is one byte. **Chris carries `+0x66 = 309` and Hugo carries
+`0`** — so Chris has a horse staged beside her in the party actor block on every map, and
+Hugo has none. His plains riding comes the other way, from scenes that stage a `krum` as a
+scene object and name it explicitly in `RideOn`; that is why it is confined to the scenes
+that were built for it.
+
+The clamp is what stops him being given one properly:
+
+```
+016C76E4  lhu   $a1, 0x66($v1)
+016C76E8  addiu $v0, $a1, -0x134     ; -308
+016C76EC  sltiu $v0, $v0, 2          ; 308 or 309, nothing else
+```
+
+308 is `zkum` and 309 is `s2um` — the two Zexen horses. **Hugo's horse is `krum`, 325**, and
+the engine says so itself: the `RideOn` handler at `0x179ED2C` carries a fix-up written for
+exactly one pair, rider model **1** on mount **325**/**353**, stripping the Fubar-rigged
+copies of `ride_neutral`, `rdwalk*` and `rdrun*` from his clump so the horse-rigged ones
+resolve (§3a). Hugo is authored for the Karaya horse and no other, and 325 is on the wrong
+side of the clamp.
+
+### 14e. The lever: give Hugo an assigned horse
+
+Widen the clamp, then set `+0x66 = 325`. Six sites, all the same `sltiu rX, rY, 2`, each
+preceded by `addiu rX, rY, -0x134`:
+
+| ISO | bytes | function |
+|---|---|---|
+| `0x10EEEC` | `02 00 42 2C` | `hasAssignedHorse` |
+| `0x10EF0C` | `02 00 63 2C` | `hasAssignedHorse`, second path |
+| `0x146EDC` | `02 00 42 2C` | party helpers |
+| `0x14711C` | `02 00 42 2C` | party helpers |
+| `0x1471A8` | `02 00 42 2C` | `PartyPut` position 7–12 guard |
+| `0x14762C` | `02 00 42 2C` | party helpers |
+
+The immediate is the low u16, little-endian in the first two bytes of the word — the same
+shape the Mounts tab already edits. Raising it to `0x100` admits 308–563, bringing in
+`krum` 325, `kru2` 353, `msx1` 359, `msx2` 360. Then Hugo's `+0x66` (ISO `0x3E1422`,
+currently `00 00`) becomes `45 01`.
+
+He then carries a Karaya horse in the party actor block the way Chris carries hers, instead
+of only where a scene stages one — so every player self-mount site (§14c) reaches him,
+including the three in Budehuc Castle.
+
+The clamp patch is inert on its own: only six characters have a nonzero `+0x66` today, all
+308/309, every one of which stays inside the widened window.
+
+**The 308 shortcut, and why not to take it.** Hugo could be given 308 with no code patch at
+all, since it is already inside the clamp. Predicted failure: the `0x179ED2C` fix-up fires
+only for mount 325/353, so on `zkum` it would not strip his Fubar-rigged duplicates and the
+clump's clip lookup would resolve `ride_neutral`/`rdwalk*`/`rdrun*` to the griffon-rigged
+copies — Hugo sitting on a horse in a griffon pose. That is a cheap, falsifiable test of
+whether the strip does what §3a says, and a bad way to actually ship him a horse.
+
+### 14f. What this does not reach, and what is still unplayed
+
+**Where Hugo can be mounted at all is fixed by asset containment, and it is three areas.**
+Scanning `cha_syu1_9??`/`cha_syu1_0??` against `krum`/`kru2` across every archive:
+
+| archive | Hugo's ground-ride bank | Karaya horse | chapters its scripts cover |
+|---|---|---|---|
+| **HGB1** · Yaza Plain | `970 971 972 973 974 975` — the only **complete** set on the disc | complete | **no chapter tags** |
+| **HNKT** · Budehuc Castle | `970 971 972 973 974` | complete | 0, 1, 2, 3, 4, 6 |
+| **KRVI** · Karaya Village | `970 971 972 973 974` | complete | 1, 2, 3, 5 |
+
+Everywhere else he carries `074` alone — `ride_neutral`, one seated pose, no mount-up, walk
+or run — so no script could mount him usefully there.
+
+The chapter column comes from scene id tags of the form `<chapter><AREA><nnn>`
+(`3KRVI002`, `1HNKT001`), one chapter per `town` sub-file. That is what "he rides in some
+chapters" is: the area ships a different script per story state. Note the gaps — **no
+chapter 5 in Budehuc, no chapter 4 in Karaya**. HGB1 carries no tags and is not
+chapter-partitioned, consistent with it being the area you ride *into*.
+
+
+- **MORI and VDZK** hold 19 player self-mounts between them and **no complete ground horse
+  in either archive**. Those need a model added to the archive, which is the repacking
+  blocker in [`ETC_BIN_MODEL_RESEARCH.md`](ETC_BIN_MODEL_RESEARCH.md), not a constant.
+- **HGB1 and KRVI** carry a complete `krum` but **no player self-mount at all** (KRVI's
+  seven are `objA:N`). Reaching those means editing a rider handle in a script from
+  `objA:N` to `0x1400`, an in-place u16 — cheap, but it takes the horse away from the NPC
+  the scene staged it for.
+- **None of §14 has been played.** It is static analysis over the ELF plus a disc census.
+  The specific thing to watch on a first test is whether a mounted player breaks the
+  scene's own choreography, since the `op 157` moves target `PLAYER.mount` and will now
+  find one.
+- **The `rides` census undercounts.** `RideOn(h, 0)` is a second self-mount spelling: the
+  handler at `0x179ED10` defaults a zero mount operand to `rider + 0x180`. `cmd_rides` only
+  matches `h | 0x4000`, so 136 is a floor. The zero form was not scanned because `op 22`
+  followed by a zero word is indistinguishable from filler without chain validation.
+- **§6's archive census measures naming, not loadability.** Chris rides despite `s2um`
+  appearing in no area archive as a complete set, so a scene can evidently load a model the
+  `cha_` scan does not attribute to it. Every residency argument in this document is
+  weakened by that and should not be used to predict that something *cannot* appear.
+- Whether the clamp's six sites are the *only* 308/309 gates. They are the only
+  `addiu −0x134` / `sltiu` pairs in `PT_LOAD`, but a gate written some other way would not
+  show up in that scan.
+
+
+### 14g. Chris's areas, and the `070` signature
+
+Same containment test as §14f, for `syu2` and the two Zexen horses. Her ground-ride bank is
+the `07x` family (§5): `070` = `rideon_L/R` mount-up, `071` walk, `072` fastwalk, `073` run,
+`074` `ride_neutral`, `075` `rd_inanaki`.
+
+| archive | Chris's `07x` | ground horse in the same archive | chapters |
+|---|---|---|---|
+| **ZKTR** · Brass Castle | `070 071 072 073 074 075` | **`zkum` complete** | 0, 1, 2, 3, 4, 5 |
+| **HNKT** · Budehuc Castle | `070 071 072 073 074 075` | **`krum` complete** (`zkum` only `172`) | 0, 1, 2, 3, 4, 6 |
+| **LZVI** · Great Hollow | `070 071 072 073 074 075` | none (`guli_005` only) | 0, 1, 2, 3, 4, 5 |
+| **VDZK** · Vinay del Zexay | **`070` only** | none | 1, 2, 3 (+3 untagged) |
+| **LAST** · Ceremonial Site | `071 072 073 074 075` — **no `070`** | none | 0, 5 |
+| **ICEW** | `071 072 073 074 075` — **no `070`** | none | 0, 5 |
+
+**The presence or absence of `070` tells you what an area is for**, and it corroborates the
+persistence result independently:
+
+- **`071–075` without `070`** (LAST, ICEW) — every ride clip *except* mounting up. You
+  cannot mount there; you can only arrive already mounted and keep riding. That is the same
+  shape as HGB1 for Hugo, arrived at from clip containment rather than from play.
+- **`070` alone** (VDZK) — mount-up and nothing else: you get on and the scene takes you
+  out. VDZK also holds **9** `RideOn(PLAYER, PLAYER.mount)` sites (§14c), the second-highest
+  on the disc, which is exactly what that clip set implies.
+- **The full set** (ZKTR, HNKT, LZVI) — mount, ride and dismount locally.
+
+So Chris is bundled ride-ready in **six** areas to Hugo's three, but only **two** of them
+carry a ground horse: Brass Castle and Budehuc Castle. The other four depend on her arriving
+mounted, or on a horse the area archive does not name.
+
+### 14h. Settled from the save corpus: the party list carries the mount, and `ETC.BIN` loads
+
+The five extracted saves in `Saves/_extracted_s3/` confirm §14b directly. `gamedata` and
+`gamedata_u04` hold the party **Hugo, Fubar, Chris, Geddoe, Thomas, Emily** and a **309** at
+party position **9**. Chris is at position **3**. That is `pos + 6`, on disc, in a real save
+— the layout `PartyPut` writes and the layout handle bit `0x4000` reads.
+
+So the party table at save `0x3216` is **twelve** u16s, not six: positions 1–6 are the
+members and 7–12 are their mounts. `s3save.decode_party_mounts` reads them and the save
+editor shows them in a Mount column.
+
+**And it answers the `ETC.BIN` question below: Chris is on `s2um`.** Not `zkum`, not `krum`
+— the exact model her `+0x66` names, whose only complete copy is in `ETC.BIN`. A model can
+therefore be staged from `ETC.BIN` without the area archive naming it, so **the per-area
+`cha_` census is not a ceiling**. Every "ships in / does not ship in" statement in this
+document is about what an archive *names*; it cannot be used to predict that a model will
+not appear. The `krum` duplication argument below is wrong, or at least not decisive.
+
+That widens §14f considerably: Hugo's three areas are where his ride clips and a Karaya
+horse are *bundled together*, not necessarily the only places he could be mounted.
+
+---
+
+**Superseded — kept for the reasoning.** Whole-ISO scans place a
+complete `s2um` — Chris's own horse, and the value in her `+0x66` — **only** in `ETC.BIN`,
+plus a single stray `cha_s2um_172` in AKMT. She demonstrably rides, so either `ETC.BIN` is
+reachable at run time or she is riding `zkum`/`krum` in practice. Two observations pull in
+opposite directions and neither settles it:
+
+- *Against* `ETC.BIN` being resident: `krum` is duplicated into HGB1, HNKT and KRVI even
+  though `ETC.BIN` already holds a complete copy. Duplication is pointless if the master is
+  always loaded.
+- *For* it: `ETC_BIN_MODEL_RESEARCH.md` describes bundle 0 as the **shared** field/character
+  bundle, holding `syu1`/`syu2`/`syu3` together.
+
+Until that is settled, every residency claim in this document is a statement about what an
+archive *names*, not a proof of what a scene can *load* — see the warning in §14f.
+
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
@@ -967,8 +1253,21 @@ is not established**.
   split is now mapped and tracks which mount system authored the rider (§5), but what those clips
   actually animate is still unread — as is why Roland uses `341` for the mounted attack where every
   other rider uses `340`.
-- Whether the field ride state survives a map transition. The field state lives on per-scene
-  EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
+- ~~Whether the field ride state survives a map transition.~~ **It does** — confirmed from
+  play 2026-09-06: Hugo mounts in Karaya Village and walks into Yaza Plain still mounted.
+  That is load-bearing, because `RideOn` (the EDS opcode) is the only thing on the field
+  that ever mounts anybody — `RideLink` has four callers, one field and three battle, and
+  the field one is reached only from the opcode handler and the dead debug toggle. **HGB1
+  contains no mount instruction at all**, so the state cannot have been re-issued there; it
+  arrived. Which mechanism carries it is *not* established. The natural candidate is that
+  the horse is a **party actor** rather than a scene object — party membership is saved
+  state and survives the transition, scene objects do not — but that was not traced, and
+  KRVI has no `RideOn(PLAYER, PLAYER.mount)` to support it either.
+
+  Practical consequence, and the reason this matters more than it looks: **a mount only has
+  to fire once.** Forcing field riding in a set of areas does not need an instruction in
+  each one, only in the area you enter from, plus the ride clips and horse model bundled in
+  each destination.
 - The rest of the `0x84`-byte list2 record — `+0x66` is now known (§11) but most of the row
   past the skill-cap array is still unmapped.
 - Which scene-setup code writes `rec->+0x1bc`. **No longer open in the way that matters**: §10a

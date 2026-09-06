@@ -66,6 +66,36 @@ const STATUSFX_SITES = [
   [0x1054B8, 0x24020096],
   [0x1054CC, 0x24020096],
 ]
+// Rune power (Passives tab): the magnitudes the passive support runes are worth, as
+// [offset, stock word]. These sit INSIDE each rune's "if equipped" branch — they are not the
+// equipped-check itself (that is PASSIVE_SITES / the PASSIVES table) — and each control rewrites only the
+// value inside the instruction, so the stock word pins both the address and the shape. The
+// last entry is not code at all: it is the walk-heal interval float in the small-data pool.
+const RUNEFX_SITES = [
+  [0x261198, 0x2442000F],   // Sunbeam   addiu $v0,$v0,15   — HP a combat turn adds
+  [0x104088, 0x24020096],   // Killer    addiu $v0,$zero,150
+  [0x104148, 0x24020096],
+  [0x1038EC, 0x24020096],   // Counter
+  [0x103B60, 0x24020096],
+  [0x103D34, 0x24020096],
+  [0x10FD34, 0x24020096],   // Gale
+  [0x10380C, 0x2842001E],   // Haziness  slti $v0,$v0,30
+  [0x245D78, 0x24020003],   // Drain     addiu $v0,$zero,3  — self-heal divisor
+  [0x105218, 0x2403000A],   // Barrier   addiu $v1,$zero,10 — reflect divisor
+  [0x1035E8, 0x24030005],   // Hunter    addiu $v1,$zero,5  — damage clamp
+  [0x244B54, 0x3C013F00],   // Violence  lui $at,0x3F00     — 0.5f HP threshold
+  [0x104370, 0x00131840],   // Wall      sll $v1,$s3,1
+  [0x1047C8, 0x00108040],   // Double-Strike
+  [0x1047DC, 0x00108040],
+  [0x104878, 0x00101040],   // Fire Sealing
+  [0x104FE0, 0x00111040],
+  [0x10546C, 0x00101040],
+  [0x10FD84, 0x00021042],   // Wizard    srl $v0,$v0,1
+  [0x10FDA8, 0x00101042],
+  [0x10FDDC, 0x00021042],   // Warrior
+  [0x10FE00, 0x00101042],
+];
+const RUNEFX_FLOAT = [0x42C3B0, 0x3E99999A];   // Sunbeam walk-heal interval, 0.3f
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -113,6 +143,43 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   (bad2.length ? bad : ok)(bad2.length
     ? `iso.js STATUSFX is missing//drifted for ${bad2.map(([o]) => "0x" + o.toString(16)).join(", ")}`
     : "iso.js STATUSFX lists every site with its stock instruction word");
+}
+{
+  const all = RUNEFX_SITES.concat([RUNEFX_FLOAT]);
+  const oob = all.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
+  if (oob.length) bad(`rune power sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
+  else ok(`rune power sites (${all.length} in block: ${RUNEFX_SITES.length} code + 1 float)`);
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const missing = all.filter(([o, w]) => {
+    const re = new RegExp(`\\[0x${o.toString(16).toUpperCase()},\\s*0x${w.toString(16).toUpperCase().padStart(8, "0")}\\]`, "i");
+    return !re.test(iso);
+  });
+  (missing.length ? bad : ok)(missing.length
+    ? `iso.js RUNEFX is missing/drifted for ${missing.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "iso.js RUNEFX lists every site with its stock word");
+  // A rune-power site must never land on an equipped-check word pair, a status constant, or
+  // inside the block the Passives tab relocates its helper into: all of these write, and the
+  // second writer would silently eat the first.
+  const psOffs = [...iso.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal:/g)].map((m) => parseInt(m[1], 16));
+  const hookOff = parseInt(((iso.match(/const PS_HOOK = \{\s*\n?\s*off: (0x[0-9A-Fa-f]+)/) || [])[1] || "0"), 16);
+  const hookSpan = parseInt(((iso.match(/const PS_HOOK = \{[\s\S]*?span: (0x[0-9A-Fa-f]+)/) || [])[1] || "0"), 16);
+  const clash = all.filter(([o]) => psOffs.some((p) => o >= p && o < p + 8)
+    || STATUSFX_SITES.some(([s]) => s === o) || MOUNT_SITES.includes(o)
+    || (hookSpan && o + 4 > hookOff && o < hookOff + hookSpan));
+  (clash.length ? bad : ok)(clash.length
+    ? `rune power overlaps another patch at ${clash.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "no rune power site overlaps an equipped-check word pair, a status constant, a mount site or the passives helper block");
+  const dupes = all.map(([o]) => o).filter((o, i, a) => a.indexOf(o) !== i);
+  (dupes.length ? bad : ok)(dupes.length
+    ? `the same address is listed twice: ${dupes.map((o) => "0x" + o.toString(16)).join(", ")}`
+    : "every rune power site is listed once");
+  // The four value shapes and their guards have to stay in iso.js: an `imm` control that
+  // silently started rewriting a shift would corrupt the instruction rather than the value.
+  (/const RF_KIND = \{/.test(iso) && /imm:\s/.test(iso) && /sa:\s/.test(iso)
+    && /f32hi:\s/.test(iso) && /f32:\s/.test(iso) ? ok : bad)(
+    "RF_KIND still defines all four value shapes (imm / sa / f32hi / f32)");
+  (/rfSiteOk\(off, stock, e\.kind\)/.test(iso) ? ok : bad)(
+    "rfWrite re-checks each site's stock shape before writing it");
 }
 {
   const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);
@@ -338,14 +405,20 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
   (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js");
   (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js"); }
-// Boot gate: the save editor is inert until Pyodide is up, so a full-screen block covers it.
-// Two things about it are load-bearing and easy to break later, so assert them statically:
-// it must be in the MARKUP (built from script it would flash the dead UI first), and it must
-// keep the ISO-editor escape hatch, because that tab needs no Python and the gate covers the
-// mode tabs. Also that app.js can actually take it down on both outcomes.
+// Boot gate: loading a memory card is inert until Pyodide is up, so a block covers that card.
+// Three things about it are load-bearing and easy to break later, so assert them statically:
+// it must be in the MARKUP (built from script it would flash the dead UI first), it must sit
+// INSIDE #loaderCard (it used to be a full-screen overlay, which made the ISO editor — which
+// needs no Python at all — look dead for the length of a 10 MB download), and it must keep the
+// ISO shortcut. Also that app.js can actually take it down on both outcomes. boot-gate.mjs
+// proves the coverage in a real browser; these are the cheap regressions to catch first.
 { const js = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
+  const bootCss = fs.readFileSync(path.join(WEB, "style.css"), "utf8");
   (/id="bootOv"/.test(html) ? ok : bad)("boot gate is in index.html (up on first paint)");
-  (/id="bootIso"/.test(html) ? ok : bad)("boot gate offers the ISO-editor escape hatch");
+  const iCard = html.indexOf('id="loaderCard"'), iOv = html.indexOf('id="bootOv"'), iDrop = html.indexOf('id="drop"');
+  (iCard >= 0 && iOv > iCard && iOv < iDrop ? ok : bad)("boot gate is inside the save loader card, not the page");
+  (!/\.boot-ov\s*\{[^}]*position:\s*fixed/.test(bootCss) ? ok : bad)("boot gate is not a fixed full-screen overlay");
+  (/id="bootIso"/.test(html) ? ok : bad)("boot gate offers the ISO-editor shortcut");
   (/id="bootFill"/.test(html) && /id="bootMsg"/.test(html) ? ok : bad)("boot gate has a progress bar + message");
   (/bootGate\.close\(\)/.test(js) ? ok : bad)("app.js closes the boot gate");
   (/bootGate\.fail\(/.test(js) ? ok : bad)("app.js puts the boot gate in an error state when the engine fails"); }
@@ -574,6 +647,13 @@ console.log("Guide overlays + xdelta:");
       && rose.shops[0].town === "Iksay Village" && rose.shops[0].kind === "rare"
       ? ok : bad)(`s3_recruit_needs.json parses (${Object.keys(j.chars).length} stars, ${items.length} items)`); }
   catch (e) { bad("s3_recruit_needs.json — " + e.message); }
+  // gear +0x08 is a price tier into the shared ladder, not potch — resolved everywhere it shows
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8"));
+    const mole = (j.chars["Dominic"].items || [])[0];
+    (mole && mole.buy === true && mole.price === 600 ? ok : bad)("a bought recruit item is priced from the disc");
+  } catch (e) { bad("recruit needs buy price — " + e.message); }
+  (/tierPotch/.test(iso) && /Price tier/.test(iso) && !/Price \(potch\)/.test(iso)
+    ? ok : bad)("iso.js resolves the gear price tier through the ladder");
   // manual "Force refresh" escape hatch: footer button that clears SW + caches and reloads
   (/id="forceRefreshBtn"/.test(html) && /#forceRefreshBtn/.test(app)
     ? ok : bad)("footer has an always-available Force-refresh button");
