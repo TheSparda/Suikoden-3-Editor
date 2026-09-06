@@ -228,7 +228,12 @@
           title: `The battle formation lists ${vals.length} member${vals.length === 1 ? "" : "s"}, but the party holds ${filled.length}`,
           detail: "The formation table at 0x3240 is what the game reads to build the party. " +
             "Where it disagrees with the party list, the extra members simply don't appear — " +
-            "no error, just empty slots. Saves edited by an older build of this editor have this.",
+            "no error, just empty slots. Saves edited by an older build of this editor have this. " +
+            "It also BLOCKS STORY JOINS: AddPartyMember (0x16FF758) looks for a free slot by " +
+            "scanning these six bytes, not the party list, so leftover entries make the game " +
+            "think the party is full even when it looks half empty — the character is never " +
+            "added and the \u201cthey joined\u201d line plays anyway. If someone who is supposed " +
+            "to rejoin never turns up, fix this first.",
           where: { sub: "party", search: "" },
           fix: { label: "Rebuild the formation",
                  ops: [{ kind: "party", slot: 0, value: eff.party[0] || 0 }] } });
