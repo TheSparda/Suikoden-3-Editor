@@ -2954,11 +2954,20 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
       stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
     const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
       global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
-      carryover: {}, names: [], characters: CHARS, party: [0,0,0,0,0,0], inventory: [] }];
+      carryover: {}, names: [], characters: CHARS, party: [0,0,0,0,0,0],
+      // pre-merge bag layout, so the "+ get it" button has to pick the bag of the party
+      // being played (Hugo leads this save)
+      inventory: [
+        { region: 'Hugo', base: 0, firstSlot: 0, capacity: 30, used: 1, freeSlots: [1,2], appendSlots: [1,2],
+          items: [{ slot: 0, id: 1, qty: 1, category: 'consumable', stackable: true }] },
+        { region: 'Chris', base: 0, firstSlot: 30, capacity: 30, used: 0, freeSlots: [30], appendSlots: [30], items: [] },
+      ] }];
     window.loadPyodide = async () => ({
       FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
       runPython(code) {
-        if (code.includes('load_reference()')) return JSON.stringify({ items: [], skills: [], charById: {},
+        if (code.includes('load_reference()')) return JSON.stringify({
+          items: [{ id: 315, name: 'Rose Brooch', cat: 'valuable' }, { id: 1, name: 'Medicine D', cat: 'consumable' }],
+          skills: [], charById: { 1: 'Hugo' },
           charRoster: { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 }, charChoices: [1, 2, 3, 4, 5, 6] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
         if (code.startsWith('apply_edits(')) return JSON.stringify({ changed: 1 });
@@ -2980,7 +2989,7 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   // default filter is "missing": recruited stars should be hidden. Match on the character
   // cell, not the row — a stage header names protagonists in its blurb.
   check("default 'missing' filter hides recruited stars",
-    (await page.locator('.starstbl tbody tr:not(.phaserow) td:has-text("Hugo")').count()) === 0);
+    (await page.locator('.starstbl tbody tr:not(.phaserow):not(.howrow) td:nth-child(2):has-text("Hugo")').count()) === 0);
   // an optional missing star carries its guide how-to as a full-width row
   check("optional missing star shows a how-to row", (await page.locator(".starstbl tr.howrow .howto").count()) >= 1);
   // the checklist is laid out in the recruitment guide's order, cut into that order's stages
@@ -2999,6 +3008,28 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
     /Rose Brooch/.test(needs) && /Iksay Village's Item Shop/.test(needs) && /stages 1-3 of 3/.test(needs));
   check("a potch need is measured against this save's purse", /100,000 potch — you have 1,000/.test(needs));
   check("...and is flagged as unaffordable", (await page.locator(".starstbl .need.short").count()) === 1);
+  // "+ get it" hands the item over: into the bag of the party this save is playing (Hugo's),
+  // staged like any other edit
+  check("the item chip offers to put it in the current party's bag",
+    (await page.locator('.starstbl [data-needitem="315"]').first().textContent()).includes("Hugo"));
+  await page.click('.starstbl [data-needitem="315"]'); await page.waitForTimeout(80);
+  check("...and says where it landed", /Rose Brooch.*Hugo, slot 1.*not yet saved/.test(await page.textContent("#status")));
+  // the potch top-up covers exactly the shortfall against this save's 1,000 gold
+  check("the potch chip offers the shortfall", /99,000/.test(await page.textContent('.starstbl [data-needgold]')));
+  await page.click(".starstbl [data-needgold]"); await page.waitForTimeout(80);
+  check("...and topping up clears the chip", (await page.locator(".starstbl .need.short").count()) === 0);
+  check("...leaving nothing more to top up", (await page.locator(".starstbl [data-needgold]").count()) === 0);
+  // both are real staged edits: they show up in the review-before-write list
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const staged = await page.textContent(".cf-list");
+  check("the item and the gold reach Review changes",
+    /Rose Brooch/.test(staged) && /1000 → 100000/.test(staged));
+  await page.click("#cfCancel");
+  // ...and the item really is in Hugo's bag on the Inventory tab, not just in the diff
+  await page.click('[data-sub="items"]'); await page.waitForSelector(".bag");
+  const hugoBag = await page.locator('.bag:has-text("Hugo")').first().textContent();
+  check("the item shows up in that bag on the Inventory tab", /Rose Brooch/.test(hugoBag));
+  await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
   // a stage folds away, taking its rows with it
   const rowsBefore = await page.locator(".starstbl tbody tr:not(.phaserow)").count();
   await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);

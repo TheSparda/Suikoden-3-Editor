@@ -193,5 +193,53 @@ console.log("recruit prerequisites (real s3_recruit_needs.json):");
   check("no needs at all renders nothing", RC.needChips(undefined, {}).length === 0);
 }
 
+console.log("where a checklist '+ get it' puts the item:");
+{
+  // bag layout as s3save reports it: four carried bags + four storages before the merge,
+  // one shared bag + storage after.
+  const bag = (region, used, append) => ({ region, used, capacity: 30, items: [], appendSlots: append });
+  const pre = () => ({
+    global: { merged: false, partyLeader: 1 },
+    inventory: [bag("Hugo", 4, [4, 5]), bag("Chris", 2, [32, 33]), bag("Geddoe", 0, [60]),
+                bag("Thomas", 1, [90]), bag("Hugo storage", 0, [120, 121]), bag("Chris storage", 0, [150])],
+  });
+  const post = { global: { merged: true }, inventory: [bag("Party bag", 6, [6, 7]), bag("Storage", 0, [30])] };
+  const teams = { Aila: ["Geddoe"], Jeane: ["Hugo", "Chris"], Lulu: [] };
+  const teamsOf = (n) => teams[n] || [];
+
+  check("after the merge everything goes in the one shared bag",
+    RC.bagForNeeds(post, "Hugo", teamsOf, []).region === "Party bag");
+  check("playing a protagonist uses that protagonist's own bag",
+    RC.bagForNeeds(pre(), "Chris", teamsOf, []).region === "Chris");
+  check("...and takes the first slot after the bag's last used entry",
+    RC.bagForNeeds(pre(), "Chris", teamsOf, []).slot === 32);
+  check("playing someone else's unit follows their team",
+    RC.bagForNeeds(pre(), "Aila", teamsOf, []).region === "Geddoe");
+  check("a unit on several teams is not guessed at, and the fallback says so", (() => {
+    const t = RC.bagForNeeds(pre(), "Jeane", teamsOf, []);
+    return t.region === "Hugo" && /doesn't say whose chapter/.test(t.why);   // Hugo's bag is the fullest
+  })());
+  check("a bag that hasn't been stocked yet is flagged, not silently used",
+    RC.bagForNeeds(pre(), "Aila", teamsOf, []).unstarted === true);
+  check("slots already staged this session are not handed out twice",
+    RC.bagForNeeds(pre(), "Chris", teamsOf, [32]).slot === 33);
+  check("a full bag overflows into that team's storage", (() => {
+    const t = RC.bagForNeeds(pre(), "Hugo", teamsOf, [4, 5]);
+    return t.region === "Hugo storage" && t.slot === 120 && /full/.test(t.why);
+  })());
+  check("with everything full it reports no slot rather than picking one",
+    RC.bagForNeeds(post, "Hugo", teamsOf, [6, 7, 30]).slot === null);
+  check("a save with no bags at all returns nothing",
+    RC.bagForNeeds({ global: {}, inventory: [] }, "Hugo", teamsOf, []) === null);
+
+  // the potch chip carries the shortfall the button tops up
+  const NEEDS = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8")).chars;
+  const chip = RC.needChips(NEEDS["Watari"], { gold: 42000 })[0];
+  check("a potch chip carries exactly what you are short", chip.amount === 100000 && chip.short === 58000);
+  check("...and nothing to top up once you can afford it", RC.needChips(NEEDS["Watari"], { gold: 100000 })[0].short === 0);
+  check("an item chip carries the item id the button adds",
+    RC.needChips(NEEDS["Augustine"], {})[0].id === 315);
+}
+
 console.log(fails ? `\nFAILED (${fails})` : "\nAll recruit-logic checks passed.");
 process.exit(fails ? 1 : 0);
