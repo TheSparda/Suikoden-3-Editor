@@ -1041,6 +1041,9 @@ function drawStars() {
   // bag, a potch price is topped up by exactly what you are short. Both only STAGE the change,
   // so they go through Review changes with everything else.
   const needBtn = (n) => {
+    // An item you have to buy needs the money, not the item: give it the same top-up the potch
+    // lines get, never "＋ add to bag" — a Mole Armor in your pack recruits nobody.
+    if (n.kind === "item" && n.buy) return topUpBtn(n);
     if (n.kind === "item" && n.id) {
       if (!bagTarget || bagTarget.slot === null) return "";
       const warn = bagTarget.unstarted
@@ -1049,12 +1052,13 @@ function drawStars() {
       return ` <button class="chip mini needbtn" data-needitem="${n.id}"
         title="Put one ${esc(n.name)} in ${esc(bagTarget.region)} — ${esc(bagTarget.why)}${esc(warn)}">＋ add to ${esc(bagTarget.region)}</button>`;
     }
-    if (n.kind === "potch" && n.short > 0) {
-      return ` <button class="chip mini needbtn" data-needgold="${n.amount}"
-        title="Top your purse up to ${n.amount.toLocaleString()} potch — the ${n.short.toLocaleString()} you are short">＋ ${n.short.toLocaleString()}</button>`;
-    }
+    if (n.kind === "potch") return topUpBtn(n);
     return "";
   };
+  const topUpBtn = (n) => (n.short > 0
+    ? ` <button class="chip mini needbtn" data-needgold="${n.amount}"
+        title="Top your purse up to ${n.amount.toLocaleString()} potch — the ${n.short.toLocaleString()} you are short">＋ ${n.short.toLocaleString()}</button>`
+    : "");
 
   const body = groups.map((g) =>
     groupHead(g) + (STARS_COLLAPSED[g.key] ? "" : g.rows.map(starRow).join(""))

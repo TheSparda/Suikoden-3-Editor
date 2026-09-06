@@ -93,7 +93,9 @@ Editable per save:
   guessing. Each of those can also be **handed over**: an item goes into the bag of the party
   the save is currently playing (derived from the field-leader byte and that character's team —
   before the parties merge each protagonist carries their own bag, so "your inventory" is not
-  one place), and a potch price is topped up by exactly the shortfall. Both only stage the
+  one place), and a potch price is topped up by exactly the shortfall. An errand that says
+  **buy** is money, not goods — Dominic joins when you *buy* the Mole Armor from him, so that
+  one is priced off the disc (600 potch) and offers the top-up, never a free copy. Both only stage the
   change, so they still go through **Review changes**. It reflects staged edits live, so it
   doubles as a worklist for a completion run.
 - **Party** — the active battle party (up to 6), by character name.
