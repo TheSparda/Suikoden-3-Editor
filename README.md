@@ -148,13 +148,20 @@ multiplies every character's growth rate at once and carries the idempotent *Tou
 Brutal* difficulty presets, optionally scoped to whatever the filter box is showing),
 **Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**,
-**Runes** (every rune in the game: **rename** it and rewrite the **menu text** the game shows
-for it. What a rune *does* lives in the spells it grants, so each of those is a **link straight
-into the Spells tab with that record open** rather than a second copy of the same fields — which
-is also the only route from an attack rune to its numbers, since Kite and Phoenix carry no status
-effect for an effect editor to hang off. The passive support runes link to nothing, because they
-have no spell record at all: what they do is engine code, not a row. Names and menu text are
-rewritten in place, so each is capped to the slot
+**Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows
+for it, and **choose which spells it grants**. Every rune record carries **four spell slots**,
+and a rune with fewer spells than that is simply zero-padded — so *Kite* grants one attack and
+has **three free slots**, and filling one is how a rune is given a spell it never had. Each of
+the game's 94 spells can go in any slot. All 27 special-attack runes have the same three slots
+spare. Each filled slot is also a **link straight into the Spells tab with that record open**,
+which stays the one place a spell's own power / cast / element / target / status is edited —
+and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
+status effect for an effect editor to hang off. The passive support runes ship with all four
+slots empty: what they do is engine code, not a spell. Two caveats, both written into the tab:
+the character levels that gate a rune's later spells are **not** in this record and are not
+editable yet, and whether an attack rune will surface more than one spell is untested on
+hardware — try a reassigned rune in game before building a run around it. Names and menu text
+are rewritten in place, so each is capped to the slot
 the disc already reserves for it, and both are **mirrored across every copy**: the 20 attack
 runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well —
 *Kite* the rune and *Kite* the spell it grants each hold their own — so one edit keeps the rune
@@ -163,8 +170,9 @@ picker, tooltip and list in the editor for that ISO, and the rune stays findable
 original name),
 **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
-poison* — that edits every spell a rune grants at once, a **bulk Power scale** for the whole
-table, and optional description rewrites),
+poison* — that edits every spell a rune grants at once, for any of the 49 runes that grant
+something (it reads each rune's slots off the disc, so it follows a reassignment), a **bulk
+Power scale** for the whole table, and optional description rewrites),
 **Unites** (including the same bulk Power scale), **Mounts** (both of the game's mount systems — the per-character **assigned horse**
 that puts the six Zexen Knights on horseback in the field *and* in battle, and the hard-coded
 **three-pair** battle table, stock *Hugo+Fubar / Futch+Bright / Franz+Ruby*, which can be
