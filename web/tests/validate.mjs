@@ -365,6 +365,15 @@ console.log("Guide overlays + xdelta:");
     const story = Object.values(j).filter((v) => v.auto).length;
     (Object.keys(j).length > 90 && story > 20 ? ok : bad)(`s3_recruit_meta.json parses (${Object.keys(j).length} chars, ${story} story)`); }
   catch (e) { bad("s3_recruit_meta.json — " + e.message); }
+  // 108 Stars: the checklist runs in the recruitment guide's order, cut into that order's stages
+  (/s3_recruit_order\.json/.test(app) && /orderStars/.test(app) && /groupStars/.test(app) && /phaserow/.test(app)
+    ? ok : bad)("108-Stars checklist runs in the guide's recruitment order");
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_order.json"), "utf8"));
+    const ns = Object.values(j.chars).map((g) => g.n);
+    const staged = Object.values(j.chars).every((g) => j.phases.some((p) => p.key === g.phase));
+    (Object.keys(j.chars).length === 108 && new Set(ns).size === ns.length && staged && j.extras.length === 4
+      ? ok : bad)(`s3_recruit_order.json parses (${Object.keys(j.chars).length} stars, ${j.phases.length} stages, ${j.extras.length} non-star)`); }
+  catch (e) { bad("s3_recruit_order.json — " + e.message); }
   // manual "Force refresh" escape hatch: footer button that clears SW + caches and reloads
   (/id="forceRefreshBtn"/.test(html) && /#forceRefreshBtn/.test(app)
     ? ok : bad)("footer has an always-available Force-refresh button");
