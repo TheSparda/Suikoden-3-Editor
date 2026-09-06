@@ -1021,6 +1021,41 @@ head("Movement speed — restore covers speeds and classes together");
   await page.context().close();
 }
 
+head("Reference — Music: where the game picks a track, read-only");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="ref"]');
+  await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
+  await page.click('[data-ref="bgm"]');
+  await page.waitForSelector("table.invtbl", { timeout: 3000 });
+  check("the sub-tab hint follows the sub-tab", /which music plays/.test(await page.textContent("#isoHint")), await page.textContent("#isoHint"));
+  const txt = await page.textContent("#isoView");
+  // Both sources of a track, and the field split that names them
+  check("it counts both cue sources", /script cues/.test(txt) && /room\s+records/.test(txt.replace(/\s+/g, " ")));
+  check("it names the room record's two audio fields", /\+0x22/.test(txt) && /\+0x24/.test(txt));
+  check("track ids are listed in hex", /0x0200/.test(txt) && /0x0113/.test(txt), txt.slice(0, 120));
+  check("track 0 reads as silence, not as an id", /silence/.test(txt));
+  check("areas are named, not just archive codes", /Budehuc Castle/.test(txt));
+  // The honesty rows — the whole reason this is reference and not an editor
+  check("it says the ids have no names", /no name table/.test(txt));
+  check("it flags 0x0200 as the map's own theme rather than a song", /own theme/.test(txt));
+  check("it says the audio itself can't be replaced", /SD\/STR\.BIN/.test(txt));
+  check("it states the filter that validates a cue", /91%/.test(txt));
+  // Filtering reaches the area names, not only the ids. Assert on the AREA table's row count:
+  // the track table legitimately keeps naming every area a surviving track plays in, so a
+  // whole-page "other areas are gone" check would be wrong, not just brittle.
+  const areaTable = page.locator("table.invtbl").nth(1);
+  const before = await areaTable.locator("tbody tr").count();
+  await page.fill("#isoSearch", "brass castle"); await page.waitForTimeout(150);
+  const after = await areaTable.locator("tbody tr").count();
+  check("filtering narrows the area table", after >= 1 && after < before, `${before} -> ${after}`);
+  check("filtering matches an area name", /Brass Castle/.test(await page.textContent("#isoView")));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
+  check("clearing the filter restores every area", (await areaTable.locator("tbody tr").count()) === before);
+  check("the view stages nothing", await nothingStaged(page));
+  check("there is no input in the Music view", (await page.locator("#isoView input, #isoView select").count()) === 0);
+  await page.context().close();
+}
+
 head("Reference — Mounts browser, read-only");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
