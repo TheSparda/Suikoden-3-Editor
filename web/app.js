@@ -1417,6 +1417,22 @@ function drawField() {
   };
 }
 
+// Mount model ids, as they appear in party positions 7-12. Only 308/309 occur in a stock
+// game — the consumer clamps with `(v - 308) < 2` — but a patched disc can show the other
+// ids the ground-ride saddle table knows, so name those too rather than print a bare number.
+// Mirrors s3save.MOUNT_MODEL_NAMES.
+// Party ids that ship with an assigned horse in the ISO's list2 +0x66 field: the six Zexen
+// Knights. Chris carries her own horse (309), the rest the knight horse (308). Hardcoded
+// because +0x66 lives in the ISO, not the save — a save alone cannot know who is eligible,
+// and an empty Mount cell is much more useful when it can say whether one was expected.
+// The ISO editor's Mounts tab can give the field to anyone, so this is "stock", not "all".
+const STOCK_HORSE_OWNERS = { 2: "Chris", 13: "Roland", 18: "Leo", 20: "Percival", 21: "Borus", 54: "Salome" };
+
+const MOUNT_MODELS = {
+  308: "Zexen-knight horse", 309: "Chris's horse", 325: "Karaya horse", 353: "Karaya horse #2",
+  42: "Ruby", 209: "Le Buque horse (mskn)", 359: "Le Buque horse", 360: "Le Buque horse #2",
+};
+
 function drawParty() {
   const s = saves[curSlot];
   const mem = s.party || [];
@@ -1430,14 +1446,54 @@ function drawParty() {
   // "Remove" was only reachable by opening the picker and choosing the `empty` row, which
   // nobody finds. An explicit ✕ per occupied slot is the obvious control.
   const eff = (slot) => (PARTY[slot] !== undefined ? PARTY[slot] : mem[slot]) || 0;
+  // Positions 7-12 of the same table hold each member's MOUNT (see s3save.PARTY_MOUNT_SLOTS).
+  // Read-only here: the game writes it when the party is formed, from the character's
+  // assigned-horse field, and showing it is how you can tell a mount is actually staged.
+  const mounts = s.partyMounts || [];
+  const mountLabel = (m) => (MOUNT_MODELS[m] || `model ${m}`);
+  // The formation table (0x3240) holds, per battle position, the 1-based index of the member
+  // that stands there — an index into the DENSE list of filled party slots, not the slot
+  // number. Invert it so a party row can state its own battle position instead of the row
+  // number being assumed to be it.
+  const form = s.formation || [];
+  const dense = [];                       // party slot -> 1-based member index
+  mem.forEach((cid, slot) => { if (cid) dense[slot] = dense.filter((x) => x).length + 1; });
+  const battlePos = {};                   // member index -> 1-based battle position
+  form.forEach((mi, pos) => { if (mi && battlePos[mi] === undefined) battlePos[mi] = pos + 1; });
+  const posOf = (slot) => (dense[slot] ? battlePos[dense[slot]] : undefined);
+  // A member with NO position is the real fault — the game builds the party from this table,
+  // so they simply will not appear. A member at a position other than their slot number is
+  // NOT a fault: the six positions are a battle layout, and the game itself writes reordered
+  // ([1,3,4,2,6,5]) and spread ([1,0,3,0,2,0]) tables. An earlier build of this view warned
+  // on those, which fires on perfectly healthy saves.
+  const orphaned = mem.filter((cid, slot) => cid && posOf(slot) === undefined).length;
   const rows = mem.map((cid, slot) => {
     const now = eff(slot);
+    const mv = mounts[slot] || 0;
+    // The mount belongs to whoever is in the slot *in the file*. If this slot has a pending
+    // edit the pairing is about to be re-derived on Apply, so say so instead of implying
+    // the horse now belongs to the new pick.
+    const pending = PARTY[slot] !== undefined && PARTY[slot] !== cid;
+    const mountCell = mv
+      ? (pending ? `<span class="dim" title="This slot has an unapplied change; the mount is re-paired on Apply.">${
+              esc(mountLabel(mv))} <span class="dim">· re-paired on Apply</span></span>`
+                 : `<span class="tag">${esc(mountLabel(mv))} <span class="dim">#${mv}</span></span>`)
+      : !now ? '<span class="dim">—</span>'
+      : STOCK_HORSE_OWNERS[now]
+        ? `<span class="dim" title="This character ships with an assigned horse, but none is staged in this save. The game writes it when the party is formed.">none staged <span class="dim">· expected</span></span>`
+        : '<span class="dim">—</span>';
+    const bp = posOf(slot);
+    const fCell = !cid ? '<span class="dim">—</span>'
+      : bp === undefined ? '<span class="tag bad" title="No formation entry — this member will not appear in battle.">not placed</span>'
+      : `<span class="dim">${bp}</span>`;
     return `<tr>
       <td class="sl">Slot ${slot + 1}${slot === 0 ? ' <span class="dim">· leader</span>' : ""}</td>
       <td><div class="party-row">
         <button type="button" class="picker" data-partyslot="${slot}" data-val="${now}" data-def="${cid}">${esc(charLabel(now))}</button>${
         now ? `<button type="button" class="chip mini party-x" data-partydrop="${slot}" title="Remove from the party" aria-label="Remove from the party">✕</button>` : ""}
-      </div></td></tr>`;
+      </div></td>
+      <td>${fCell}</td>
+      <td>${mountCell}</td></tr>`;
   }).join("");
   const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =
@@ -1450,7 +1506,37 @@ function drawParty() {
        (save <code>0x3216</code>) — who is in your party, in order. It is not the <b>battle
        formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
        re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
-    `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th></tr></thead><tbody>${rows}</tbody></table>`;
+    (orphaned ? `<div class="warnbox">${orphaned} party member${orphaned === 1 ? " has" : "s have"}
+       no place in the battle formation, so ${orphaned === 1 ? "they" : "they"} will not appear in
+       battle. Run the health check — it can rebuild the table.</div>` : "") +
+    `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th><th>Battle pos.</th><th>Mount</th></tr></thead><tbody>${rows}</tbody></table>` +
+    (anyFilled ? `<div class="card" style="margin:12px 0 0">
+      <div class="bag-h">Battle formation <span class="u">save 0x3240 · six positions</span></div>
+      <div class="muted" style="margin:0 0 8px">A <b>separate table</b> from the party list, and the
+        one the game actually reads to build the party. Each position holds the <i>index</i> of a
+        party member, so gaps and reordering are normal — the game writes both. It is also what a
+        story join looks at for free space, not the party list.</div>
+      <table class="invtbl"><thead><tr><th>Position</th><th>Who stands there</th><th>Mount</th></tr></thead><tbody>${
+        form.slice(0, 6).map((mi, pos) => {
+          const slot = mi ? mem.findIndex((c, k) => dense[k] === mi) : -1;
+          const who = mi && slot >= 0 ? charLabel(eff(slot))
+                    : mi ? `<span class="tag bad">member ${mi} — no such party member</span>`
+                    : '<span class="dim">empty</span>';
+          const mv2 = slot >= 0 ? (mounts[slot] || 0) : 0;
+          const mc = mv2 ? `<span class="tag">${esc(mountLabel(mv2))}</span>` : '<span class="dim">—</span>';
+          return `<tr><td class="sl">${pos + 1}</td><td>${who}</td><td>${mc}</td></tr>`;
+        }).join("")}</tbody></table>
+      <div class="muted" style="margin:8px 0 0;font-size:12px">${
+        form.filter((v) => !v).length} of 6 free — a character who joins by story event needs one
+        of these empty, or the join is silently dropped.</div></div>` : "") +
+    (anyFilled ? `<div class="muted" style="margin:8px 0 0;font-size:12px">A <b>mount</b> is staged
+       in the same table, six positions along (save <code>0x3222</code>), written when the party is
+       formed from the character's assigned-horse field in the ISO. It is what puts a horse beside
+       them on the field. Removing a member takes their mount with them.${
+         mounts.some((m) => m) ? ""
+           : " <b>Nothing is staged in this save</b> — none of these characters carries that field."
+             + " Stock it is only the six Zexen Knights; the ISO editor's Mounts tab can give it to"
+             + " anyone, and the horse then appears here once the party is next formed."}</div>` : "");
   $$("[data-partydrop]").forEach((b) => (b.onclick = () => {
     PARTY[+b.dataset.partydrop] = 0;
     drawParty();

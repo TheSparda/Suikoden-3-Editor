@@ -12,6 +12,7 @@ what turns noise into signal.
     python3 Editor/eds_dis.py actorops                 # which opcodes take an actor handle
     python3 Editor/eds_dis.py towns                    # FIND THE SCRIPTS: scan town sub-files
     python3 Editor/eds_dis.py scenes                   # FIND THE CASTS: who each scene stages
+    python3 Editor/eds_dis.py rides  [ARCHIVE]         # every "ride your own horse" call
     python3 Editor/eds_dis.py dis   0xD269D91E 40      # disassemble 40 instructions there
     python3 Editor/eds_dis.py find  346 1              # every `op 346, param 1` on the disc
 
@@ -94,6 +95,14 @@ BANDS = {0x0000: "slot (plain index)", 0x0400: "charId (0x400|N)", 0x0800: "scen
 
 
 def actor_str(v):
+    """Render an actor handle. Bit 0x4000 is NOT part of the namespace — see MOUNT.
+
+    The decoder at 0x17B5A40 resolves the handle to an actor record and then ends with
+    `$v0 = rec + 0x180; movz $v0, rec, (handle & 0x4000)`. Actor records are 0x40 bytes
+    (`MakeActorRecord` @ 0x1775AA0 bzeroes exactly that), so +0x180 is the actor **six
+    slots later** — that actor's mount. Printing 0x5400 as a bare "PLAYER" hides the
+    single most load-bearing bit in the field mount system, so it gets a suffix.
+    """
     if v & 0x8000:
         return f"none({v:#06x})"
     ns, idx = v & 0x3C00, v & 0x3FF
@@ -101,7 +110,8 @@ def actor_str(v):
             0x1000: "indirect", 0x1400: "PLAYER", 0x1800: "partyPos"}.get(ns)
     if kind is None:
         return f"{v:#06x}"
-    return "PLAYER" if kind == "PLAYER" else f"{kind}:{idx}"
+    base = "PLAYER" if kind == "PLAYER" else f"{kind}:{idx}"
+    return base + ".mount" if v & 0x4000 else base
 
 
 def op_lengths(buf):
@@ -306,6 +316,85 @@ def cmd_towns(argv):
     print("\nNote the zero: scenes never name a character by id (0x400|N). They use SLOTS.")
 
 
+SELF_MOUNT_OPS = {22: "RideOn", 24: "RideOff"}
+
+
+def cmd_rides(argv):
+    """Every "mount this actor on its OWN horse" instruction on the disc.
+
+    `RideOn(h, h | 0x4000)` is the self-mount shape: the second operand resolves to the
+    actor six slots along, which is where the engine stages a character's assigned horse
+    (`PartyPut` @ 0x16FF8A8 puts it at party position `pos + 6` whenever list2 `+0x66`
+    is set). So this instruction means "ride your own horse", and `RideOn(PLAYER, ...)`
+    means "the player rides theirs".
+
+    No chain validation is needed: requiring `param2 == param1 | 0x4000` with a valid
+    namespace is a 1-in-millions coincidence, which is why this finds signal where the
+    raw opcode search in MOUNT_SYSTEM_RESEARCH.md §9 found only noise. Results are split
+    by sub-file kind because only `town` holds scripts — `map` hits are filler (the
+    all-zero handle, or the repeating 0x5050 float garbage) and are reported separately
+    rather than silently dropped.
+    """
+    want = argv[0].upper() if argv else None
+    d = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "s3_subfiles.json")))
+    kinds = d["kinds"]
+    spans = sorted((a["base"] + s * 2048, a["base"] + (s + n) * 2048, a["archive"],
+                    kinds[k], l) for a in d["archives"] for s, n, k, l in a["files"])
+
+    def where(o):
+        lo, hi = 0, len(spans)
+        while lo < hi:
+            m = (lo + hi) // 2
+            if spans[m][0] <= o:
+                lo = m + 1
+            else:
+                hi = m
+        if lo and spans[lo - 1][1] > o:
+            return spans[lo - 1][2], spans[lo - 1][3], spans[lo - 1][4]
+        return "?", "?", ""
+
+    ok_ns = {0x0000, 0x0400, 0x0800, 0x0C00, 0x1000, 0x1400, 0x1800}
+    rows = []
+    with open(iso_path(), "rb") as f:
+        for a in archives():
+            base, rem, pos, carry = a["base"], a["size"], 0, b""
+            f.seek(base)
+            while rem > 0:
+                n = min(1 << 26, rem)
+                data = carry + f.read(n)
+                rem -= n
+                for op in SELF_MOUNT_OPS:
+                    pat = struct.pack("<H", op)
+                    i = data.find(pat)
+                    while i != -1:
+                        o = base + pos + i - len(carry)
+                        if o % 2 == 0 and i + 8 <= len(data):
+                            r, m, _p = struct.unpack_from("<3H", data, i + 2)
+                            if (m == (r | 0x4000) and not r & 0x8000
+                                    and (r & 0x3C00) in ok_ns):
+                                rows.append((o, op, r))
+                        i = data.find(pat, i + 1)
+                pos += n
+                carry = data[-8:]
+
+    town, other = collections.Counter(), collections.Counter()
+    for o, op, r in sorted(rows):
+        arc, kind, label = where(o)
+        if want and arc != want:
+            continue
+        who = actor_str(r)
+        (town if kind == "town" else other)[(arc, who, SELF_MOUNT_OPS[op])] += 1
+        if kind == "town":
+            print(f"  {arc:5} {label[:20]:20} {o:010X} {SELF_MOUNT_OPS[op]:7} {who}")
+    print(f"\n{sum(town.values())} self-mount(s) in `town` scripts:")
+    for (arc, who, nm), c in sorted(town.items()):
+        print(f"   {arc:6} {nm:7} {who:16} x{c}")
+    print(f"\n{sum(other.values())} in non-script sub-files (filler, not code):")
+    for (arc, who, nm), c in sorted(other.items()):
+        print(f"   {arc:6} {nm:7} {who:16} x{c}")
+
+
 def cmd_scenes(argv):
     """List every scene's cast, and the exact byte that casts each role.
 
@@ -387,7 +476,8 @@ def main():
         return 2
     cmd, argv = sys.argv[1], [a for a in sys.argv[2:] if not os.path.isfile(a)]
     fn = {"lens": cmd_lens, "dis": cmd_dis, "scan": cmd_scan, "find": cmd_find,
-          "actorops": cmd_actorops, "towns": cmd_towns, "scenes": cmd_scenes}.get(cmd)
+          "actorops": cmd_actorops, "towns": cmd_towns, "scenes": cmd_scenes,
+          "rides": cmd_rides}.get(cmd)
     if not fn:
         print(__doc__)
         return 2
