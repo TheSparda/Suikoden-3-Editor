@@ -585,16 +585,18 @@ head("Field character — the whitelist that decides who you can walk around as"
   await page.context().close();
 }
 
-head("Field character — per-map coverage; Story content in its own view");
+head("Field character — chips; Story content in its own view");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
   await page.waitForSelector("#avWide", { timeout: 3000 });
-  // Coverage rides on the chip, because "is this character even in the map I am on" is the
-  // second thing that decides whether a pick works and the user cannot check it themselves.
+  // Per-area coverage used to ride on each chip as a second condition to satisfy. Play
+  // testing retired it — the shipped characters worked everywhere — so the chips must not
+  // advertise a map limit again.
   { const txt = await page.textContent("#isoView");
-    check("chips report how many maps ship each model", /\d+\/28 maps/.test(txt), (txt.match(/\d+\/28 maps/) || [])[0]);
-    check("Thomas's chip shows his small coverage", /5\/28 maps/.test(txt)); }
+    check("chips carry no per-area coverage claim", !/\/28 maps/.test(txt),
+      (txt.match(/\S*\/28 maps/) || [])[0]);
+    check("...and still name the ids they admit", /#1\b/.test(txt) && /#29\b/.test(txt)); }
 
   // The story-content control: retiring a case must move that character to Hugo's index.
   // Story content was promoted out of Test once it was confirmed in play, so it is reached
