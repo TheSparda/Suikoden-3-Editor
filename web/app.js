@@ -971,6 +971,16 @@ function drawStars() {
     recruited: (n) => (byName[n] ? byName[n].st.recruited : null),
   });
 
+  // Where a "＋ get it" lands: the bag belonging to the party this save is currently playing.
+  // Derived from the field-leader byte (staged edit included) and that character's team bits,
+  // so an item added from the checklist goes somewhere you can actually reach right now.
+  const leadId = LEADER !== null ? LEADER : (s.global && s.global.partyLeader);
+  const leadName = (REF.charById && REF.charById[leadId]) || s.leaderName || "";
+  const bagTarget = RecruitCore.bagForNeeds(s, leadName, (n) => {
+    const r = byName[n] || (s.characters || []).map((c) => ({ c })).find((x) => x.c.name === n);
+    return r ? (r.st || recState(r.c)).teams : [];
+  }, Object.values(ADDED).flat());
+
   const teamPills = (st) => st.teams.length
     ? st.teams.map((t) => `<span class="tpill t${t[0]}">${t[0]}</span>`).join("")
     : `<span class="tpill tS" title="shared / story">S</span>`;
@@ -1002,7 +1012,7 @@ function drawStars() {
     const chips = (!rec && !x.story) ? needChips(x.c.name) : [];
     const chipHtml = chips.map((n) => {
       const mark = n.ok === null ? "" : n.ok ? `<span class="ok">✓</span> ` : `<span class="miss">✗</span> `;
-      return `<span class="need n-${n.kind}${n.ok === false ? " short" : ""}">${mark}${esc(n.text)}</span>`;
+      return `<span class="need n-${n.kind}${n.ok === false ? " short" : ""}">${mark}${esc(n.text)}${needBtn(n)}</span>`;
     }).join("");
     const howRow = (how || chipHtml)
       ? `<tr class="${dirty}howrow"><td colspan="6">
@@ -1025,6 +1035,25 @@ function drawStars() {
         <span class="phbar"><span style="width:${gpct}%"></span></span>
         <div class="phnote">${esc(g.note || "")}${extra}</div>
       </td></tr>`;
+  };
+
+  // Hand it over rather than making you go and get it: an item lands in the current party's
+  // bag, a potch price is topped up by exactly what you are short. Both only STAGE the change,
+  // so they go through Review changes with everything else.
+  const needBtn = (n) => {
+    if (n.kind === "item" && n.id) {
+      if (!bagTarget || bagTarget.slot === null) return "";
+      const warn = bagTarget.unstarted
+        ? ` — WARNING: ${bagTarget.region}'s chapter hasn't started, and the game overwrites that bag when it does`
+        : "";
+      return ` <button class="chip mini needbtn" data-needitem="${n.id}"
+        title="Put one ${esc(n.name)} in ${esc(bagTarget.region)} — ${esc(bagTarget.why)}${esc(warn)}">＋ add to ${esc(bagTarget.region)}</button>`;
+    }
+    if (n.kind === "potch" && n.short > 0) {
+      return ` <button class="chip mini needbtn" data-needgold="${n.amount}"
+        title="Top your purse up to ${n.amount.toLocaleString()} potch — the ${n.short.toLocaleString()} you are short">＋ ${n.short.toLocaleString()}</button>`;
+    }
+    return "";
   };
 
   const body = groups.map((g) =>
@@ -1072,6 +1101,27 @@ function drawStars() {
   };
   $$("[data-starsadd]").forEach((b) => (b.onclick = () => {
     const c = charByRoster(+b.dataset.starsadd); setRecruit(c, true, RTEAM ? [RTEAM] : []); drawStars();
+  }));
+  $$("[data-needitem]").forEach((b) => (b.onclick = () => {
+    const id = +b.dataset.needitem;
+    // Re-derive the target at click time: an earlier click in this render already claimed a slot.
+    const t = RecruitCore.bagForNeeds(s, leadName, (n) => (byName[n] ? byName[n].st.teams : []),
+      Object.values(ADDED).flat());
+    if (!t || t.slot === null) { setStatus("every bag is full — clear a slot in Inventory first"); return; }
+    ADDED[t.bi] = (ADDED[t.bi] || []).concat(t.slot);
+    // Runes, armour and key items are one per slot with the count left at 0; only real
+    // stackables carry a quantity. Same rule the Inventory tab writes.
+    INV[t.slot] = itemStackable(id) ? { id, qty: 1 } : { id };
+    setStatus(`${itemLabel(id)} → ${t.region}, slot ${t.slot} — staged, not yet saved`);
+    drawStars(); refreshHealthBadge();
+  }));
+  $$("[data-needgold]").forEach((b) => (b.onclick = () => {
+    const want = +b.dataset.needgold;
+    const have = typeof GOLD === "number" ? GOLD : (s.global && s.global.gold) || 0;
+    if (have >= want) return;
+    GOLD = want;                          // top up by the shortfall, not a round number
+    setStatus(`Gold ${have.toLocaleString()} → ${want.toLocaleString()} — staged, not yet saved`);
+    drawStars(); refreshHealthBadge();
   }));
 }
 
@@ -1443,7 +1493,14 @@ function drawItems() {
     const items = bag.items.filter((it) => (it.category === "key") === wantKey &&
       (!SEARCH || (ITEM_BY_ID[it.id]?.name || "").toLowerCase().includes(SEARCH) ||
        String(it.slot) === SEARCH || it.id.toString(16).includes(SEARCH)));
-    const added = (ADDED[bi] || []).map((sl) => ({ slot: sl, id: 0, qty: 0, stackable: true, category: wantKey ? "key" : "consumable" }));
+    // A slot added this session shows whatever has been staged into it — the checklist's
+    // "＋ get it" fills one in directly, and an empty row where the Rose Brooch is supposed to
+    // be would read as if the add had failed. Still-empty ones stay in the tab you added from.
+    const added = (ADDED[bi] || []).map((sl) => {
+      const st = INV[sl] || {}, id = st.id || 0;
+      return { slot: sl, id, qty: st.qty || 0, stackable: id ? itemStackable(id) : true,
+               category: id ? itemCategory(id) : (wantKey ? "key" : "consumable") };
+    }).filter((r) => !r.id || (r.category === "key") === wantKey);
     const list = items.concat(added);
     // Only append AFTER the bag's last used entry: the game keeps each bag packed from its
     // base and adds new pickups at the tail, so a slot in an interior gap can be dropped
