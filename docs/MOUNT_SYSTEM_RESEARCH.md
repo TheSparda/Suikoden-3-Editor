@@ -1133,6 +1133,25 @@ whether the strip does what §3a says, and a bad way to actually ship him a hors
 
 ### 14f. What this does not reach, and what is still unplayed
 
+**Where Hugo can be mounted at all is fixed by asset containment, and it is three areas.**
+Scanning `cha_syu1_9??`/`cha_syu1_0??` against `krum`/`kru2` across every archive:
+
+| archive | Hugo's ground-ride bank | Karaya horse | chapters its scripts cover |
+|---|---|---|---|
+| **HGB1** · Yaza Plain | `970 971 972 973 974 975` — the only **complete** set on the disc | complete | **no chapter tags** |
+| **HNKT** · Budehuc Castle | `970 971 972 973 974` | complete | 0, 1, 2, 3, 4, 6 |
+| **KRVI** · Karaya Village | `970 971 972 973 974` | complete | 1, 2, 3, 5 |
+
+Everywhere else he carries `074` alone — `ride_neutral`, one seated pose, no mount-up, walk
+or run — so no script could mount him usefully there.
+
+The chapter column comes from scene id tags of the form `<chapter><AREA><nnn>`
+(`3KRVI002`, `1HNKT001`), one chapter per `town` sub-file. That is what "he rides in some
+chapters" is: the area ships a different script per story state. Note the gaps — **no
+chapter 5 in Budehuc, no chapter 4 in Karaya**. HGB1 carries no tags and is not
+chapter-partitioned, consistent with it being the area you ride *into*.
+
+
 - **MORI and VDZK** hold 19 player self-mounts between them and **no complete ground horse
   in either archive**. Those need a model added to the archive, which is the repacking
   blocker in [`ETC_BIN_MODEL_RESEARCH.md`](ETC_BIN_MODEL_RESEARCH.md), not a constant.
@@ -1165,8 +1184,21 @@ whether the strip does what §3a says, and a bad way to actually ship him a hors
   split is now mapped and tracks which mount system authored the rider (§5), but what those clips
   actually animate is still unread — as is why Roland uses `341` for the mounted attack where every
   other rider uses `340`.
-- Whether the field ride state survives a map transition. The field state lives on per-scene
-  EOBJs (`+0x250`) and the battle state lives in `btlWork`; no save-file field was traced.
+- ~~Whether the field ride state survives a map transition.~~ **It does** — confirmed from
+  play 2026-09-06: Hugo mounts in Karaya Village and walks into Yaza Plain still mounted.
+  That is load-bearing, because `RideOn` (the EDS opcode) is the only thing on the field
+  that ever mounts anybody — `RideLink` has four callers, one field and three battle, and
+  the field one is reached only from the opcode handler and the dead debug toggle. **HGB1
+  contains no mount instruction at all**, so the state cannot have been re-issued there; it
+  arrived. Which mechanism carries it is *not* established. The natural candidate is that
+  the horse is a **party actor** rather than a scene object — party membership is saved
+  state and survives the transition, scene objects do not — but that was not traced, and
+  KRVI has no `RideOn(PLAYER, PLAYER.mount)` to support it either.
+
+  Practical consequence, and the reason this matters more than it looks: **a mount only has
+  to fire once.** Forcing field riding in a set of areas does not need an instruction in
+  each one, only in the area you enter from, plus the ride clips and horse model bundled in
+  each destination.
 - The rest of the `0x84`-byte list2 record — `+0x66` is now known (§11) but most of the row
   past the skill-cap array is still unmapped.
 - Which scene-setup code writes `rec->+0x1bc`. **No longer open in the way that matters**: §10a
