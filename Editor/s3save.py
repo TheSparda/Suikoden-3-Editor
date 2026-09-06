@@ -309,8 +309,6 @@ def _rebuild_formation(b, old_party):
     for k in range(PARTY_MOUNT_SLOTS):
         struct.pack_into("<H", b, PARTY_MOUNT_OFF + k * 2, kept[k][1] if k < len(kept) else 0)
     old_form = list(b[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS])
-    if len(old_ids) == len(new_ids) and formation_is_valid(new_party, old_form):
-        return                      # same size, table already consistent -> leave the order alone
     # old 1-based member index -> new 1-based member index, for the members that survived.
     # Matched by identity in order of occurrence, so a party holding the same character twice
     # (which the health check flags, but the file can hold) still pairs up one-to-one.
@@ -322,17 +320,25 @@ def _rebuild_formation(b, old_party):
                 survived[i] = j
                 remaining.pop(k)
                 break
-    order, seen = [], set()
-    for v in old_form:              # walk positions, keeping the surviving members' order
-        j = survived.get(v)
-        if j and j not in seen:
-            order.append(j); seen.add(j)
-    for j in range(1, len(new_ids) + 1):
-        if j not in seen:
-            order.append(j); seen.add(j)
+    # Update the table IN PLACE rather than re-deriving it. The six entries are battle
+    # positions, and the game writes reordered ([1,3,4,2,6,5]) and spread ([1,0,3,0,2,0])
+    # layouts of its own — a real card has [1,0,3,0,2,0] for a three-member party. Rebuilding
+    # densely from position 0, which this used to do on any size change, silently flattened
+    # that. So: everyone who survives keeps the position they were standing in, a removed
+    # member's position is freed, and anyone new drops into the first free one. A stale entry
+    # pointing at a member who no longer exists maps to nothing and is cleared, which repairs
+    # the older-build tables that block story joins.
     form = [0] * FORMATION_SLOTS
-    for pos, j in enumerate(order[:FORMATION_SLOTS]):
-        form[pos] = j
+    for pos, v in enumerate(old_form):
+        j = survived.get(v)
+        if j and j not in form:
+            form[pos] = j
+    for j in range(1, len(new_ids) + 1):
+        if j in form:
+            continue
+        if 0 not in form:
+            break                       # no free position; cannot happen for <= 6 members
+        form[form.index(0)] = j
     b[FORMATION_OFF:FORMATION_OFF + FORMATION_SLOTS] = bytes(form)
 
 
