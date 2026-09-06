@@ -427,19 +427,33 @@ def decode_encounter_words(words):
 
 
 # ---------------------------------------------------------------------------
-# Consumable / food table (verified v12). Distinct array from gear: name ptr is at
-# +0x44 (gear uses +0x40), and — unlike gear — name/desc/stats are SAME-record aligned
-# (60/60 desc "Heals NNN HP" == heal field; no off-by-one). Medicines, Antitoxin, stat
-# "Stone of X" items, and foods all share this record.
-FOOD_TABLE_FILE = 0x3E91D0     # first record
+# Consumable / food table. Medicines, Antitoxin, the stat "Stone of X" items and the dishes
+# all share this record. Like gear, the NAME pointer is one record BEHIND the data it names:
+# a dish's name is at +0x44 of block i and its desc/heal/proc are in block i+1, so every offset
+# below is measured from the block holding the NAME.
+#
+# This corrects the v12 reading. That note claimed "name/desc/stats are SAME-record aligned
+# (60/60 desc 'Heals NNN HP' == heal field; no off-by-one)" — but desc and heal are in one
+# record under BOTH readings, so their agreeing proves only that. It is 59/59 either way, and
+# says nothing about where the NAME belongs.
+#
+# The item table settles it, because it is what the game shows the player: getDesc(id) ->
+# itemRecord(id) -> band0, name @+0 / desc @+4. Checked against every dish:
+#     name@i with data@i    — 11/60 descriptions match the item table
+#     name@i with data@i+1  — 59/59 match; the heal number disagrees with the item text
+#                             44 times under the first reading and 0 times under this one
+# Boundary: dish 59 "Salad Platter" takes block 60 ("Heals 380HP"), exactly what item 0x09C
+# reads, and blocks 60/61 hold Sacrificial Jizo and Escape Scroll — the two non-recipe items
+# the old comment had already spotted past the table.
+FOOD_TABLE_FILE = 0x3E91D0     # first record (the block holding dish 0's NAME)
 FOOD_STRIDE     = 0x48
 FOOD_COUNT      = 60           # recipe/dish records 0..59; recs 60-61 resolve to consumable
                                # ITEMS (Sacrificial Jizo=Curative, Escape Scroll=Spell Scroll) —
                                # past the recipe table, so excluded (was 62; see issue notes)
-FOOD_DESC_OFF   = 0x00         # u32 -> description string (vaddr)   [CONFIRMED]
-FOOD_HEAL_OFF   = 0x14         # u16 heal amount (HP)                [CONFIRMED 60/60]
-FOOD_PROC_OFF   = 0x1E         # u16 proc chance % (0/30/60)         [CONFIRMED 7/7]
 FOOD_NAME_OFF   = 0x44         # u32 -> name string (vaddr)          [CONFIRMED anchor]
+FOOD_DESC_OFF   = 0x48         # u32 -> description string (vaddr)   [= next block +0x00]
+FOOD_HEAL_OFF   = 0x5C         # u16 heal amount (HP)                [= next block +0x14]
+FOOD_PROC_OFF   = 0x66         # u16 proc chance % (0/30/60)         [= next block +0x1E]
 
 def find_food_records(iso):
     """Return [{index, addr, name, desc, heal, proc}] for the consumable/food table.
@@ -449,7 +463,7 @@ def find_food_records(iso):
     out = []
     for i in range(FOOD_COUNT):
         off = FOOD_TABLE_FILE + i * FOOD_STRIDE
-        rec = iso.rd(off, FOOD_STRIDE)
+        rec = iso.rd(off, FOOD_STRIDE * 2)      # name here, desc/heal/proc in the next block
         nptr = struct.unpack_from("<I", rec, FOOD_NAME_OFF)[0]
         dptr = struct.unpack_from("<I", rec, FOOD_DESC_OFF)[0]
         try:
@@ -705,6 +719,18 @@ def clear_mod(path):
 
 # Rune -> ordered spell names (from Suikosource S3 casting-time guide).
 # Resolved to spell-table indices at runtime by name, so it survives index drift.
+#
+# NOT ground truth any more, and not the rune->spell binding. The disc carries that
+# itself, in the rune table at file 0x3EAF78 +0x18: four u16 1-based spell numbers per
+# rune (see Suikoden3_ISO_offsets.md, "Custom runes — rune->spell binding"). Every entry
+# below was checked against those bytes on a pristine SLUS-20387 and all 22 match exactly
+# — but they describe a STOCK disc, so on an edited one they are simply wrong. The web
+# editor reads the record and keeps no copy of this map.
+#
+# What it is still good for is the one job it has left: build_item_desc_extra.py bakes a
+# "— Grants a, b, c" clause into s3_rune_food_desc.json, which the save editor (no ISO to
+# read) and the ISO editor's untrusted-row fallback both display as prose. If that JSON is
+# ever regenerated, prefer reading the binding off the disc instead of this map.
 RUNE_SPELLS = {
     "fire":        ["Flaming Arrows", "Dancing Flames", "Blazing Wall", "Explosion"],
     "rage":        ["Dancing Flames", "Blazing Wall", "Explosion", "Final Flame"],

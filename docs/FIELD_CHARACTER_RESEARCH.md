@@ -144,12 +144,15 @@ the game itself ships one.
    — which for a chapter transition is soon. This is the same caveat the Health tab already
    states ("the game sets the leader itself on story transitions"), now with the mechanism
    behind it. It is not a reason not to ship the edit; it is what the note next to it should say.
-2. **Residency is a real risk, and §6 now measures it.**
+2. **Residency looked like a real risk. In play it isn't one.**
    `0x17B7338` streams party members' and guests' field models per area through the same
    resource path, and any recruited character can be brought anywhere after the merge — so the
-   engine already loads arbitrary party models in arbitrary areas. What is *not* proven is that
-   an id the scene script never mentions gets streamed in time. Pointing the leader at someone
-   the area does not carry gets a missing avatar, not a crash (the request just returns `100`).
+   engine already loads arbitrary party models in arbitrary areas. §6 measured which archive
+   ships which model on the theory that a missing one would not draw. Playing the whitelisted
+   characters says the measurement does not predict anything: **every one of them worked in
+   every area they were taken to**, coverage table or not. Worst case was always a missing
+   avatar rather than a crash (the request just returns `100`), and that case has not been
+   reproduced. The editor no longer shows the coverage figure — see §6.
 3. **Sarah was never an avatar.** She is in Luc's party, not at the head of it, and id 66 is
    absent from the chain. Exposing her is the ISO patch, not the save edit — and she is
    untested where the other six are shipped-and-played by the game itself.
@@ -182,11 +185,19 @@ Masked Luc — `AKVI`, `ICEW`, `LAST`, `ZKTR`. On a map in that group Luc walks 
 and Masked Luc does not load at all, which is what happens on Plain Amur. Note also that
 **Duck Village (`DKVI`) carries neither**.
 
-**The honest limit of this table.** `ETC.BIN` also carries all 82, and a model already
-resident is not evicted on an area change — so presence is not a guarantee and absence is not
-a verdict. It is the streaming set for that map, which is the strongest signal available
-without running the game. The editor therefore says "ships in N of 28 maps" and never
-"will not work".
+**The honest limit of this table — and then play testing removed it from the editor.**
+`ETC.BIN` also carries all 82, and a model already resident is not evicted on an area change —
+so presence was never a guarantee and absence was never a verdict. It is the streaming set for
+that map, which was the strongest signal available *without running the game*. Running the game
+settled it the other way: **the field characters worked in every area**, including ones this
+table says do not ship their model, which is what those two escape hatches predict when both
+apply. The "ships in N of 28 maps" note has been taken out of both tabs — it read as a limit,
+and it is not one. The table stays here as a record of what the archives contain; it is not a
+constraint on who you can play as.
+
+The Plain Amur observation above (Luc draws, Masked Luc does not) is left as written, but note
+it is now the only datapoint pointing the other way, and it has not been re-tested against a
+disc where Masked Luc had already been resident.
 
 ## 7. The leader byte is also *whose story this is*
 
@@ -1137,6 +1148,12 @@ what the buttons were supposed to do.
 of the 28 area archives ship each character's field model, before you pick) and a **Story
 content** control in the ISO tab that retires a character's case at the `0x177FEB4` switch so
 it falls through to Hugo's index — the empty-dialogue fix from §7.
+
+**v1.100.0 removed the per-map coverage again**, from the save picker, the Field character
+tab's "how it works" list and the ISO Test chips. Play testing found no area where a
+whitelisted character failed to appear, so the figure was a warning about a condition that
+never fired. `Editor/s3_avatar_areas.json` is kept as research data; nothing in the editor
+reads it now.
 
 **v1.63.0 added** the Encounter tab's **Movement rules** panel from §8: independent
 walking/running toggles and the second-run-range mode switch that makes Koroku and Fubar roll

@@ -93,7 +93,30 @@
   const splitImm = (w, op) => (((w >>> 0) & 0xFFFF0000) === op ? (w & 0xFFFF) : null);
   // 60 recipe/dish records (0..59). Records 60-61 name-resolve to consumable ITEMS (Sacrificial
   // Jizo = Curative, Escape Scroll = Spell Scroll), i.e. past the recipe table — excluded. (#food)
-  const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, desc: 0x00, heal: 0x14, proc: 0x1E, name: 0x44 };
+  //
+  // The NAME is one record BEHIND the data it names — the same displacement gear has (see GEAR:
+  // its name pointer sits at +0x40 of the preceding record). A dish's name is at +0x44 of block
+  // i and its description, heal and proc are in block i+1, so every offset below is measured
+  // from the block that holds the NAME.
+  //
+  // This corrects a reading that stood since v12 and was wrong. The old note said food was
+  // "SAME-record aligned (60/60 desc 'Heals NNN HP' == heal field; no off-by-one)" — but desc
+  // and heal sit in the same record under BOTH readings, so agreeing with each other proves
+  // only that, and says nothing about where the name belongs. It is 59/59 either way.
+  //
+  // What settles it is the item table, which is what the game actually shows the player:
+  // getDesc(id) -> itemRecord(id) -> band0 record, name @+0 / desc @+4. Compare each dish's
+  // name against that:
+  //     name@i paired with data@i    — 11/60 descriptions match the item table
+  //     name@i paired with data@i+1  — 59/59 match, and the heal number disagrees with the
+  //                                    item text 44 times under the first reading, 0 under this
+  // The boundary agrees too: dish 59 "Salad Platter" takes block 60 ("Heals 380HP"), which is
+  // exactly what item 0x09C reads, and blocks 60/61 carry Sacrificial Jizo and Escape Scroll —
+  // the two non-recipe items the old comment had already noticed sitting past the table.
+  //
+  // Consequence of the old reading, and why this matters: the Food tab showed every dish's name
+  // against the PREVIOUS dish's numbers, so editing "Fried Ice Cream" wrote Tomato Ice Cream.
+  const FOOD = { off: 0x3E91D0, stride: 0x48, count: 60, name: 0x44, desc: 0x48, heal: 0x5C, proc: 0x66 };
   // Equipment records, 0x44 apart. These offsets are relative to the STATS record, which sits
   // one record after the one carrying the name pointer — so the name pointer reads back at
   // base-0x04 (= +0x40 of the preceding record). scanGear explains how a record is anchored.
@@ -104,7 +127,23 @@
   // (the passive support runes — Balance, Fury, Fortune … — which have no spell-table entry
   // at all, which is why they used to show nothing). Records for non-rune ids are zeroed, so
   // every read is guarded by a name check against the item list before its desc is trusted.
-  const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, lo: 317, hi: 462 };
+  //
+  // The rest of the record is the rune→spell binding the offsets doc spent three sessions
+  // hunting through the ELF for. It was never in code: **+0x18 is four u16 spell numbers**,
+  // 1-based into the spell table (0 = an unused slot), and that IS the list of spells the rune
+  // grants. All 49 spell-granting runes decode exactly, including every count the game uses —
+  // Fire = 1,2,3,4 (Flaming Arrows … Explosion), True Fire = 3,4,5,6 (the sliding window
+  // Suikosource documents), Blinking = 35,36,37,0 (three spells), Sword of Rage = 38,39,0,0
+  // (two), Kite = 78,0,0,0 (one attack and three FREE slots). The 23 passive support runes
+  // carry four zeros, which is why they have no battle menu at all. So a rune granting fewer
+  // than four spells is not a special case in the engine — it is zero-padding, and writing a
+  // spell number into a zero slot is the whole of "give this rune another spell".
+  //   +0x0C u32 shop price (0 = never sold)
+  //   +0x10 u32 slot mask (7 = Head/Right/Left, 1 = Pale Gate, head only, 2 = Drain)
+  //   +0x14 u16 element family — the same numbering as ELEMENTS below
+  //   +0x16 u16 category: 0 = magic/support, 2 = special-attack rune
+  const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, lo: 317, hi: 462,
+                     price: 0x0C, slotMask: 0x10, elem: 0x14, cat: 0x16, spells: 0x18, slotCount: 4 };
   const ENEMY = { off: 0x3E74E0, count: 100, stride: 0x14 };   // names only (no editable stat table)
 
   // ---- Armor sets (see Editor/Suikoden3_ISO_offsets.md "Armor sets ... CRACKED") ----
@@ -589,6 +628,368 @@
     return enc && enc.every((x, i) => x === w[i]) ? p : null;
   };
 
+
+  // ---- passive support runes, forced on without equipping them ---------------
+  // The 23 support runes (Fortune, Balance, Fury, Wall...) grant no spells and have no battle
+  // command: each one is a passive the engine asks about at the moment it matters. Every one of
+  // those asks is the same shape --- "does this character have item N equipped?" --- and it goes
+  // through one of three helpers, all of which walk the character's seven equip slots (slot 7
+  // being the three rune slots) looking for that exact item id:
+  //
+  //   VA 0x16CB380  FindEquipSlot(charRecord, itemId)   -> slot 1..7, or 0
+  //   VA 0x16CB438  FindEquipSlot(charId, itemId)       -> resolves the id, then the above
+  //   VA 0x181B3B0  UnitHasItem(unit, itemId)           -> battle side; IGNORES its argument and
+  //                                                        resolves the ACTING unit itself, then
+  //                                                        calls 0x16CB270, the same slot walk
+  //
+  // 51 sites across 22 runes, all decoded and byte-verified (see PS_BATTLE below and the offsets
+  // doc). Only TWO of them are offered as switches, and the reason is scope.
+  //
+  // WHY ONLY THE FIELD ONES. A call site is exactly two words --- `jal <helper>` and its branch
+  // delay slot --- with the result tested in $v0 immediately after. Dropping the call frees both
+  // words, and one of them has to keep the delay-slot instruction (at five sites it is not the
+  // argument setup, and at three of those it is arithmetic the next instruction consumes). That
+  // leaves ONE word for the answer, which is enough for "yes" and not enough for "yes, if this is
+  // <character>": reading the id off the record, comparing it and normalising the result to a
+  // boolean is three instructions minimum. The battle-side helper is worse than that --- it never
+  // receives the character at all, so at those 23 sites there is nothing to test against. So an
+  // in-battle passive cannot be made per-unit here; forced on, it would be on for whichever unit
+  // the engine is asking about, enemies included. Those sites are listed, with what they do, and
+  // deliberately not switchable. Doing it properly means relocating code into free space in the
+  // ELF and calling out to it, which is a different job from flipping a word in place.
+  //
+  // The two field sites have no such problem. Both live in the field-step module and both are
+  // LOOPS OVER PARTY SLOTS 1-6 (`0x16FFCA8(slot)`), asking once per slot:
+  //
+  //   0x1702740  the encounter roll   -> `movn $s1,$s3,$v0`: any yes turns on the weak-foe skip
+  //   0x17029A0  the walk-heal        -> a yes heals THAT slot (`0x16C8790`)
+  //
+  // so answering yes there means "everyone in your party has it", which is exactly what the rune
+  // does when six people wear one. There are no enemies on the field to leak to.
+  //
+  // The patch, then: move the delay-slot instruction up into the jal's word, and write the answer
+  // into the word it vacated. Order is preserved, nothing is inserted, and the stock two words go
+  // back byte-for-byte, so turning a rune off again stages nothing.
+  //
+  // The answer is `sltu $v0,$zero,$a0` rather than a bare 1, at both sites. $a0 is the party-slot
+  // handle `0x16FFCA8` just returned, and it is 0 for an empty slot --- the walk-heal site tests
+  // exactly that itself two instructions earlier (`beqz $s0`). So an empty slot still answers no,
+  // which is what the stock code does.
+  //
+  // Fortune ("Doubles experience value gained") is NOT here, and the searches that came up empty
+  // are worth recording: its item id 440 (0x1B8) appears eight times as an instruction immediate
+  // anywhere in the ELF and every one is a struct offset or a stack displacement, never an
+  // argument; no call to any of the three helpers passes it; and no data table pairs it with
+  // another support-rune id. Whatever grants the EXP bonus does not ask the question the other
+  // 22 ask.
+  const PS_YES = 0x0004102B;          // sltu $v0,$zero,$a0 — yes, for an occupied party slot
+  const PASSIVES = [
+    { id: 0x1B9, where: "field",
+      what: "The whole rune. The field encounter roll (VA 0x1702740) walks party slots 1–6 asking "
+        + "this and turns on the weak-foe skip if any of them says yes, so one answer covers the party.",
+      sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
+    { id: 0x1BD, where: "field",
+      what: "The walking half only — the field heal loop (VA 0x17029A0), which heals each party "
+        + "slot that answers yes. The “15HP each combat turn” half is a battle site and is "
+        + "listed below with the rest, unswitched.",
+      sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" }] },
+  ];
+  // Decoded, verified, and deliberately NOT offered — see "WHY ONLY THE FIELD ONES" above. Kept
+  // in code rather than in a comment so the tab can name each one, and so the same bounds and
+  // jal-target checks that guard the switchable sites guard these too (web/tests/validate.mjs).
+  const PS_BATTLE = [
+    { id: 0x1BA, what: "Multiplies the high-damage-hit chance by 150/100, at both sites that roll it.",
+      sites: [{ off: 0x10407C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" },
+              { off: 0x10413C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" }] },
+    { id: 0x1BB, what: "Multiplies the counter-attack chance by 150/100 at all three sites that roll it.",
+      sites: [{ off: 0x1038E0, jal: 0x0C5B2CE0, ds: 0x240501BB, k: "rec" },
+              { off: 0x103B54, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" },
+              { off: 0x103D28, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" }] },
+    { id: 0x1BC, what: "Multiplies SPD by 150/100.",
+      sites: [{ off: 0x10FD28, jal: 0x0C5B2CE0, ds: 0x240501BC, k: "rec" }] },
+    { id: 0x1BD, what: "Sunbeam's other half: the +15 HP a combat turn adds (the literal "
+        + "`addiu $v0,$v0,0xF` right after the check). The walking half IS switchable, above.",
+      sites: [{ off: 0x261184, jal: 0x0C5B2CE0, ds: 0x240501BD, k: "rec" }] },
+    { id: 0x1BE, what: "Doubles PDF at the damage site — and turns on the other half of the rune at "
+        + "eight battle-action sites, which is what stops the character doing anything else.",
+      sites: [{ off: 0x104368, jal: 0x0C5B2CE0, ds: 0x02129821, k: "rec" },
+              { off: 0x110F74, jal: 0x0C5B2D0E, ds: 0x240501BE, k: "id" },
+              { off: 0x25C844, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25C8F8, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CA60, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CB18, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CBBC, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CC54, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CC9C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
+              { off: 0x25CD5C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" }] },
+    { id: 0x1BF, what: "Opens the dodge roll — the code right after is `rand(100) < 30`, so the 30% "
+        + "is the rune's real number.",
+      sites: [{ off: 0x1037F4, jal: 0x0C5B2CE0, ds: 0x240501BF, k: "rec" }] },
+    { id: 0x1C0, what: "The critical-hit self-heal.",
+      sites: [{ off: 0x245D6C, jal: 0x0C606CEC, ds: 0x240501C0, k: "unit" }] },
+    { id: 0x1C1, what: "The magic-reflect roll.",
+      sites: [{ off: 0x105200, jal: 0x0C5B2CE0, ds: 0x0200202D, k: "rec" }] },
+    { id: 0x1C2, what: "Clears the unbalance status bit (0x10) in both places the state is rebuilt.",
+      sites: [{ off: 0x1100AC, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" },
+              { off: 0x1100E0, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" }] },
+    { id: 0x1C3, what: "Zeroes incoming damage of one element and doubles another, at all four sites "
+        + "that scale elemental damage.",
+      sites: [{ off: 0x104858, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
+              { off: 0x104FC0, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
+              { off: 0x10544C, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
+              { off: 0x1115C4, jal: 0x0C5B2CE0, ds: 0xAFA40000, k: "rec" }] },
+    { id: 0x1C4, what: "Three sites in the target picker: the one that decides a single-target attack "
+        + "may not land here.",
+      sites: [{ off: 0x22E694, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
+              { off: 0x22EB04, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
+              { off: 0x230B44, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" }] },
+    { id: 0x1C5, what: "The other side of the same picker — preferred target.",
+      sites: [{ off: 0x230B64, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" },
+              { off: 0x23AC20, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" }] },
+    { id: 0x1C6, what: "The auto-item action, in the turn planner and again where the action is issued.",
+      sites: [{ off: 0x23B9CC, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" },
+              { off: 0x259C48, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" }] },
+    { id: 0x1C7, what: "Doubles damage dealt AND damage taken — the two sites are the attacker's copy "
+        + "and the defender's, and the shifts are literal `sll ...,1`.",
+      sites: [{ off: 0x1047BC, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" },
+              { off: 0x1047D0, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" }] },
+    { id: 0x1C8, what: "Moves half of the SKL-derived figure into MGC. Two sites: one adds the half, "
+        + "one halves what is left.",
+      sites: [{ off: 0x10FD64, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" },
+              { off: 0x10FD9C, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" }] },
+    { id: 0x1C9, what: "The same pair of sites for REP into PWR.",
+      sites: [{ off: 0x10FDBC, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" },
+              { off: 0x10FDF4, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" }] },
+    { id: 0x1CA, what: "Sets the asleep state at battle start and the berserk state on waking — the "
+        + "two status writes right after each check.",
+      sites: [{ off: 0x244B1C, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" },
+              { off: 0x25DFC8, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" }] },
+    { id: 0x1CB, what: "The turn-4 wake-up.",
+      sites: [{ off: 0x2611C8, jal: 0x0C606CEC, ds: 0x240501CB, k: "unit" }] },
+    { id: 0x1CC, what: "Always berserk: one site in the stat module and two that set the state in battle.",
+      sites: [{ off: 0x105634, jal: 0x0C5B2CE0, ds: 0x240501CC, k: "rec" },
+              { off: 0x25DFE8, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" },
+              { off: 0x2610D0, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" }] },
+    { id: 0x1CD, what: "The berserk-on-heavy-damage trigger.",
+      sites: [{ off: 0x244B3C, jal: 0x0C606CEC, ds: 0x240501CD, k: "unit" }] },
+    { id: 0x1CE, what: "Clamps the damage dealt (the site writes a literal 5 over it) and turns on the "
+        + "item-drop side.",
+      sites: [{ off: 0x1035E0, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
+              { off: 0x104838, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
+              { off: 0x2463CC, jal: 0x0C606CEC, ds: 0x240501CE, k: "unit" }] },
+  ];
+  // Fortune is the one support rune with no decoded site at all (see the note above). Named here
+  // so the tab can say so by name rather than just leaving a gap in the list.
+  const PS_UNMAPPED = [0x1B8];
+  // A switchable site is one of three things and nothing else: the stock two words, the forced
+  // two words, or something this editor did not write. The third case goes read-only rather than
+  // being overwritten, the same rule the Status-effect controls follow.
+  function psSiteState(s) {
+    if (!inBlk(s.off, 8)) return "oob";
+    const a = readW(s.off, 4) >>> 0, b = readW(s.off + 4, 4) >>> 0;
+    if (a === (s.jal >>> 0) && b === (s.ds >>> 0)) return "stock";
+    if (a === (s.ds >>> 0) && b === (PS_YES >>> 0)) return "forced";
+    return "other";
+  }
+  // ...and a rune is the summary of its sites. "mixed" is a real state worth naming: a disc
+  // patched by an older recipe, or one where a site went read-only after the rest were set.
+  function psState(p) {
+    const st = p.sites.map(psSiteState);
+    if (st.some((x) => x === "oob" || x === "other")) return "unknown";
+    return st.every((x) => x === "forced") ? "forced" : st.every((x) => x === "stock") ? "stock" : "mixed";
+  }
+  function psWrite(p, on) {
+    let n = 0;
+    p.sites.forEach((s, i) => {
+      const st = psSiteState(s);
+      if (st !== "stock" && st !== "forced") return;          // never write over a site we can't read
+      writeW(s.off, 4, on ? s.ds : s.jal);
+      writeW(s.off + 4, 4, on ? PS_YES : s.ds);
+      const nm = REF.items[p.id] || `rune ${hex(p.id, 3)}`;
+      const tag = p.sites.length > 1 ? ` (site ${i + 1} of ${p.sites.length})` : "";
+      reg(s.off, 4, "word", "Passive runes", `${nm} always on${tag} — the check`);
+      reg(s.off + 4, 4, "word", "Passive runes", `${nm} always on${tag} — the answer`);
+      n++;
+    });
+    return n;
+  }
+
+  // ---- Rune power: the numbers the passives are worth -------------------------
+  // The switches above answer the engine's "does this character have rune N equipped?" with a
+  // yes. This is the other question a passive raises, and it is a completely separate patch: not
+  // WHETHER the effect runs, but HOW MUCH it is worth. Every one of these runes computes its
+  // effect from a literal baked into the instruction stream right after the check — Sunbeam's
+  // `addiu $v0,$v0,0xF` is the 15 HP a combat turn adds, Haziness' `slti $v0,$v0,0x1E` is the
+  // 30 in `rand(100) < 30` — so the magnitude is editable in place, in the same one-word,
+  // fully-reversible way the Status-effect strength controls edit theirs. Nothing moves and
+  // nothing is inserted; only the value inside an instruction the game already executes changes.
+  //
+  // These work on a STOCK disc. The rune still has to be equipped for any of it to happen —
+  // every site here lives INSIDE the `if (has rune)` branch, which is exactly why the effect is
+  // per-character even though the constant is global. Forcing a rune on above and raising its
+  // number here are independent, and can be done in either order or on their own.
+  //
+  // WHAT IS NOT HERE, and why. Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness
+  // and Fury have no magnitude at their sites at all — they set a state bit or gate a branch, so
+  // there is no number to move. Fire Sealing's fourth site (0x1115C4) is slot bookkeeping, not
+  // damage. Fortune has no site anywhere (see PS_UNMAPPED). And Sunbeam's walk-heal HP-per-tick
+  // could be forced to a flat N by overwriting its `mfc1 $s2,$f1` with an `addiu`, but that
+  // throws away the elapsed-interval count the stock code computes for no gain the interval
+  // knob below does not already give: shortening the interval scales the same rate, and leaves
+  // every instruction as the game shipped it.
+  //
+  // Four shapes of value, and the identity check that guards each is the shape's own:
+  //   imm   — `addiu $rt,$zero,N` / `slti $rt,$rs,N`: value is the low half-word, and a site is
+  //           only writable while the HIGH half (opcode + registers) still matches what we
+  //           decoded. Same rule as fxSiteOk.
+  //   sa    — `sll`/`srl $rd,$rt,N`: value is bits 10..6, so the identity check masks those out
+  //           and compares the rest of the word.
+  //   f32hi — `lui $at,0x3F00`: the top half of an IEEE-754 single (0.5) materialised inline.
+  //           Only the upper 16 bits exist, so a percentage round-trips to within ~0.002%.
+  //   f32   — a whole float in the executable's small-data literal pool. There is no opcode to
+  //           check, so the guard is the value itself being a sane positive number.
+  const F32B = new DataView(new ArrayBuffer(4));
+  const f32Bits = (v) => { F32B.setFloat32(0, v, true); return F32B.getUint32(0, true); };
+  const RF_KIND = {
+    imm:   { fits: (w, s) => ((w & 0xFFFF0000) >>> 0) === ((s & 0xFFFF0000) >>> 0),
+             get: (w) => w & 0xFFFF, put: (w, v) => withImm(w, v), width: 2, disp: "num" },
+    sa:    { fits: (w, s) => ((w & ~0x7C0) >>> 0) === ((s & ~0x7C0) >>> 0),
+             get: (w) => (w >>> 6) & 0x1F, put: (w, v) => (((w & ~0x7C0) >>> 0) | ((v & 0x1F) << 6)) >>> 0,
+             width: 4, disp: "word" },
+    f32hi: { fits: (w, s) => ((w & 0xFFFF0000) >>> 0) === ((s & 0xFFFF0000) >>> 0),
+             get: (w) => Math.round(f32Of(((w & 0xFFFF) << 16) >>> 0) * 100),
+             put: (w, v) => withImm(w, (f32Bits(v / 100) >>> 16) & 0xFFFF), width: 4, disp: "word" },
+    f32:   { fits: (w) => { const f = f32Of(w); return Number.isFinite(f) && f > 0 && f <= 600; },
+             get: (w) => Math.round(f32Of(w) * 1000) / 1000, put: (_w, v) => f32Bits(v),
+             width: 4, disp: "f32" },
+  };
+  // sll doubles, srl halves — the same field means opposite things, so each entry says which and
+  // the dropdown is generated from it rather than written out twice.
+  const RF_MULT = ["×1 (no change)", "×2", "×4", "×8", "×16", "×32"];
+  const RF_SHARE = ["all of it", "half", "a quarter", "an eighth", "a sixteenth"];
+  const RUNEFX = [
+    { id: 0x1BD, key: "sunWalk", g: "Outside battle", kind: "f32", stock: 0.3, min: 0.01, max: 60,
+      label: "Sunbeam — walk-heal: 1 HP every N seconds", step: 0.01, unit: "s",
+      help: "The walking half of Sunbeam heals 1 HP each time this many seconds of field time have "
+        + "passed. The loop adds the frame delta to a running total, and once the total passes this "
+        + "number it divides by it, heals that many HP into every party slot that answers yes, and "
+        + "clears the total — so halving this doubles the rate, and a value small enough to be "
+        + "crossed every frame heals once per frame. It is a float in the executable's small-data "
+        + "pool, and the walk-heal is the ONLY instruction in the whole image that reads it, so "
+        + "nothing else moves with it.",
+      sites: [[0x42C3B0, 0x3E99999A]] },
+    { id: 0x1BD, key: "sunTurn", g: "In battle", kind: "imm", stock: 15, min: 0, max: 9999,
+      label: "Sunbeam — HP healed each combat turn", unit: "HP",
+      help: "The literal `addiu $v0,$v0,0xF` immediately after the check: 15 HP added to the "
+        + "unit's current HP once per combat turn. The value is added to a u16 with a signed "
+        + "16-bit immediate, so the useful range stops at 32767.",
+      sites: [[0x261198, 0x2442000F]] },
+    { id: 0x1BA, key: "killer", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
+      label: "Killer — high-damage-hit chance", unit: "%",
+      help: "The chance the battle code already rolled is multiplied by this over 100, at both "
+        + "sites that roll it. 100 makes the rune do nothing; 0 makes it a penalty.",
+      sites: [[0x104088, 0x24020096], [0x104148, 0x24020096]] },
+    { id: 0x1BB, key: "counter", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
+      label: "Counter — counter-attack chance", unit: "%",
+      help: "×N/100 at all three sites that roll a counter. Note the FIRST site's result then "
+        + "runs into a hard cap the rune has no part in — `slti $v1,$s1,96` / `movn`, which "
+        + "pins anything at or above 96 to 95 — so past roughly 64% base chance that site "
+        + "stops responding. The other two sites have no such clamp.",
+      sites: [[0x1038EC, 0x24020096], [0x103B60, 0x24020096], [0x103D34, 0x24020096]] },
+    { id: 0x1BC, key: "gale", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
+      label: "Gale — SPD", unit: "%",
+      help: "SPD ×N/100. The result is masked to 16 bits right after, so keep the product under "
+        + "65535 or it wraps.",
+      sites: [[0x10FD34, 0x24020096]] },
+    { id: 0x1BF, key: "haziness", g: "In battle", kind: "imm", stock: 30, min: 0, max: 100,
+      label: "Haziness — chance the attack misses", unit: "%",
+      help: "The rune opens a `rand(100) < 30` roll, and this is the 30 — the rune's real "
+        + "number, which its menu text never states. 100 dodges everything the roll covers.",
+      sites: [[0x10380C, 0x2842001E]] },
+    { id: 0x1C0, key: "drain", g: "In battle", kind: "imm", stock: 3, min: 1, max: 999,
+      label: "Drain — self-heal is damage ÷ N", unit: "÷",
+      help: "A critical hit heals the attacker for the damage dealt divided by this. Smaller heals "
+        + "more; 1 gives back the whole hit. Zero is refused because the site divides by it.",
+      sites: [[0x245D78, 0x24020003]] },
+    { id: 0x1C1, key: "barrier", g: "In battle", kind: "imm", stock: 10, min: 1, max: 999,
+      label: "Barrier — reflect chance is the stat ÷ N", unit: "÷",
+      help: "The magic-reflect roll is `rand(100) < stat/N`, where the stat comes from the unit. "
+        + "Smaller reflects more often. Zero is refused because the site divides by it.",
+      sites: [[0x105218, 0x2403000A]] },
+    { id: 0x1CE, key: "hunter", g: "In battle", kind: "imm", stock: 5, min: 0, max: 9999,
+      label: "Hunter — damage is clamped to", unit: "dmg",
+      help: "The damage figure is replaced outright with this literal when the rune answers yes "
+        + "— the clamp that makes Hunter a capture tool. Raising it un-clamps the rune while "
+        + "leaving its item-drop half alone.",
+      sites: [[0x1035E8, 0x24030005]] },
+    { id: 0x1CD, key: "violence", g: "In battle", kind: "f32hi", stock: 50, min: 1, max: 100,
+      label: "Violence — goes berserk below this share of max HP", unit: "%",
+      help: "The unit's HP fraction is compared against an inline 0.5f (`lui $at,0x3F00`). Only the "
+        + "top half of the float is in the instruction, so a percentage is stored to about 0.002% "
+        + "— close enough that every whole percent reads back as itself.",
+      sites: [[0x244B54, 0x3C013F00]] },
+    { id: 0x1BE, key: "wall", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
+      label: "Wall — PDF multiplier",
+      help: "The damage site doubles PDF with a literal `sll $v1,$s3,1`. The shift is the multiplier, "
+        + "so it moves in powers of two. This is only Wall's defensive half — the eight "
+        + "battle-action gates that stop the character doing anything else are untouched.",
+      sites: [[0x104370, 0x00131840]] },
+    { id: 0x1C7, key: "dblStrike", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
+      label: "Double-Strike — damage dealt and taken",
+      help: "Two `sll $s0,$s0,1` sites — the attacker's copy and the defender's — written "
+        + "together, so the rune stays symmetrical. They still stack the way the stock rune does: "
+        + "when both sides wear one, both shifts apply.",
+      sites: [[0x1047C8, 0x00108040], [0x1047DC, 0x00108040]] },
+    { id: 0x1C3, key: "fireSeal", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
+      label: "Fire Sealing — damage taken from the doubled element",
+      help: "Fire Sealing zeroes one element's incoming damage and doubles another's; this is the "
+        + "doubling, at all three sites that scale elemental damage. The zeroed half is a branch, "
+        + "not a number, and the rune's fourth site is slot bookkeeping — neither is editable "
+        + "here.",
+      sites: [[0x104878, 0x00101040], [0x104FE0, 0x00111040], [0x10546C, 0x00101040]] },
+    { id: 0x1C8, key: "wizard", g: "Multipliers", kind: "sa", mult: "srl", stock: 1, min: 0, max: 4,
+      label: "Wizard — how much of the figure moves",
+      help: "Wizard halves with `srl ...,1` in two places — one adds the half in, the other "
+        + "halves what is left — and both are written together so the pair stays consistent. "
+        + "“all of it” is a shift of zero, which leaves the instruction a plain move.",
+      sites: [[0x10FD84, 0x00021042], [0x10FDA8, 0x00101042]] },
+    { id: 0x1C9, key: "warrior", g: "Multipliers", kind: "sa", mult: "srl", stock: 1, min: 0, max: 4,
+      label: "Warrior — how much of the figure moves",
+      help: "The same pair of halvings as Wizard, on the other pair of stats.",
+      sites: [[0x10FDDC, 0x00021042], [0x10FE00, 0x00101042]] },
+  ];
+  function rfSiteOk(off, stock, kind) {
+    if (!inBlk(off, 4)) return false;
+    return RF_KIND[kind].fits(readW(off, 4) >>> 0, stock >>> 0);
+  }
+  function rfState(e) {
+    if (!e.sites.every(([off, w]) => rfSiteOk(off, w, e.kind))) return { known: false };
+    const K = RF_KIND[e.kind];
+    const vals = e.sites.map(([off]) => K.get(readW(off, 4) >>> 0));
+    return { known: true, agree: vals.every((v) => v === vals[0]), value: vals[0], vals,
+      dirty: e.sites.some(([off]) => isDirty(off, 4)) };
+  }
+  // Registered per site and numbered, for the same reason fxWrite numbers its: three rows that
+  // all read "Counter — counter-attack chance" look like duplicates, "site 2 of 3" does not.
+  // An `imm` site registers its low HALF-WORD so the review list reads "150 -> 300"; the others
+  // move bits outside the immediate, so they register the whole word.
+  function rfWrite(e, v) {
+    const K = RF_KIND[e.kind];
+    const n = e.kind === "f32" ? Math.min(e.max, Math.max(e.min, Math.round((+v || 0) * 1000) / 1000))
+      : clampInt(v, e.min, e.max);
+    const nm = (REF.items && REF.items[e.id]) || `rune ${hex(e.id, 3)}`;
+    e.sites.forEach(([off, stock], i) => {
+      if (!rfSiteOk(off, stock, e.kind)) return;
+      writeW(off, 4, K.put(readW(off, 4) >>> 0, n));
+      const tail = e.sites.length > 1 ? ` (site ${i + 1} of ${e.sites.length})` : "";
+      reg(off, K.width, K.disp, "Rune power", `${nm} · ${e.label}${tail}`);
+    });
+    return n;
+  }
+  const rfChoices = (e) => (e.mult === "srl" ? RF_SHARE : RF_MULT).slice(e.min, e.max + 1);
+  const rfShow = (e, v) => (e.kind === "sa" ? (e.mult === "srl" ? RF_SHARE : RF_MULT)[v] || `shift ${v}`
+    : e.unit === "÷" ? `÷${v}` : `${v}${e.unit ? (e.unit === "%" ? "%" : " " + e.unit) : ""}`);
+
   const mipsSll = (rd, rt, sa) => (rt << 16) | (rd << 11) | (sa << 6);
   function potchWords(m) {      // -> [sll word, addu word] or null if unsupported
     if (m === 1) return [0, 0];
@@ -789,31 +1190,34 @@
   const GEAR_STAT_SELECTOR = { 0: "PWR", 1: "SKL", 2: "MAG", 3: "REP", 4: "PDF", 5: "MDF", 6: "SPD", 7: "LUK" };
   const GEAR_TYPE_PARAM = { 2: "stat", 5: "skill" };   // type -> what `param` means
 
-  // Rune -> ordered spell names it grants (resolved to table indices by name at runtime).
-  const RUNE_SPELLS = {
-    fire: ["Flaming Arrows", "Dancing Flames", "Blazing Wall", "Explosion"],
-    rage: ["Dancing Flames", "Blazing Wall", "Explosion", "Final Flame"],
-    truefire: ["Blazing Wall", "Explosion", "Final Flame", "Hellfire"],
-    lightning: ["Thunder Runner", "Berserk Blow", "Soaring Bolt", "Furious Blow"],
-    thunder: ["Berserk Blow", "Soaring Bolt", "Furious Blow", "Thunder Storm"],
-    truelightning: ["Soaring Bolt", "Furious Blow", "Thunder Storm", "Hammer of Raijin"],
-    wind: ["Wind of Sleep", "Healing Wind", "The Shredding", "Funeral Wind"],
-    cyclone: ["Healing Wind", "The Shredding", "Funeral Wind", "Shining Wind"],
-    truewind: ["The Shredding", "Funeral Wind", "Shining Wind", "Eternal Wind"],
-    water: ["Kindness Drops", "Breath of Ice", "Kindness Rain", "Silent Lake"],
-    flowing: ["Breath of Ice", "Kindness Rain", "Silent Lake", "Mother Ocean"],
-    truewater: ["Kindness Rain", "Silent Lake", "Mother Ocean", "Heavenly Drops"],
-    earth: ["Clay Guardian", "Vengeful Child", "Guardian Earth", "Earthquake"],
-    motherearth: ["Vengeful Child", "Guardian Earth", "Earthquake", "Canopy Defense"],
-    trueearth: ["Guardian Earth", "Earthquake", "Canopy Defense", "Land of Eternity"],
-    shield: ["Battle Oath", "Great Blessing", "Battlefield"],
-    blinking: ["Ready!", "Set!", "Go!"],
-    jongleur: ["Song of Skylark", "Song of Serenity", "Song of Madness", "Song of a Hero"],
-    palegate: ["Open Gate", "Royal Passage", "Pale Palace", "Empty World"],
-    swordofrage: ["Sword of Rage", "Fire Amulet"],
-    swordofthunder: ["Sword of Thunder", "Thunder Amulet"],
-    swordofcyclone: ["Sword of Cyclone", "Wind Amulet"],
-  };
+  // Which spells a rune grants, read live off the loaded disc — RUNE_TBL +0x18, four u16
+  // spell numbers. This used to be a hardcoded name->name map covering only the 22 magic
+  // runes, because the binding was believed to live in code; it does not, so there is no
+  // second copy of this fact any more. Reading it off the disc also means the answer follows
+  // an edit: reassign Kite's slots and every place that says what Kite grants agrees.
+  //
+  // Slot numbers are 1-BASED (the same convention the engine uses to index the spell table,
+  // `rec = 0x019A4A88 + id*0x20`), so slot value N is this editor's spell row N-1. 0 is an
+  // empty slot, not spell 0 — Flaming Arrows is 1.
+  function runeSpellIds(id) {
+    const rec = RUNE_TBL.off + id * RUNE_TBL.stride, out = [];
+    for (let k = 0; k < RUNE_TBL.slotCount; k++) {
+      const o = rec + RUNE_TBL.spells + k * 2;
+      out.push(BUF && inBlk(o, 2) ? r16(o) : 0);
+    }
+    return out;
+  }
+  const spellRowName = (row) => (BUF && row >= 0 && row < SPELL.count
+    ? strAt(r32(SPELL.off + row * SPELL.stride + 0x08)) : "");
+  // A slot's 1-based number as a name. A real disc has 14 spell rows (80..93) that are fully
+  // formed records with null name pointers — spare slots — so "in the table" and "has a name"
+  // are different questions and the label says which one failed.
+  const spellSlotName = (gid) => (gid ? spellRowName(gid - 1) || `(unnamed #${gid - 1})` : "");
+  // How a slot reads in the picker. The record stores a 1-BASED number but every other tab
+  // labels a spell by its 0-based row (`#2` on the Spells tab, `data-i="2"` in its card), so
+  // the label shows the row — otherwise "#3 Blazing Wall" here and "#2 Blazing Wall" there
+  // are the same spell under two numbers and the link between them looks wrong.
+  const spellSlotLabel = (gid) => (gid ? `${spellSlotName(gid)} (#${gid - 1})` : "\u2014 empty \u2014");
 
   // ---- field schemas for the character/growth/support/weapon record tables ----
   // [label, offsetInRecord, widthBytes, kind]  (kind: item | skill | rank | num)
@@ -1076,6 +1480,17 @@
   // both indexes cannot mix them, and one lookup then serves every in-place string write.
   const descCopies = (off) => strAlias("desc").get(off) || strAlias("name").get(off) || [off];
   const descCopyCount = (off) => descCopies(off).length;
+  // The cap, and — when the disc stores this string more than once — the fact that one edit
+  // writes every copy. 27 descriptions and 43 names are duplicated (a rune and the spell it
+  // grants, a magic scroll and the spell it casts, the Wind Amulet and its spell), and a
+  // mirrored write is a feature when the field says so and a surprise when it doesn't.
+  function slotNoteHTML(ptr) {
+    const cop = descCopies(vaOff(ptr)), n = cop.length;
+    const title = n > 1
+      ? ` title="Stored ${n} times on this disc (${cop.map((o) => "0x" + hex(o, 6)).join(", ")}). Editing this writes them all."`
+      : "";
+    return `<span class="u"${title}>max ${origSlotLen(ptr)}${n > 1 ? ` \u00b7 ${n} copies, mirrored` : ""}</span>`;
+  }
   // Write one description's bytes to every copy of it, and register each so the review list and
   // the dirty badge account for both. Callers have already length-checked against the slot; the
   // index guarantees the other copies share that length.
@@ -1134,12 +1549,12 @@
     ]);
     const rooms = await grabOpt("../Editor/s3_rooms.json");        // per-area encounter rates
     const subfiles = await grabOpt("../Editor/s3_subfiles.json");  // FSECT sub-file layout
+    const bgm = await grabOpt("../Editor/s3_bgm.json");            // music cues + per-room audio
     const uniteChars = await grabOpt("../Editor/s3_unite_chars.json");  // who is in each unite
     const itemSources = await grabOpt("../Editor/s3_item_sources.json");   // where items come from
     const shops = await grabOpt("../Editor/s3_shops.json");        // shop counter map + town names
     const runeFood = await grabOpt("../Editor/s3_rune_food_desc.json");    // rune/food menu text + spell lists
     const runeOwner = await grabOpt("../Editor/s3_rune_owner.json");       // whose rune each signature rune is
-    const avatarAreas = await grabOpt("../Editor/s3_avatar_areas.json");   // which maps carry each field model
     const items = {}, cats = {};
     let cur = "";
     for (const line of itemsTxt.split(/\r?\n/)) {
@@ -1153,8 +1568,8 @@
       const p = line.trim().split(/\s+/); if (p.length >= 2) { const id = parseInt(p[0], 16); if (!isNaN(id)) skills[id] = p.slice(1).join(" "); }
     }
     REF = { items, cats, idesc, skills, names, runeSlots, skillRef, skillCaps, growthRef, bestiary,
-            enemyPacks, warUnits, warRef, rooms, subfiles, uniteChars, itemSources,
-            runeFood, runeOwner, shops, avatarAreas };
+            enemyPacks, warUnits, warRef, rooms, subfiles, bgm, uniteChars, itemSources,
+            runeFood, runeOwner, shops };
     return REF;
   }
 
@@ -1292,11 +1707,13 @@
     if (kind === "flags14") return decodeTarget(v);
     if (kind === "status") return decodeF18(v);
     if (kind === "imm16") return String(v & 0xFFFF);   // a patched MIPS word: only the immediate moved
+    if (kind === "word") return "0x" + hex(v >>> 0, 8);  // ...and one where the whole word was replaced
     if (kind === "f32") { const f = f32Of(v); return Number.isFinite(f) ? String(+f.toFixed(3)) : "?"; }
     if (kind === "spellid") {                          // ...and that immediate is a 1-based spell number
-      const i = (v & 0xFFFF) - 1;
-      const nm = i >= 0 && i < SPELL.count ? strAt(r32(SPELL.off + i * SPELL.stride + 0x08)) : "";
-      return nm ? `${nm} (#${i})` : `spell no. ${v & 0xFFFF}`;
+      const gid = v & 0xFFFF;
+      if (!gid) return "\u2014 empty \u2014";           // a rune's unused spell slot; never a real spell
+      const i = gid - 1, nm = spellRowName(i);
+      return nm ? `${nm} (#${i})` : `spell no. ${gid}`;
     }
     return String(v);
   }
@@ -2217,7 +2634,7 @@
 
   // ---- top-level render ------------------------------------------------------
   const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
-    ["shops", "Shops"], ["runes", "Runes"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
+    ["shops", "Shops"], ["runes", "Runes"], ["passives", "Passives"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
 
@@ -2298,12 +2715,13 @@
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
-      runes: "Every rune in the game \u2014 rename it and rewrite the menu text the game shows for it. What each rune DOES lives in the spells it grants, so those are links straight into the Spells tab with the record open, rather than a second set of the same fields here. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
+      runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
+      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Both switchable sites are byte-checked against a pristine disc, but neither has been watched working in play. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
-      test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested \u2014 the model still has to be resident in the area, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
+      test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
       food: "Consumable / food table: heal amount and proc chance %.",
@@ -2311,7 +2729,7 @@
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
-      ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, and every packed sub-file on the disc. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
+      ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, every packed sub-file on the disc, and where the game decides which music plays. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
       changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
     };
     q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
@@ -2328,6 +2746,7 @@
     else if (VIEW === "spells") drawSpells(host);
     else if (VIEW === "unites") drawUnites(host);
     else if (VIEW === "runes") drawRunes(host);
+    else if (VIEW === "passives") drawPassives(host);
     else if (VIEW === "mounts") drawMounts(host);
     else if (VIEW === "movement") drawMoveSpeed(host);
     else if (VIEW === "story") drawStory(host);
@@ -2542,12 +2961,26 @@
   // unused rows are zeroed, so we only trust a record whose name string still matches the item
   // (case/punctuation-insensitive — the disc writes "Sword of Rage", the id list "Sword Of Rage").
   const nameKey = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-  function runeTblDesc(id) {
-    if (id < RUNE_TBL.lo || id > RUNE_TBL.hi) return "";
+  // Is the row at this item id really that rune's record? The table has a row per ITEM id and
+  // every non-rune row is zeroed, so this is what separates "this rune grants nothing" from
+  // "there is nothing here to read". The description AND the spell slots are both gated on it.
+  //
+  // It matches on the name the row shipped with as well as the one it holds now, because the
+  // editor can rewrite that name in place: keying only on the current bytes made a rune's own
+  // fields disappear the moment it was renamed — the row stopped matching the bundled item
+  // list, which is precisely when the row is most certainly the right one.
+  function runeRowTrusted(id) {
+    if (!BUF || id < RUNE_TBL.lo || id > RUNE_TBL.hi) return false;
     const o = RUNE_TBL.off + id * RUNE_TBL.stride;
-    if (!inBlk(o, RUNE_TBL.stride)) return "";
-    const nm = strAt(r32(o + RUNE_TBL.name));
-    if (!nm || nameKey(nm) !== nameKey(REF.items[id] || "")) return "";
+    if (!inBlk(o, RUNE_TBL.stride)) return false;
+    const np = r32(o + RUNE_TBL.name), want = nameKey(REF.items[id] || "");
+    if (!np || !want) return false;
+    if (nameKey(strAt(np)) === want) return true;
+    return nameKey(strFrom(ORIG, vaOff(np), origSlotLen(np))) === want;
+  }
+  function runeTblDesc(id) {
+    if (!runeRowTrusted(id)) return "";
+    const o = RUNE_TBL.off + id * RUNE_TBL.stride;
     return strAt(r32(o + RUNE_TBL.desc));
   }
   function runeDesc(id) {
@@ -2555,9 +2988,13 @@
     const nm = REF.items[id]; if (!nm) return "";
     const own = runeTblDesc(id);                          // what the game prints in the rune menu
     const byName = spellDescByName();
-    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");   // magic rune → RUNE_SPELLS
-    const set = RUNE_SPELLS[key];
-    if (set && set.length) {                              // magic rune: name the spells it grants
+    // What it grants comes off the rune's own record (+0x18, four 1-based spell numbers), so
+    // this one-liner follows a reassignment instead of repeating a bundled list back. A rune
+    // whose slots are all zero — every passive support rune — has nothing to name here.
+    const set = runeRowTrusted(id) ? runeSpellIds(id).filter(Boolean).map(spellSlotName).filter(Boolean) : [];
+    // An attack rune's single spell carries the rune's own name, so "Kite — Grants Kite" is
+    // noise; only spell it out when the list says something the name doesn't.
+    if (set.length && !(set.length === 1 && nameKey(set[0]) === nameKey(nm))) {
       const grants = `Grants ${set.join(", ")}`;
       if (own) return `${own} — ${grants}`;
       const d0 = byName[set[0]];
@@ -2583,12 +3020,19 @@
   }
   function foodDesc(id) {
     if (!BUF || REF.cats[id] !== "Food Items") return "";
-    const nm = REF.items[id]; return nm ? (foodDescByName()[nm.toLowerCase()] || "") : "";
+    // Keyed on the name the DISC currently holds, falling back to the bundled one. The map is
+    // built from the food table's own names, so after a rename the retail name is not in it and
+    // the dish would silently lose its description in every picker — the same trap the rune
+    // grants lookup had.
+    const m = foodDescByName();
+    const live = discItemName(id);
+    return (live && m[live.toLowerCase()]) || m[(REF.items[id] || "").toLowerCase()] || "";
   }
   // Both maps above are keyed by a name string read out of the ISO, so a staged edit can change
   // either side of the pair. Every edit funnels through commitEdit/undo/redo, which calls this —
   // the next picker or tooltip then rebuilds from the current bytes (94 + 60 records, cheap).
-  // Rune and gear text is read per call, so it needs no cache to drop.
+  // Rune and gear text is read per call, so it needs no cache to drop; the item-name map is
+  // a cache and does, or a rename would not reach the pickers until the next disc load.
   // CLASS_NAMES reads strings out of BUF, so a staged edit to a class word must drop it too.
   // DESC_ALIAS is keyed on ORIG and so never goes stale mid-session — only on a new ISO (below).
   function dropDescCaches() { SPELL_DESC_BY_NAME = null; FOOD_DESC_BY_NAME = null; CLASS_NAMES = null; ITEM_NAMES = null; }
@@ -2748,9 +3192,22 @@
     return m ? m.name : `Location ${loc} (unidentified)`;
   };
   // Buy price, when the item has a gear record. Consumables have none, so they show "—".
+  //
+  // The gear field is a price TIER, not potch: it only ever holds 2..5 across the whole band,
+  // and the disc's price routine (VA 0x1773390) reads `ladder[tier - 1]` from the 15-step
+  // shared ladder — it materialises the ladder's address minus one word, then indexes by
+  // tier*4, which is the 1-based idiom. So resolve it rather than printing a "price" of 3.
+  function priceLadder() {
+    const [base, n, w] = PRICE_LADDER;
+    return Array.from({ length: n }, (_, i) => readW(base + i * w, w));
+  }
+  function tierPotch(tier) {
+    const lad = priceLadder();
+    return tier >= 1 && tier <= lad.length ? lad[tier - 1] : null;
+  }
   function shopPrice(id) {
     const g = id && scanGear()[id];
-    return g ? readW(g + GEAR.price, 4) : null;
+    return g ? tierPotch(readW(g + GEAR.price, 4)) : null;
   }
 
   function drawShops(host) {
@@ -3233,7 +3690,13 @@
   function drawSpells(host) {
     const upd = spDescOn;
     const jump = SPELL_JUMP; SPELL_JUMP = null;
-    const runeOpts = Object.keys(RUNE_SPELLS).map((r) => `<option value="${r}">${r}</option>`).join("");
+    // Every rune that actually grants something, read off this disc's rune table rather than a
+    // bundled list of 22. That adds the 27 special-attack runes — Kite, Phoenix, Goss — which
+    // were unreachable from here before, and it follows a reassignment: change what a rune
+    // grants on the Runes tab and this card reskins the new set.
+    const runeOpts = runeIds().map((id) => [id, itemName(id), runeSpellIds(id).filter(Boolean)])
+      .filter(([, , ids]) => ids.length)
+      .map(([id, nm, ids]) => `<option value="${id}">${esc2(nm)} (${ids.length})</option>`).join("");
     const elemOptsBlank = `<option value="">— no change —</option>` + Object.entries(ELEMENTS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
     const statOptsBlank = `<option value="">— no change —</option>` + ["none", ...Object.values(F18_BITS)].map((s) => `<option value="${s}">${s}</option>`).join("");
     const reskin = `<details class="card fold" id="spReskinBox" style="margin:0 0 12px"${spReskinOpen ? " open" : ""}>
@@ -3327,7 +3790,8 @@
       }
       setStatus("Preset filled — pick a rune and click “Apply to rune”.", "ok");
     }));
-    q("#rsRune", host).onchange = () => { const el = q("#rsInfo", host); el.textContent = "→ " + RUNE_SPELLS[q("#rsRune", host).value].join(", "); };
+    q("#rsRune", host).onchange = () => { const el = q("#rsInfo", host);
+      el.textContent = "→ " + runeSpellIds(+q("#rsRune", host).value).filter(Boolean).map(spellSlotName).join(", "); };
     q("#rsRune", host).dispatchEvent(new Event("change"));
 
     qa(".sp", host).forEach((el) => (el.onchange = () => {
@@ -3399,9 +3863,12 @@
     }
   }
   function runeReskin() {
-    const rune = q("#rsRune").value, idx = spellNameIndex();
-    const targets = (RUNE_SPELLS[rune] || []).map((n) => idx[n]).filter((v) => v != null);
-    if (!targets.length) return setStatus("Could not resolve that rune's spells in this ISO.", "err");
+    const id = +q("#rsRune").value, rune = itemName(id);
+    // Slots are 1-based spell numbers, so row = slot - 1. Resolving by NUMBER rather than by
+    // name also settles the duplicates a name lookup could not: "Shining Wind" is two separate
+    // records (the Cyclone rune's spell and Ace's attack) and only one of them is meant.
+    const targets = runeSpellIds(id).filter(Boolean).map((g) => g - 1).filter((i) => i >= 0 && i < SPELL.count);
+    if (!targets.length) return setStatus("That rune grants no spells on this disc — nothing to reskin.", "err");
     const f = {}, num = (id) => q(id).value;
     if (num("#rsPower") !== "") f.power = +num("#rsPower");
     if (num("#rsCast") !== "") f.cast = +num("#rsCast");
@@ -3507,15 +3974,24 @@
       const heal = off + FOOD.heal, proc = off + FOOD.proc, dptr = r32(off + FOOD.desc);
       const dmax = origSlotLen(dptr), dcur = strAt(dptr);
       const descCell = dmax > 0
-        ? `<td><input type="text" class="fddesc" maxlength="${dmax}" style="min-width:150px" value="${esc2(dcur)}" data-dptr="${dptr}" data-g="${esc2(name)}" title="max ${dmax} chars"></td>`
+        ? `<td><label class="field" style="margin:0"><span class="muted">${slotNoteHTML(dptr)}</span>
+             <input type="text" class="fddesc" maxlength="${dmax}" style="min-width:150px" value="${esc2(dcur)}" data-dptr="${dptr}" data-g="${esc2(name)}"></label></td>`
         : `<td class="muted">${esc2(dcur)}</td>`;
-      rows.push(`<tr><td class="sl">${i}</td><td class="acc2">${esc2(name || "#" + i)}</td>
+      // Renaming a dish is the same in-place write its description is. A dish's name string is
+      // the very one the item table points at (all 60 share the pointer), so there is no second
+      // copy to drift: the recipe list, the item menu and every picker move together.
+      const nptr = r32(off + FOOD.name), nmax = origSlotLen(nptr);
+      const nameCell = nmax > 0
+        ? `<td><label class="field" style="margin:0"><span class="muted">${slotNoteHTML(nptr)}</span>
+             <input type="text" class="fdname" maxlength="${nmax}" style="min-width:120px" value="${esc2(name)}" data-nptr="${nptr}" data-g="${esc2(name)}"></label></td>`
+        : `<td class="acc2">${esc2(name || "#" + i)}</td>`;
+      rows.push(`<tr><td class="sl">${i}</td>${nameCell}
         <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(heal)}" data-off="${heal}" data-dptr="${dptr}" data-kind="heal" data-g="${esc2(name)}" data-l="Heal HP"></td>
         <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-dptr="${dptr}" data-kind="proc" data-g="${esc2(name)}" data-l="Proc %"></td>
         ${descCell}</tr>`);
     }
     host.innerHTML = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
-      <div style="overflow-x:auto"><table class="invtbl"><thead><tr><th>#</th><th>Item</th><th>Heal HP</th><th>Proc %</th><th>Description</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table></div>`;
+      <div style="overflow-x:auto"><table class="invtbl"><thead><tr><th>#</th><th>Name</th><th>Heal HP</th><th>Proc %</th><th>Description</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table></div>`;
     q("#fUpd", host).onchange = (e) => { foodDescOn = e.target.checked; };
     // reflect a food row's description string back into its editable cell (+ highlight)
     const refreshFoodDesc = (dptr, row) => {
@@ -3530,6 +4006,21 @@
         if (foodDescOn && inp.dataset.dptr) { rewriteDesc(+inp.dataset.dptr, (t) => inp.dataset.kind === "heal" ? descHeal(t, v) : descProc(t, v), nm, "Description"); refreshFoodDesc(+inp.dataset.dptr, inp.closest("tr")); }
       };
       markField(inp, off, 2, "num");
+    });
+    // In-place rename, same rules as everywhere else: over its own bytes, NUL-padded, capped to
+    // the slot, and refused when empty rather than leaving the dish nameless in every list.
+    qa("input.fdname", host).forEach((el) => {
+      const nptr = +el.dataset.nptr, noff = vaOff(nptr), nmax = origSlotLen(nptr);
+      el.onchange = () => {
+        const want = el.value.trim();
+        if (!want) { el.value = strFrom(BUF, noff, nmax); return setStatus("An item needs a name — left unchanged.", "warn"); }
+        const res = setDescText(nptr, want, el.dataset.g, "Name");
+        if (res.tooLong) setStatus(`"${want}" is too long — this name slot holds ${res.max} characters.`, "warn");
+        else if (res.skip) setStatus("This item's name can't be written on this disc.", "err");
+        el.value = strFrom(BUF, noff, nmax);
+        markField(el, noff, nmax, "text");
+      };
+      markField(el, noff, nmax, "text");
     });
     // manual, length-capped description edit per food item
     qa("input.fddesc", host).forEach((el) => {
@@ -4125,17 +4616,6 @@
     return true;
   }
 
-  // Which area archives ship this model's cha_ records. Absence is a warning, not a verdict
-  // — ETC.BIN carries every one of them too, and a resident model is not evicted on an area
-  // change — so the readout says "ships in", never "will not work".
-  function avatarAreas(id) {
-    const m = REF && REF.avatarAreas && REF.avatarAreas.byModel && REF.avatarAreas.byModel[String(id)];
-    return m && Array.isArray(m.areas) ? m.areas : null;
-  }
-  function avatarAreaCount() {
-    const a = REF && REF.avatarAreas && REF.avatarAreas.archives;
-    return Array.isArray(a) ? a.length : 0;
-  }
   // The team index 0x177FEB4 resolves for this id, read back from the patched bytes.
   // Anything with no live case falls through the switch's default, which is index 0 (Hugo).
   function storyIndexOf(id) {
@@ -4170,17 +4650,15 @@
     const actorFbOn = !fbBad && fbSites.every((f) => r32(f.off) === f.alt);
     const stock = new Set(AVATAR.STOCK_SET);
     const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
-    const nArch = avatarAreaCount();
+    // Chips used to carry per-area model coverage as well. Play testing retired it: the
+    // characters the game ships worked in every area they were tried in, so the only thing
+    // worth flagging per id is whose story content it gets.
     const chip = (id) => {
-      const ar = avatarAreas(id), si = storyIndexOf(id);
-      const maps = ar ? ` · ${ar.length}/${nArch} maps` : "";
+      const si = storyIndexOf(id);
       const story = si === 0 ? "" : ` · story ${si}`;
-      const title = ar
-        ? `field model ships in ${ar.length} of ${nArch} area archives: ${ar.join(", ") || "none"}`
-             + (si ? ` — uses its own story content (team index ${si})` : " — uses Hugo's story content")
-        : "";
-      return `<span class="tag${stock.has(id) ? "" : " acc2"}"${title ? ` title="${esc2(title)}"` : ""}>${
-        esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}${maps}${story}</span></span>`;
+      const title = si ? `uses its own story content (team index ${si})` : "uses Hugo's story content";
+      return `<span class="tag${stock.has(id) ? "" : " acc2"}" title="${esc2(title)}">${
+        esc2(avatarName(id) || `id ${id}`)} <span class="dim">#${id}${story}</span></span>`;
     };
 
     // Character options for the single-id slots: the 75 battle characters, then the two
@@ -4213,10 +4691,11 @@
           or the scripts changes: this only stops the loader from refusing the id.
         </div>
         <div class="warnbox" style="margin:0 0 10px">
-          Two things bite beyond the whitelist. The model has to be <b>resident in the area you
-          are standing in</b> — coverage is on each chip below — and a <b>scripted scene can
-          hang</b> whoever you pick, including the eight the game ships: Koroku is one of them and
-          hangs. Being able to load a model is not the same as the game knowing what to do with it.
+          What bites beyond the whitelist is scripts, not loading: a <b>scripted scene can hang</b>
+          whoever you pick, including the eight the game ships — Koroku is one of them and hangs.
+          Being able to load a model is not the same as the game knowing what to do with it.
+          (Area coverage used to be listed here as a second condition. It isn't one — the shipped
+          characters played fine in every area they were tried in.)
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin:0 0 10px;align-items:center">
           <button id="avWide" class="chip${isWide ? " on" : ""}">Allow every battle character</button>
@@ -4747,14 +5226,15 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const effs = GEAR.effs.map((eo) => effectSlotHTML(nm, base, eo)).join("");
       rows.push(`<details class="char" data-base="${base}"><summary><span class="chev">▸</span>
           <span class="nm">${esc2(nm)}</span><span class="muted">${hex(iid, 3)}</span>
-          <span class="lv">DEF ${r16(def)} · ${r32(price)}p</span></summary>
+          <span class="lv">DEF ${r16(def)} · tier ${r32(price)}${tierPotch(r32(price)) !== null ? ` = ${tierPotch(r32(price))}p` : ""}</span></summary>
         <div class="char-body"><div class="grid">
           <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
-          <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
+          <label class="field"><span>Price tier <span class="dim">1-15 on the shared ladder${tierPotch(r32(price)) !== null ? `, ${tierPotch(r32(price))} potch` : ""}</span></span>
+            <input type="number" class="gr" min="0" max="15" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price tier"></label>
         </div>
-        <label class="field" style="margin-top:8px"><span>Name (${nameMax} char slot)</span>
+        <label class="field" style="margin-top:8px"><span>Name ${slotNoteHTML(nptr)}</span>
           <input type="text" class="ge-name" maxlength="${nameMax}" value="${esc2(nm)}" data-nptr="${nptr}" data-iid="${iid}" data-g="${esc2(nm)}"></label>
-        <label class="field" style="margin-top:8px"><span>Description (${descMax} char slot)</span>
+        <label class="field" style="margin-top:8px"><span>Description ${slotNoteHTML(dptr)}</span>
           <input type="text" class="ge-desc" maxlength="${descMax}" value="${esc2(descStr)}" data-dptr="${dptr}" data-g="${esc2(nm)}"></label>
         <h4>Effect slots</h4>${effs}</div></details>`);
     }
@@ -6510,6 +6990,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     sources: "Reference (read-only): where each item comes from — drops decoded off this disc, plus guide notes.",
     mountref: "Reference (read-only): the mount system as decoded off this disc — what each model can do, which areas carry a mount, and the battle mechanics that aren't exposed as editable fields.",
     files: "Reference (read-only): every packed sub-file on the disc — which archive holds it, where it starts, how big it is, and what it turned out to be.",
+    bgm: "Reference (read-only): where the game decides which music plays — every cue in the event scripts and the BGM/ambient pair on every room record. Read-only because the track ids have no names yet.",
   };
   let RUNE_GROUP = "";     // Runes browser: family filter chip ("" = all)
   let SKILL_TYPE = "";     // Skills browser: type filter chip ("" = all)
@@ -6677,10 +7158,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const nm = REF.items[id] || "";
     const fb = (REF.runeFood && REF.runeFood[String(id)]) || "";
     const m = /^(.*?)\s*—\s*Grants\s+(.+)$/.exec(fb);
-    const key = nm.toLowerCase().replace(/\s+/g, "").replace(/rune$/, "");
-    // An attack rune's spell carries the rune's own name (Kite -> "Kite"), so it has no
-    // RUNE_SPELLS entry and no "— Grants" clause; fall back to the rune name so those runes
-    // reach the effect editor too. Resolved against the loaded disc, not a bundled list.
     // The rune's own NAME string, as a pointer + the slot the disc already reserves, so the
     // browser can rewrite it in place. 43 names on this disc are stored twice — a rune and the
     // spell it grants each hold their own copy of "Kite" — so a rename has to write both or
@@ -6689,15 +7166,16 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const inTbl = BUF && id >= RUNE_TBL.lo && id <= RUNE_TBL.hi && inBlk(rec, RUNE_TBL.stride);
     const np = inTbl ? r32(rec + RUNE_TBL.name) : 0;
     const liveName = np ? strAt(np) : "";
-    let grants = RUNE_SPELLS[key] || (m ? m[2].split(/\s*,\s*/) : []);
-    // Resolve the attack-rune fallback against the name the disc CURRENTLY holds first. A
-    // rename renames the rune's spell along with it, so keying only on the bundled name would
-    // make the effect editor vanish from every rune the moment it was renamed.
-    if (!grants.length && BUF) {
-      const idx = spellNameIndex();
-      if (liveName && liveName in idx) grants = [liveName];
-      else if (nm && nm in idx) grants = [nm];
-    }
+    // The four spell slots, straight off the record — but only for a row this disc still
+    // NAMES as the rune it should be. That is the same trust check runeTblDesc() makes before
+    // believing a description, and for the same reason: the table has a row per item id and
+    // the non-rune ones are zeroed, so four zeros read out of an unnamed row means "nothing
+    // here to read", not "this rune grants nothing". Untrusted rows fall back to the bundled
+    // "— Grants a, b, c" clause, which is prose and so never reaches the editor.
+    const trusted = inTbl && runeRowTrusted(id);
+    const slotIds = trusted ? runeSpellIds(id) : [0, 0, 0, 0];
+    const grants = trusted ? slotIds.filter(Boolean).map(spellSlotName)
+      : (m ? m[2].split(/\s*,\s*/) : []);
     // The rune's own desc string, as a pointer + slot cap, so the browser can edit it in place.
     // This is the copy the game's rune menu actually reads (getDesc VA 0x16DBE48 -> itemRecord
     // VA 0x16DBCD8 -> RUNE_TBL +4), and until now nothing in the editor could write it: the
@@ -6715,7 +7193,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       descPtr: own ? dp : 0,                       // 0 when this row has no trustworthy record
       descMax: own ? origSlotLen(dp) : 0,
       descCopies: own ? descCopyCount(vaOff(dp)) : 1,
-      grants,
+      grants, slotIds, editable: trusted,
       owner: runeOwners()[nameKey(nm)] || "",
       holders: runeHolders()[nameKey(nm)] || [],
       sources: sourceRows(id),
@@ -6756,45 +7234,59 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     host.innerHTML = chips +
       `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
         grants, and who carries it. Names and descriptions come off <b>this</b> disc's rune table, so an edit
-        made here or on the Text tab shows everywhere the editor names that rune. <b>Grants</b> lists the spells a magic rune unlocks as its mastery level rises;
-        the Spells tab is where those are edited. Rows in the last column are tagged
+        made here or on the Text tab shows everywhere the editor names that rune.
+        <b>Spells granted</b> is the rune's own record, not a lookup: every rune holds
+        <b>four spell slots</b>, and a rune with fewer spells than that is padded with empty ones.
+        Kite grants one attack and has three slots free; the Fire Rune fills all four. Pick any of
+        the game's spells in any slot — that is how a rune is given a spell it never had. The spell's
+        own numbers (power, cast, element, target, area, status) live on the Spells tab, one click away
+        on each filled slot, and stay the single place they are edited.
+        Rows in the last column are tagged
         <span class="srctag guide">guide</span> when they come from the Suikosource rune-slot and character
         guides and <span class="srctag disc">disc</span> when decoded from this disc's enemy drop tables.
         The menu text box writes the rune's description straight into the table the game reads for it, capped
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
-        Every spell a rune grants is a <b>link to that spell's own record</b> on the Spells tab, opened and
-        ready to edit — power, cast, element, target, area, status. That is the one place a spell is edited,
-        so there is no second copy of those fields here to disagree with it. It is also the only route from an
-        attack rune to its numbers: Kite and Phoenix carry no status effect, so nothing else in this row would
-        ever have pointed at them. The passive support runes (Fortune, Balance, Fury…) list nothing to link,
-        because they have no spell record at all — what they do is engine code, not a row.
+        The passive support runes (Fortune, Balance, Fury…) ship with all four slots empty — what they do
+        is engine code, not a spell — so their slots are shown but writing one is untested territory,
+        unlike the magic and special-attack runes, where the game already reads every count from one
+        spell to four. Whichever slots you use, the levels a character has to reach before the later ones
+        unlock are <b>not</b> in this record and are not editable yet; test a reassigned rune in game
+        before building a run around it.
+        What those runes do instead is engine code, and that code is on the <b>Passives</b> tab: the two
+        that work outside battle can be switched on for the whole party without the rune, and the rest are
+        listed there with what they do and why they are not offered.
         Which rune a character has equipped is set on the <b>Characters</b> tab.</div>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="sl">${hex(r.id, 3)}</td>
           <td>${r.nameMax > 0
-            ? `<label class="field" style="margin:0 0 4px"><span class="muted">Name
-                 <span class="u">max ${r.nameMax}${r.nameCopies > 1 ? ` \u00b7 ${r.nameCopies} copies, mirrored` : ""}</span></span>
+            ? `<label class="field" style="margin:0 0 4px"><span class="muted">Name ${slotNoteHTML(r.namePtr)}</span>
                <input type="text" class="rname" data-id="${r.id}" maxlength="${r.nameMax}" value="${esc2(r.name)}"></label>`
             : esc2(r.name)}<div class="opt-tag">${esc2(runeGroupLabel(r.group))}</div></td>
           <td>${r.descMax > 0
-            ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text
-                 <span class="u">max ${r.descMax}${r.descCopies > 1 ? ` · ${r.descCopies} copies, mirrored` : ""}</span></span>
+            ? `<label class="field" style="margin:0 0 6px"><span class="muted">Menu text ${slotNoteHTML(r.descPtr)}</span>
                <input type="text" class="rdesc" data-id="${r.id}" maxlength="${r.descMax}" value="${esc2(r.text)}"></label>`
             : `<div class="muted">${esc2(r.text || "—")}</div>`}
-            ${r.grants.length ? `<div class="grants">${r.grants.map((s) => {
-              // A chip only becomes a link when the spell it names is really in the table.
-              // The 23 support runes (Fortune, Balance, Fury...) have no spell record at all —
-              // their effect is engine code, not a row — so linking them would promise a
-              // destination that does not exist. Those stay plain chips.
-              const si = spellNameIndex()[s];
-              return si == null
-                ? `<span class="spellchip" title="no spell record on this disc — this rune's effect is engine code">${esc2(s)}</span>`
-                : `<button class="spellchip link" data-spjump="${esc2(s)}" data-spi="${si}"
-                     title="Open ${esc2(s)} on the Spells tab — power, cast, element, target, area and status">${esc2(s)}</button>`;
-            }).join("")}</div>` : ""}
+            ${r.editable
+              // Four slots, always all four, because that is what the record holds: a rune
+              // with one spell is three ZEROS, not a shorter list, so an empty slot is a
+              // control to fill in rather than something the row has to hide. Each filled
+              // slot keeps its link to the spell's own record — the one place a spell's
+              // power/cast/element/target/status is edited.
+              ? `<div class="runeslots"><div class="muted" style="margin:8px 0 2px">Spells granted
+                   <span class="u">four slots · empty ones are free</span></div>
+                 ${r.slotIds.map((gid, k) => `<div class="slotrow">
+                    <span class="slotn">${k + 1}</span>
+                    <select class="rspell" data-id="${r.id}" data-k="${k}"
+                      title="Which spell this rune grants in slot ${k + 1}"><option value="${gid}"
+                      >${esc2(spellSlotLabel(gid))}</option></select>
+                    ${gid ? `<button class="spellchip link" data-spjump="${esc2(spellSlotName(gid))}" data-spi="${gid - 1}"
+                        title="Open this spell's record on the Spells tab — power, cast, element, target, area and status">edit ↗</button>` : ""}
+                  </div>`).join("")}</div>`
+              : r.grants.length ? `<div class="grants">${r.grants.map((s) =>
+                  `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
           </td>
           <td>${runeWhoHTML(r)}</td></tr>`).join("")
         || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
@@ -6811,6 +7303,41 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const box = q("#isoSearch"); if (box) box.value = b.dataset.spjump;
       drawView();
     }));
+    // Spell slots. Each select ships with ONE option — the value it already holds — and is
+    // filled with the full 94-spell list the first time it is touched. Rendering all of them
+    // up front is ~1MB of HTML for 72 runes, and the filter box re-renders this whole tab on
+    // every keystroke, so the eager version would make typing in it stutter.
+    let SLOT_OPTS = null;
+    const slotOptions = () => (SLOT_OPTS || (SLOT_OPTS = `<option value="0">— empty —</option>` +
+      Array.from({ length: SPELL.count }, (_, i) => {
+        const nm = spellRowName(i);
+        // Rows 80..93 on a real disc are complete records with no name — spare slots. Say so,
+        // rather than offering 14 identical blanks that look like a bug.
+        return `<option value="${i + 1}">${esc2(nm || "(unused spell slot)")} (#${i})</option>`;
+      }).join("")));
+    qa("select.rspell", host).forEach((el) => {
+      const id = +el.dataset.id, k = +el.dataset.k;
+      const off = RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.spells + k * 2;
+      if (!inBlk(off, 2)) { el.disabled = true; return; }
+      markField(el, off, 2, "spellid");
+      let filled = false;
+      const fill = () => {
+        if (filled) return;
+        filled = true;
+        const cur = el.value; el.innerHTML = slotOptions(); el.value = cur;
+      };
+      el.addEventListener("pointerdown", fill);   // mouse: fires before the popup opens
+      el.addEventListener("focus", fill);         // keyboard: tabbing straight into it
+      el.onchange = () => {
+        const gid = clampInt(+el.value || 0, 0, 0xFFFF);
+        writeW(off, 2, gid);
+        reg(off, 2, "spellid", itemName(id), `Spell slot ${k + 1}`);
+        setStatus(gid
+          ? `${itemName(id)} slot ${k + 1} now grants ${spellSlotName(gid)}. Review, then Save.`
+          : `${itemName(id)} slot ${k + 1} emptied. Review, then Save.`, "ok");
+        drawRunes(host);
+      };
+    });
     // In-place rename. Same write as the menu text below: the string is overwritten where it
     // already sits and null-padded, so no pointer on the disc moves and every menu that names
     // the rune reads through the one pointer it always did. An empty box would leave the rune
@@ -6843,6 +7370,182 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         drawRunes(host);
       };
     });
+  }
+
+
+  // ---- Passives browser ------------------------------------------------------
+  // Two tables, and the split between them is the whole point of the tab: what can be forced
+  // safely (the field checks, which loop your party) above, and what was decoded but is not
+  // offered (the battle checks, which are about whichever unit is acting) below. Each row shows
+  // the rune's own menu text off this disc next to what the decoded call sites actually do,
+  // because those are two different claims and a reader should not have to guess which is which.
+  const PS_STATE_LABEL = {
+    stock: ["off", "stock — only works when the rune is equipped"],
+    forced: ["ALWAYS ON", "this disc answers “yes” for every occupied party slot"],
+    mixed: ["PARTLY ON", "some of this rune's sites are forced and some are stock — tick it, or untick it, to make them agree"],
+    unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
+  };
+  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what].join(" ").toLowerCase();
+  const psSiteCount = (p) => `${p.sites.length} site${p.sites.length > 1 ? "s" : ""}`;
+
+  let rfOpen = false;
+  function rfCard() {
+    const groups = [];
+    for (const e of RUNEFX) if (!groups.includes(e.g)) groups.push(e.g);
+    const rows = groups.map((g) => {
+      const fields = RUNEFX.filter((e) => e.g === g).map((e) => {
+        const st = rfState(e), nm = runeInfo(e.id).name || hex(e.id, 3);
+        const head = `<span>${esc2(e.label)}
+          <span class="u" title="${esc2(nm + " — " + e.help)}">stock ${esc2(rfShow(e, e.stock))}</span></span>`;
+        // A read-only control keeps its class and key so it is still findable and still names
+        // the addresses that disagree — hiding it would leave a silent gap in the card.
+        if (!st.known) return `<label class="field">${head}
+          <input type="number" class="rf" data-k="${e.key}" value="" disabled
+            title="This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only."></label>`;
+        if (e.kind === "sa") {
+          const opts = rfChoices(e).map((t, i) => `<option value="${i + e.min}"${i + e.min === st.value ? " selected" : ""}>${esc2(t)}</option>`).join("");
+          return `<label class="field">${head}<select class="rf" data-k="${e.key}">${opts}</select></label>`;
+        }
+        return `<label class="field">${head}
+          <input type="number" class="rf" data-k="${e.key}" min="${e.min}" max="${e.max}"${e.step ? ` step="${e.step}"` : ""} value="${st.value}"></label>`;
+      }).join("");
+      return `<div class="bag-h" style="margin-top:10px">${esc2(g)}</div><div class="grid">${fields}</div>`;
+    }).join("");
+    const unknown = RUNEFX.filter((e) => !rfState(e).known).length;
+    const nSites = RUNEFX.reduce((a, e) => a + e.sites.length, 0);
+    return `<details class="card" id="rfBox"${rfOpen ? " open" : ""}>
+      <summary><b>Rune power</b> <span class="u">what a passive is worth once it does fire ·
+        ${RUNEFX.length} constants across ${new Set(RUNEFX.map((e) => e.id)).size} runes</span></summary>
+      <div class="muted" style="margin:8px 0 10px">The switches above decide <b>whether</b> a passive runs without
+        the rune. These decide <b>how much it is worth</b> — the literal the game multiplies, divides or adds by,
+        right after it has asked whether you have the rune. They work on a stock disc and need no switch: the rune
+        still has to be equipped, exactly as it always did. <b>Sunbeam heals 15 HP a combat turn and 1 HP every
+        0.3 seconds of walking</b>, and both of those numbers are here.</div>
+      <div class="warnbox" style="margin:0 0 10px">Like every other code constant in this editor these are
+        <b>global</b>: raising Killer's percentage raises it for everyone who equips a Killer Rune, enemies
+        included. Each control rewrites only the value inside an instruction the game already runs — the opcode and
+        registers stay as shipped — and ↺ puts the original back byte-for-byte.${unknown
+          ? ` <b>${unknown}</b> control(s) are read-only because this disc's instructions aren't what they patch.` : ""}</div>
+      ${rows}
+      <div class="muted" style="margin:10px 0 0">${nSites} sites, all inside the rune's own
+        <i>if&nbsp;equipped</i> branch, and all registered in the <b>Changes</b> tab under “Rune power”. The runes
+        with no control have no number at their sites — they set a state bit or open a branch, so there is nothing
+        to move.</div>
+      <div class="row" style="margin-top:10px"><button class="chip mini" id="rfReset">Restore all to stock</button></div>
+    </details>`;
+  }
+  function wireRf(host) {
+    const box = q("#rfBox", host); if (box) box.ontoggle = () => { rfOpen = box.open; };
+    qa(".rf", host).forEach((el) => {
+      const e = RUNEFX.find((x) => x.key === el.dataset.k); if (!e || el.disabled) return;
+      // The revert tooltip shows the value in the shape it actually has: a decimal for an
+      // immediate, the whole word for a shift, the float itself for the walk-heal interval.
+      markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
+      el.onchange = () => {
+        const n = rfWrite(e, el.value);
+        drawView();
+        setStatus(`${runeInfo(e.id).name || hex(e.id, 3)} — ${e.label}: ${rfShow(e, n)} `
+          + `(stock ${rfShow(e, e.stock)}).`, "ok");
+      };
+    });
+    const rb = q("#rfReset", host);
+    if (rb) rb.onclick = () => {
+      RUNEFX.forEach((e) => rfWrite(e, e.stock));
+      drawView(); setStatus("Rune power restored to stock.", "ok");
+    };
+  }
+  function drawPassives(host) {
+    const q2 = SEARCH;
+    const keep = (p) => !q2 || psHaystack(p, runeInfo(p.id)).includes(q2);
+    const rows = PASSIVES.filter(keep);
+    const held = PS_BATTLE.filter(keep);
+    const forced = PASSIVES.filter((p) => psState(p) === "forced").length;
+    const unknown = PASSIVES.filter((p) => psState(p) === "unknown").length;
+    const nBattle = PS_BATTLE.reduce((a, p) => a + p.sites.length, 0);
+    const body = rows.map((p) => {
+      const info = runeInfo(p.id), st = psState(p);
+      const [pill, why] = PS_STATE_LABEL[st];
+      return `<tr>
+        <td><input type="checkbox" class="psOn" data-id="${p.id}"${st === "forced" ? " checked" : ""}${st === "unknown" ? " disabled" : ""}></td>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · id ${hex(p.id, 3)}</div></td>
+        <td>${esc2(info.text || "—")}</td>
+        <td class="muted">${esc2(p.what)}</td>
+        <td><span class="u" title="${esc2(why)}">${pill}</span></td>
+      </tr>`;
+    }).join("");
+    const heldBody = held.map((p) => {
+      const info = runeInfo(p.id);
+      return `<tr>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · id ${hex(p.id, 3)}</div></td>
+        <td>${esc2(info.text || "—")}</td>
+        <td class="muted">${esc2(p.what)}</td>
+      </tr>`;
+    }).join("");
+    const gap = PS_UNMAPPED.filter((id) => !q2 || (REF.items[id] || "").toLowerCase().includes(q2))
+      .map((id) => `<tr class="muted">
+        <td><b>${esc2(REF.items[id] || hex(id, 3))}</b><div style="font-size:11px">no site found · id ${hex(id, 3)}</div></td>
+        <td>${esc2(runeTblDesc(id) || (REF.runeFood && REF.runeFood[String(id)]) || "—")}</td>
+        <td>Nothing to switch, and nothing found to switch it at. Its item id appears nowhere in the game
+          code as an argument, no call to any of the three equipped-rune lookups passes it, and no data table
+          pairs it with another support-rune id — so whatever grants this bonus does not ask the question the
+          other 22 ask.</td>
+      </tr>`).join("");
+    host.innerHTML = `
+      <div class="muted" style="margin:0 0 10px">A support rune does nothing until someone equips it, and then only
+        for them. This tab removes the <b>equipped</b> half of that sentence for the passives that work
+        <b>outside battle</b>: the effect runs whether or not the rune is anywhere in your inventory, and the rune
+        itself is untouched — still buyable, still equippable, still doing the same thing when equipped. The
+        <b>What forcing it does</b> column is read off the decoded call sites, not off the rune's menu text beside
+        it; where the two disagree, the code column is the one that is true of this disc.</div>
+      <div style="overflow-x:auto"><table class="invtbl">
+        <thead><tr><th style="width:34px">On</th><th style="width:15%">Rune</th><th style="width:24%">What the game says</th>
+          <th>What forcing it does <span class="u">decoded from the call sites</span></th><th style="width:90px">State</th></tr></thead>
+        <tbody>${body || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody>
+      </table></div>
+      <div class="muted" style="margin:8px 0 0">Both of these are <b>loops over party slots 1–6</b> in the
+        field-step module, asking once per slot, so answering yes means “everyone in your party has it” — which is
+        exactly what the rune does when six people wear one. The answer written is
+        <code>sltu $v0,$zero,$a0</code>, not a bare <i>yes</i>: an empty party slot still answers no, which is what
+        the stock code does. ${forced} of ${PASSIVES.length} are on.${unknown
+          ? ` <b>${unknown}</b> is read-only because this disc's code at one of its sites is not what the editor
+              decoded.` : ""}
+        Every write is two instruction words per site and shows up per site in the <b>Changes</b> tab, under
+        “Passive runes”.</div>
+      <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Both sites are
+        decoded from a pristine USA SLUS-20387 and byte-checked before they are written, and unticking restores the
+        stock instructions exactly. What is untested is the <i>result</i>: neither forced passive has been watched
+        running in game. Keep a backup disc.</div>
+      ${rfCard()}
+      <details class="card"><summary><b>The in-battle passives</b>
+        <span class="u">decoded — ${PS_BATTLE.length} runes, ${nBattle} sites — and deliberately not switchable</span></summary>
+        <div class="muted" style="margin:8px 0 10px">These are the other 21 runes, plus Sunbeam's second half. They
+          are found, verified and listed here, but there is no switch for them, and the reason is that
+          <b>the answer cannot be made per-unit</b>. A call site is two instruction words; one of them has to keep
+          the delay-slot instruction that was already there, which leaves exactly one word for the answer. That is
+          enough for <i>yes</i> and not enough for <i>yes, if this is Hugo</i> — reading the character id off the
+          record, comparing it and turning that into a 0/1 is three instructions at best. The battle-side lookup is
+          worse still: it never receives the character, it resolves whichever unit is acting and asks about that. So
+          a forced battle passive would be on for <b>every unit in the fight, enemies included</b> — Wall would lock
+          the whole battlefield in place, Hunter would clamp everyone's damage to nothing. Reaching these properly
+          means relocating code into free space in the executable and calling out to it, which is a different job
+          from flipping a word in place; the offsets doc has every site if someone wants to take it on.</div>
+        <div style="overflow-x:auto"><table class="invtbl">
+          <thead><tr><th style="width:16%">Rune</th><th style="width:26%">What the game says</th>
+            <th>Where it is asked</th></tr></thead>
+          <tbody>${heldBody}${gap}${heldBody || gap ? "" : `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody>
+        </table></div>
+      </details>`;
+    wireRf(host);
+    qa(".psOn", host).forEach((b) => (b.onchange = () => {
+      const p = PASSIVES.find((x) => x.id === +b.dataset.id);
+      const on = b.checked;
+      const n = psWrite(p, on);
+      const nm = runeInfo(p.id).name;
+      drawView();
+      setStatus(n ? `${nm} — ${on ? "forced on for the whole party" : "back to stock (equip the rune to use it)"}, `
+        + `${n} site${n > 1 ? "s" : ""} written.` : `${nm} — nothing written; this disc's code doesn't match.`,
+        n ? "ok" : "warn");
+    }));
   }
 
   // ---- Skills browser --------------------------------------------------------
@@ -6967,6 +7670,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     ["files", "Files", () => { const sf = subfileIndex(); return (sf ? sf.archives.reduce((a, x) => a + x.files.length, 0) : 0).toLocaleString(); }, drawFiles],
     ["places", "Pickups", () => ((REF.itemSources && REF.itemSources.places) || []).length, drawPickups],
     ["mountref", "Mounts", () => MOUNTREF.riders.length + MOUNTREF.mounts.length, drawMountRef],
+    ["bgm", "Music", () => { const b = bgmIndex(); return b ? b.script.length.toLocaleString() : 0; }, drawBgmRef],
   ];
   function refTabs() {
     return `<div class="subtabs" style="margin-bottom:10px">${REF_MODES.map(([k, label, count]) =>
@@ -7161,6 +7865,102 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${tbl(["Finding", "Why it isn't editable", "Address"],
         MOUNTREF.notEditable.filter((r) => hit(...r)).map((r) =>
           `<tr><td>${esc2(r[0])}</td><td class="muted">${esc2(r[1])}</td><td class="sl">${esc2(r[2])}</td></tr>`))}`;
+    wireRefTabs(host);
+  }
+
+  // ---- Music reference (read-only) -------------------------------------------
+  // Music is not a table in the executable. Two places pick a track — the event-script sound
+  // command (opcode 59/60, an 18-byte instruction whose w2 operand is the track) and the room
+  // record's +0x22 — and both are indexed in Editor/s3_bgm.json by build_bgm_index.py.
+  //
+  // READ-ONLY on purpose, and the reason is worth stating rather than implying: every cue's
+  // offset is known and a track id is a single u16, so the *edit* is trivial. What's missing
+  // is meaning — the 13 ids have no names, and there is no name table on the disc to find, so
+  // an editor here would be a dropdown of numbers to guess between. Naming them needs a
+  // patched disc and an emulator. Until then this shows what the disc actually says.
+  const BGM_UNRESOLVED = [
+    ["What the track ids sound like",
+     "13 ids and no name table anywhere on the disc — the only way to map an id to a song is to patch a disc and listen. Nothing here guesses at a name.",
+     "—"],
+    ["What track 0x0200 really is",
+     "It is 465 of the script cues AND the dominant room-record value, which reads as “this map’s own theme” rather than one specific song. The 0x0113–0x0129 band behaves like real per-song ids; 0x0200 probably does not.",
+     "—"],
+    ["Replacing the music itself",
+     "The audio lives in the SD/STR.BIN SCEI container. The area archives carry no Sony audio headers at all (SShd/SSbd/VAGp/SEQp: zero hits), so only which id is requested can ever be changed here — not what it sounds like.",
+     "SD/STR.BIN"],
+    ["Adding a cue where the script has none",
+     "The sound command is a fixed 18 bytes, so retargeting a track or silencing it (id 0) is an in-place 2-byte write. Inserting a new cue would mean lengthening the script, which is a different and much riskier problem.",
+     "0x17AF1A8"],
+  ];
+  function bgmIndex() {
+    const idx = (typeof window !== "undefined" && window.S3_TEST_BGM) || (REF && REF.bgm);
+    return idx && Array.isArray(idx.script) && Array.isArray(idx.rooms) ? idx : null;
+  }
+  function drawBgmRef(host) {
+    const idx = bgmIndex();
+    if (!idx) {
+      host.innerHTML = refTabs() + `<div class="muted">Needs <code>Editor/s3_bgm.json</code>; it didn't load.</div>`;
+      wireRefTabs(host);
+      return;
+    }
+    const q2 = SEARCH, hit = (...xs) => !q2 || xs.join(" ").toLowerCase().includes(q2);
+    const tbl = (head, rows) => `<table class="invtbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
+      rows.join("") || `<tr><td colspan="${head.length}" class="muted">no matches</td></tr>`}</tbody></table>`;
+    const tid = (t) => (t === 0 ? "silence" : "0x" + hex(t, 4));
+
+    // Tally once: per track (cues, rooms, which areas) and per area (its tracks and ambience).
+    const trk = new Map(), area = new Map();
+    const bump = (m, k, f) => { if (!m.has(k)) m.set(k, f()); return m.get(k); };
+    const A = (a) => bump(area, a, () => ({ cues: new Map(), bgm: new Map(), se: new Map(), rooms: 0 }));
+    const T = (t) => bump(trk, t, () => ({ cues: 0, rooms: 0, areas: new Set() }));
+    const inc = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+    idx.script.forEach((c) => { const r = T(c.track); r.cues++; r.areas.add(c.archive); inc(A(c.archive).cues, c.track); });
+    idx.rooms.forEach((r) => { const a = A(r.archive); a.rooms++; inc(a.bgm, r.bgm); inc(a.se, r.se);
+      const t = T(r.bgm); t.rooms++; t.areas.add(r.archive); });
+    const seIds = new Set(idx.rooms.map((r) => r.se).filter(Boolean));
+    const fmt = (m) => [...m.entries()].sort((x, y) => y[1] - x[1]).map(([k, n]) => `${tid(k)}×${n}`).join(", ");
+
+    // Naming all 23 areas for the ubiquitous tracks buries the signal, which is *which* places
+    // use the distinctive ones — so past a handful, the count says more than the list.
+    const areaList = (set) => {
+      const ns = [...set].sort().map((a) => archName(a) || a);
+      return ns.length > 6 ? `${ns.length} areas — effectively everywhere` : ns.join(", ");
+    };
+    const trkRows = [...trk.entries()].sort((a, b) => (b[1].cues + b[1].rooms) - (a[1].cues + a[1].rooms))
+      .filter(([t, v]) => hit(tid(t), String(t), [...v.areas].join(" "), [...v.areas].map(archName).join(" ")))
+      .map(([t, v]) => `<tr><td class="sl">${tid(t)}</td><td class="sl">${t}</td><td>${v.cues.toLocaleString()}</td><td>${
+        v.rooms.toLocaleString()}</td><td class="muted">${esc2(areaList(v.areas))}</td></tr>`);
+    const areaRows = [...area.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .filter(([a, v]) => hit(a, archName(a), fmt(v.cues), fmt(v.bgm)))
+      .map(([a, v]) => `<tr><td>${esc2(archName(a) || "—")}<div class="muted">${esc2(a)}</div></td><td class="sl">${
+        esc2(fmt(v.cues) || "—")}</td><td class="sl">${esc2(fmt(v.bgm))}</td><td class="sl">${
+        esc2(fmt(v.se))}</td><td>${v.rooms}</td></tr>`);
+
+    host.innerHTML = refTabs() +
+      `<div class="muted" style="margin:0 0 10px">Music is <b>not</b> a table in the executable — two
+        places pick a track, and this is both of them, decoded off this disc.
+        <b>${idx.script.length.toLocaleString()}</b> script cues (event-script opcode 59/60, an 18-byte
+        instruction whose third halfword is the track) and <b>${idx.rooms.length.toLocaleString()}</b> room
+        records, each carrying a BGM id at <code>+0x22</code> and an ambient sound effect at
+        <code>+0x24</code> — which is why ambience reads 0 indoors and non-zero on field maps.
+        <b>${trk.size}</b> distinct track ids in all.</div>
+      <div class="muted" style="margin:0 0 10px">The request function is <code>0x17AEA38</code>; kind 1 is
+        BGM because its tag in the table at <code>0x1983020</code> is <code>0x1000</code>, exactly the bit
+        masked off before the current-track comparison. A raw scan for the opcode also matches ordinary
+        data, so a cue counts only if the operand words that are zero in every disassembler-confirmed
+        instruction are zero in it too — that keeps 91% of raw hits and drops the obvious garbage.
+        Every offset in the index re-reads the value it stores.</div>
+      <div class="bag-h">Track ids — what asks for what</div>
+      ${tbl(["Track", "Decimal", "Script cues", "Rooms", "Areas that use it"], trkRows)}
+      <div class="bag-h" style="margin-top:14px">By area — what each place plays</div>
+      ${tbl(["Area", "Script cues", "Room BGM", "Room ambience", "Rooms"], areaRows)}
+      <div class="bag-h" style="margin-top:14px">What is not resolved</div>
+      ${tbl(["Finding", "Where it stands", "Address"],
+        BGM_UNRESOLVED.filter((r) => hit(...r)).map((r) =>
+          `<tr><td>${esc2(r[0])}</td><td class="muted">${esc2(r[1])}</td><td class="sl">${esc2(r[2])}</td></tr>`))}
+      <div class="muted" style="margin:10px 0 0">${seIds.size} distinct ambient sound effects across the
+        room records. Rebuild this index from a pristine disc with
+        <code>python3 Editor/build_bgm_index.py &lt;iso&gt;</code>.</div>`;
     wireRefTabs(host);
   }
 
@@ -7455,6 +8255,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     });
     STATUSFX.forEach((f) => f.sites.forEach(([o], k) =>
       code(o, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    // Rune power. Named per site like the status constants, and the kind follows the shape of
+    // the value: an `imm` site only moves its low half-word, the others move bits outside it.
+    RUNEFX.forEach((f) => f.sites.forEach(([o], k) =>
+      code(o, `Rune power · ${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`,
+        RF_KIND[f.kind].disp === "num" ? "imm16" : RF_KIND[f.kind].disp)));
     SETS.counterSites.forEach((o, k) => code(o, `Destiny counter chance (site ${k + 1})`));
     SETS.counterOwnerSites.forEach((o, k) => code(o, `Counter bonus · which set owns it (site ${k + 1})`));
     code(SETS.healOwnerSite, "Pale Moon heal · which set owns it");
@@ -7477,7 +8282,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   }
 
   // ---- reading a value out of an arbitrary block ------------------------------
-  const CHG_GROUPS = ["Text", "Runes", "Spells", "Unites", "Items", "Gear", "Food", "Shops",
+  const CHG_GROUPS = ["Text", "Runes", "Passive runes", "Spells", "Unites", "Items", "Gear", "Food", "Shops",
     "Characters", "Growth", "Support", "Weapons", "Sets", "Movement", "Code patches", "Unmapped"];
   function chgRead(dv, off, w) {
     const r = off - ELF_BASE;
@@ -7520,6 +8325,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     ENC.sites.forEach((o, i) => word(o, ENC.stock[i], `Encounter rate · ${ENC.labels[i]}`));
     STATUSFX.forEach((f) => f.sites.forEach(([o, w], k) =>
       word(o, w, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    RUNEFX.forEach((f) => f.sites.forEach(([o, w], k) =>
+      word(o, w, `Rune power · ${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
     AVATAR.ACTORFB.sites.forEach((s, k) => word(s.off, s.stock, `Scene actor fallback · word ${k + 1}`));
     // 16-bit immediates: only the low half-word is the value, so compare that alone.
     const imm = (off, stock, label) => {
@@ -7535,6 +8342,15 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       imm(p.riderSites[0], MOUNTS.STOCK[i][0], `Mount pair ${i + 1} · rider`);
       imm(p.mountSite, MOUNTS.STOCK[i][1], `Mount pair ${i + 1} · mount`);
     });
+    // Both words of every support-rune check — including the 49 this editor deliberately does NOT
+    // write. Those are the ones most worth auditing: if a disc has them patched, it was done
+    // somewhere else, and the audit naming the site is how anyone would find out.
+    PASSIVES.concat(PS_BATTLE).forEach((p) => p.sites.forEach((st, i) => {
+      const nm = (REF && REF.items[p.id]) || `rune ${hex(p.id, 3)}`;
+      const tag = p.sites.length > 1 ? ` (site ${i + 1} of ${p.sites.length})` : "";
+      word(st.off, st.jal, `Passive rune · ${nm} always on${tag} — the check`);
+      word(st.off + 4, st.ds, `Passive rune · ${nm} always on${tag} — the answer`);
+    }));
     return out;
   }
 
