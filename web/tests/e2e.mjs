@@ -1846,22 +1846,127 @@ head("Per-field revert + Revert all + badge");
   await page.context().close();
 }
 
-head("Balance (Hard Mode) — idempotent + reset");
+// The Balance tab is gone: its growth half is a card at the top of the Growth tab, its spell
+// and unite halves are cards on those tabs. Two things are asserted at once here — that the
+// merged card still scales from disk (so presets stay idempotent), and that it writes the
+// VERIFIED offsets. The old tab carried a stale copy of the mapping that never touched HP at
+// +0 and wrote MDF's multiplier into the non-growth byte at +8.
+const origU32 = (p) => (bytes[p] | bytes[p + 1] << 8 | bytes[p + 2] << 16 | bytes[p + 3] << 24) >>> 0;
+
+head("Growth — bulk scaling (merged from Balance): idempotent, right offsets");
 { const page = await newPage(); await loadIso(page);
   const [l2b, l2s] = TABLES.list2;
-  // synth plants list2 rec1 growth +4..+11 = [6,5,4,3,3,4,2,8]; Hard PWR mult 0.7 -> round(6*0.7)=4
-  await page.click('#isoTabs [data-v="balance"]');
-  await page.click('[data-preset="hard"]'); await page.click("#hm-apply"); await page.waitForTimeout(120);
+  const rec = l2b + 1 * l2s;
+  // synth list2 rec1: HP@+0 = 9, PWR@+4 = 6, MDF@+9 = 4, and +8 = 3 (NOT a growth byte).
+  // Hard preset: HP x0.65, PWR x0.7, MDF x0.8.
+  check("Balance is no longer a tab of its own", !(await page.$('#isoTabs [data-v="balance"]')));
+  await page.click('#isoTabs [data-v="growth"]');
+  check("the Growth tab carries the bulk-scaling card", !!(await page.$("#gbBox")));
+  await openFold(page, "#gbBox");
+  await page.click('[data-gpreset="hard"]'); await page.click("#gb-apply"); await page.waitForTimeout(150);
   let r = await save(page);
-  const pwrOff = l2b + 1 * l2s + 4;
-  check("hard: PWR growth 6 -> 4", r.u8(pwrOff) === 4);
-  // idempotent: applying Hard again after save scales from the NEW originals -> 4*0.7=3 (not compounding to a spiral)
-  await page.click('#isoTabs [data-v="balance"]'); await page.click('[data-preset="hard"]'); await page.click("#hm-apply"); await page.waitForTimeout(120);
+  check("hard: PWR growth 6 -> 4 (+4)", r.u8(rec + 4) === 4);
+  check("hard: HP growth 9 -> 6 — at +0, the offset the old tab never touched", r.u8(rec + 0) === 6);
+  check("hard: MDF growth 4 -> 3 (+9)", r.u8(rec + 9) === 3);
+  check("the non-growth byte at +8 is left alone (the old tab wrote MDF's multiplier here)", r.u8(rec + 8) === 3);
+  // idempotent: applying Hard again after a save scales from the NEW originals, no runaway
+  await openFold(page, "#gbBox");
+  await page.click('[data-gpreset="hard"]'); await page.click("#gb-apply"); await page.waitForTimeout(150);
   r = await save(page);
-  check("hard again: 4 -> 3 (scales from disk, no runaway)", r.u8(pwrOff) === 3);
-  // reset to 1.00x -> no changes staged
-  await page.click('#isoTabs [data-v="balance"]'); await page.click('[data-preset="reset"]'); await page.click("#hm-apply"); await page.waitForTimeout(120);
+  check("hard again: PWR 4 -> 3 (scales from disk, no runaway)", r.u8(rec + 4) === 3);
+  check("hard again: HP 6 -> 4", r.u8(rec + 0) === 4);
+  // reset to 1.00x -> nothing staged
+  await openFold(page, "#gbBox");
+  await page.click('[data-gpreset="reset"]'); await page.click("#gb-apply"); await page.waitForTimeout(150);
   check("reset preset stages nothing", await nothingStaged(page));
+  await page.context().close();
+}
+
+head("Growth — collapsed-row summary, overwrite guard, filter scope");
+{ const page = await newPage(); await loadIso(page);
+  const [l2b, l2s] = TABLES.list2;
+  const rec = l2b + 1 * l2s;
+  await page.click('#isoTabs [data-v="growth"]');
+  const sumOf = (off) => page.textContent(`details.char[data-rec="${off}"] .gr-sum`);
+  const sums = await page.$$eval("details.char .gr-sum", (e) => e.map((x) => x.textContent));
+  check("collapsed rows carry a growth summary", sums.length > 0 && /HP \d+ · PWR \d+/.test(sums[0] || ""), sums[0]);
+  check("record #1's summary reads its planted bytes", /HP 9 · PWR 6/.test(await sumOf(rec)), await sumOf(rec));
+
+  // Overwrite guard: bulk scaling starts from the pristine bytes, so a hand-typed growth value
+  // would vanish without a word. It has to ask first.
+  await openRec(page, `details.char[data-rec="${rec}"]`);
+  const pwr = `details.char[data-rec="${rec}"] input.fnum[data-off="${rec + 4}"]`;
+  await page.fill(pwr, "12"); await page.dispatchEvent(pwr, "change"); await page.waitForTimeout(80);
+  check("the summary follows a hand edit while the record is open", /PWR 12/.test(await sumOf(rec)), await sumOf(rec));
+  await openFold(page, "#gbBox");
+  await page.click('[data-gpreset="hard"]');
+  let asked = null;
+  page.once("dialog", (d) => { asked = d.message(); d.dismiss(); });
+  await page.click("#gb-apply"); await page.waitForTimeout(150);
+  check("bulk apply warns before overwriting hand-edited growth", /edited by hand/.test(asked || ""), asked || "no dialog");
+  check("dismissing the warning leaves the hand edit intact", /PWR 12/.test(await sumOf(rec)), await sumOf(rec));
+  page.once("dialog", (d) => d.accept());
+  await page.click("#gb-apply"); await page.waitForTimeout(150);
+  check("accepting applies the scale over the hand edit", /PWR 4/.test(await sumOf(rec)), await sumOf(rec));
+  await page.click("#isoResetBtn"); await page.waitForTimeout(120);
+
+  // Filter scope: with the filter box in use, the card offers to scale only what it is showing.
+  const name = await page.textContent(`details.char[data-rec="${rec}"] .nm`);
+  await page.fill("#isoSearch", name); await page.waitForTimeout(150);
+  await openFold(page, "#gbBox");
+  check("a filter reveals the scope picker", !!(await page.$("#gb-scope")));
+  await page.selectOption("#gb-scope", "filter");
+  await page.click('[data-gpreset="hard"]'); await page.click("#gb-apply"); await page.waitForTimeout(150);
+  const r = await save(page);
+  check("scoped apply scales the matching record", r.u8(rec + 4) === 4);
+  check("scoped apply leaves every other record alone",
+    r.u8(l2b + 2 * l2s + 4) === bytes[l2b + 2 * l2s + 4] && r.u8(l2b + 3 * l2s + 4) === bytes[l2b + 3 * l2s + 4]);
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(120);
+  await openFold(page, "#gbBox");
+  check("clearing the filter hides the scope picker", !(await page.$("#gb-scope")));
+  await page.context().close();
+}
+
+head("Spells / Unites — bulk Power scale (the difficulty presets' other halves)");
+{ const page = await newPage(); await loadIso(page);
+  const spPow = SPELL.off + 0x1C, unPow = UNITE.off + 0x1C;
+  const pow0 = origU32(spPow);
+  await page.click('#isoTabs [data-v="spells"]');
+  await openFold(page, "#pbBox");
+  await page.click('[data-pbpreset="hard"]');
+  check("the Hard preset fills the spell multiplier (x0.75)", (await page.inputValue("#pb-m")) === "0.75");
+  await page.click("#pb-apply"); await page.waitForTimeout(200);
+  // spDescOn is on by default, so a bulk scale rewrites each DMG number just like a typed Power
+  check("bulk scale rewrote the description too", (await page.inputValue('details.char[data-i="0"] input.spdesc')) === "Deals 75DMG",
+    await page.inputValue('details.char[data-i="0"] input.spdesc'));
+  // 94 records is few enough to reg() each one, so the review names them rather than reporting
+  // an anonymous byte count the way the old Balance tab's bulk write had to.
+  let { r, review } = await saveAndReview(page);
+  check("the review names the scaled spells instead of a byte count",
+    /Power/.test(review) && /Flaming Arrows/.test(review), review.replace(/\s+/g, " ").slice(0, 140));
+  check("bulk spell power scales from the original", r.u32(spPow) === Math.round(pow0 * 0.75), String(r.u32(spPow)));
+  await openFold(page, "#pbBox");
+  await page.click('[data-pbpreset="reset"]'); await page.click("#pb-apply"); await page.waitForTimeout(200);
+  check("reset stages nothing on the Spells tab", await nothingStaged(page));
+
+  // ...and with the rewrite toggle off, Power moves alone
+  await page.uncheck("#spUpd");
+  await openFold(page, "#pbBox");
+  await page.fill("#pb-m", "0.5"); await page.dispatchEvent("#pb-m", "change");
+  await page.click("#pb-apply"); await page.waitForTimeout(200);
+  check("with the rewrite toggle off the description is left alone",
+    (await page.inputValue('details.char[data-i="0"] input.spdesc')) === "Deals 75DMG",
+    await page.inputValue('details.char[data-i="0"] input.spdesc'));
+  await page.click("#isoResetBtn"); await page.waitForTimeout(120);
+
+  const upow0 = origU32(unPow);
+  await page.click('#isoTabs [data-v="unites"]');
+  await openFold(page, "#pbBox");
+  await page.click('[data-pbpreset="brutal"]');
+  check("the Brutal preset fills the unite multiplier (x0.6)", (await page.inputValue("#pb-m")) === "0.6");
+  await page.click("#pb-apply"); await page.waitForTimeout(200);
+  r = await save(page);
+  check("bulk unite power scales from the original", r.u32(unPow) === Math.round(upow0 * 0.6), String(r.u32(unPow)));
   await page.context().close();
 }
 
@@ -1870,8 +1975,10 @@ head("Global encounter rate — scale all three movement paths");
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   check("Encounter is its own top-level tab", !!(await page.$('#isoTabs [data-v="encounter"]')));
-  check("the Balance tab no longer carries the rate field", await (async () => {
-    await page.click('#isoTabs [data-v="balance"]');
+  // The rate field used to live on Balance; that tab is gone entirely now (its growth half is
+  // a card on Growth), so the only thing left to assert is that nothing else claims #encPct.
+  check("no other tab carries the rate field", await (async () => {
+    await page.click('#isoTabs [data-v="growth"]');
     const gone = !(await page.$("#encPct"));
     await page.click('#isoTabs [data-v="encounter"]');
     await page.waitForSelector("#encPct", { timeout: 3000 });
@@ -3034,9 +3141,10 @@ head("Damage+heal slot — move Shining Wind's split effect to another spell");
   check("the damage+heal card starts collapsed", !(await page.locator("#spSplitSpell").isVisible()));
   // two collapsed bars in a row are ambiguous — each section carries a captioned rule
   { const secs = await page.locator("#isoView > .secdiv > span").allTextContents();
-    check("the tab reads as four labelled sections",
-      secs.length === 4 && /Status effects/.test(secs[0]) && /Special effect/.test(secs[1])
-      && /Bulk edit/.test(secs[2]) && /Every spell/.test(secs[3]),
+    check("the tab reads as five labelled sections",
+      secs.length === 5 && /Status effects/.test(secs[0]) && /Special effect/.test(secs[1])
+      && /Bulk edit · a whole rune/.test(secs[2]) && /Bulk edit · every spell/.test(secs[3])
+      && /Every spell/.test(secs[4]),
       secs.join(" | ")); }
   await openFold(page, "#spSplitBox");
   // the fixture ships the stock wiring: spell id 17 (row 16) + a 300 HP heal
@@ -3509,9 +3617,15 @@ for (const [w, h] of [[360, 640], [320, 480]]) {
   const page = await newPage({ width: w, height: h });
   await loadIso(page);
   let over = null;
-  for (const v of ["chars", "growth", "support", "weapons", "shops", "spells", "unites", "gear", "sets", "food", "balance", "enemies", "ref", "changes"]) {
+  for (const v of ["chars", "growth", "support", "weapons", "shops", "spells", "unites", "gear", "sets", "food", "enemies", "ref", "changes"]) {
     await page.click(`#isoTabs [data-v="${v}"]`); await page.waitForTimeout(50);
     if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) over = v;
+    // The bulk cards ship collapsed, so a plain tab visit never renders their grids — open the
+    // three of them explicitly, or a multiplier row that overflows would go unnoticed.
+    for (const box of ["#gbBox", "#pbBox"]) if (await page.$(box)) {
+      await openFold(page, box); await page.waitForTimeout(50);
+      if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) over = v + " (bulk card)";
+    }
   }
   check(`no overflow at ${w}px`, over === null, over ? "overflow in " + over : "");
   await page.context().close();
