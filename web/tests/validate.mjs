@@ -66,6 +66,36 @@ const STATUSFX_SITES = [
   [0x1054B8, 0x24020096],
   [0x1054CC, 0x24020096],
 ]
+// Rune power (Passives tab): the magnitudes the passive support runes are worth, as
+// [offset, stock word]. These sit INSIDE each rune's "if equipped" branch — they are not the
+// equipped-check itself (that is PASSIVE_SITES/PS_BATTLE) — and each control rewrites only the
+// value inside the instruction, so the stock word pins both the address and the shape. The
+// last entry is not code at all: it is the walk-heal interval float in the small-data pool.
+const RUNEFX_SITES = [
+  [0x261198, 0x2442000F],   // Sunbeam   addiu $v0,$v0,15   — HP a combat turn adds
+  [0x104088, 0x24020096],   // Killer    addiu $v0,$zero,150
+  [0x104148, 0x24020096],
+  [0x1038EC, 0x24020096],   // Counter
+  [0x103B60, 0x24020096],
+  [0x103D34, 0x24020096],
+  [0x10FD34, 0x24020096],   // Gale
+  [0x10380C, 0x2842001E],   // Haziness  slti $v0,$v0,30
+  [0x245D78, 0x24020003],   // Drain     addiu $v0,$zero,3  — self-heal divisor
+  [0x105218, 0x2403000A],   // Barrier   addiu $v1,$zero,10 — reflect divisor
+  [0x1035E8, 0x24030005],   // Hunter    addiu $v1,$zero,5  — damage clamp
+  [0x244B54, 0x3C013F00],   // Violence  lui $at,0x3F00     — 0.5f HP threshold
+  [0x104370, 0x00131840],   // Wall      sll $v1,$s3,1
+  [0x1047C8, 0x00108040],   // Double-Strike
+  [0x1047DC, 0x00108040],
+  [0x104878, 0x00101040],   // Fire Sealing
+  [0x104FE0, 0x00111040],
+  [0x10546C, 0x00101040],
+  [0x10FD84, 0x00021042],   // Wizard    srl $v0,$v0,1
+  [0x10FDA8, 0x00101042],
+  [0x10FDDC, 0x00021042],   // Warrior
+  [0x10FE00, 0x00101042],
+];
+const RUNEFX_FLOAT = [0x42C3B0, 0x3E99999A];   // Sunbeam walk-heal interval, 0.3f
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -115,9 +145,124 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
     : "iso.js STATUSFX lists every site with its stock instruction word");
 }
 {
+  const all = RUNEFX_SITES.concat([RUNEFX_FLOAT]);
+  const oob = all.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
+  if (oob.length) bad(`rune power sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
+  else ok(`rune power sites (${all.length} in block: ${RUNEFX_SITES.length} code + 1 float)`);
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const missing = all.filter(([o, w]) => {
+    const re = new RegExp(`\\[0x${o.toString(16).toUpperCase()},\\s*0x${w.toString(16).toUpperCase().padStart(8, "0")}\\]`, "i");
+    return !re.test(iso);
+  });
+  (missing.length ? bad : ok)(missing.length
+    ? `iso.js RUNEFX is missing/drifted for ${missing.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "iso.js RUNEFX lists every site with its stock word");
+  // A rune-power site must never land on an equipped-check word pair or a status constant:
+  // both tables write, and the second writer would silently eat the first.
+  const psOffs = [...iso.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal:/g)].map((m) => parseInt(m[1], 16));
+  const clash = all.filter(([o]) => psOffs.some((p) => o >= p && o < p + 8)
+    || STATUSFX_SITES.some(([s]) => s === o) || MOUNT_SITES.includes(o));
+  (clash.length ? bad : ok)(clash.length
+    ? `rune power overlaps another patch at ${clash.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+    : "no rune power site overlaps an equipped-check word pair, a status constant or a mount site");
+  const dupes = all.map(([o]) => o).filter((o, i, a) => a.indexOf(o) !== i);
+  (dupes.length ? bad : ok)(dupes.length
+    ? `the same address is listed twice: ${dupes.map((o) => "0x" + o.toString(16)).join(", ")}`
+    : "every rune power site is listed once");
+  // The four value shapes and their guards have to stay in iso.js: an `imm` control that
+  // silently started rewriting a shift would corrupt the instruction rather than the value.
+  (/const RF_KIND = \{/.test(iso) && /imm:\s/.test(iso) && /sa:\s/.test(iso)
+    && /f32hi:\s/.test(iso) && /f32:\s/.test(iso) ? ok : bad)(
+    "RF_KIND still defines all four value shapes (imm / sa / f32hi / f32)");
+  (/rfSiteOk\(off, stock, e\.kind\)/.test(iso) ? ok : bad)(
+    "rfWrite re-checks each site's stock shape before writing it");
+}
+{
   const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);
   if (oob.length) bad(`mount pair sites out of block: ${oob.map((o) => "0x" + o.toString(16)).join(", ")}`);
   else ok(`mount pair sites (${MOUNT_SITES.length} code sites in block)`);
+}
+
+// Passives tab: the 51 decoded equipped-rune checks. TWO of them are switchable (the field
+// party loops); the other 49 are listed as PS_BATTLE and deliberately never written. Both tables
+// get the same structural checks, because "decoded but not offered" still has to be right — the
+// tab names those sites, and the Changes-tab audit compares a disc against their stock words.
+// Each site is TWO words — the `jal` and its delay slot — so the bound is 8 bytes, and two sites
+// landing within 8 bytes of each other would have one silently overwrite the other. The jal word
+// is decoded here rather than trusted: it must still target the helper its `k` claims, which is
+// the check that catches a site copied to the wrong address or a `k` typo.
+console.log("Passive rune sites:");
+{
+  const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+  const DELTA = 0x15B8800;                                  // ISO offset -> ELF vaddr
+  const HELPER = { rec: 0x16CB380, id: 0x16CB438, unit: 0x181B3B0 };
+  const BAND = [0x1B8, 0x1CE];                              // the support-rune item ids
+  const FIELD = [0x149F90, 0x14A1B4];                        // the only two that may be written
+  const grab = (name) => (iso.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n  \\];`)) || [])[1];
+  const sw = grab("PASSIVES"), bt = grab("PS_BATTLE");
+  const unmapped = (iso.match(/const PS_UNMAPPED = \[([^\]]*)\]/) || [])[1];
+  if (!sw || !bt || unmapped === undefined) bad("could not read PASSIVES / PS_BATTLE / PS_UNMAPPED out of iso.js");
+  else {
+    const idsOf = (b) => [...b.matchAll(/\{ id: (0x[0-9A-Fa-f]+),/g)].map((m) => parseInt(m[1], 16));
+    const sitesOf = (b) => [...b.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal: (0x[0-9A-Fa-f]+), ds: (0x[0-9A-Fa-f]+), k: "(\w+)" \}/g)]
+      .map((m) => ({ off: parseInt(m[1], 16), jal: parseInt(m[2], 16) >>> 0, ds: parseInt(m[3], 16) >>> 0, k: m[4] }));
+    const swIds = idsOf(sw), btIds = idsOf(bt);
+    const gaps = unmapped.split(",").map((x) => parseInt(x.trim(), 16)).filter((n) => !isNaN(n));
+    const swSites = sitesOf(sw), btSites = sitesOf(bt), sites = swSites.concat(btSites);
+    (sites.length === 51 ? ok : bad)(`${sites.length} call sites parsed (expected 51)`);
+
+    // The switchable half is exactly the two field sites, and nothing else may creep in: every
+    // other site is about the acting unit in battle, which cannot be scoped to your party.
+    const swOffs = swSites.map((s) => s.off).sort((a, b) => a - b);
+    (swOffs.length === 2 && swOffs.every((o, i) => o === FIELD[i]) ? ok : bad)(
+      swOffs.length === 2 && swOffs.every((o, i) => o === FIELD[i])
+        ? "the switchable sites are exactly the two field party loops (0x149F90, 0x14A1B4)"
+        : `switchable sites drifted: ${swOffs.map((o) => "0x" + o.toString(16)).join(", ")}`);
+    (swSites.every((s) => s.k === "id") ? ok : bad)("both field sites go through 0x16CB438 (charId form)");
+    (btSites.some((s) => s.off === 0x261184) ? ok : bad)("Sunbeam's in-battle half is held back, not switched");
+
+    // Every support rune is accounted for exactly once, as switchable, held back, or a named gap.
+    const band = [];
+    for (let i = BAND[0]; i <= BAND[1]; i++) band.push(i);
+    const seen = [...swIds, ...btIds, ...gaps];
+    const uniq = new Set(seen);
+    const missing = band.filter((i) => !uniq.has(i));
+    const stray = [...uniq].filter((i) => i < BAND[0] || i > BAND[1]);
+    // Sunbeam is the one rune that appears in BOTH tables — its two halves land on different
+    // sides of the split — so the count is 23 distinct ids across 24 entries.
+    const dupes = seen.filter((v, i) => seen.indexOf(v) !== i);
+    (missing.length || stray.length || dupes.length !== 1 || dupes[0] !== 0x1BD ? bad : ok)(
+      missing.length || stray.length || dupes.length !== 1 || dupes[0] !== 0x1BD
+        ? `the support-rune band 0x1B8..0x1CE is not covered as expected: missing ${missing.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, `
+          + `stray ${stray.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, repeated ${dupes.map((i) => "0x" + i.toString(16)).join(", ") || "none"} (only Sunbeam 0x1bd may repeat)`
+        : `every support rune 0x1B8..0x1CE is switchable, held back or a named gap (${uniq.size} ids, Sunbeam split across both)`);
+
+    const oobP = sites.filter((s) => s.off < ELF_BASE || s.off + 8 > ELF_END);
+    (oobP.length ? bad : ok)(oobP.length
+      ? `passive sites out of block: ${oobP.map((s) => "0x" + s.off.toString(16)).join(", ")}`
+      : `all ${sites.length} passive sites (2 words each) stay in the read block`);
+
+    // No two sites may share, or straddle, each other's word pair.
+    const sorted = sites.map((s) => s.off).sort((a, b) => a - b);
+    const clash = sorted.filter((o, i) => i && o - sorted[i - 1] < 8);
+    (clash.length ? bad : ok)(clash.length
+      ? `passive sites overlap at ${clash.map((o) => "0x" + o.toString(16)).join(", ")} — one patch would eat the other`
+      : "no two passive sites are within 8 bytes of each other");
+
+    // The jal word must still name the helper its kind claims.
+    const wrong = sites.filter((s) => {
+      const va = s.off + DELTA;
+      return (s.jal >>> 26) !== 3
+        || (((va & 0xF0000000) | ((s.jal & 0x03FFFFFF) << 2)) >>> 0) !== HELPER[s.k];
+    });
+    (wrong.length ? bad : ok)(wrong.length
+      ? `${wrong.length} passive site(s) don't jal the helper their kind names: ${wrong.map((s) => "0x" + s.off.toString(16)).join(", ")}`
+      : `every site's jal decodes to the helper its kind names (${Object.keys(HELPER).join(" / ")})`);
+
+    // The answer the patch writes, spelled out so a typo fails here rather than in the game.
+    (/const PS_YES = 0x0004102B;/.test(iso) ? ok : bad)("PS_YES is sltu $v0,$zero,$a0 (0x0004102B)");
+    (/psWrite/.test(iso) && !/PS_BATTLE\.forEach\([^)]*psWrite/.test(iso) ? ok : bad)("nothing writes the held-back sites");
+  }
 }
 
 // 2b) shop counter index: the JSON the Shops tab labels itself from must agree with the
@@ -173,14 +318,20 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
   (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js");
   (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js"); }
-// Boot gate: the save editor is inert until Pyodide is up, so a full-screen block covers it.
-// Two things about it are load-bearing and easy to break later, so assert them statically:
-// it must be in the MARKUP (built from script it would flash the dead UI first), and it must
-// keep the ISO-editor escape hatch, because that tab needs no Python and the gate covers the
-// mode tabs. Also that app.js can actually take it down on both outcomes.
+// Boot gate: loading a memory card is inert until Pyodide is up, so a block covers that card.
+// Three things about it are load-bearing and easy to break later, so assert them statically:
+// it must be in the MARKUP (built from script it would flash the dead UI first), it must sit
+// INSIDE #loaderCard (it used to be a full-screen overlay, which made the ISO editor — which
+// needs no Python at all — look dead for the length of a 10 MB download), and it must keep the
+// ISO shortcut. Also that app.js can actually take it down on both outcomes. boot-gate.mjs
+// proves the coverage in a real browser; these are the cheap regressions to catch first.
 { const js = fs.readFileSync(path.join(WEB, "app.js"), "utf8");
+  const bootCss = fs.readFileSync(path.join(WEB, "style.css"), "utf8");
   (/id="bootOv"/.test(html) ? ok : bad)("boot gate is in index.html (up on first paint)");
-  (/id="bootIso"/.test(html) ? ok : bad)("boot gate offers the ISO-editor escape hatch");
+  const iCard = html.indexOf('id="loaderCard"'), iOv = html.indexOf('id="bootOv"'), iDrop = html.indexOf('id="drop"');
+  (iCard >= 0 && iOv > iCard && iOv < iDrop ? ok : bad)("boot gate is inside the save loader card, not the page");
+  (!/\.boot-ov\s*\{[^}]*position:\s*fixed/.test(bootCss) ? ok : bad)("boot gate is not a fixed full-screen overlay");
+  (/id="bootIso"/.test(html) ? ok : bad)("boot gate offers the ISO-editor shortcut");
   (/id="bootFill"/.test(html) && /id="bootMsg"/.test(html) ? ok : bad)("boot gate has a progress bar + message");
   (/bootGate\.close\(\)/.test(js) ? ok : bad)("app.js closes the boot gate");
   (/bootGate\.fail\(/.test(js) ? ok : bad)("app.js puts the boot gate in an error state when the engine fails"); }
@@ -343,8 +494,30 @@ console.log("Guide overlays + xdelta:");
   const pyRuneStride = /RUNE_TBL_STRIDE\s*=\s*(0x[0-9A-Fa-f]+)/.exec(sp);
   (isoRune && pyRune && pyRuneStride && +isoRune[1] === +pyRune[1] && +isoRune[2] === +pyRuneStride[1]
     ? ok : bad)("iso.js RUNE_TBL and s3patch.py RUNE_TBL_FILE agree (live read vs baked JSON)");
-  (/function runeTblDesc/.test(iso) && /nameKey\(nm\) !== nameKey/.test(iso)
-    ? ok : bad)("iso.js validates each rune record's name before trusting its description");
+  // Every non-rune row in that table is zeroed, so a row is only believed when it still names
+  // the rune the item list says it is. Both the description AND the four spell slots go
+  // through runeRowTrusted() — four zeros in an unnamed row means "nothing to read here",
+  // not "this rune grants no spells".
+  (/function runeRowTrusted/.test(iso) && /function runeTblDesc/.test(iso)
+    && /runeRowTrusted\(id\)/.test(iso) && /nameKey\(strAt\(np\)\) === want/.test(iso)
+    ? ok : bad)("iso.js validates each rune record's name before trusting its contents");
+  // ...and it matches the name the row SHIPPED with too, or renaming a rune would make that
+  // rune's own fields vanish — the row stops matching the bundled item list at exactly the
+  // moment it is most certainly the right row.
+  (/nameKey\(strFrom\(ORIG, vaOff\(np\), origSlotLen\(np\)\)\) === want/.test(iso)
+    ? ok : bad)("iso.js keeps trusting a rune row after the rune is renamed");
+  // The rune->spell binding: RUNE_TBL +0x18 is four u16 1-based spell numbers (0 = a free
+  // slot). This is the fact the offsets doc spent three sessions hunting for in code, so a
+  // regression on the offset or the 1-based convention has to fail loudly rather than write
+  // a plausible-looking wrong number into a rune record.
+  (/spells: 0x18, slotCount: 4/.test(iso) ? ok : bad)("iso.js RUNE_TBL carries the four spell slots at +0x18");
+  (/function runeSpellIds/.test(iso) && /RUNE_TBL\.spells \+ k \* 2/.test(iso)
+    ? ok : bad)("iso.js reads a rune's granted spells off the disc, not a bundled list");
+  (!/const RUNE_SPELLS/.test(iso) ? ok : bad)("iso.js keeps no second, hardcoded copy of the rune->spell map");
+  (/spellSlotName = \(gid\) => \(gid \? spellRowName\(gid - 1\)/.test(iso)
+    ? ok : bad)("iso.js treats a spell slot as 1-based (0 = empty, not spell 0)");
+  (/select class="rspell"/.test(iso) && /reg\(off, 2, "spellid", itemName\(id\), `Spell slot/.test(iso)
+    ? ok : bad)("the Runes tab renders four editable spell slots and registers the write");
   (/function dropDescCaches/.test(iso) && (iso.match(/dropDescCaches\(\)/g) || []).length >= 5
     ? ok : bad)("iso.js drops the name->desc caches on every staged edit / undo / revert");
   // save editor (no ISO) uses the pre-extracted rune/food descriptions + rich skill effects
@@ -365,6 +538,35 @@ console.log("Guide overlays + xdelta:");
     const story = Object.values(j).filter((v) => v.auto).length;
     (Object.keys(j).length > 90 && story > 20 ? ok : bad)(`s3_recruit_meta.json parses (${Object.keys(j).length} chars, ${story} story)`); }
   catch (e) { bad("s3_recruit_meta.json — " + e.message); }
+  // 108 Stars: the checklist runs in the recruitment guide's order, cut into that order's stages
+  (/s3_recruit_order\.json/.test(app) && /orderStars/.test(app) && /groupStars/.test(app) && /phaserow/.test(app)
+    ? ok : bad)("108-Stars checklist runs in the guide's recruitment order");
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_order.json"), "utf8"));
+    const ns = Object.values(j.chars).map((g) => g.n);
+    const staged = Object.values(j.chars).every((g) => j.phases.some((p) => p.key === g.phase));
+    (Object.keys(j.chars).length === 108 && new Set(ns).size === ns.length && staged && j.extras.length === 4
+      ? ok : bad)(`s3_recruit_order.json parses (${Object.keys(j.chars).length} stars, ${j.phases.length} stages, ${j.extras.length} non-star)`); }
+  catch (e) { bad("s3_recruit_order.json — " + e.message); }
+  // ...and under each how-to, what that errand needs and where it comes from
+  (/s3_recruit_needs\.json/.test(app) && /needChips/.test(app) && /class="needs"/.test(app)
+    ? ok : bad)("108-Stars checklist says what each errand needs");
+  // ...and hands it over: item into the current party's bag, potch topped up by the shortfall
+  (/data-needitem/.test(app) && /bagForNeeds/.test(app) && /data-needgold/.test(app)
+    ? ok : bad)("108-Stars checklist can stage the item and the potch it needs");
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8"));
+    const items = Object.values(j.chars).flatMap((c) => c.items || []);
+    const rose = (j.chars["Augustine"].items || [])[0];
+    (items.length >= 8 && rose && rose.name === "Rose Brooch" && rose.shops.length
+      && rose.shops[0].town === "Iksay Village" && rose.shops[0].kind === "rare"
+      ? ok : bad)(`s3_recruit_needs.json parses (${Object.keys(j.chars).length} stars, ${items.length} items)`); }
+  catch (e) { bad("s3_recruit_needs.json — " + e.message); }
+  // gear +0x08 is a price tier into the shared ladder, not potch — resolved everywhere it shows
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8"));
+    const mole = (j.chars["Dominic"].items || [])[0];
+    (mole && mole.buy === true && mole.price === 600 ? ok : bad)("a bought recruit item is priced from the disc");
+  } catch (e) { bad("recruit needs buy price — " + e.message); }
+  (/tierPotch/.test(iso) && /Price tier/.test(iso) && !/Price \(potch\)/.test(iso)
+    ? ok : bad)("iso.js resolves the gear price tier through the ladder");
   // manual "Force refresh" escape hatch: footer button that clears SW + caches and reloads
   (/id="forceRefreshBtn"/.test(html) && /#forceRefreshBtn/.test(app)
     ? ok : bad)("footer has an always-available Force-refresh button");

@@ -218,84 +218,86 @@ python3 s3patch.py set-aoe     "ISO" --index 3 --off    # make Explosion single-
 python3 s3patch.py set-spell   "ISO" --index 0 --field flags14  --value 0x830A   # full manual flag write
 ```
 
-## Custom runes — rune→spell mapping (partially located 2026-08-09)
-A **spell-index list table** sits at **file 0x3B0FA8** (preceded by a pointer
-0x019E7690). It is runs of 1-byte spell indices (into the 94-entry spell table)
-separated by `0x00` bytes, e.g. `00 01 02 03 | 04..0B | 0C..1F | 20 21 22 | ...`.
-A second identical copy starts at 0x3B1088.
+## Custom runes — rune→spell binding (SOLVED 2026-09-06, in the rune table)
+**It was never in code.** Three earlier sessions hunted the ELF for a rune-definition
+struct and came away with "UNSOLVED, needs Ghidra". The binding is four bytes past
+where the editor had already stopped reading: **RUNE_TBL (file `0x3EAF78`, stride
+`0x20`, indexed by ITEM id) `+0x18` is four `u16` spell numbers**, and that array IS
+the list of spells the rune grants.
 
-Status: **mechanism found, keying NOT yet confirmed.** These index-lists are how
-the game says "this group grants spells X,Y,Z,W", which is exactly what you'd edit
-to build a custom rune's spell set. What's still unverified is which group maps to
-which rune *item ID* (13D+) — needs a cross-reference pass (find the struct that
-holds both a rune id and a pointer/offset into this list).
+The whole record, decoded:
 
-What IS fully editable today (spell effect table @0x3EC2A0): for any of the 94
-spells you can change damage (+0x1C), cast time (+0x10), element (+0x04),
-target/AOE (+0x14), and status effect (+0x18). So "make rune X's spells hit harder
-/ become AOE / add poison" works right now. "Make rune X grant a completely
-different set of spells" needs the keying above confirmed first.
+| Offset | Type | Meaning |
+|---|---|---|
+| +0x00 | u32 | name pointer |
+| +0x04 | u32 | description pointer (the copy the rune menu reads — issue #11) |
+| +0x08 | u32 | 1 for every rune |
+| +0x0C | u32 | shop price (0 = never sold) |
+| +0x10 | u32 | slot mask: 7 = Head/Right/Left, 1 = Pale Gate (head only), 2 = Drain |
+| +0x14 | u16 | element family — same numbering as the spell record's element |
+| +0x16 | u16 | category: 0 = magic/support, 2 = special-attack rune |
+| **+0x18** | **4 × u16** | **granted spell numbers, 1-BASED, 0 = an unused slot** |
 
-## Custom rune — Level 1 (reskin) vs Level 2 (reassign spells)
-**Level 1 (WORKS NOW): change what a rune's existing spells do.** The `reskin`
-command rewrites any spell's power / cast / element / AOE / status in one call:
+1-based is the engine's own convention for the spell table (`rec = 0x019A4A88 + id*0x20`),
+so slot value N is the editor's spell row N-1. Flaming Arrows is 1, not 0.
+
+### Why the old byte-search could not find it
+The 2026-08-09 note is right that value-matching for `0,1,2,3` drowns in false positives
+— but it was searching for the wrong shape. The quads are **not** stored as the bytes
+`00 01 02 03`; they are stored 1-based and 16-bit, `01 00 02 00 03 00 04 00`, inside a
+record whose first eight bytes are pointers. Nothing was going to match. The three
+"candidate tables" ruled out that day (`0x3B0FA8` item remap, `0x42EE90`, the spell
+`kind` high byte) were all correctly ruled out; the table was simply never a candidate,
+because RUNE_TBL was already filed under "rune text" and not re-examined.
+
+### Verification (exhaustive, pristine SLUS-20387)
+All 49 spell-granting runes decode exactly, and every count the game ships is just
+zero-padding on the same four slots:
+
+- **22/22 magic runes** reproduce the Suikosource spell lists byte for byte, including
+  the sliding window: Fire `1,2,3,4` → True Fire `3,4,5,6`, Lightning `7,8,9,10` →
+  True Lightning `9,10,11,12`.
+- **Blinking** `35,36,37,0` and **Shield** `31,32,33,0` — three spells, one zero.
+- **Sword of Rage / Thunder / Cyclone** `38,39,0,0` etc. — two spells, two zeros.
+- **27 special-attack runes** (Kite `78`, Phoenix `52`, Goss `75` …) each grant exactly
+  one spell, which is the spell that shares the rune's name — and each therefore carries
+  **three free slots**, 81 across the set.
+- **23 passive support runes** (Fortune, Balance, Fury …) carry four zeros, which is
+  why they have no battle menu at all.
+
+So "a rune with fewer than four spells" is not a special case the engine handles; it is
+padding. Writing a spell number into a zero slot is the whole of *give this rune another
+spell* — a 2-byte edit per slot.
+
+### Level 2 is now open
 ```
-python3 s3patch.py reskin "ISO" --index 5 --power 3000 --aoe on --element Water --status sleep
+Kite  = item 365, record file 0x3EDD18, slots at 0x3EDD30
+        50 D7 9D 01 | 20 D7 9D 01 | 01 00 00 00 | 20 03 00 00
+        07 00 00 00 | 00 00 02 00 | 4E 00 | 00 00 | 00 00 | 00 00
+                                     ^Kite   ^^^^^^ three free slots
 ```
-`--status` accepts: none, poison, instant-death, unbalance, sleep, teleport/chant,
-silence/berserk, buff-pdf/mdf, sword-*, resist-*. Shows before/after decode and
-backs up first (--no-backup to skip). To reskin a whole rune, reskin each of its
-4 spell indices.
+Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0). The
+old `RUNE_SPELLS` hardcoded name map is **deleted** — the binding is read off the disc,
+so there is no second copy to drift.
 
-**Level 2 (NOT cracked): make a rune grant a DIFFERENT set of spells.**
-Investigated three candidate tables, none is the rune→spell binding:
-- 0x3B0FA8 = sequential item remap (0..0x6D), not rune grouping.
-- 0x42EE90 = spell UNLOCK-LEVEL thresholds, 4×u16 per group (e.g. [1,20,60,99]).
-  *(This one IS useful on its own: it sets the character levels at which each of a
-  rune's 4 spells becomes available — editable, just not the spell identity.)*
-- spell `kind` high byte = loose element/class tag, mixes runes; not a selector.
-The actual binding is likely a rune-definition struct keyed by rune item ID (13D+)
-pointing into the spell table — still needs a dedicated hunt to confirm before any
-Level-2 edits are safe.
+### Spare spell records
+Spell rows **80..93** (14 of the 94) are fully formed records — cast 50, target `0x0A`
+single foe, power 100 — with **null name and description pointers**. They are spare
+slots. A genuinely new spell needs strings pointed at them; the record itself is ready.
 
-## Level 2 rune→spell binding — investigation status (2026-08-09)
-Ground truth from Suikosource: Fire Rune grants spells [0,1,2,3], True Fire
-[2,3,4,5], Lightning [6,7,8,9], Earth [24,25,26,27], etc.
+### What is still NOT known
+- **Unlock levels.** Which character level gates a rune's 2nd/3rd/4th spell is not in
+  this record and has not been located. `0x42EE90` was tentatively called an unlock-level
+  table on 2026-08-09; re-reading it, rows 1-3 and 17-21 are `(1, 20, 60, 99)` but rows
+  4-16 and 22-37 are rising curves up to 950, and its keying is unconfirmed. Treat it as
+  unidentified.
+- **Whether an attack rune surfaces more than one spell.** Kite is category `2` (+0x16);
+  every magic rune is `0`. The menu code may read slot 1 only for category-2 runes. If a
+  reassigned Kite shows one spell in game, try setting +0x16 to 0 and +0x14 to an element
+  family so it is treated as a magic rune. **Untested — verify on the play disc.**
 
-Why byte-search FAILS to find the binding: those quads are contiguous ascending
-runs (0,1,2,3…), which match generic counter/index arrays all over the ELF —
-every hit at 0x3C91xx/0x3C93xx is a false positive (literally `01 00 02 00 03 00…`).
-So value-matching cannot isolate the table. Confirmed dead ends this session:
-0x3B0FA8 (item remap), 0x42EE90 (unlock-level thresholds), spell `kind` hi byte.
-
-What WOULD crack it (needs a disassembler pass, not byte search):
-1. Load the boot ELF in Ghidra/IDA (base vaddr 0x165D000) and find the function
-   that reads the spell table (base vaddr 0x019A4AA0, stride 0x20). Its caller
-   passes the spell index — trace back to where that index comes from per rune.
-2. OR find the rune ITEM definition struct (keyed by item id 13D+) and look for a
-   field that is a small int / pointer resolving to a spell index or index-list.
-Until then, Level-2 (reassign a rune's spell lineup) is UNSOLVED and must not be
-attempted by blind byte edits.
-
-## Level-1 rune reskin — shipped & tested (2026-08-09)
-Two commands, both validated on an APFS clone of the ISO (original never touched):
-```
-# one spell
-python3 s3patch.py reskin      "ISO" --index 3 --power 3000 --aoe on --status poison
-# a whole rune's spell set at once (resolves spells by name from RUNE_SPELLS map)
-python3 s3patch.py reskin-rune "ISO" --rune fire --power 3000 --aoe on
-```
-Known runes: fire, rage, truefire, lightning, thunder, truelightning, cyclone,
-flowing, earth, motherearth, trueearth, shield, blinking, jongleur, palegate,
-swordofrage, swordofthunder, swordofcyclone.
-
-Safe testing: `Editor/make_test_iso.sh "ISO"` makes a clone (instant on APFS via
-`cp -c`), applies an example Fire-rune buff, and prints PCSX2 verification steps.
-Rule going forward: test writes on a clone, never the original.
-
-Confirmed NOT possible from this table: visual/animation reskin (link fields
-correlate with behavior/kind, not graphics assets; visuals live in separate
-asset files). Level-2 spell reassignment remains unsolved (needs Ghidra).
+Confirmed NOT possible from the spell table: visual/animation reskin (link fields
+correlate with behavior/kind, not graphics assets; visuals live in separate asset files).
 
 ## Cross-platform GUI: s3editor.py (web app, 2026-08-09)
 Stdlib-only local web app (no pip installs). Reuses all s3patch logic.
@@ -459,8 +461,29 @@ DRIFTS and produced wrong results (e.g. "Medicine D :: Performs an accidental
 attack") — so they are intentionally left blank rather than shown incorrectly.
 Correct-or-blank, never wrong.
 
+## Gear +0x08 is a price TIER, not potch (2026-09-06)
+The field the gear record carries at +0x08 was labelled "price" and shown as potch by the
+Shops and Gear tabs — which printed "Mole Armor · 3p". It is an index into the **shared
+15-step price ladder** at 0x3C963C, and the indexing is **1-based**:
+
+    01773390  lui   $v0, 0x198          ; the price routine's ladder case
+    01773394  sll   $v1, $s0, 2         ; tier * 4
+    01773398  addiu $v0, $v0, 0x1e38    ; 0x1981E38 == ladder VA (0x1981E3C) - 4
+    0177339C  addu  $v1, $v1, $v0
+    017733A4  lw    $v0, ($v1)          ; ladder[tier - 1]
+
+Corroboration: the field only ever holds 2..5 across all 156 records in the band (300 / 600 /
+1500 / 2700 potch), the routine's own bounds check is `bgez $s0` + `slti $s0, 0xe`, and it
+otherwise calls the assert at 0x1712238. Rune records are different — the u32 at +0x0C there
+is real potch (600, 1200, 1800 … max 17000). Mole Armor (id 194) is tier 3 = **600 potch**,
+which is what Dominic charges you to join.
+
+`shopPrice()` in web/iso.js resolves the tier through the ladder, and the Gear tab labels the
+field "Price tier" with the resolved potch beside it. Editor/build_recruit_needs.py uses the
+same resolution to price the one recruit errand that is a purchase.
+
 ## Equipment effects — mapped + editable (2026-08-09)
-Gear record (stride 0x44): desc ptr +0x00, price u32 +0x08, DEF u16 +0x10,
+Gear record (stride 0x44): price TIER u32 +0x08 (see above), desc ptr +0x00, DEF u16 +0x10,
 name ptr +0x40. Effect slots: up to 5, each 8 bytes at +0x14,+0x1C,+0x24,+0x2C,+0x34
 = (type u16, value u16, skill_id u16, pad u16). Effect types (verified vs
 descriptions across 148 gear records):
@@ -1755,9 +1778,17 @@ one of the 17 call sites; the 0x3C stride is fully accounted for, which is itsel
 | +0x0C | u32 | pointer (tested non-zero at 5 sites; NULL is normal) |
 | +0x10/+0x14/+0x18 | f32 | three floats, read with `lwc1` |
 | +0x1C | s16 | flag, tested non-zero at 6 sites |
-| +0x1F | s8 | ? |
-| +0x22, +0x24 | u16 | ? |
-| +0x28…+0x38 | u32 ×5 | ? (read as words; likely more pointers) |
+| +0x1F | s8 | **audio** — sole arg to `0x17AE0A8` (environment/reverb preset; 3 values disc-wide) |
+| +0x22 | u16 | **room BGM id** — see "BGM / sound control" |
+| +0x24 | u16 | **room ambient SE id** — 0 indoors, non-zero on field maps |
+| +0x28 | u32 | **audio** — fade/volume bits, split `&0x00070000` and `&0x00F00000` |
+| +0x2C, +0x30 | u32 | **audio** — BGM request params |
+| +0x34 | u32 | **audio** — ambient SE param |
+| +0x38 | u32 | ? (read as a word at one site) |
+
+The tail from `+0x1F` to `+0x34` is **not** the "more pointers" the earlier note guessed —
+it is the room's audio block, fanned out to three sound calls at `0x17AEDA8`. See the
+"BGM / sound control" section for the decode.
 
 **FSECT.BIN is a directory after all** (superseding the 2026-08-09 "relocation table"
 verdict). The loader is at 0x1734278 (`\DATA\FSECT.BIN;1` @0x19BE018) and the entry
@@ -2824,3 +2855,394 @@ a file that was saved at another scale**, which it could not be before: the file
 **Still not done:** war units carry a stock baseline too, but the War tab has no bulk
 multipliers to prefill. The global encounter percentage needs none of this — it is a code
 patch decoded against a known stock immediate, so it already reads its real value back.
+
+## The food table's NAME is one record behind its data (2026-09-06)
+
+**Symptom.** The ISO editor's Food tab showed every dish's name against the *previous* dish's
+heal, proc and description — so editing "Fried Ice Cream" wrote Tomato Ice Cream — and the
+save editor's item pickers showed 49 of 60 dishes with the wrong heal.
+
+**The old reading, and why it looked solid.** The v12 note read:
+
+> name/desc/stats are SAME-record aligned (60/60 desc "Heals NNN HP" == heal field; no
+> off-by-one)
+
+That check is real but it cannot decide the question. The description and the heal field are
+in one record under *both* readings, so their agreeing proves only that they belong together —
+it is 59/59 either way and says nothing about where the **name** belongs. The one field that
+was never cross-checked is the one that moved.
+
+**What settles it.** The item table is what the game actually shows the player: `getDesc(id)`
+→ `itemRecord(id)` → band 0 (ids 1–160, base `0x3E8CBC`, stride `0x24`), **name @+0, desc @+4**
+in a single record. Pair each dish's name against that:
+
+| pairing | descriptions matching the item table | heal disagreeing with the item text |
+|---|---|---|
+| name@i with data@i (old) | **11 / 60** | 44 |
+| name@i with data@i+1 (correct) | **59 / 59** | 0 |
+
+The boundary agrees too: dish 59 *Salad Platter* takes block 60 ("Heals 380HP"), which is
+exactly what item `0x09C` reads — and blocks 60/61 carry *Sacrificial Jizo* and *Escape
+Scroll*, the two non-recipe items the old comment had already noticed sitting past the table.
+
+**The layout**, with every offset measured from the block holding the NAME:
+
+| field | offset | note |
+|---|---|---|
+| name | `+0x44` | u32 → string. Same pointer the item band uses — all 60 share it |
+| description | `+0x48` | u32 → string (= next block `+0x00`) |
+| heal | `+0x5C` | u16 HP (= next block `+0x14`) |
+| proc | `+0x66` | u16 % (= next block `+0x1E`) |
+
+This is the **same displacement gear has** — a gear name pointer sits at `+0x40` of the
+preceding record — and the same shape as the spell table's three tail fields, which ride one
+record ahead. Three tables on this disc now, so it is the house style rather than an oddity:
+when a record's name is at the far end of its block, check which block the data belongs to.
+
+**Side finding.** Food items are *not* missing a name↔description record, which is what
+`build_item_desc_extra.py` was written to work around. They are ordinary band-0 items with
+name @+0 and desc @+4; the food table only adds the heal and proc numbers. The regenerated
+`s3_rune_food_desc.json` now agrees with the item table 60/60.
+
+---
+
+## BGM / sound control — decoded (2026-09-06)
+
+Music is **not** a table in the ELF. Two places pick a track, both now located, indexed and
+editable in place. Index: `Editor/build_bgm_index.py <pristine ISO>` → `Editor/s3_bgm.json`
+— **1,175 script cues + 1,612 room records**.
+
+### The request function — `0x17AEA38`
+
+The BGM entry point, identified by its own debug printf: it materialises
+`prevBgm:0x%x stat:0x%x` (string @ `0x19C92C0`) at `0x17AEAC0`. Signature:
+
+```
+soundReq(kind, track, volBits, fadeBits, param0, param1, flag)
+    tag  = u16 [0x1983020 + kind*2]      ; 8 entries: 0, 0x1000, 0x2000, 0x3000, 38,39,40,41
+    stat = 0x17AEA08(kind)               ; current state for this category
+    prev = stat & ~0x1000                ; ...and the comparison that names the field
+    if (track != 0 && prev != track) -> restart
+```
+
+**Kind 1 is BGM.** Its tag `0x1000` is exactly the bit masked off at `0x17AEABC` before the
+comparison, so `track` lives in the same space as `prevBgm`. That mask is the proof, not the
+naming — the printf and the tag agree independently.
+
+### Where tracks come from
+
+**1 — event-script opcode 59/60** (handler `0x17AF1A8`, **18 bytes**, both opcodes share it;
+`w0 ^ 0x3C` distinguishes them). Operands are read straight off the script stream:
+
+| Word | Offset | Meaning |
+|---|---|---|
+| w0 | +0x00 | opcode, 59 or 60 |
+| w1 | +0x02 | **kind** (indexes the 8-entry table above; 1 = BGM) |
+| w2 | +0x04 | **track id** ← the editable field, a single u16 |
+| w3/w4 | +0x06 | fade/volume u32 (`w4` observed 35,37,38,48,49,52,64,68) |
+| w5/w6 | +0x0A | param u32 (always 0 in valid instructions) |
+| w7/w8 | +0x0E | param u32 (`w8` = 16) |
+
+**2 — the room record's `+0x22`** (the 0x3C record already located by
+`build_room_index.py`). `0x17AEDA8` fetches the room and fans its tail out:
+
+```
+soundReq(kind=1, room->0x22, room->0x28 & 0xF00000, room->0x28 & 0x70000,
+         room->0x2C, room->0x30, 0)
+tailcall 0x17AE1E0(room->0x24, room->0x34)      ; the SD_SE_START path
+```
+
+So `+0x22` is the room's BGM and `+0x24` its ambient SE — confirmed by the data, which reads
+0 for interiors and non-zero on field maps, and by `0x17AE1E0` being the function that prints
+`%s callNo: (SD_SE_START + %d)`. The room record's `+0x28` is byte-identical (`0x00440000`) to
+the value the scripts pass in the same argument slot, which cross-checks the whole contract.
+
+### Finding the cues — and the filter that makes it trustworthy
+
+A raw two-byte search for opcode 59/60 matches ordinary data freely, and the chainer in
+`eds_dis.py` is no help here: it recovers only ~20 sound commands across all 133 town
+sub-files, because it stops dead at the first opcode whose length is unrecovered. So the scan
+is raw, and a **structural filter** does the validating: `w3`, `w5`, `w6` and `w7` are zero in
+every disassembler-confirmed instruction, so a candidate is kept only if they are zero here.
+
+That filter keeps **1,175 of 1,294** raw kind-1 hits (91%) and collapses **33 candidate track
+ids to 13**. What it drops is the obvious garbage — 23908, 55482, 32768 — which is the check
+that says it separates signal from noise rather than merely shrinking the set. It cleans the
+other categories by the same margin (kind 2: 308→269, kind 3: 143→105). Every emitted offset
+re-reads the value the index stores for it (0 mismatches).
+
+### The 13 track ids
+
+| Track | Cues | Track | Cues | Track | Cues |
+|---|---|---|---|---|---|
+| 0x0200 | 465 | 0x0114 | 75 | 0x011E | 26 |
+| 0x0000 (stop) | 250 | 0x0124 | 58 | 0x0202 | 18 |
+| 0x0204 | 97 | 0x0129 | 35 | 0x0203 | 7 |
+| 0x0113 | 77 | 0x0201 | 33 | 0x0122 | 6 |
+| | | 0x0115 | 28 | | |
+
+They fall into two bands: **0x0200–0x0204**, and **0x0113–0x0129**. The per-area spread reads
+like the game — Budehuc Castle (HNKT) carries the widest variety (0x0124, 0x0129, 0x0113,
+0x0114, 0x0115, 0x011E, 0x0122), exactly right for the hub that cycles themes across chapters,
+while field maps (MORI, HAKA, KSKR, RVER) are almost entirely `0x0200`. That, plus `0x0200`
+also being the dominant value in the *room* records, is why `0x0200` is read as **"this map's
+own theme"** rather than one specific song — editing those 465 cues is the part most likely
+not to behave as a user expects. The `0x0113`–`0x0129` band is the meaningful set.
+
+### What is NOT resolved
+
+- **No id → song name.** 13 ids, no name table anywhere on the disc. Mapping them needs a
+  patched disc and an emulator, not another scan.
+- **Where a track id becomes audio.** Area archives contain no Sony audio headers (`SShd`,
+  `SSbd`, `VAGp`, `SEQp` — checked across AKMT/MORI/SOGE/HGB1 `data` sub-files, zero hits), so
+  the music itself lives in `SD/STR.BIN` (the `SCEI`/`VerS` container). **Replacing the audio
+  is out of reach**; only re-pointing which id is requested is in scope.
+- **Inserting new cues.** The 18-byte instruction means retargeting a track (2 bytes) or
+  silencing it (track = 0) is free, but adding a music change where the script has none would
+  need the script lengthened — a different and much riskier problem.
+
+### Side finding — the opcode table is self-naming
+
+273 of the 359 handlers reference a debug string that names their command
+(`EC_MODEL_INIT_E`, `EC_TOWN_DATA_LOAD_E`, `EC_FOOT_SE_CALL_%s_S`, …). Walk each handler from
+its entry to its first `jr $ra`, collect `lui`+`addiu`/`ori` pairs that resolve into the string
+region, and most of `eds_dis.NAMES` fills itself in. Note the handler table maps several
+opcodes to one address, and unrelated helper functions sit *between* handlers — so attribute a
+call site by scanning back to its `addiu $sp, $sp, -N` prologue, not by taking the nearest
+preceding handler entry. The nearest-entry shortcut put the room-audio consumer inside op
+65/66 and was wrong.
+
+---
+
+## Passive support runes — how the engine asks, and how to answer for it (2026-09-06)
+
+The 23 support runes (item ids **440–462**, `0x1B8`–`0x1CE`: Fortune, Champion's, Killer,
+Counter, Gale, Sunbeam, Wall, Haziness, Drain, Barrier, Balance, Fire Sealing, Skunk, Firefly,
+Medicine, Double-Strike, Wizard, Warrior, Waking, Alertness, Fury, Violence, Hunter) grant no
+spells and have no battle command, so nothing in the spell or unite tables describes them.
+What they are instead is **one question, asked 51 times**: *does this character have item N
+equipped?* Answer it with yes and the passive is on without the rune.
+
+**The three helpers.** All of them walk the same seven equip slots — 1–6 gear, slot 7 being
+the three rune slots read through `0x16DD9F8(char, slot, sub)` — and return the slot number
+that holds the wanted item id, or 0.
+
+| VA | file | signature | notes |
+|---|---|---|---|
+| `0x16CB380` | `0x112B80` | `FindEquipSlot(charRecord, itemId)` | 25 rune sites. Opens with `beqz <record> → return 0` |
+| `0x16CB438` | `0x112C38` | `FindEquipSlot(charId, itemId)` | 3 rune sites. Resolves the id (`0x16C6D08`) then tail-calls the above |
+| `0x181B3B0` | `0x262BB0` | `UnitHasItem(unit, itemId)` | 23 rune sites. **Ignores `$a0`** — `0x181B738` fetches the ACTING unit itself, maps it to a record via `0x17BBB20`, then calls `0x16CB270`, a second copy of the same seven-slot walk |
+
+Located by scanning the whole `PT_LOAD` for `jal` instructions whose `$a1` is an
+`addiu $a1,$zero,imm` with `imm` in `0x1B8..0x1CE` and no intervening write to `$a1`. That
+yields exactly 51 sites across 22 runes — see `web/iso.js:PASSIVES`, which carries every
+offset with its stock `jal` word and delay slot, and `web/tests/validate.mjs`, which re-decodes
+each `jal` and asserts it still names the helper its entry claims.
+
+**The patch shape.** A site is two words: `jal <helper>` and its branch delay slot, with the
+result tested in `$v0` immediately after. Removing the call frees both, so:
+
+```
+word[off]     := <the delay-slot instruction>      # it still has to run
+word[off + 4] := <the answer>                      # into $v0, for the test that follows
+```
+
+Order is preserved and nothing is inserted, which matters more than it looks: at **five** of
+the 51 sites the delay slot is not the argument setup, and at three of those it is arithmetic
+whose result the very next instruction consumes — e.g. Counter at file `0x103B54`,
+
+```
+016BC34C  div   $zero,$v0,$s2
+016BC350  mflo  $v0
+016BC354  jal   0x16CB380
+016BC358  addu  $s1,$s1,$v0     <- the mflo result, not the rune id
+```
+
+Writing the answer into the jal's word instead would feed `$s1` a 1. The other two are
+`move $a0,$s0` (Barrier, `0x105200`) and `sw $a0,($sp)` (Fire Sealing, `0x1115C4`).
+
+**Two answers, not one.** They are not interchangeable:
+
+* `0x16CB380` sites → `sltu $v0,$zero,$a0` (`0x0004102B`) — *yes, if `$a0` is a real character
+  record*. That reproduces the helper's own opening guard, and several of these sites feed it
+  the result of `0x17BBB20` (unit → record), which returns 0 for a unit that is not a
+  character. Without the guard a forced passive would fire on things the engine does not
+  consider characters at all.
+* `0x16CB438` / `0x181B3B0` sites → `addiu $v0,$zero,1` (`0x24020001`) — unconditional yes.
+  `$a0` is a character id or a unit handle here, not a record; `0x181B3B0` does not even read it.
+
+Verified against a pristine SLUS-20387: all 51 stock word pairs match byte-for-byte, every
+`jal` decodes to the helper its entry names, all sites are inside `[0xA4800, 0x465DF0)`, and no
+two are within 8 bytes of each other. No site's delay-slot word is the target of any branch or
+jump in the image (three sites' `jal` words are, which is harmless — order is preserved).
+
+**What the sites do**, read off the code around them — this is where the rune's own menu text
+can be checked against the engine:
+
+| rune | sites | what a "yes" does |
+|---|---|---|
+| Champion's `0x1B9` | 1 | the field encounter roll (`0x1702740`) loops party slots 1–6; one yes enables the weak-foe skip |
+| Killer `0x1BA` | 2 | crit chance × `150/100` |
+| Counter `0x1BB` | 3 | counter chance × `150/100` |
+| Gale `0x1BC` | 1 | SPD × `150/100` |
+| Sunbeam `0x1BD` | 2 | field walk-heal loop over party slots 1–6, and the literal `addiu $v0,$v0,0xF` a combat turn adds |
+| Wall `0x1BE` | 10 | PDF doubled (`sll ...,1`) at the damage site; the other eight are battle-action gates — the "no other movement" half |
+| Haziness `0x1BF` | 1 | opens the dodge roll; the code right after is `rand(100) < 30`, so 30% is the rune's real number |
+| Drain `0x1C0` | 1 | the critical-hit self-heal |
+| Barrier `0x1C1` | 1 | the magic-reflect roll |
+| Balance `0x1C2` | 2 | clears status bit `0x10` (unbalance) in both places the state is rebuilt |
+| Fire Sealing `0x1C3` | 4 | one element's incoming damage zeroed, another doubled |
+| Skunk `0x1C4` | 3 | target picker: single-target attacks may not land here |
+| Firefly `0x1C5` | 2 | the same picker, preferred target |
+| Medicine `0x1C6` | 2 | the auto-item action, planned and issued |
+| Double-Strike `0x1C7` | 2 | damage dealt AND taken doubled — attacker's copy and defender's |
+| Wizard `0x1C8` | 2 | half the SKL figure into MGC |
+| Warrior `0x1C9` | 2 | half of REP into PWR |
+| Waking `0x1CA` | 2 | asleep at battle start, berserk on waking |
+| Alertness `0x1CB` | 1 | the turn-4 wake-up |
+| Fury `0x1CC` | 3 | always berserk: one stat site, two battle-state sites |
+| Violence `0x1CD` | 1 | the berserk-on-heavy-damage trigger |
+| Hunter `0x1CE` | 3 | clamps the damage dealt (a literal 5 is written over it) and turns on the item-drop side |
+
+**Only the two field sites are shipped as switches, and the reason is scope.**
+
+One word for the answer is enough for *yes* and not enough for *yes, if this is Hugo*: reading
+the character id off the record, comparing it and normalising the result to a boolean is three
+instructions at best, and a call site frees at most two (one of which must keep the delay-slot
+instruction). The battle-side helper is worse — it never receives the character at all, it
+resolves whichever unit is acting. So an in-battle passive **cannot be made per-unit at these
+sites**, and forcing one would arm every unit in the fight, enemies included: Wall would lock
+the whole battlefield in place, Hunter would clamp everyone's damage to nothing.
+
+The two **field** sites have no such problem. Both live in the field-step module and both are
+loops over party slots 1–6 (`0x16FFCA8(slot)`), asking once per slot:
+
+| file | VA | what a yes does |
+|---|---|---|
+| `0x149F90` | `0x1702790` | Champion's — `movn $s1,$s3,$v0`; any yes turns on the weak-foe skip |
+| `0x14A1B4` | `0x17029B4` | Sunbeam's **walk-heal** — a yes heals that slot via `0x16C8790` |
+
+so a forced yes means "everyone in your party has it", which is what the rune does when six
+people wear one, and there are no enemies on the field to leak to. Both are written with
+`sltu $v0,$zero,$a0` rather than a bare 1: `$a0` is the slot handle `0x16FFCA8` just returned
+and it is 0 for an empty slot — the walk-heal site tests exactly that itself two instructions
+earlier (`beqz $s0`) — so an empty slot still answers no.
+
+Reaching the other 49 properly means relocating code into free space in the ELF and calling out
+to it, which is a different job from flipping a word in place. Everything needed for that is in
+the table above and in `web/iso.js:PS_BATTLE`, which carries all 49 with their stock words so
+the Changes-tab audit can still report a disc that has them patched some other way.
+
+**Still untested in play.** Both switchable sites are decoded and byte-verified; neither has
+been watched working in game. The tab says so.
+**Fortune `0x1B8` is not here at all — WHERE IT IS NOT.** "Doubles experience value gained" is the
+one support rune with no decoded site, and three exhaustive searches came up empty, so
+nobody should repeat them: (a) its id 440 appears as an instruction immediate exactly eight
+times anywhere in `PT_LOAD`, and every one is a struct displacement (`addiu $s0,$v1,0x1B8` at
+`0x17B7F1C`, six more of the same shape) or a stack offset — never an argument; (b) no call to
+any of the three helpers passes it, with `$a1` immediate or otherwise (the full caller lists are
+27 / 3 / 28, and every one is accounted for); (c) no `u16` in the image holds 440 next to another
+support-rune id, so there is no "special runes" table it could be read from. Whatever grants the
+EXP bonus does not ask the question the other 22 ask.
+
+Shipped as the ISO editor's **Passives** tab (`web/iso.js:drawPassives`): two checkboxes above,
+the 49 held-back sites listed below them with what each does and why it has no switch. Both
+words of a written site are registered in the Changes tab under "Passive runes", and all 51 —
+written or not — are audited against their stock values by `chgCodeAudit`.
+
+---
+
+## Rune power — the magnitudes the passives are worth (2026-09-06)
+
+The section above answers *whether* the engine thinks you have a rune. This is the other
+question, and it turns out to be the easier one: **twelve of the 23 support runes compute their
+effect from a literal baked into the instruction stream immediately after the check**, so the
+magnitude is editable in place without touching the check at all. Every site below sits INSIDE
+the rune's `if (has rune)` branch — which is why the constant being global does not make the
+effect global. The rune still has to be equipped; the number is just what it is worth once it is.
+
+Found by walking forward from each of the 51 decoded call sites to the instructions the taken
+branch executes, and keeping the ones whose value is a literal rather than a runtime figure.
+All 23 are byte-verified against a pristine SLUS-20387, and none of them overlaps a call-site
+word pair, a `STATUSFX` constant or a mount site (`web/tests/validate.mjs` asserts all three).
+
+**Four shapes of value**, each with its own identity check, because writing one shape's value
+into another shape's word corrupts the instruction rather than the number:
+
+| shape | instruction | value lives in | guard |
+|---|---|---|---|
+| `imm` | `addiu $rt,$zero,N` / `slti $rt,$rs,N` | low half-word | high half-word must still match |
+| `sa` | `sll` / `srl $rd,$rt,N` | bits 10..6 | the rest of the word must still match |
+| `f32hi` | `lui $at,0x3F00` | top 16 bits of an IEEE-754 single | high half-word must still match |
+| `f32` | — (small-data literal pool) | the whole 4 bytes | value must be a finite positive float |
+
+### The 23 sites
+
+| rune | what the number is | stock | file offsets | stock word |
+|---|---|---|---|---|
+| Sunbeam `0x1BD` | walk-heal: 1 HP every N seconds | 0.3 | `0x42C3B0` | `3E99999A` (float, not code) |
+| Sunbeam `0x1BD` | HP added each combat turn | 15 | `0x261198` | `2442000F` |
+| Killer `0x1BA` | high-damage-hit chance × N/100 | 150 | `0x104088`, `0x104148` | `24020096` |
+| Counter `0x1BB` | counter chance × N/100 | 150 | `0x1038EC`, `0x103B60`, `0x103D34` | `24020096` |
+| Gale `0x1BC` | SPD × N/100 | 150 | `0x10FD34` | `24020096` |
+| Haziness `0x1BF` | the `rand(100) < N` dodge roll | 30 | `0x10380C` | `2842001E` (`slti`) |
+| Drain `0x1C0` | self-heal is damage ÷ N | 3 | `0x245D78` | `24020003` |
+| Barrier `0x1C1` | reflect chance is the stat ÷ N | 10 | `0x105218` | `2403000A` |
+| Hunter `0x1CE` | damage clamped to N | 5 | `0x1035E8` | `24030005` |
+| Violence `0x1CD` | berserk below N of max HP | 0.5f | `0x244B54` | `3C013F00` (`lui $at`) |
+| Wall `0x1BE` | PDF × 2^N | 1 | `0x104370` | `00131840` (`sll $v1,$s3,1`) |
+| Double-Strike `0x1C7` | damage dealt AND taken × 2^N | 1 | `0x1047C8`, `0x1047DC` | `00108040` |
+| Fire Sealing `0x1C3` | the doubled element's damage × 2^N | 1 | `0x104878`, `0x104FE0`, `0x10546C` | `00101040` / `00111040` |
+| Wizard `0x1C8` | the share moved: 1/2^N | 1 | `0x10FD84`, `0x10FDA8` | `00021042` / `00101042` (`srl`) |
+| Warrior `0x1C9` | the share moved: 1/2^N | 1 | `0x10FDDC`, `0x10FE00` | `00021042` / `00101042` |
+
+### Sunbeam's walk-heal, in full — the only non-code entry
+
+`0x1702954`..`0x17029DC` is the heal loop. It reads the frame delta (`0x17129D8`, which is
+nothing but `return *(float*)0x0196A3C0`), adds it to a running total at `0x0197A310+0xC0`,
+and compares against a **gp-relative float**:
+
+```
+01702960  lwc1  $f2,-31168($gp)      ; $gp = 0x019EC570 (ELF SHT_MIPS_REGINFO ri_gp_value)
+0170296C  add.s $f0,$f1,$f0          ; total += delta
+01702970  c.lt.s $f2,$f0             ; total > interval ?
+01702978  bc1f  0x01702998           ; no  -> heal 0
+0170297C  swc1  $f0,192($v0)         ; (delay) store the total back
+01702988  div.s $f0,$f0,$f2          ; yes -> ticks = total / interval
+0170298C  sw    $zero,192($v0)       ;        clear the total
+01702990  cvt.w.s $f1,$f0
+01702994  mfc1  $s2,$f1              ; $s2 = HP to heal, third arg to 0x16C8790
+```
+
+The interval is **0.3 s**, at VA `0x019E4BB0` / file `0x42C3B0`. `$gp` is not materialised
+anywhere in `PT_LOAD` (zero `lui $gp`) — it comes from the ELF's `SHT_MIPS_REGINFO` section
+(ELF offset `0x38E4D4`, `ri_gp_value` at `+0x14`), which is how the address was resolved.
+**Exactly one instruction in the whole image reads it**: this `lwc1`. No absolute `lui`+`addiu`
+pair materialises `0x019E4BB0` and no `u32` anywhere in the block holds it, so the constant is
+Sunbeam's alone and nothing else moves when it does.
+
+`$s2` is initialised to 0 before the loop and its only other use is `andi $a2,$s2,0xFFFF` — the
+heal amount — so a shorter interval scales the rate cleanly, including past one tick per frame.
+
+**Why the HP-per-tick is NOT exposed.** `mfc1 $s2,$f1` at `0x14A194` could be overwritten with
+`addiu $s2,$zero,N` for a flat heal, and it would be reversible and correctly scoped (the `bc1f`
+skips it, so an un-crossed interval still heals nothing). It is left alone because it buys
+nothing the interval does not already give and it throws away a computed value for a constant.
+
+### What has no number, and why
+
+Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness and Fury set a state bit or
+gate a branch — there is no literal at their sites to move. Fire Sealing's fourth site
+(`0x1115C4`) is rune-slot bookkeeping, not damage. Fortune has no site at all (see above).
+
+Two clamps sit *outside* the rune's branch and are therefore not rune power, but they bound it:
+Counter's first site runs into `slti $v1,$s1,0x60` / `addiu $v0,$zero,0x5F` / `movn` at
+`0x10390C`..`0x103914`, which pins any counter chance at or above 96 to **95** — so raising
+Counter past roughly 64% base stops moving that site. Gale's product is masked to 16 bits.
+
+Shipped as the **Rune power** card inside the Passives tab (`web/iso.js:rfCard` / `RUNEFX`).
+Each site is registered in the Changes tab under "Rune power" and audited against its stock
+word by `chgCodeAudit`, so a disc patched some other way still gets named.
+
+**Untested in play**, like the switches above it: all 23 are decoded, byte-verified and
+round-trip clean, but no altered number has been watched taking effect in game.

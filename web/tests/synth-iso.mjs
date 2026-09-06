@@ -14,13 +14,16 @@ export const ELF_BASE = 0xA4800, ELF_END = 0x465DF0, ELF_VADDR = 0x165D000;
 // (8 bytes longer) keeps them inside its own record at +0x20+x. See iso.js SPELL/UNITE.
 export const SPELL = { off: 0x3EC2A0, stride: 0x20, elem: 0x24, radius: 0x21, chance: 0x26 };
 export const UNITE = { off: 0x3ECF90, stride: 0x28, radius: 0x21, chance: 0x24 };
-export const FOOD = { off: 0x3E91D0, stride: 0x48, heal: 0x14, proc: 0x1E, name: 0x44, desc: 0x00 };
+// A dish's NAME is one record behind the data it names (the displacement gear has too), so
+// these offsets are measured from the block holding the name: desc/heal/proc are in the next
+// one. The fixture has to plant it that way or the suite would keep proving the old reading.
+export const FOOD = { off: 0x3E91D0, stride: 0x48, name: 0x44, desc: 0x48, heal: 0x5C, proc: 0x66 };
 export const ENEMY = { off: 0x3E74E0, stride: 0x14, count: 100 };
 export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [0x14, 0x1C, 0x24, 0x2C, 0x34] };
 // Rune item table (iso.js RUNE_TBL): indexed by ITEM id, name ptr @+0 / desc ptr @+4. It is
 // the only source of text for the passive support runes, so the fixture plants one of those
 // (Balance) alongside the magic runes in the character's slots.
-export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04 };
+export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, spells: 0x18 };
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
 // War-battle class reference (iso.js CLASS_POOL / CLASS_TBL): a pool of 78 string pointers and
 // a 43x47 table of (type, modifier) pool indices. Indexed [skillA-1][skillB-1]; column == skill id.
@@ -108,6 +111,64 @@ export const encMoveWord = (imm, opc, negated) =>
 // FindActorByCharId's miss-exit (vaddr 0x17B5A38): `jr $ra` + `move $v0,$zero`. The Test
 // tab can rewrite it to tail-jump at the player lookup so an actor nobody can find resolves
 // to you — the scene-softlock experiment.
+// Passive support runes (Passives tab): the 51 `jal <equipped-rune lookup>` + delay-slot word
+// pairs the tab neutralises, as [offset, jal, delaySlot]. Seeded stock so the tab renders every
+// rune as "off" and a tick has real stock words to replace. Kept in step with iso.js by
+// validate.mjs, which parses both.
+export const PASSIVE_SITES = [
+  [0x149F90, 0x0C5B2D0E, 0x240501B9],
+  [0x10407C, 0x0C5B2CE0, 0x240501BA],
+  [0x10413C, 0x0C5B2CE0, 0x240501BA],
+  [0x1038E0, 0x0C5B2CE0, 0x240501BB],
+  [0x103B54, 0x0C5B2CE0, 0x02228821],
+  [0x103D28, 0x0C5B2CE0, 0x02228821],
+  [0x10FD28, 0x0C5B2CE0, 0x240501BC],
+  [0x14A1B4, 0x0C5B2D0E, 0x240501BD],
+  [0x261184, 0x0C5B2CE0, 0x240501BD],
+  [0x104368, 0x0C5B2CE0, 0x02129821],
+  [0x110F74, 0x0C5B2D0E, 0x240501BE],
+  [0x25C844, 0x0C606CEC, 0x240501BE],
+  [0x25C8F8, 0x0C606CEC, 0x240501BE],
+  [0x25CA60, 0x0C606CEC, 0x240501BE],
+  [0x25CB18, 0x0C606CEC, 0x240501BE],
+  [0x25CBBC, 0x0C606CEC, 0x240501BE],
+  [0x25CC54, 0x0C606CEC, 0x240501BE],
+  [0x25CC9C, 0x0C606CEC, 0x240501BE],
+  [0x25CD5C, 0x0C606CEC, 0x240501BE],
+  [0x1037F4, 0x0C5B2CE0, 0x240501BF],
+  [0x245D6C, 0x0C606CEC, 0x240501C0],
+  [0x105200, 0x0C5B2CE0, 0x0200202D],
+  [0x1100AC, 0x0C5B2CE0, 0x240501C2],
+  [0x1100E0, 0x0C5B2CE0, 0x240501C2],
+  [0x104858, 0x0C5B2CE0, 0x240501C3],
+  [0x104FC0, 0x0C5B2CE0, 0x240501C3],
+  [0x10544C, 0x0C5B2CE0, 0x240501C3],
+  [0x1115C4, 0x0C5B2CE0, 0xAFA40000],
+  [0x22E694, 0x0C606CEC, 0x240501C4],
+  [0x22EB04, 0x0C606CEC, 0x240501C4],
+  [0x230B44, 0x0C606CEC, 0x240501C4],
+  [0x230B64, 0x0C606CEC, 0x240501C5],
+  [0x23AC20, 0x0C606CEC, 0x240501C5],
+  [0x23B9CC, 0x0C606CEC, 0x240501C6],
+  [0x259C48, 0x0C606CEC, 0x240501C6],
+  [0x1047BC, 0x0C5B2CE0, 0x240501C7],
+  [0x1047D0, 0x0C5B2CE0, 0x240501C7],
+  [0x10FD64, 0x0C5B2CE0, 0x240501C8],
+  [0x10FD9C, 0x0C5B2CE0, 0x240501C8],
+  [0x10FDBC, 0x0C5B2CE0, 0x240501C9],
+  [0x10FDF4, 0x0C5B2CE0, 0x240501C9],
+  [0x244B1C, 0x0C606CEC, 0x240501CA],
+  [0x25DFC8, 0x0C606CEC, 0x240501CA],
+  [0x2611C8, 0x0C606CEC, 0x240501CB],
+  [0x105634, 0x0C5B2CE0, 0x240501CC],
+  [0x25DFE8, 0x0C606CEC, 0x240501CC],
+  [0x2610D0, 0x0C606CEC, 0x240501CC],
+  [0x244B3C, 0x0C606CEC, 0x240501CD],
+  [0x1035E0, 0x0C5B2CE0, 0x240501CE],
+  [0x104838, 0x0C5B2CE0, 0x240501CE],
+  [0x2463CC, 0x0C606CEC, 0x240501CE],
+];
+
 export const ACTORFB_SITES = [[0x1FD238, 0x03E00008, 0x085ED732], [0x1FD23C, 0x0000102D, 0x00000000]];
 // The four "the model has no such clip -> give up" branches. Retiring all of them is the
 // field-pickup fix; the last two are the ones whose success path marks the motion finished,
@@ -149,6 +210,38 @@ export const MECH = {
   roundMount: { off: 0x226FF8, stock: 0x26100001 },
   adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
 };
+// Rune power (iso.js RUNEFX): the magnitudes the passive runes are worth, planted stock so the
+// Passives tab's controls decode and a write has a real instruction to rewrite the value inside.
+// `kind` mirrors iso.js so the e2e can assert the right bits moved — an `imm` write must leave
+// the high half-word alone, an `sa` write must only move bits 10..6. Kept in step with iso.js by
+// validate.mjs, which parses both.
+export const RUNEFX_SITES = [
+  { key: "sunTurn", off: 0x261198, word: 0x2442000F, kind: "imm", value: 15 },
+  { key: "killer", off: 0x104088, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "killer", off: 0x104148, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "counter", off: 0x1038EC, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "counter", off: 0x103B60, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "counter", off: 0x103D34, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "gale", off: 0x10FD34, word: 0x24020096, kind: "imm", value: 150 },
+  { key: "haziness", off: 0x10380C, word: 0x2842001E, kind: "imm", value: 30 },
+  { key: "drain", off: 0x245D78, word: 0x24020003, kind: "imm", value: 3 },
+  { key: "barrier", off: 0x105218, word: 0x2403000A, kind: "imm", value: 10 },
+  { key: "hunter", off: 0x1035E8, word: 0x24030005, kind: "imm", value: 5 },
+  { key: "violence", off: 0x244B54, word: 0x3C013F00, kind: "f32hi", value: 50 },
+  { key: "wall", off: 0x104370, word: 0x00131840, kind: "sa", value: 1 },
+  { key: "dblStrike", off: 0x1047C8, word: 0x00108040, kind: "sa", value: 1 },
+  { key: "dblStrike", off: 0x1047DC, word: 0x00108040, kind: "sa", value: 1 },
+  { key: "fireSeal", off: 0x104878, word: 0x00101040, kind: "sa", value: 1 },
+  { key: "fireSeal", off: 0x104FE0, word: 0x00111040, kind: "sa", value: 1 },
+  { key: "fireSeal", off: 0x10546C, word: 0x00101040, kind: "sa", value: 1 },
+  { key: "wizard", off: 0x10FD84, word: 0x00021042, kind: "sa", value: 1 },
+  { key: "wizard", off: 0x10FDA8, word: 0x00101042, kind: "sa", value: 1 },
+  { key: "warrior", off: 0x10FDDC, word: 0x00021042, kind: "sa", value: 1 },
+  { key: "warrior", off: 0x10FE00, word: 0x00101042, kind: "sa", value: 1 },
+];
+// Sunbeam's walk-heal interval is not an instruction — it is a float in the small-data literal
+// pool, read by exactly one lwc1 in the whole executable.
+export const RUNEFX_FLOAT = { key: "sunWalk", off: 0x42C3B0, value: 0.3 };
 // Status effect strength (iso.js STATUSFX): eleven `addiu $rt,$zero,imm` battle-code sites whose
 // immediates are the percentages a status effect is worth. The fixture plants the stock words so
 // the controls decode, and the e2e checks a write lands in the low half only.
@@ -322,7 +415,14 @@ export function buildSynthIso() {
     if (i === 2) { w32(o + 0x14, 0x00000500); w32(o + 0x18, 1 << 23); w16(o + SPELL.elem, 7); }
   });
   { const o = UNITE.off; w32(o + 8, put("Test Unite")); w32(o + 0x0C, put("coop")); w32(o + 0x10, 65); w32(o + 0x14, 0x00000200); w32(o + 0x1C, 200); }
-  { const o = FOOD.off; w32(o + FOOD.name, put("Medicine")); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100); }
+  // Two dishes, so a reader that is off by one lands on the wrong one instead of on zeroes.
+  let foodNameOff = 0;
+  { const o = FOOD.off;
+    const foodName = put("Medicine");
+    w32(o + FOOD.name, foodName); w32(o + FOOD.desc, put("Heals 100HP")); w16(o + FOOD.heal, 100);
+    const o1 = FOOD.off + FOOD.stride;
+    w32(o1 + FOOD.name, put("Antitoxin")); w32(o1 + FOOD.desc, put("Cures poison")); w16(o1 + FOOD.heal, 10);
+    foodNameOff = foodName - ELF_VADDR + ELF_BASE; }
   // shop fixture: location 0, stages 0 and 1, on all three counters (+ one rarity each)
   const SHOP_FIXTURE = { loc: 0, stages: 2, chance: 40, stock: null };
   {
@@ -371,6 +471,7 @@ export function buildSynthIso() {
   STORY_CASES.forEach(([o, imm]) => w32(o, avatarWord(imm, "eq")));
   ENCMOVE_SITES.forEach(([o, imm, opc, neg]) => w32(o, encMoveWord(imm, opc, neg)));
   ACTORFB_SITES.forEach(([o, stock]) => w32(o, stock));
+  PASSIVE_SITES.forEach(([o, jal, ds]) => { w32(o, jal); w32(o + 4, ds); });
   // enemies-editor fixture: two byte-identical copies of one BladeBunny record + aux
   for (const [recO, auxO] of [[ENEMY_REC_A, ENEMY_AUX_A], [ENEMY_REC_B, ENEMY_AUX_B]]) {
     const v = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
@@ -449,11 +550,20 @@ export function buildSynthIso() {
   // also carry a "Grants <spells>" tail) plus Balance, a passive support rune with no spell
   // entry anywhere — before the rune table was read it showed nothing at all in the picker.
   const balance = catItems("Runes").find((r) => r.name === "Balance");
+  // Each row also gets the four spell slots the real record carries at +0x18 — 1-based spell
+  // numbers, 0 = free. The three counts the disc actually uses are all represented, because
+  // they are three different things to render: full (four spells), partly filled (an empty
+  // slot mid-record) and the Kite shape (one spell, three slots free) that the slot editor
+  // exists for. Balance keeps four zeros — a passive rune grants nothing.
   const runeRows = [...runes.map((r, i) => ({ ...r, desc: `Rune slot ${i} text.` })),
-    { ...balance, desc: "Maintains balance." }];
+    { ...balance, desc: "Maintains balance.", spells: [0, 0, 0, 0] }];
+  runeRows[0].spells = [1, 2, 3, 4];        // all four, like a magic rune
+  runeRows[1].spells = [2, 3, 0, 0];        // two spells, two free
+  runeRows[2].spells = [1, 0, 0, 0];        // one spell, three free — Kite's shape
   for (const r of runeRows) {
     const o = RUNE_TBL.off + r.id * RUNE_TBL.stride;
     w32(o + RUNE_TBL.name, put(r.name)); w32(o + RUNE_TBL.desc, put(r.desc));
+    (r.spells || [0, 0, 0, 0]).forEach((gid, k) => w16(o + RUNE_TBL.spells + k * 2, gid));
   }
   // ---- duplicated description fixture (issue #11) -----------------------------------------
   // On a real disc 27 descriptions are stored TWICE, at two addresses reached from two
@@ -484,6 +594,9 @@ export function buildSynthIso() {
     // spell its own allocation of the rune's name — same text, different address.
     const spellNameCopy = put(twinRune.name);
     w32(so + 8, spellNameCopy);
+    // ...and the rune points AT that spell, the way every real attack rune does: slot 1 holds
+    // its own attack (1-based, so TWIN_SPELL + 1) and the other three are free.
+    w16(o + RUNE_TBL.spells, TWIN_SPELL + 1);
     mapping.twin = { text: TWIN_TEXT, rune: twinRune,
       runeOff: runeCopy - ELF_VADDR + ELF_BASE, spellOff: spellCopy - ELF_VADDR + ELF_BASE, spellIdx: TWIN_SPELL,
       runeNameOff: runeNameCopy - ELF_VADDR + ELF_BASE, spellNameOff: spellNameCopy - ELF_VADDR + ELF_BASE };
@@ -519,8 +632,12 @@ export function buildSynthIso() {
   }
   for (const f of STATUSFX_SITES) w32(f.off, f.word);   // status effect strength code sites
   mapping.statusfx = STATUSFX_SITES;
+  for (const f of RUNEFX_SITES) w32(f.off, f.word);     // rune power code sites
+  wf32(RUNEFX_FLOAT.off, RUNEFX_FLOAT.value);           // ...and the walk-heal interval
+  mapping.runefx = { sites: RUNEFX_SITES, float: RUNEFX_FLOAT };
   mapping.shops = SHOP_FIXTURE;
   mapping.runes = runeRows;
+  mapping.food = { nameOff: foodNameOff, nameMax: "Medicine".length };
   mapping.balance = { ...balance, desc: "Maintains balance." };
 
   return { bytes, armor, mapping };

@@ -113,17 +113,13 @@ check("widening admits the 82-id run plus the two specials, nothing more",
 // The Overview picker offers all 75 battle characters and marks which ones the engine will
 // actually load. Get that backwards and the tab quietly promises a swap that never happens,
 // so the grouping is asserted rather than eyeballed. avatarList() is sliced out of app.js
-// and run against stubbed globals; it touches REF, CHAR_LIST and avatarAreaInfo — the last
-// one backed by the real coverage file, so the note it builds is exercised, not stubbed away.
+// and run against stubbed globals; it touches REF, CHAR_LIST, STORY_SAFE and AVATAR_NOTES.
 const appSrc = fs.readFileSync(path.join(REPO, "web", "app.js"), "utf8");
 const fnStart = appSrc.indexOf("function avatarList(");
 if (fnStart < 0) { console.error("FAIL: no avatarList() in web/app.js"); process.exit(1); }
 const fnEnd = appSrc.indexOf("\n}", fnStart);
 const NAMES = Object.fromEntries(PY_PARTY_IDS.map((id, i) => [id, `Char${i + 1}`]));
 Object.assign(NAMES, { 202: "Masked Luc", 203: "Grasslands Chris" });
-const AREAS = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_avatar_areas.json"), "utf8"));
-const areaInfo = (id) => { const m = (AREAS.byModel || {})[String(id)];
-  return m && Array.isArray(m.areas) ? { areas: m.areas, total: (AREAS.archives || []).length } : null; };
 // STORY_SAFE lives beside avatarList rather than inside it, so it is parsed out of app.js
 // too — restating the four here would let the two drift without a test noticing.
 const safeM = appSrc.match(/const STORY_SAFE = new Set\(\[([^\]]*)\]\)/);
@@ -134,11 +130,11 @@ const STORY_SAFE = new Set(safeM[1].split(",").map((t) => Number(t.trim())).filt
 const notesM = appSrc.match(/const AVATAR_NOTES = \{[\s\S]*?\n\};/);
 if (!notesM) { console.error("FAIL: no AVATAR_NOTES in web/app.js"); process.exit(1); }
 const AVATAR_NOTES = new Function(notesM[0] + "\nreturn AVATAR_NOTES;")();
-const avatarList = new Function("REF", "CHAR_LIST", "avatarAreaInfo", "STORY_SAFE", "AVATAR_NOTES",
+const avatarList = new Function("REF", "CHAR_LIST", "STORY_SAFE", "AVATAR_NOTES",
   appSrc.slice(fnStart, fnEnd + 2) + "\nreturn avatarList;")(
   { fieldAvatars: PY_AVATARS, charById: NAMES },
   PY_PARTY_IDS.map((id) => ({ id, name: NAMES[id] })),
-  areaInfo, STORY_SAFE, AVATAR_NOTES);
+  STORY_SAFE, AVATAR_NOTES);
 
 console.log("Save-editor picker labelling:");
 { const list = avatarList(1);
@@ -172,12 +168,11 @@ console.log("Save-editor picker labelling:");
     !STORY_SAFE.has(54) && (list.find((r) => r.id === 54) || {}).cat === "has a known problem");
   check("nobody is listed twice", new Set(list.map((r) => r.id)).size === list.length);
   check("every row carries a note explaining its group", list.every((r) => r.desc && r.cat));
-  // The coverage warning has to reach the row the user reads, not just exist in the file.
-  const luc = list.find((r) => r.id === 63);
-  check("a row states how many maps ship that field model", /ships in \d+\/28 maps/.test(luc.desc), luc.desc);
-  check("...and names them", /ZKTR/.test(luc.desc));
-  const thomas = list.find((r) => r.id === 29);
-  check("the most map-limited avatar reports its small count", /ships in 5\/28 maps/.test(thomas.desc), thomas.desc);
+  // Per-area coverage used to ride on every row. Play testing showed it does not gate the
+  // pick — all of these worked in every area — so no row may claim a map limit again.
+  check("no row carries a per-area coverage note",
+    !list.some((r) => /ships in|\/28 maps/.test(r.desc)),
+    (list.find((r) => /ships in|\/28 maps/.test(r.desc)) || {}).desc);
   // A roaming pick with no known problem should describe the two party conditions, since that
   // is what actually decides whether scenes work for it.
   check("a roaming pick with no verdict explains the party conditions",
@@ -212,27 +207,6 @@ console.log("Story-content switch:");
   check("it covers the whitelisted avatars that have their own story index",
     covered.includes(0x3F) && covered.includes(0x36) && covered.includes(0xCA) && covered.includes(0xCB),
     JSON.stringify(covered)); }
-
-// ---- per-map coverage data ---------------------------------------------------
-// The picker's "ships in N of 28 maps" note is only as good as this file; a truncated or
-// stale one would read as "this character is everywhere" rather than as missing data.
-console.log("Per-map coverage data:");
-{ const areas = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_avatar_areas.json"), "utf8"));
-  check("28 area archives listed", (areas.archives || []).length === 28, (areas.archives || []).length);
-  const bm = areas.byModel || {};
-  check("every battle character has an entry", PY_PARTY_IDS.every((id) => bm[String(id)]));
-  check("every whitelisted avatar has an entry", PY_AVATARS.every((id) => bm[String(id)]));
-  check("each entry names a model code and an area list",
-    Object.values(bm).every((m) => typeof m.code === "string" && m.code.length === 4 && Array.isArray(m.areas)));
-  check("every listed area is a real archive",
-    Object.values(bm).every((m) => m.areas.every((a) => areas.archives.includes(a))));
-  // The observation that motivated the whole section: Plain Amur is an archive that carries
-  // Luc but not Masked Luc, and at least one such archive must exist for that to be possible.
-  const luc = bm["63"].areas, mask = bm["202"].areas;
-  check("some archive carries Luc but not Masked Luc",
-    luc.some((a) => !mask.includes(a)), luc.filter((a) => !mask.includes(a)).join(", "));
-  check("coverage is partial, not universal (a full list would mean the scan matched junk)",
-    Object.values(bm).every((m) => m.areas.length < 28)); }
 
 // ---- keeping the leader in party slot 1, without losing anyone ---------------
 // A leader who is not in the party has no actor record, so scenes freeze when they need the

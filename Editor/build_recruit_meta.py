@@ -16,6 +16,8 @@ def roster():
 ALIAS = {
     "Sgt. Joe": "Sgt. Jordi (Joe)", "Elliot": "Elliott",
     "Viki": "Viki (Big)", "Viki (Young)": "Viki (Little)",
+    # the FAQ's spellings of two roster names — without these both fell through unclassified
+    "Guillaume": "Guilliame", "Beecham": "Beechum",
 }
 
 # A guide field header at column 0 ("Name:", "Automatic:", "Battle Fighting Style:", ...) —

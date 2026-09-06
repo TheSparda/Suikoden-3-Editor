@@ -179,10 +179,39 @@ input.search, input.picker-search {
 .starsbar { height:9px; border:1px solid var(--line); border-radius:999px; background:var(--changed-bg); overflow:hidden; margin:6px 0 4px; }
 .starsbar span { display:block; height:100%; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .25s; }
 .opt-tag { font-size:11px; color:var(--mut); white-space:nowrap; }
+/* "next in guide order" — the first optional star still missing, i.e. what to go and do */
+.nextup { font-size:12px; margin-top:8px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; }
+.nextup .muted { display:block; margin-top:2px; }
+/* the checklist runs in the recruitment guide's order: # is that position, Star the Star of Destiny name */
+.starstbl td.ordn, .starstbl th.ordn { width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+.starstbl td.sod { font-size:11px; letter-spacing:.03em; white-space:nowrap; }
+/* stage headers: one per block of the guide's order, with that stage's own progress */
+.starstbl tr.phaserow td { background:var(--changed-bg); border-top:1px solid var(--line); padding:8px; }
+.starstbl tr.phaserow.off td { opacity:.72; }
+.phasetog { background:transparent; border:0; padding:0; color:inherit; font-size:13px; cursor:pointer; }
+.phasetog b { font-family:var(--titlefont); letter-spacing:.02em; }
+.phprog { font-size:12px; color:var(--mut); margin-left:8px; font-variant-numeric:tabular-nums; }
+.phbar { display:inline-block; vertical-align:middle; width:70px; height:5px; margin-left:8px;
+  border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+.phbar > span { display:block; height:100%; background:linear-gradient(90deg,var(--acc),var(--acc2)); }
+.phnote { color:var(--mut); font-size:11px; line-height:1.4; margin-top:3px; max-width:80ch; }
+.phextra { color:var(--acc2); cursor:help; }
 .starstbl .ok { color:var(--ok); font-size:12px; white-space:nowrap; }
 .starstbl .miss { color:var(--mut); font-size:12px; white-space:nowrap; }
 .starstbl tr.howrow td { padding-top:0; border-top:0; }
 .howto { color:var(--mut); font-size:11px; line-height:1.4; max-width:70ch; }
+/* what a how-to makes you bring: the item's real source, the potch against your purse, the
+   star you need along first. ✓/✗ marks the ones this save can already answer. */
+.needs { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:4px; max-width:80ch; }
+.needlbl { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); }
+.need { font-size:11px; line-height:1.35; color:var(--ink); border:1px solid var(--line);
+  border-radius:6px; padding:2px 7px; background:var(--input-bg); }
+.need.n-gate { font-style:italic; color:var(--mut); }
+.need.short { border-color:var(--warnbd); color:var(--warn); }
+/* "just give it to me": stages the item into the current party's bag, or tops the purse up */
+.need .needbtn { margin-left:6px; padding:1px 7px; font-size:11px; vertical-align:baseline;
+  color:var(--acc2); border-color:var(--line); background:transparent; }
+.need .ok, .need .miss { font-size:11px; }
 /* team pills: single-letter team badges (Hugo/Chris/Geddoe/Thomas/Shared) */
 .tpill { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:5px; font-size:11px;
   font-weight:700; color:var(--accink); border:1px solid transparent; }
@@ -235,11 +264,20 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .bar.indet .bar-fill { width:35% !important; transition:none; animation:indet 1.15s ease-in-out infinite; }
 @keyframes indet { 0% { margin-left:-35%; } 100% { margin-left:100%; } }
 
-/* full-screen boot gate (see index.html #bootOv) — the save editor cannot do anything until
-   Pyodide is up, so cover everything instead of letting the dead form look usable. Sits above
-   the modals so a shared-in save can't raise a dialog behind it. */
-.boot-ov { position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center;
-  padding:20px; background:color-mix(in srgb,var(--bg) 84%,transparent); opacity:1; transition:opacity .22s ease; }
+/* boot gate (see index.html #bootOv) — scoped to the save loader card, which is the ONLY
+   thing Pyodide gates; the ISO editor, themes and install all work while it boots, so this
+   must not cover them. Absolute inside #loaderCard; the :has() min-height keeps the card at
+   least as tall as the gate while it is in the DOM (the drop zone alone can be shorter), and
+   evaporates when app.js removes it. */
+#loaderCard { position:relative; }
+#loaderCard:has(#bootOv) { min-height:330px; }
+/* On a phone the step notes wrap to two or three lines and the two chips stack, so the gate
+   is ~150px taller than the drop zone it covers — without this it would scroll inside a card
+   that has plenty of room to just be taller. boot-gate.mjs asserts it never clips. */
+@media (max-width:430px) { #loaderCard:has(#bootOv) { min-height:470px; } }
+.boot-ov { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+  padding:12px; overflow:auto; border-radius:inherit;
+  background:color-mix(in srgb,var(--bg) 88%,transparent); opacity:1; transition:opacity .22s ease; }
 @supports (backdrop-filter:blur(2px)) { .boot-ov { backdrop-filter:blur(3px); } }
 .boot-ov.gone { opacity:0; pointer-events:none; }
 .boot-card { background:var(--panel); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow);
@@ -388,6 +426,14 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 button.spellchip { font:inherit; font-size:11px; line-height:inherit; cursor:pointer;
   text-decoration:underline; text-underline-offset:2px; }
 button.spellchip:hover, button.spellchip:focus-visible { color:var(--ink); border-color:var(--acc2); }
+/* The four spell slots a rune grants. All four are always shown, empty ones included — an
+   unused slot is a zero in the record, not a missing row, and it is the thing you fill in to
+   give a rune another spell — so the slot NUMBER is a fixed-width gutter and the selects line
+   up under each other whether or not the rune uses them all. */
+.runeslots .slotrow { display:flex; align-items:center; gap:6px; margin-top:3px; }
+.runeslots .slotn { flex:0 0 auto; width:14px; text-align:right; font-size:11px;
+  font-variant-numeric:tabular-nums; color:var(--muted); }
+.runeslots select.rspell { flex:1 1 auto; min-width:0; }
 /* 8 rank columns have to fit a 320px phone, so they scroll rather than squeeze the label out */
 .ranktbl { display:block; overflow-x:auto; white-space:nowrap; overscroll-behavior-x:contain; }
 .ranktbl th, .ranktbl td { padding:4px 6px; }
