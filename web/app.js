@@ -1266,6 +1266,15 @@ function drawField() {
   };
 }
 
+// Mount model ids, as they appear in party positions 7-12. Only 308/309 occur in a stock
+// game — the consumer clamps with `(v - 308) < 2` — but a patched disc can show the other
+// ids the ground-ride saddle table knows, so name those too rather than print a bare number.
+// Mirrors s3save.MOUNT_MODEL_NAMES.
+const MOUNT_MODELS = {
+  308: "Zexen-knight horse", 309: "Chris's horse", 325: "Karaya horse", 353: "Karaya horse #2",
+  42: "Ruby", 209: "Le Buque horse (mskn)", 359: "Le Buque horse", 360: "Le Buque horse #2",
+};
+
 function drawParty() {
   const s = saves[curSlot];
   const mem = s.party || [];
@@ -1279,14 +1288,46 @@ function drawParty() {
   // "Remove" was only reachable by opening the picker and choosing the `empty` row, which
   // nobody finds. An explicit ✕ per occupied slot is the obvious control.
   const eff = (slot) => (PARTY[slot] !== undefined ? PARTY[slot] : mem[slot]) || 0;
+  // Positions 7-12 of the same table hold each member's MOUNT (see s3save.PARTY_MOUNT_SLOTS).
+  // Read-only here: the game writes it when the party is formed, from the character's
+  // assigned-horse field, and showing it is how you can tell a mount is actually staged.
+  const mounts = s.partyMounts || [];
+  const mountLabel = (m) => (MOUNT_MODELS[m] || `model ${m}`);
+  // The formation table (0x3240) holds, per battle position, the 1-based index of the member
+  // that stands there — an index into the DENSE list of filled party slots, not the slot
+  // number. Invert it so a party row can state its own battle position instead of the row
+  // number being assumed to be it.
+  const form = s.formation || [];
+  const dense = [];                       // party slot -> 1-based member index
+  mem.forEach((cid, slot) => { if (cid) dense[slot] = dense.filter((x) => x).length + 1; });
+  const battlePos = {};                   // member index -> 1-based battle position
+  form.forEach((mi, pos) => { if (mi && battlePos[mi] === undefined) battlePos[mi] = pos + 1; });
+  const posOf = (slot) => (dense[slot] ? battlePos[dense[slot]] : undefined);
+  const aligned = mem.every((cid, slot) => !cid || posOf(slot) === slot + 1);
   const rows = mem.map((cid, slot) => {
     const now = eff(slot);
+    const mv = mounts[slot] || 0;
+    // The mount belongs to whoever is in the slot *in the file*. If this slot has a pending
+    // edit the pairing is about to be re-derived on Apply, so say so instead of implying
+    // the horse now belongs to the new pick.
+    const pending = PARTY[slot] !== undefined && PARTY[slot] !== cid;
+    const mountCell = !mv ? '<span class="dim">—</span>'
+      : pending ? `<span class="dim" title="This slot has an unapplied change; the mount is re-paired on Apply.">${
+            esc(mountLabel(mv))} <span class="dim">· re-paired on Apply</span></span>`
+      : `<span class="tag">${esc(mountLabel(mv))} <span class="dim">#${mv}</span></span>`;
+    const bp = posOf(slot);
+    const fCell = !cid ? '<span class="dim">—</span>'
+      : bp === undefined ? '<span class="tag bad">not in the formation</span>'
+      : bp === slot + 1 ? `<span class="dim">${bp}</span>`
+      : `<span class="tag acc2" title="This member stands at battle position ${bp}, not ${slot + 1}.">${bp}</span>`;
     return `<tr>
       <td class="sl">Slot ${slot + 1}${slot === 0 ? ' <span class="dim">· leader</span>' : ""}</td>
       <td><div class="party-row">
         <button type="button" class="picker" data-partyslot="${slot}" data-val="${now}" data-def="${cid}">${esc(charLabel(now))}</button>${
         now ? `<button type="button" class="chip mini party-x" data-partydrop="${slot}" title="Remove from the party" aria-label="Remove from the party">✕</button>` : ""}
-      </div></td></tr>`;
+      </div></td>
+      <td>${fCell}</td>
+      <td>${mountCell}</td></tr>`;
   }).join("");
   const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =
@@ -1299,7 +1340,17 @@ function drawParty() {
        (save <code>0x3216</code>) — who is in your party, in order. It is not the <b>battle
        formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
        re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
-    `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th></tr></thead><tbody>${rows}</tbody></table>`;
+    (anyFilled && !aligned ? `<div class="warnbox">This save's <b>battle formation</b> is not in party
+       order — at least one member stands at a different position from their party slot (see the
+       Battle pos. column). That is a legitimate layout the game writes when you reorder in the
+       tavern, so it is shown rather than corrected. Changing the party <i>size</i> re-derives the
+       table into party order on Apply; a same-size swap keeps the custom order.</div>` : "") +
+    `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th><th>Battle pos.</th><th>Mount</th></tr></thead><tbody>${rows}</tbody></table>` +
+    (mounts.some((m) => m) ? `<div class="muted" style="margin:8px 0 0;font-size:12px">A <b>mount</b>
+       is staged in the same table, six positions along (save <code>0x3222</code>), and the game
+       fills it when the party is formed from the character's assigned-horse field. It is what
+       puts a horse beside them on the field — Chris carries one all game, which is why she rides
+       in scenes that ask for it. Removing a member takes their mount with them.</div>` : "");
   $$("[data-partydrop]").forEach((b) => (b.onclick = () => {
     PARTY[+b.dataset.partydrop] = 0;
     drawParty();
