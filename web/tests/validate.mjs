@@ -120,73 +120,73 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   else ok(`mount pair sites (${MOUNT_SITES.length} code sites in block)`);
 }
 
-// Passives tab: the 51 decoded equipped-rune checks. TWO of them are switchable (the field
-// party loops); the other 49 are listed as PS_BATTLE and deliberately never written. Both tables
-// get the same structural checks, because "decoded but not offered" still has to be right — the
-// tab names those sites, and the Changes-tab audit compares a disc against their stock words.
-// Each site is TWO words — the `jal` and its delay slot — so the bound is 8 bytes, and two sites
-// landing within 8 bytes of each other would have one silently overwrite the other. The jal word
-// is decoded here rather than trusted: it must still target the helper its `k` claims, which is
-// the check that catches a site copied to the wrong address or a `k` typo.
+// Passives tab: the 51 decoded equipped-rune checks, and the relocated helper they are pointed
+// at. The site table is checked structurally — each site is TWO words (the `jal` and its delay
+// slot), so the bound is 8 bytes, and two sites within 8 bytes of each other would have one
+// silently overwrite the other. The `jal` word is decoded here rather than trusted: it must
+// still target the helper its `k` claims, which catches a site copied to the wrong address or a
+// `k` typo. The helper block is checked the other way round: the machine code iso.js embeds is
+// pulled apart and its baked-in constants re-derived from the JS ones beside it, so a moved
+// block, a resized table or a changed record stride fails here rather than in the game.
 console.log("Passive rune sites:");
 {
   const iso = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
   const DELTA = 0x15B8800;                                  // ISO offset -> ELF vaddr
   const HELPER = { rec: 0x16CB380, id: 0x16CB438, unit: 0x181B3B0 };
   const BAND = [0x1B8, 0x1CE];                              // the support-rune item ids
-  const FIELD = [0x149F90, 0x14A1B4];                        // the only two that may be written
+  const FIELD = [0x149F90, 0x14A1B4];                        // the two field party loops
   const grab = (name) => (iso.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n  \\];`)) || [])[1];
-  const sw = grab("PASSIVES"), bt = grab("PS_BATTLE");
+  const sw = grab("PASSIVES");
   const unmapped = (iso.match(/const PS_UNMAPPED = \[([^\]]*)\]/) || [])[1];
-  if (!sw || !bt || unmapped === undefined) bad("could not read PASSIVES / PS_BATTLE / PS_UNMAPPED out of iso.js");
+  // PS_HOOK's keys (off, len, rows, stride) are common words, so read them out of the object
+  // literal itself rather than out of the whole file — `off: 0x3EC2A0` belongs to a spell table.
+  const hook = (iso.match(/const PS_HOOK = \{([\s\S]*?)\n  \};/) || [])[1] || "";
+  const num = (k) => { const m = hook.match(new RegExp(`\\b${k}:\\s*(0x[0-9A-Fa-f]+|\\d+)`)); return m ? Number(m[1]) : undefined; };
+  const hexStr = (k) => (hook.match(new RegExp(`\\n    ${k}:\\n([\\s\\S]*?),(?:\\n|$)`)) || [])[1];
+  if (!sw || unmapped === undefined) bad("could not read PASSIVES / PS_UNMAPPED out of iso.js");
   else {
-    const idsOf = (b) => [...b.matchAll(/\{ id: (0x[0-9A-Fa-f]+),/g)].map((m) => parseInt(m[1], 16));
-    const sitesOf = (b) => [...b.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal: (0x[0-9A-Fa-f]+), ds: (0x[0-9A-Fa-f]+), k: "(\w+)" \}/g)]
+    const ids = [...sw.matchAll(/\{ id: (0x[0-9A-Fa-f]+),/g)].map((m) => parseInt(m[1], 16));
+    const sites = [...sw.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal: (0x[0-9A-Fa-f]+), ds: (0x[0-9A-Fa-f]+), k: "(\w+)" \}/g)]
       .map((m) => ({ off: parseInt(m[1], 16), jal: parseInt(m[2], 16) >>> 0, ds: parseInt(m[3], 16) >>> 0, k: m[4] }));
-    const swIds = idsOf(sw), btIds = idsOf(bt);
     const gaps = unmapped.split(",").map((x) => parseInt(x.trim(), 16)).filter((n) => !isNaN(n));
-    const swSites = sitesOf(sw), btSites = sitesOf(bt), sites = swSites.concat(btSites);
     (sites.length === 51 ? ok : bad)(`${sites.length} call sites parsed (expected 51)`);
+    (ids.length === 22 ? ok : bad)(`${ids.length} runes carry sites (expected 22)`);
 
-    // The switchable half is exactly the two field sites, and nothing else may creep in: every
-    // other site is about the acting unit in battle, which cannot be scoped to your party.
-    const swOffs = swSites.map((s) => s.off).sort((a, b) => a - b);
-    (swOffs.length === 2 && swOffs.every((o, i) => o === FIELD[i]) ? ok : bad)(
-      swOffs.length === 2 && swOffs.every((o, i) => o === FIELD[i])
-        ? "the switchable sites are exactly the two field party loops (0x149F90, 0x14A1B4)"
-        : `switchable sites drifted: ${swOffs.map((o) => "0x" + o.toString(16)).join(", ")}`);
-    (swSites.every((s) => s.k === "id") ? ok : bad)("both field sites go through 0x16CB438 (charId form)");
-    (btSites.some((s) => s.off === 0x261184) ? ok : bad)("Sunbeam's in-battle half is held back, not switched");
+    // The two field sites are the party loops, and they are the ONLY ones that go through the
+    // charId form of the lookup along with Wall's stat site — a `k` that drifted would send the
+    // trampoline the wrong argument, so the shape of the split is pinned rather than assumed.
+    const fieldSites = sites.filter((s) => FIELD.includes(s.off));
+    (fieldSites.length === 2 && fieldSites.every((s) => s.k === "id") ? ok : bad)(
+      "both field party loops (0x149F90, 0x14A1B4) still go through 0x16CB438 (charId form)");
+    (sites.filter((s) => s.k === "id").length === 3 && sites.filter((s) => s.k === "rec").length === 25
+      && sites.filter((s) => s.k === "unit").length === 23 ? ok : bad)(
+      "the sites split 25 / 3 / 23 across the record, charId and unit lookups");
+    (sites.some((s) => s.off === 0x261184) ? ok : bad)("Sunbeam's in-battle half is carried too");
 
-    // Every support rune is accounted for exactly once, as switchable, held back, or a named gap.
+    // Every support rune is accounted for exactly once, as a rune with sites or a named gap.
     const band = [];
     for (let i = BAND[0]; i <= BAND[1]; i++) band.push(i);
-    const seen = [...swIds, ...btIds, ...gaps];
-    const uniq = new Set(seen);
+    const seen = [...ids, ...gaps], uniq = new Set(seen);
     const missing = band.filter((i) => !uniq.has(i));
     const stray = [...uniq].filter((i) => i < BAND[0] || i > BAND[1]);
-    // Sunbeam is the one rune that appears in BOTH tables — its two halves land on different
-    // sides of the split — so the count is 23 distinct ids across 24 entries.
     const dupes = seen.filter((v, i) => seen.indexOf(v) !== i);
-    (missing.length || stray.length || dupes.length !== 1 || dupes[0] !== 0x1BD ? bad : ok)(
-      missing.length || stray.length || dupes.length !== 1 || dupes[0] !== 0x1BD
-        ? `the support-rune band 0x1B8..0x1CE is not covered as expected: missing ${missing.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, `
-          + `stray ${stray.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, repeated ${dupes.map((i) => "0x" + i.toString(16)).join(", ") || "none"} (only Sunbeam 0x1bd may repeat)`
-        : `every support rune 0x1B8..0x1CE is switchable, held back or a named gap (${uniq.size} ids, Sunbeam split across both)`);
+    (missing.length || stray.length || dupes.length ? bad : ok)(
+      missing.length || stray.length || dupes.length
+        ? `the support-rune band 0x1B8..0x1CE is not covered exactly once: missing ${missing.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, `
+          + `stray ${stray.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, repeated ${dupes.map((i) => "0x" + i.toString(16)).join(", ") || "none"}`
+        : `every support rune 0x1B8..0x1CE appears exactly once (${uniq.size} ids, Fortune the one named gap)`);
 
     const oobP = sites.filter((s) => s.off < ELF_BASE || s.off + 8 > ELF_END);
     (oobP.length ? bad : ok)(oobP.length
       ? `passive sites out of block: ${oobP.map((s) => "0x" + s.off.toString(16)).join(", ")}`
       : `all ${sites.length} passive sites (2 words each) stay in the read block`);
 
-    // No two sites may share, or straddle, each other's word pair.
     const sorted = sites.map((s) => s.off).sort((a, b) => a - b);
     const clash = sorted.filter((o, i) => i && o - sorted[i - 1] < 8);
     (clash.length ? bad : ok)(clash.length
       ? `passive sites overlap at ${clash.map((o) => "0x" + o.toString(16)).join(", ")} — one patch would eat the other`
       : "no two passive sites are within 8 bytes of each other");
 
-    // The jal word must still name the helper its kind claims.
     const wrong = sites.filter((s) => {
       const va = s.off + DELTA;
       return (s.jal >>> 26) !== 3
@@ -196,11 +196,94 @@ console.log("Passive rune sites:");
       ? `${wrong.length} passive site(s) don't jal the helper their kind names: ${wrong.map((s) => "0x" + s.off.toString(16)).join(", ")}`
       : `every site's jal decodes to the helper its kind names (${Object.keys(HELPER).join(" / ")})`);
 
-    // The answer the patch writes, spelled out so a typo fails here rather than in the game.
-    (/const PS_YES = 0x0004102B;/.test(iso) ? ok : bad)("PS_YES is sltu $v0,$zero,$a0 (0x0004102B)");
-    (/psWrite/.test(iso) && !/PS_BATTLE\.forEach\([^)]*psWrite/.test(iso) ? ok : bad)("nothing writes the held-back sites");
+    // ---- the relocated helper -------------------------------------------------
+    const H = {
+      off: num("off"), va: num("va"), span: num("span"), len: num("len"), maskOff: num("maskOff"),
+      rows: num("rows"), stride: num("stride"), first: num("first"),
+      recBase: num("recBase"), recStride: num("recStride"), recCount: num("recCount"),
+      pickMin: num("pickMin"), pickMax: num("pickMax"),
+    };
+    const jalM = hook.match(/jal: \{ rec: (0x[0-9A-Fa-f]+), id: (0x[0-9A-Fa-f]+), unit: (0x[0-9A-Fa-f]+) \}/);
+    const entM = hook.match(/entry: \{ rec: (0x[0-9A-Fa-f]+), id: (0x[0-9A-Fa-f]+), unit: (0x[0-9A-Fa-f]+) \}/);
+    const codeHex = (hexStr("code") || "").replace(/[^0-9A-Fa-f]/g, "");
+    const stockHex = (hexStr("stock") || "").replace(/[^0-9A-Fa-f]/g, "");
+    if (!jalM || !entM || !codeHex || !stockHex || H.off === undefined) bad("could not read PS_HOOK out of iso.js");
+    else {
+      const w = (i) => parseInt(codeHex.substr(i * 8 + 6, 2) + codeHex.substr(i * 8 + 4, 2)
+        + codeHex.substr(i * 8 + 2, 2) + codeHex.substr(i * 8, 2), 16) >>> 0;
+      const nwords = codeHex.length / 8;
+      (H.off + DELTA === H.va ? ok : bad)(`the block's vaddr and ISO offset agree (0x${H.va.toString(16)} = 0x${H.off.toString(16)} + delta)`);
+      (H.off >= ELF_BASE && H.off + H.span <= ELF_END ? ok : bad)("the whole helper block stays in the read block");
+      (H.maskOff + H.rows * H.stride === H.len && H.len <= H.span ? ok : bad)(
+        `code + table (${H.maskOff} + ${H.rows}x${H.stride}) is exactly PS_HOOK.len and fits the ${H.span}-byte routine`);
+      (codeHex.length === H.maskOff * 2 ? ok : bad)(`PS_HOOK.code is ${codeHex.length / 2} bytes, filling the block up to the table`);
+      (stockHex.length === H.len * 2 ? ok : bad)(`PS_HOOK.stock is ${stockHex.length / 2} bytes — every byte this editor writes`);
+      // No call site may live inside the block, or the two patches would fight.
+      const inside = sites.filter((s) => s.off + 8 > H.off && s.off < H.off + H.span);
+      (inside.length ? bad : ok)(inside.length ? `a call site sits inside the helper block: 0x${inside[0].off.toString(16)}` : "no call site lives inside the helper block");
+      // The three entry points: each must be a real address inside the code, and each `jal`
+      // word must decode back to it.
+      const ent = { rec: parseInt(entM[1], 16), id: parseInt(entM[2], 16), unit: parseInt(entM[3], 16) };
+      const jw = { rec: parseInt(jalM[1], 16) >>> 0, id: parseInt(jalM[2], 16) >>> 0, unit: parseInt(jalM[3], 16) >>> 0 };
+      const entBad = Object.keys(ent).filter((k) => ent[k] < H.va || ent[k] >= H.va + H.maskOff || ent[k] % 4
+        || ((0x0C000000 | ((ent[k] >> 2) & 0x03FFFFFF)) >>> 0) !== jw[k]);
+      (entBad.length ? bad : ok)(entBad.length
+        ? `PS_HOOK entry/jal disagree or fall outside the code: ${entBad.join(", ")}`
+        : "psRec / psId / psUnit are inside the code and their jal words decode back to them");
+      // Every entry starts a stack frame — a `jal` into the middle of an instruction pair, or
+      // into the table, would land here as something else entirely.
+      const entOk = Object.keys(ent).every((k) => (w((ent[k] - H.va) / 4) & 0xFFFF0000) >>> 0 === 0x27BD0000);
+      (entOk ? ok : bad)("each entry point begins with `addiu $sp,$sp,-N`");
+      // The constants baked into the machine code, re-derived from the JS beside it.
+      const enc = {
+        row0: ((0x09 << 26) | (5 << 21) | (3 << 16) | ((-H.first) & 0xFFFF)) >>> 0,   // addiu $v1,$a1,-first
+        rows: ((0x0B << 26) | (3 << 21) | (1 << 16) | H.rows) >>> 0,                   // sltiu $at,$v1,rows
+        recHi: ((0x0F << 26) | (1 << 16) | (((H.recBase >>> 16) + (H.recBase & 0x8000 ? 1 : 0)) & 0xFFFF)) >>> 0,
+        recLo: ((0x09 << 26) | (1 << 21) | (1 << 16) | (H.recBase & 0xFFFF)) >>> 0,
+        span: ((0x0B << 26) | (2 << 21) | (1 << 16) | (H.recCount * H.recStride)) >>> 0, // sltiu $at,$v0,N
+        stride: ((0x09 << 26) | (1 << 16) | H.recStride) >>> 0,                         // addiu $at,$zero,0x8C
+      };
+      const mask = H.va + H.maskOff;
+      const maskHi = ((0x0F << 26) | (1 << 16) | (((mask >>> 16) + (mask & 0x8000 ? 1 : 0)) & 0xFFFF)) >>> 0;
+      const maskLo = ((0x09 << 26) | (1 << 21) | (1 << 16) | (mask & 0xFFFF)) >>> 0;
+      const shift = Math.log2(H.stride);
+      const words = Array.from({ length: nwords }, (_, i) => w(i));
+      const has = (x) => words.includes(x >>> 0);
+      const checks = [
+        ["the row index is `$a1 - PS_HOOK.first`", words[0] === enc.row0],
+        ["...bounded by PS_HOOK.rows", words[1] === enc.rows],
+        ["the record array base is PS_HOOK.recBase", words[3] === enc.recHi && words[4] === enc.recLo],
+        ["...bounded by recCount x recStride", words[6] === enc.span],
+        ["...and divided by PS_HOOK.recStride", words[8] === enc.stride],
+        [`the row is shifted by log2(stride) = ${shift}`, words[13] === ((3 << 16) | (3 << 11) | (shift << 6)) >>> 0],
+        ["the table address is PS_HOOK.va + PS_HOOK.maskOff", words[16] === maskHi && words[17] === maskLo],
+        ["the no-match path tail-jumps to 0x16CB380", has(0x08000000 | ((0x16CB380 >> 2) & 0x03FFFFFF))],
+        ["...and the battle one to 0x16CB270", has(0x08000000 | ((0x16CB270 >> 2) & 0x03FFFFFF))],
+        ["psId resolves the character id through 0x16C6D08", has(0x0C000000 | ((0x16C6D08 >> 2) & 0x03FFFFFF))],
+        ["psUnit resolves the acting unit through 0x181B738", has(0x0C000000 | ((0x181B738 >> 2) & 0x03FFFFFF))],
+      ];
+      checks.forEach(([m, c]) => (c ? ok : bad)(m));
+      (H.pickMin === 1 && H.pickMax === 75 ? ok : bad)("the picker offers record indices 1..75 — the battle characters");
+      (Math.pow(2, Math.round(shift)) === H.stride && H.stride * 8 >= H.recCount ? ok : bad)(
+        "the table stride is a power of two and covers every record index");
+
+      // The fixture plants the same stock bytes; a drift between the two would make the e2e
+      // suite exercise a block iso.js does not recognise.
+      const syn = fs.readFileSync(path.join(REPO, "web", "tests", "synth-iso.mjs"), "utf8");
+      const synHex = ((syn.match(/export const PS_HOOK_STOCK =\n([\s\S]*?);\n/) || [])[1] || "").replace(/[^0-9A-Fa-f]/g, "");
+      (synHex === stockHex ? ok : bad)("synth-iso.mjs plants exactly the stock bytes iso.js expects");
+      const synJal = syn.match(/PS_HOOK_JAL = \{ rec: (0x[0-9A-Fa-f]+), id: (0x[0-9A-Fa-f]+), unit: (0x[0-9A-Fa-f]+) \}/);
+      (synJal && [1, 2, 3].every((i) => parseInt(synJal[i], 16) >>> 0 === jw[["", "rec", "id", "unit"][i]]) ? ok : bad)(
+        "synth-iso.mjs and iso.js agree on the three trampoline jal words");
+    }
+
+    // The delay slot is the one word this editor must never touch: every entry in the table
+    // carries it, the audit compares it, and the write path only ever rewrites `s.off`.
+    (/writeW\(s\.off, 4, w\);/.test(iso) ? ok : bad)("psSyncSites rewrites the jal word and nothing else");
+    (/const PS_LEGACY_YES = 0x0004102B;/.test(iso) ? ok : bad)("v1.106.0's answer word is still recognised (0x0004102B)");
   }
 }
+
 
 // 2b) shop counter index: the JSON the Shops tab labels itself from must agree with the
 // offsets above, and must not name a location that has no stock on the disc.
