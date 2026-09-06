@@ -160,6 +160,16 @@ console.log("recruit prerequisites (real s3_recruit_needs.json):");
   check("the same enemy at two levels is one enemy", /Red Mantik Lv39\/45/.test(bowl));
   check("droppers beyond the top few are counted, not hidden", /\+\d+ more dropper/.test(bowl));
 
+  // an errand that says BUY needs the money, not the item
+  const mole = RC.needChips(NEEDS["Dominic"], { gold: 100 })[0];
+  check("a bought item is priced, not fetched",
+    mole.buy === true && mole.amount === 600 && /buy it from Dominic: 600 potch/.test(mole.text));
+  check("...and measured against the purse", mole.ok === false && mole.short === 500);
+  check("...and it is still an item chip carrying its id", mole.kind === "item" && mole.id === 194);
+  check("affording it clears the chip", RC.needChips(NEEDS["Dominic"], { gold: 600 })[0].ok === true);
+  check("an item you have to GIVE is not turned into a purchase",
+    !(NEEDS["Barts"].items || [])[0].buy && !(NEEDS["Augustine"].items || [])[0].buy);
+
   // an item nothing in the repo covers says so rather than implying knowledge
   const statue = RC.needChips(NEEDS["Billy"], {});
   check("an unsourced item admits it", statue.every((c) => /no source in the editor's tables/.test(c.text)));

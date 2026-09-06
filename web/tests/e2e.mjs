@@ -70,9 +70,10 @@ async function newPage(viewport) {
   await page.addInitScript(fakeHandle());
   return page;
 }
-// The full-screen boot gate covers the mode tabs until Pyodide is up, and these tests abort
-// the Pyodide CDN on purpose — so take the gate down first. That button exists for real users
-// too: the ISO editor needs no Python. web/tests/boot-gate.mjs is what tests the gate itself.
+// The boot gate covers the save loader card until Pyodide is up, and these tests abort the
+// Pyodide CDN on purpose, so it would sit there for the whole run. It no longer covers the
+// mode tabs — clicking through to the ISO editor works with it up — but taking it down keeps
+// these tests off the gate's geometry entirely. web/tests/boot-gate.mjs tests the gate itself.
 async function dismissBoot(page) {
   const b = await page.$("#bootHide");
   if (b) await b.click().catch(() => {});   // may have self-closed already (stubbed engine)
@@ -320,7 +321,8 @@ head("Byte-exact edits across every editable view");
   // Gear: DEF/price/effect/desc
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
   await page.fill('input.gr[data-l="DEF"]', "42"); await page.dispatchEvent('input.gr[data-l="DEF"]', "change");
-  await page.fill('input.gr[data-l="Price"]', "9999"); await page.dispatchEvent('input.gr[data-l="Price"]', "change");
+  // +0x08 is a price TIER into the shared 15-step ladder, not potch (see the offsets notebook)
+  await page.fill('input.gr[data-l="Price tier"]', "4"); await page.dispatchEvent('input.gr[data-l="Price tier"]', "change");
   await page.selectOption(".ge-type >> nth=0", "1");   // effect0 type -> HP regen
   // Food: heal/proc
   await page.click('#isoTabs [data-v="food"]');
@@ -354,7 +356,7 @@ head("Byte-exact edits across every editable view");
   check("unite0 chance = 40%", r.u16(UNITE.off + UNITE.chance) === 40);
   check("unite summary shows the radius", /r2/.test(uniteSum), uniteSum);
   check("gear DEF = 42", r.u16(GEAR.P + GEAR.stride + GEAR.def) === 42);
-  check("gear price = 9999", r.u32(GEAR.P + GEAR.stride + GEAR.price) === 9999);
+  check("gear price tier = 4", r.u32(GEAR.P + GEAR.stride + GEAR.price) === 4);
   check("gear effect0 type = 1", r.u16(GEAR.P + GEAR.stride + GEAR.effs[0]) === 1);
   check("food0 heal = 250", r.u16(FOOD.off + FOOD.heal) === 250);
   check("food0 proc = 60", r.u16(FOOD.off + FOOD.proc) === 60);
@@ -3114,7 +3116,7 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
     const CHARS = [
       ['Hugo','Hugo',true], ['Chris','',false], ['Jeane','',false],
       ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false],
-      ['Augustine','',false], ['Watari','',false]
+      ['Augustine','',false], ['Watari','',false], ['Dominic','',false]
     ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
       level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
       stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
@@ -3132,7 +3134,8 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
       FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
       runPython(code) {
         if (code.includes('load_reference()')) return JSON.stringify({
-          items: [{ id: 315, name: 'Rose Brooch', cat: 'valuable' }, { id: 1, name: 'Medicine D', cat: 'consumable' }],
+          items: [{ id: 315, name: 'Rose Brooch', cat: 'valuable' }, { id: 1, name: 'Medicine D', cat: 'consumable' },
+                  { id: 194, name: 'Mole Armor', cat: 'armor' }],
           skills: [], charById: { 1: 'Hugo' },
           charRoster: { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 }, charChoices: [1, 2, 3, 4, 5, 6] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
@@ -3174,6 +3177,11 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
     /Rose Brooch/.test(needs) && /Iksay Village's Item Shop/.test(needs) && /stages 1-3 of 3/.test(needs));
   check("a potch need is measured against this save's purse", /100,000 potch — you have 1,000/.test(needs));
   check("...and is flagged as unaffordable", (await page.locator(".starstbl .need.short").count()) === 1);
+  // an errand that says BUY needs the money, not a free copy of the goods
+  const buyChip = await page.textContent('.starstbl .need:has-text("Mole Armor")');
+  check("a bought item is priced instead of fetched", /buy it from Dominic: 600 potch/.test(buyChip));
+  check("...with no offer to conjure one into the bag",
+    (await page.locator('.starstbl [data-needitem="194"]').count()) === 0);
   // "+ get it" hands the item over: into the bag of the party this save is playing (Hugo's),
   // staged like any other edit
   check("the item chip offers to put it in the current party's bag",
