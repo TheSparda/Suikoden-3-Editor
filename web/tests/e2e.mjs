@@ -2262,13 +2262,15 @@ head("Runes — families, granted spells, who has it");
   const tags = await page.$$eval(".srctag", (es) => es.map((e) => e.textContent.trim()));
   check("rune provenance stays tagged disc vs guide", tags.length > 0 && tags.every((t) => t === "disc" || t === "guide"));
   check("the view stages nothing", await nothingStaged(page));
-  // The tab is no longer read-only — it owns the rune's NAME, its menu text (issue #11: the
-  // only copy of it the game actually reads) and its effect bits (issue #12). It must still
-  // stage nothing until touched, and it must carry ONLY those fields: any other input here
-  // would be an accident, since every other rune property belongs to another tab.
+  // The tab is no longer read-only — it owns the rune's NAME and its menu text (issue #11: the
+  // only copy of it the game actually reads). It must still stage nothing until touched, and it
+  // must carry ONLY those two: what a rune DOES belongs to the spell record, and a second set of
+  // those fields here is exactly the duplication the granted-spell links replaced.
   const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable fields are name, menu text and effect bits",
-    kinds.every((k) => /^(rname|rdesc|sp18|sp18hex|rfx)$/.test(k)), kinds.join(" | "));
+  check("the only editable fields are the name and the menu text",
+    kinds.every((k) => /^(rname|rdesc)$/.test(k)), kinds.join(" | "));
+  check("no spell fields are duplicated onto this tab",
+    (await page.locator("#isoView details.runefx, #isoView input.rfx, #isoView [data-fxpreset]").count()) === 0);
   // A rune is only editable when its table row still names it — the same check runeTblDesc()
   // makes before trusting a record. The fixture fills a handful of the 72 rows; the rest are
   // zeroed and stay read-only, so the editor never writes into a row it can't vouch for.
@@ -3538,7 +3540,31 @@ head("Runes tab — rename and menu text");
     const i = document.querySelector("#isoView input.rname"); return i ? i.value : null; }, NEW);
   check("the row is still findable under its original name", stillThere === NEW, String(stillThere));
 
+  // Every spell a rune grants is a link to that spell's own record. This is the only route
+  // from an attack rune to its numbers: Kite and Phoenix carry no status effect, so the inline
+  // effect editor never appears for them, and before this the row was a dead end.
+  await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
+  await page.waitForTimeout(120);
+  const chip = await page.evaluate(() => {
+    const c = document.querySelector("#isoView .grants button.spellchip");
+    return c ? { text: c.textContent.trim(), spi: c.dataset.spi } : null;
+  });
+  check("a granted spell is a link, carrying the spell's index", !!chip && chip.spi === String(mapping.twin.spellIdx),
+    JSON.stringify(chip));
+  await page.click("#isoView .grants button.spellchip");
+  await page.waitForTimeout(200);
+  const landed = await page.evaluate((spi) => {
+    const d = document.querySelector(`#isoView details.char[data-i="${spi}"]`);
+    return { view: document.querySelector("#isoTabs .on")?.dataset.v, found: !!d, open: d ? d.open : null };
+  }, String(mapping.twin.spellIdx));
+  check("clicking it lands on the Spells tab", landed.view === "spells", JSON.stringify(landed));
+  check("...with that spell's record already open", landed.found && landed.open === true, JSON.stringify(landed));
+
   // An empty name would leave the rune nameless in every list — refused, not written.
+  // (The link check above left us on the Spells tab.)
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
+  await page.waitForTimeout(150);
   await page.fill("#isoView input.rname", "");
   await page.dispatchEvent("#isoView input.rname", "change");
   await page.waitForTimeout(120);
