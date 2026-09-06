@@ -218,84 +218,86 @@ python3 s3patch.py set-aoe     "ISO" --index 3 --off    # make Explosion single-
 python3 s3patch.py set-spell   "ISO" --index 0 --field flags14  --value 0x830A   # full manual flag write
 ```
 
-## Custom runes — rune→spell mapping (partially located 2026-08-09)
-A **spell-index list table** sits at **file 0x3B0FA8** (preceded by a pointer
-0x019E7690). It is runs of 1-byte spell indices (into the 94-entry spell table)
-separated by `0x00` bytes, e.g. `00 01 02 03 | 04..0B | 0C..1F | 20 21 22 | ...`.
-A second identical copy starts at 0x3B1088.
+## Custom runes — rune→spell binding (SOLVED 2026-09-06, in the rune table)
+**It was never in code.** Three earlier sessions hunted the ELF for a rune-definition
+struct and came away with "UNSOLVED, needs Ghidra". The binding is four bytes past
+where the editor had already stopped reading: **RUNE_TBL (file `0x3EAF78`, stride
+`0x20`, indexed by ITEM id) `+0x18` is four `u16` spell numbers**, and that array IS
+the list of spells the rune grants.
 
-Status: **mechanism found, keying NOT yet confirmed.** These index-lists are how
-the game says "this group grants spells X,Y,Z,W", which is exactly what you'd edit
-to build a custom rune's spell set. What's still unverified is which group maps to
-which rune *item ID* (13D+) — needs a cross-reference pass (find the struct that
-holds both a rune id and a pointer/offset into this list).
+The whole record, decoded:
 
-What IS fully editable today (spell effect table @0x3EC2A0): for any of the 94
-spells you can change damage (+0x1C), cast time (+0x10), element (+0x04),
-target/AOE (+0x14), and status effect (+0x18). So "make rune X's spells hit harder
-/ become AOE / add poison" works right now. "Make rune X grant a completely
-different set of spells" needs the keying above confirmed first.
+| Offset | Type | Meaning |
+|---|---|---|
+| +0x00 | u32 | name pointer |
+| +0x04 | u32 | description pointer (the copy the rune menu reads — issue #11) |
+| +0x08 | u32 | 1 for every rune |
+| +0x0C | u32 | shop price (0 = never sold) |
+| +0x10 | u32 | slot mask: 7 = Head/Right/Left, 1 = Pale Gate (head only), 2 = Drain |
+| +0x14 | u16 | element family — same numbering as the spell record's element |
+| +0x16 | u16 | category: 0 = magic/support, 2 = special-attack rune |
+| **+0x18** | **4 × u16** | **granted spell numbers, 1-BASED, 0 = an unused slot** |
 
-## Custom rune — Level 1 (reskin) vs Level 2 (reassign spells)
-**Level 1 (WORKS NOW): change what a rune's existing spells do.** The `reskin`
-command rewrites any spell's power / cast / element / AOE / status in one call:
+1-based is the engine's own convention for the spell table (`rec = 0x019A4A88 + id*0x20`),
+so slot value N is the editor's spell row N-1. Flaming Arrows is 1, not 0.
+
+### Why the old byte-search could not find it
+The 2026-08-09 note is right that value-matching for `0,1,2,3` drowns in false positives
+— but it was searching for the wrong shape. The quads are **not** stored as the bytes
+`00 01 02 03`; they are stored 1-based and 16-bit, `01 00 02 00 03 00 04 00`, inside a
+record whose first eight bytes are pointers. Nothing was going to match. The three
+"candidate tables" ruled out that day (`0x3B0FA8` item remap, `0x42EE90`, the spell
+`kind` high byte) were all correctly ruled out; the table was simply never a candidate,
+because RUNE_TBL was already filed under "rune text" and not re-examined.
+
+### Verification (exhaustive, pristine SLUS-20387)
+All 49 spell-granting runes decode exactly, and every count the game ships is just
+zero-padding on the same four slots:
+
+- **22/22 magic runes** reproduce the Suikosource spell lists byte for byte, including
+  the sliding window: Fire `1,2,3,4` → True Fire `3,4,5,6`, Lightning `7,8,9,10` →
+  True Lightning `9,10,11,12`.
+- **Blinking** `35,36,37,0` and **Shield** `31,32,33,0` — three spells, one zero.
+- **Sword of Rage / Thunder / Cyclone** `38,39,0,0` etc. — two spells, two zeros.
+- **27 special-attack runes** (Kite `78`, Phoenix `52`, Goss `75` …) each grant exactly
+  one spell, which is the spell that shares the rune's name — and each therefore carries
+  **three free slots**, 81 across the set.
+- **23 passive support runes** (Fortune, Balance, Fury …) carry four zeros, which is
+  why they have no battle menu at all.
+
+So "a rune with fewer than four spells" is not a special case the engine handles; it is
+padding. Writing a spell number into a zero slot is the whole of *give this rune another
+spell* — a 2-byte edit per slot.
+
+### Level 2 is now open
 ```
-python3 s3patch.py reskin "ISO" --index 5 --power 3000 --aoe on --element Water --status sleep
+Kite  = item 365, record file 0x3EDD18, slots at 0x3EDD30
+        50 D7 9D 01 | 20 D7 9D 01 | 01 00 00 00 | 20 03 00 00
+        07 00 00 00 | 00 00 02 00 | 4E 00 | 00 00 | 00 00 | 00 00
+                                     ^Kite   ^^^^^^ three free slots
 ```
-`--status` accepts: none, poison, instant-death, unbalance, sleep, teleport/chant,
-silence/berserk, buff-pdf/mdf, sword-*, resist-*. Shows before/after decode and
-backs up first (--no-backup to skip). To reskin a whole rune, reskin each of its
-4 spell indices.
+Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0). The
+old `RUNE_SPELLS` hardcoded name map is **deleted** — the binding is read off the disc,
+so there is no second copy to drift.
 
-**Level 2 (NOT cracked): make a rune grant a DIFFERENT set of spells.**
-Investigated three candidate tables, none is the rune→spell binding:
-- 0x3B0FA8 = sequential item remap (0..0x6D), not rune grouping.
-- 0x42EE90 = spell UNLOCK-LEVEL thresholds, 4×u16 per group (e.g. [1,20,60,99]).
-  *(This one IS useful on its own: it sets the character levels at which each of a
-  rune's 4 spells becomes available — editable, just not the spell identity.)*
-- spell `kind` high byte = loose element/class tag, mixes runes; not a selector.
-The actual binding is likely a rune-definition struct keyed by rune item ID (13D+)
-pointing into the spell table — still needs a dedicated hunt to confirm before any
-Level-2 edits are safe.
+### Spare spell records
+Spell rows **80..93** (14 of the 94) are fully formed records — cast 50, target `0x0A`
+single foe, power 100 — with **null name and description pointers**. They are spare
+slots. A genuinely new spell needs strings pointed at them; the record itself is ready.
 
-## Level 2 rune→spell binding — investigation status (2026-08-09)
-Ground truth from Suikosource: Fire Rune grants spells [0,1,2,3], True Fire
-[2,3,4,5], Lightning [6,7,8,9], Earth [24,25,26,27], etc.
+### What is still NOT known
+- **Unlock levels.** Which character level gates a rune's 2nd/3rd/4th spell is not in
+  this record and has not been located. `0x42EE90` was tentatively called an unlock-level
+  table on 2026-08-09; re-reading it, rows 1-3 and 17-21 are `(1, 20, 60, 99)` but rows
+  4-16 and 22-37 are rising curves up to 950, and its keying is unconfirmed. Treat it as
+  unidentified.
+- **Whether an attack rune surfaces more than one spell.** Kite is category `2` (+0x16);
+  every magic rune is `0`. The menu code may read slot 1 only for category-2 runes. If a
+  reassigned Kite shows one spell in game, try setting +0x16 to 0 and +0x14 to an element
+  family so it is treated as a magic rune. **Untested — verify on the play disc.**
 
-Why byte-search FAILS to find the binding: those quads are contiguous ascending
-runs (0,1,2,3…), which match generic counter/index arrays all over the ELF —
-every hit at 0x3C91xx/0x3C93xx is a false positive (literally `01 00 02 00 03 00…`).
-So value-matching cannot isolate the table. Confirmed dead ends this session:
-0x3B0FA8 (item remap), 0x42EE90 (unlock-level thresholds), spell `kind` hi byte.
-
-What WOULD crack it (needs a disassembler pass, not byte search):
-1. Load the boot ELF in Ghidra/IDA (base vaddr 0x165D000) and find the function
-   that reads the spell table (base vaddr 0x019A4AA0, stride 0x20). Its caller
-   passes the spell index — trace back to where that index comes from per rune.
-2. OR find the rune ITEM definition struct (keyed by item id 13D+) and look for a
-   field that is a small int / pointer resolving to a spell index or index-list.
-Until then, Level-2 (reassign a rune's spell lineup) is UNSOLVED and must not be
-attempted by blind byte edits.
-
-## Level-1 rune reskin — shipped & tested (2026-08-09)
-Two commands, both validated on an APFS clone of the ISO (original never touched):
-```
-# one spell
-python3 s3patch.py reskin      "ISO" --index 3 --power 3000 --aoe on --status poison
-# a whole rune's spell set at once (resolves spells by name from RUNE_SPELLS map)
-python3 s3patch.py reskin-rune "ISO" --rune fire --power 3000 --aoe on
-```
-Known runes: fire, rage, truefire, lightning, thunder, truelightning, cyclone,
-flowing, earth, motherearth, trueearth, shield, blinking, jongleur, palegate,
-swordofrage, swordofthunder, swordofcyclone.
-
-Safe testing: `Editor/make_test_iso.sh "ISO"` makes a clone (instant on APFS via
-`cp -c`), applies an example Fire-rune buff, and prints PCSX2 verification steps.
-Rule going forward: test writes on a clone, never the original.
-
-Confirmed NOT possible from this table: visual/animation reskin (link fields
-correlate with behavior/kind, not graphics assets; visuals live in separate
-asset files). Level-2 spell reassignment remains unsolved (needs Ghidra).
+Confirmed NOT possible from the spell table: visual/animation reskin (link fields
+correlate with behavior/kind, not graphics assets; visuals live in separate asset files).
 
 ## Cross-platform GUI: s3editor.py (web app, 2026-08-09)
 Stdlib-only local web app (no pip installs). Reuses all s3patch logic.
