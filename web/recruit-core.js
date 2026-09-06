@@ -205,12 +205,13 @@
       // is "from the Vinay del Zexay trading post"), or nobody has said — which the checklist
       // owns up to rather than dressing up.
       const blank = it.lineSays ? "only the line above" : "no source in the editor's tables";
-      out.push({ kind: "item", name: it.name, ok: null,
+      out.push({ kind: "item", name: it.name, id: it.id, ok: null,
         text: `${it.name} — ${where.length ? where.join(" · ") : blank}` });
     });
     (needs && needs.potch || []).forEach((amount) => {
       const gold = typeof o.gold === "number" ? o.gold : null;
-      out.push({ kind: "potch", name: amount, ok: gold === null ? null : gold >= amount,
+      out.push({ kind: "potch", name: amount, amount, short: gold === null ? null : Math.max(0, amount - gold),
+        ok: gold === null ? null : gold >= amount,
         text: `${num(amount)} potch${gold === null ? "" : ` — you have ${num(gold)}`}` });
     });
     (needs && needs.first || []).forEach((f) => {
@@ -223,8 +224,69 @@
     return out;
   }
 
+  // Where a "＋ add" from the checklist should put the item: the bag the party you are actually
+  // playing is carrying. The save's bag layout depends on how far the story has gone — before
+  // the parties merge each protagonist carries their own bag (plus their own storage); after,
+  // there is one shared bag — so "your inventory" is not a single place, and dropping a Rose
+  // Brooch into Chris's bag while you are playing Hugo would put it somewhere you cannot reach.
+  //
+  // leaderName is who the save says you walk around as; teamsOf(name) gives that character's
+  // pre-merge team(s) from the recruit bitmask. `taken` is the slots already staged this
+  // session, which are no longer free. Returns null only when the save has no bags at all.
+  function bagForNeeds(save, leaderName, teamsOf, taken) {
+    const inv = (save && save.inventory) || [];
+    if (!inv.length) return null;
+    const held = new Set(taken || []);
+    const idx = (region) => inv.findIndex((b) => b.region === region);
+    const freeIn = (b) => (b && (b.appendSlots || b.freeSlots) || []).filter((sl) => !held.has(sl));
+
+    const merged = !!(save.global && save.global.merged);
+    let bi = -1, why = "";
+    if (merged) {
+      bi = idx("Party bag");
+      why = "the parties have merged, so there is one shared bag";
+    } else {
+      const teams = (leaderName && teamsOf ? teamsOf(leaderName) : []) || [];
+      const team = RECRUITERS.includes(leaderName) ? leaderName : teams.length === 1 ? teams[0] : null;
+      if (team && idx(team) >= 0) {
+        bi = idx(team);
+        why = RECRUITERS.includes(leaderName)
+          ? `you are playing as ${leaderName}`
+          : `${leaderName} is on ${team}'s team, and that is who you are playing as`;
+      } else {
+        // Nothing in the save says whose chapter is running — fall back to the carried bag with
+        // the most in it, and say so rather than pretending it was derived.
+        let best = -1;
+        inv.forEach((b, i) => {
+          if (!RECRUITERS.includes(b.region)) return;
+          if (best < 0 || b.used > inv[best].used) best = i;
+        });
+        bi = best;
+        why = "the save doesn't say whose chapter is running, so this is the fullest carried bag";
+      }
+    }
+    if (bi < 0) bi = 0;
+    // A full bag is not a dead end: that team's storage takes the overflow.
+    let slot = freeIn(inv[bi])[0];
+    if (slot === undefined) {
+      const store = idx(merged ? "Storage" : `${inv[bi].region} storage`);
+      if (store >= 0 && freeIn(inv[store]).length) {
+        why += ` — that bag is full, so this goes to ${inv[store].region}`;
+        bi = store;
+        slot = freeIn(inv[store])[0];
+      }
+    }
+    return {
+      bi, region: inv[bi].region, why,
+      slot: slot === undefined ? null : slot,
+      // Before the merge, an empty carried bag means that chapter hasn't begun; the game stocks
+      // the bag when it does and overwrites whatever is in it, so anything added now is lost.
+      unstarted: !merged && inv[bi].used === 0 && RECRUITERS.includes(inv[bi].region),
+    };
+  }
+
   const api = { RECRUITERS, recState, setRecruit, applyCanonical, teamCounts, previewChanges,
-    orderStars, groupStars, nextStar, needChips };
+    orderStars, groupStars, nextStar, needChips, bagForNeeds };
   if (typeof module !== "undefined" && module.exports) module.exports = api;   // Node (CJS)
   root.RecruitCore = api;                                                       // browser global
 })(typeof self !== "undefined" ? self : globalThis);
