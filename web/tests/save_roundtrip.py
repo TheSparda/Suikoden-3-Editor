@@ -598,6 +598,36 @@ def main():
     check("a mount follows its rider when an earlier member is removed",
           m2[p2.index(L)] == 309 and sum(1 for x in m2 if x) == 1, str(m2))
 
+    print("Mount slots are editable from the party editor:")
+    # The value here is the MODEL the scene stages; whether anything is staged at all is gated
+    # on the rider's +0x66 in the ISO. That split is why this is worth exposing: the model is
+    # read out of the party list WITHOUT the `(v - 308) < 2` clamp the ISO field is subject to.
+    base = bytearray(build_synth())
+    for k, v in enumerate([1, 25, 26, 0, 0, 0]):
+        struct.pack_into("<H", base, s3save.PARTY_OFF + k * 2, v)
+    struct.pack_into("<H", base, s3save.PARTY_MOUNT_OFF + 2 * 2, 309)
+    base = bytes(base)
+
+    out, n = s3save.apply_edits_to_gamedata(base, {}, party_mount_edits={0: 325})
+    check("a mount edit writes the model id", s3save.decode_party_mounts(out)[0] == 325,
+          str(s3save.decode_party_mounts(out)))
+    check("...and counts as one changed field", n == 1, str(n))
+    check("...and leaves the other mount slots alone", s3save.decode_party_mounts(out)[2] == 309)
+    # Order matters: the formation rebuild shuffles mounts to follow their riders, so a mount
+    # edit batched with a party edit has to be applied after it, not before.
+    out2, _ = s3save.apply_edits_to_gamedata(base, {}, party_edits={1: 0},
+                                             party_mount_edits={0: 325})
+    check("a party edit in the same batch does not clobber the mount edit",
+          s3save.decode_party_mounts(out2)[0] == 325, str(s3save.decode_party_mounts(out2)))
+    out3, _ = s3save.apply_edits_to_gamedata(base, {}, party_mount_edits={2: 0})
+    check("writing 0 removes a staged mount", s3save.decode_party_mounts(out3)[2] == 0)
+    out4, _ = s3save.apply_edits_to_gamedata(base, {}, party_mount_edits={9: 325})
+    check("an out-of-range slot is ignored",
+          s3save.decode_party_mounts(out4) == s3save.decode_party_mounts(base))
+    out5, _ = s3save.apply_edits_to_gamedata(base, {}, party_mount_edits={0: 42})
+    check("an unclamped model (Ruby, 42) can be written — the party list has no 308/309 gate",
+          s3save.decode_party_mounts(out5)[0] == 42)
+
     print("Memory-card ECC helper:")
     zero = s3save.ecc_page(bytes(512))
     check("ecc_page returns 16 bytes", len(zero) == 16)

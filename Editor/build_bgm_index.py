@@ -38,6 +38,10 @@ filter keeps 91% of raw kind-1 hits and collapses 33 candidate track ids to 13 c
 ones — the values it drops are the obvious garbage (23908, 55482), which is the check
 that says it is separating signal from noise rather than just shrinking the set.
 
+ALSO indexed: the 29 streamed tracks themselves (see `streams`), so the editor can play
+them straight off the disc. What is NOT indexed is any link between a track id and a
+stream — see the note below.
+
 NOT resolved here: what the track ids sound like. There are 13 of them and no name table
 on the disc; mapping id -> song needs a patched disc and an emulator, not a scan.
 """
@@ -49,6 +53,18 @@ SOUND_OPS = (59, 60)            # both dispatch to the handler at 0x17AF1A8
 KIND_BGM = 1                    # table[1] = 0x1000, the prevBgm tag
 N_KINDS = 8                     # the table at 0x1983020 has 8 entries
 INSTR = 18                      # bytes
+
+# ---- the streamed music itself -------------------------------------------------------
+# /SD/STR.BIN is one concatenation of `Svag` streams — Sony interleaved VAG, i.e. plain
+# PS-ADPCM, 44.1 kHz stereo. What locates them is a table in MODULES/SD_CALL.IRX: 29
+# records of {u32 file, u32 startSector, u32 ?, u32 flags}, sectors relative to STR.BIN.
+# All 29 starts land exactly on a `Svag` header, which is what says the table is the right
+# one. The third word is NOT a length — see streams() — so sizes come from the headers.
+# Each stream is a 0x400 header, a second copy of it, then the data.
+STR_BASE, STR_SIZE = 0xE617C800, 47712256
+SDCALL_TABLE = 0x4C8800 + 0x1A680
+N_STREAMS = 29
+SVAG_DATA = 0x800               # header + its duplicate, then PCM
 
 
 def town_subfiles(sub):
@@ -74,6 +90,48 @@ def cues(data):
         if w[i + 3] or w[i + 5] or w[i + 6] or w[i + 7]:
             continue
         out.append((i * 2, w[i], w[i + 1], w[i + 2], w[i + 4], w[i + 8]))
+    return out
+
+
+def streams(f):
+    """The 29 streamed music/ambience tracks, from the SD_CALL.IRX table.
+
+    What the record's third word is NOT: the stream's length. It disagrees with the actual
+    data size on 9 of the 29 (record 4 declares 282 sectors where the data needs 243;
+    record 17 declares 452 where the data needs 526), so it is something else — a play or
+    loop length, unread. The authoritative size is the one in each stream's own `Svag`
+    header, and that is what this trusts. Recorded as `sectors` but never used to compute
+    an offset; believing it would have handed the editor truncated audio on six tracks and
+    run two others off their end.
+
+    Correct-or-absent: every record must start on a readable `Svag`, starts must strictly
+    increase from 0, each stream's data must end before the next one starts, and the last
+    must end inside STR.BIN.
+    """
+    f.seek(SDCALL_TABLE)
+    recs = [struct.unpack("<4I", f.read(16)) for _ in range(N_STREAMS)]
+    out, prev = [], -1
+    for i, (fid, start, ln, flags) in enumerate(recs):
+        if fid != 0 or start <= prev:
+            raise SystemExit(f"stream record {i} out of order (file={fid} start={start})")
+        prev = start
+        f.seek(STR_BASE + start * SEC)
+        head = f.read(SVAG_DATA)
+        if head[0x400:0x404] != b"Svag":
+            raise SystemExit(f"record {i} has no Svag header at sector {start}")
+        size, rate, ch, inter = struct.unpack_from("<4I", head, 0x404)
+        if not (1 <= ch <= 2 and 8000 <= rate <= 48000):
+            raise SystemExit(f"record {i} has an implausible Svag header: {size},{rate},{ch}")
+        # PS-ADPCM: 16 bytes carry 28 samples, per channel
+        secs = size / ch / (rate * 16 / 28)
+        out.append({"i": i, "sect": start, "sectors": ln, "flags": flags,
+                    "off": STR_BASE + start * SEC + SVAG_DATA, "bytes": size,
+                    "rate": rate, "ch": ch, "inter": inter, "secs": round(secs, 2)})
+    for i, st in enumerate(out):
+        end = st["sect"] * SEC + SVAG_DATA + st["bytes"]
+        limit = out[i + 1]["sect"] * SEC if i + 1 < len(out) else STR_SIZE
+        if end > limit:
+            raise SystemExit(f"stream {i} runs {end - limit:,} bytes past the next stream")
     return out
 
 
@@ -105,7 +163,7 @@ def main():
                    "rooms[] are the 0x3C room record's audio fields (+0x22 BGM, +0x24 "
                    "ambient SE). Track ids are unnamed. See Suikoden3_ISO_offsets.md "
                    "'BGM / sound control'.",
-           "kindBgm": KIND_BGM, "script": [], "rooms": []}
+           "kindBgm": KIND_BGM, "script": [], "rooms": [], "streams": []}
 
     bykind = collections.Counter()
     tracks = collections.Counter()
@@ -131,6 +189,7 @@ def main():
                                       "trackOff": off + o + 4})
 
         out["rooms"] = room_audio(rooms)
+        out["streams"] = streams(f)
 
         # Every emitted offset must re-read the value the index claims for it.
         bad = 0
@@ -161,6 +220,13 @@ def main():
     print(f"\n{len(tracks)} distinct BGM track ids:")
     for t, c in sorted(tracks.items(), key=lambda x: -x[1]):
         print(f"   0x{t:04X} ({t:5d}) : {c:5d} cue(s)")
+    print(f"\n{len(out['streams'])} streamed tracks in /SD/STR.BIN "
+          f"(~{sum(s['secs'] for s in out['streams']) / 60:.1f} min; sizes come from each "
+          f"Svag header, not the table's third word):")
+    for st in out["streams"]:
+        print(f"   [{st['i']:2}] sect {st['sect']:>6} +{st['sectors']:<6} "
+              f"{st['bytes']:>10,}B  {st['rate']}Hz ch{st['ch']}  "
+              f"{int(st['secs']) // 60}m{st['secs'] % 60:04.1f}s")
     print("\nper archive:")
     for arc in sorted(byarc):
         ids = ", ".join(f"0x{t:04X}x{c}" for t, c in
