@@ -1206,7 +1206,30 @@ So Chris is bundled ride-ready in **six** areas to Hugo's three, but only **two*
 carry a ground horse: Brass Castle and Budehuc Castle. The other four depend on her arriving
 mounted, or on a horse the area archive does not name.
 
-**The unresolved piece is whether `ETC.BIN` can supply a mount.** Whole-ISO scans place a
+### 14h. Settled from the save corpus: the party list carries the mount, and `ETC.BIN` loads
+
+The five extracted saves in `Saves/_extracted_s3/` confirm §14b directly. `gamedata` and
+`gamedata_u04` hold the party **Hugo, Fubar, Chris, Geddoe, Thomas, Emily** and a **309** at
+party position **9**. Chris is at position **3**. That is `pos + 6`, on disc, in a real save
+— the layout `PartyPut` writes and the layout handle bit `0x4000` reads.
+
+So the party table at save `0x3216` is **twelve** u16s, not six: positions 1–6 are the
+members and 7–12 are their mounts. `s3save.decode_party_mounts` reads them and the save
+editor shows them in a Mount column.
+
+**And it answers the `ETC.BIN` question below: Chris is on `s2um`.** Not `zkum`, not `krum`
+— the exact model her `+0x66` names, whose only complete copy is in `ETC.BIN`. A model can
+therefore be staged from `ETC.BIN` without the area archive naming it, so **the per-area
+`cha_` census is not a ceiling**. Every "ships in / does not ship in" statement in this
+document is about what an archive *names*; it cannot be used to predict that a model will
+not appear. The `krum` duplication argument below is wrong, or at least not decisive.
+
+That widens §14f considerably: Hugo's three areas are where his ride clips and a Karaya
+horse are *bundled together*, not necessarily the only places he could be mounted.
+
+---
+
+**Superseded — kept for the reasoning.** Whole-ISO scans place a
 complete `s2um` — Chris's own horse, and the value in her `+0x66` — **only** in `ETC.BIN`,
 plus a single stray `cha_s2um_172` in AKMT. She demonstrably rides, so either `ETC.BIN` is
 reachable at run time or she is riding `zkum`/`krum` in practice. Two observations pull in
