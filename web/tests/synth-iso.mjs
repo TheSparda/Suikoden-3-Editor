@@ -187,6 +187,10 @@ export const ENEMY_REC_B = 0x466000, ENEMY_AUX_B = 0x466100;   // copy 2
 export const ZONE_SLOTS_A = 0x466200, ZONE_PARTY_A = 0x466240, ZONE_MEM_A = 0x466290;
 export const ZONE_SLOTS_B = 0x466300, ZONE_PARTY_B = 0x466340, ZONE_MEM_B = 0x466390;
 export const WAR_REC_A = 0x466400, WAR_REC_B = 0x4664A0;       // war-unit fixture (two copies)
+// A second war unit whose id is below 0x100 — the game's actor enum, i.e. a "leader unit"
+// rather than a generic soldier tier. The War view's bulk scopes split on exactly that
+// boundary, so the fixture needs one of each to prove the split.
+export const WAR_LEAD_A = 0x466600, WAR_LEAD_B = 0x4666A0;
 // Room (per-area encounter rate) fixture — two chapter-variant tables of three rooms.
 // Placed clear of the enemy/war spans so it gets its OWN aux window, the way the real
 // disc's town-data sub-files do, instead of being absorbed into an enemy range.
@@ -221,8 +225,10 @@ export const ENEMY_TEST_PACKS = {
   }],
 };
 
-// War-units fixture (War tab): one ZxnKn record in two copies, stats-only —
-// war variants carry no aux/reward offsets. Injected via window.S3_TEST_WAR_UNITS.
+// War-units fixture (War tab): two packs of one record each, both in two copies, stats-only —
+// war variants carry no aux/reward offsets. A generic soldier tier (ZxnKn, list1 id 0x132) and
+// a "leader unit" (Leo, actor-enum id 0x12), because the War view's bulk scopes split on that
+// id boundary. Injected via window.S3_TEST_WAR_UNITS.
 export const WAR_TEST_UNITS = {
   format: "s3war", version: 1,
   recLayout: { hp: 48, maxhp: 50, lv: 64, stats: 32, size: 0x8C },
@@ -232,6 +238,15 @@ export const WAR_TEST_UNITS = {
     enemies: [{ id: 0x132, name: "ZxnKn", variants: [{
       lv: 20, hp: 230, stats: [49, 65, 60, 35, 40, 45, 45, 55], exp: 0, sp: 0, potch: 0,
       drops: [], rec: [WAR_REC_A, WAR_REC_B], aux: [],
+    }] }],
+  }, {
+    // Second archive, one leader unit: keeps the two kinds in separate packs so a per-pack
+    // filter can select one without the other, and so each pack still holds exactly one
+    // editable record (the field selectors in the per-unit tests stay unambiguous).
+    archive: "ETC", war: true, copies: 2, label: "Leo (unit)",
+    enemies: [{ id: 0x12, name: "Leo (unit)", variants: [{
+      lv: 23, hp: 600, stats: [60, 70, 55, 40, 45, 50, 45, 50], exp: 0, sp: 0, potch: 0,
+      drops: [], rec: [WAR_LEAD_A, WAR_LEAD_B], aux: [],
     }] }],
   }],
 };
@@ -374,11 +389,13 @@ export function buildSynthIso() {
       pa.members.forEach((m, mi) => { bytes[meO + pi * 8 + mi] = m; });
     });
   }
-  // war-units fixture: one ZxnKn record in two copies (stats only, no aux)
-  for (const recO of [WAR_REC_A, WAR_REC_B]) {
-    const v = WAR_TEST_UNITS.packs[0].enemies[0].variants[0];
-    v.stats.forEach((sv, si) => w16(recO + 32 + si * 2, sv));
-    w16(recO + 48, v.hp); w16(recO + 50, v.hp); w16(recO + 64, v.lv);
+  // war-units fixture: a soldier tier and a leader unit, each in two copies (stats only, no aux)
+  for (const [pi, recs] of [[0, [WAR_REC_A, WAR_REC_B]], [1, [WAR_LEAD_A, WAR_LEAD_B]]]) {
+    const v = WAR_TEST_UNITS.packs[pi].enemies[0].variants[0];
+    for (const recO of recs) {
+      v.stats.forEach((sv, si) => w16(recO + 32 + si * 2, sv));
+      w16(recO + 48, v.hp); w16(recO + 50, v.hp); w16(recO + 64, v.lv);
+    }
   }
   // room tables: rank/grace/rate/bg per record, exactly as build_room_index.py reads them
   for (const t of ROOM_FIXTURE) {

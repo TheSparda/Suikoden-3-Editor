@@ -633,7 +633,7 @@
   const auxRevertAt = (rel, len) => AUX.forEach((w) => { if (w.tag === "potch") w.buf.set(w.orig.subarray(rel, rel + len), rel); });
   // Saving makes the written bytes the new "original", which is also the baseline the stock
   // comparison measures against — so drop its cached verdict and let it re-measure.
-  const auxMarkSaved = () => { AUX.forEach((w) => { w.orig = w.buf.slice(); }); ESCALE = RSCALE = null; };
+  const auxMarkSaved = () => { AUX.forEach((w) => { w.orig = w.buf.slice(); }); resetBulkScales(); RSCALE = null; };
   // Multi-offset field helpers for enemy edits: one logical field lives at the same
   // relative spot in every pack copy; write all, dirty/revert consider all.
   function eRead(offs, w) { return w === 1 ? auxR8(offs[0]) : w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
@@ -838,7 +838,6 @@
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
   let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
-  let ESCALE = null;  // cached stock-vs-disc comparison for the open disc (see detectStockScale)
   let ROOMS = [], ROOMS_SKIPPED = 0;        // per-area room tables (Encounter view)
   let RSCALE = null;  // cached stock-vs-disc comparison of those tables (see detectRoomScale)
   let WPACKS_SKIPPED = 0;                                    // war packs unavailable on this disc (War view)
@@ -1429,7 +1428,7 @@
   const TABLE_VIEWS = new Set(["enemies", "war", "encounter"]);
   function resetTables() {
     TABLES_STATE = "idle"; TABLES_PROMISE = null; TABLES_ERR = ""; DISC_GEN++;
-    EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; WPACKS_SKIPPED = 0; ESCALE = null;
+    EPACKS = []; EPACKS_META = null; EPACKS_SKIPPED = 0; WPACKS_SKIPPED = 0; resetBulkScales();
     ROOMS = []; ROOMS_SKIPPED = 0; RSCALE = null;
   }
   // Idempotent: concurrent callers (two tabs clicked quickly, or a view and a patch apply at
@@ -1556,7 +1555,7 @@
     // Commit in one assignment, onto whatever AUX holds NOW — a potch edit made while this
     // read was in flight has to survive it.
     AUX = AUX.concat(aux);
-    EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped; WPACKS_SKIPPED = wskipped; ESCALE = null;
+    EPACKS = epacks; EPACKS_META = epsrc || null; EPACKS_SKIPPED = eskipped; WPACKS_SKIPPED = wskipped; resetBulkScales();
     ROOMS = rareas; ROOMS_SKIPPED = rskipped; RSCALE = null;
     TABLES_STATE = "ready";
   }
@@ -2215,7 +2214,7 @@
       balance: "Bulk difficulty levers: scale every character's stat-growth rate (and optionally spell/unite power) by a multiplier. Scaled from the ISO's original values, so presets don't compound.",
       encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
-      war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster. Your own units use the characters' save stats. Army skill list included as reference.",
+      war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item, rune and skill lookups, where each item comes from, and every packed sub-file on the disc.",
     };
     q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
@@ -5407,41 +5406,90 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     scheduleBadge();
   }
 
-  // ---- Enemies (per-area stat/reward editor + bestiary reference) -------------
+  // ---- Bulk stat tuning (shared by the Enemies and War views) -----------------
   const STAT_NAMES8 = ["PWR", "SKL", "MAG", "REP", "PDF", "MDF", "SPD", "LUK"];
-  // Bulk multipliers (kept across redraws). Every apply recomputes from a fixed BASE, so
-  // re-applying never compounds; a field left at x1 is not touched. The base is the STOCK
-  // disc's number when this file matches the pack index (see detectStockScale), otherwise
-  // the number this file happened to open with.
-  const ENBULK = { hp: 1, stats: 1, lv: 1, exp: 1, sp: 1, potch: 1, dropw: 1, scope: "all" };
-  let EB_STOCK = true;        // multiply the stock disc's values rather than this file's
   // One entry per multiplier: where the field lives in every pack copy, what the stock disc
   // holds there, and the clamp the multiply obeys. Apply and the stock comparison both read
   // this list, so the two can't drift apart.
   const EB_GROUPS = [
-    { key: "hp", label: "HP", w: 2, min: 1, max: 65535,
+    { key: "hp", label: "HP", mlabel: "HP", w: 2, min: 1, max: 65535,
       sites: (v, rl) => [[[...v.rec.map((o) => o + rl.hp), ...v.rec.map((o) => o + rl.maxhp)], v.hp]] },
-    { key: "stats", label: "stats", w: 2, min: 0, max: 65535,
+    { key: "stats", label: "stats", mlabel: "All 8 stats", w: 2, min: 0, max: 65535,
       sites: (v, rl) => (v.stats || []).map((sv, i) => [v.rec.map((o) => o + rl.stats + i * 2), sv]) },
-    { key: "lv", label: "level", w: 2, min: 1, max: 99,
+    { key: "lv", label: "level", mlabel: "Level", w: 2, min: 1, max: 99,
       sites: (v, rl) => [[v.rec.map((o) => o + rl.lv), v.lv]] },
-    { key: "exp", label: "EXP", w: 4, min: 0, max: 4294967295,
+    { key: "exp", label: "EXP", mlabel: "EXP value", w: 4, min: 0, max: 4294967295,
       sites: (v, rl, al) => [[v.aux.map((o) => o + al.exp), v.exp]] },
-    { key: "sp", label: "SP", w: 2, min: 0, max: 65535,
+    { key: "sp", label: "SP", mlabel: "SP", w: 2, min: 0, max: 65535,
       sites: (v, rl, al) => [[v.aux.map((o) => o + al.sp), v.sp]] },
-    { key: "potch", label: "potch", w: 4, min: 0, max: 4294967295,
+    { key: "potch", label: "potch", mlabel: "Potch", w: 4, min: 0, max: 4294967295,
       sites: (v, rl, al) => [[v.aux.map((o) => o + al.potch), v.potch]] },
-    { key: "dropw", label: "drop weights", w: 2, min: 0, max: 1000, drops: true,
+    { key: "dropw", label: "drop weights", mlabel: "Drop weights", w: 2, min: 0, max: 1000, drops: true,
       sites: (v, rl, al) => Array.from({ length: al.nDrops }, (_, i) =>
         [v.aux.map((o) => o + al.drops + i * 4 + 2), (v.drops && v.drops[i]) ? v.drops[i][1] : 0]) },
   ];
-  function enemyPacksInScope(scope) {
+  const ebGroups = (...keys) => keys.map((k) => EB_GROUPS.find((g) => g.key === k));
+
+  // A bulk tuner owns one view's multiplier card. The Enemies and War views run the same
+  // engine over disjoint halves of EPACKS (p.war splits them) with different field groups —
+  // war battles pay no EXP/SP/potch and drop nothing, so those multipliers don't exist there.
+  // Each tuner keeps its own multipliers, stock-relative toggle and cached stock comparison,
+  // so tuning one view never moves the other's controls.
+  const BULK_TUNERS = [];
+  function makeBulkTuner(cfg) {
+    const t = Object.assign({ mul: { scope: cfg.scopes[0].v }, stock: true, scale: null }, cfg);
+    for (const g of cfg.groups) t.mul[g.key] = 1;
+    BULK_TUNERS.push(t);
+    return t;
+  }
+  // Saving (or opening another disc) makes different bytes the baseline, so every cached
+  // stock verdict has to be re-measured.
+  const resetBulkScales = () => { for (const t of BULK_TUNERS) t.scale = null; };
+
+  const ENEMY_BULK = makeBulkTuner({
+    id: "eb", war: false, noun: "enemy", groups: EB_GROUPS,
+    hay: (p) => (p.archive + " " + archName(p.archive) + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase(),
+    scopes: [
+      { v: "all", label: "all packs" },
+      { v: "filtered", label: "packs matching filter", filtered: true },
+    ],
+  });
+  // War units split into the generic soldier/monster tiers (list1 ids, 0x100+) and the human
+  // "leader unit" records (the game's actor enum, below 0x100 — Leo, Franz, Ruby, Sarah and
+  // the unidentified Unit #N). Both scopes exist because they are different difficulty knobs:
+  // leaders are the boss units a war battle is won or lost on, soldier tiers are the filler.
+  const WAR_BULK = makeBulkTuner({
+    id: "wb", war: true, noun: "war unit", groups: ebGroups("hp", "stats", "lv"),
+    hay: (p) => (p.archive + " " + (WAR_ARCH_HINTS[p.archive] || "") + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase(),
+    note: `Scope picks which half of the opposition you are strengthening: <b>leader units</b> are the boss units a war
+      battle turns on (Leo, Franz, Ruby, Sarah and the unidentified <i>Unit&nbsp;#N</i> records), <b>soldier tiers</b> are the
+      generic Zexen/Karaya/Lizard/Duck/Mantor/Harmonian troops and the chapter-5 war monsters. Raising level alone is the
+      gentlest difficulty knob; HP makes battles longer, the 8 stats make them harder. <b>Your own army is untouched</b> —
+      it reads the characters' save-file stats, not these records.`,
+    scopes: [
+      { v: "all", label: "all war units" },
+      { v: "filtered", label: "packs matching filter", filtered: true },
+      { v: "leaders", label: "leader units only", unit: (e) => e.id < 0x100 },
+      { v: "troops", label: "soldier tiers & war monsters only", unit: (e) => e.id >= 0x100 },
+    ],
+  });
+
+  const bulkPacks = (t) => EPACKS.filter((p) => !!p.war === !!t.war);
+  // The variants one Apply/Reset/Restore covers: this view's half of EPACKS, narrowed by the
+  // selected scope. Detection deliberately does NOT use this — what the disc is carrying is a
+  // property of the whole disc, not of whichever scope happens to be selected.
+  function bulkVariants(t) {
+    const sc = t.scopes.find((s) => s.v === t.mul.scope) || t.scopes[0];
     const q2 = SEARCH;
-    return EPACKS.filter((p) => {
-      if (p.war) return false;   // war units have their own view; bulk multipliers never touch them
-      if (scope !== "filtered" || !q2) return true;
-      return (p.archive + " " + archName(p.archive) + " " + p.enemies.map((e) => e.name).join(" ")).toLowerCase().includes(q2);
-    });
+    const out = [];
+    for (const p of bulkPacks(t)) {
+      if (sc.filtered && q2 && !t.hay(p).includes(q2)) continue;
+      for (const e of p.enemies) {
+        if (sc.unit && !sc.unit(e)) continue;
+        for (const v of e.variants) out.push(v);
+      }
+    }
+    return out;
   }
   // Recover the one multiplier that best explains a set of (stock, disc) pairs, given as a flat
   // [stock, disc, stock, disc, ...] array. A candidate is scored by REPLAYING the multiply -
@@ -5472,22 +5520,23 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // ---- Is this disc already tuned? -------------------------------------------
   // A saved ISO records no multiplier, only the numbers it produced, so re-opening a disc whose
   // HP had been doubled used to show x1 with no hint that anything had moved. The pack index is
-  // also a STOCK BASELINE: Editor/build_enemy_index.py reads a pristine USA disc and writes each
-  // variant's lv/hp/stats/exp/sp/potch/drops next to its offsets. Comparing the two recovers the
-  // multiplier - a whole field group sitting at one consistent ratio IS the multiplier that was
-  // applied - and lets Apply keep multiplying the stock numbers instead of stacking on itself.
-  const stockKnown = () => { const s = detectStockScale(); return !!(s && s.ok && s.matched); };
-  function detectStockScale() {
-    if (ESCALE) return ESCALE;
+  // also a STOCK BASELINE: Editor/build_enemy_index.py and build_war_index.py read a pristine
+  // USA disc and write each variant's lv/hp/stats/exp/sp/potch/drops next to its offsets.
+  // Comparing the two recovers the multiplier - a whole field group sitting at one consistent
+  // ratio IS the multiplier that was applied - and lets Apply keep multiplying the stock
+  // numbers instead of stacking on itself.
+  const stockKnown = (t) => { const s = detectStockScale(t); return !!(s && s.ok && s.matched); };
+  function detectStockScale(t) {
+    if (t.scale) return t.scale;
     const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
-    const packs = EPACKS.filter((p) => !p.war);
-    if (!rl || !al || !packs.length) return (ESCALE = { ok: false });
+    const packs = bulkPacks(t);
+    if (!rl || !al || !packs.length) return (t.scale = { ok: false });
     const S = {};                        // group key -> flat [stock, disc, stock, disc, ...]
-    for (const g of EB_GROUPS) S[g.key] = [];
+    for (const g of t.groups) S[g.key] = [];
     let variants = 0;
     for (const p of packs) for (const e of p.enemies) for (const v of e.variants) {
       variants++;
-      for (const g of EB_GROUPS) for (const [offs, stock] of g.sites(v, rl, al)) {
+      for (const g of t.groups) for (const [offs, stock] of g.sites(v, rl, al)) {
         // A stock 0 carries no ratio (x anything is still 0), and a field whose offsets this
         // disc doesn't have reads null - neither is evidence either way.
         if (!offs.length || !Number.isFinite(stock) || stock <= 0) continue;
@@ -5498,44 +5547,42 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     }
     const groups = {};
     let tot = 0, hit = 0;
-    for (const g of EB_GROUPS) {
+    for (const g of t.groups) {
       const d = fitScale(S[g.key], g.min, g.max);
       groups[g.key] = d;
       tot += d.n; hit += d.hit;
     }
-    ESCALE = { ok: true, groups, variants, samples: tot, explained: tot ? hit / tot : 0,
-               matched: tot > 0 && hit >= tot * 0.9 };
+    t.scale = { ok: true, groups, variants, samples: tot, explained: tot ? hit / tot : 0,
+                matched: tot > 0 && hit >= tot * 0.9 };
     // Prefill the multipliers with what the disc is already carrying: a file saved at HP x1.2
     // opens showing x1.2, and re-applying reproduces it instead of stacking to x1.44.
-    if (ESCALE.matched) for (const g of EB_GROUPS) {
+    if (t.scale.matched) for (const g of t.groups) {
       const d = groups[g.key];
-      if (d.n && d.sure) ENBULK[g.key] = Math.round(d.r * 1000) / 1000;
+      if (d.n && d.sure) t.mul[g.key] = Math.round(d.r * 1000) / 1000;
     }
-    return ESCALE;
+    return t.scale;
   }
   // The groups whose ratio is confidently something other than x1 - i.e. what was done to this disc.
-  function stockTuned() {
-    const s = detectStockScale();
+  function stockTuned(t) {
+    const s = detectStockScale(t);
     if (!s || !s.ok || !s.matched) return [];
-    return EB_GROUPS.filter((g) => { const d = s.groups[g.key]; return d && d.n && d.sure && d.r !== 1; });
+    return t.groups.filter((g) => { const d = s.groups[g.key]; return d && d.n && d.sure && d.r !== 1; });
   }
-  function applyEnemyBulk() {
+  function applyBulk(t) {
     const rl = EPACKS_META.recLayout, al = EPACKS_META.auxLayout;
-    const useStock = EB_STOCK && stockKnown();
+    const useStock = t.stock && stockKnown(t);
     let nv = 0;
-    for (const p of enemyPacksInScope(ENBULK.scope)) {
-      for (const e of p.enemies) for (const v of e.variants) {
-        nv++;
-        for (const g of EB_GROUPS) {
-          const m = ENBULK[g.key];
-          if (m === 1) continue;
-          for (const [offs, stock] of g.sites(v, rl, al)) {
-            if (!offs.length) continue;
-            const base = (useStock && Number.isFinite(stock)) ? stock : eOrig(offs, g.w);
-            if (base === null || base === undefined) continue;
-            if (g.drops && !base) continue;                 // leave empty drop slots empty
-            eWrite(offs, g.w, Math.max(g.min, Math.min(g.max, Math.round(base * m))));
-          }
+    for (const v of bulkVariants(t)) {
+      nv++;
+      for (const g of t.groups) {
+        const m = t.mul[g.key];
+        if (m === 1) continue;
+        for (const [offs, stock] of g.sites(v, rl, al)) {
+          if (!offs.length) continue;
+          const base = (useStock && Number.isFinite(stock)) ? stock : eOrig(offs, g.w);
+          if (base === null || base === undefined) continue;
+          if (g.drops && !base) continue;                 // leave empty drop slots empty
+          eWrite(offs, g.w, Math.max(g.min, Math.min(g.max, Math.round(base * m))));
         }
       }
     }
@@ -5544,33 +5591,111 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // Undo a tuning that is already baked into the file: write the stock disc's own numbers back.
   // Only offered when the comparison matched, because writing the index's values onto a disc it
   // doesn't describe would be writing someone else's numbers.
-  function restoreStockValues() {
+  function restoreStockValues(t) {
     const rl = EPACKS_META.recLayout, al = EPACKS_META.auxLayout;
     let nv = 0, moved = 0;
-    for (const p of enemyPacksInScope(ENBULK.scope)) {
-      for (const e of p.enemies) for (const v of e.variants) {
-        nv++;
-        for (const g of EB_GROUPS) for (const [offs, stock] of g.sites(v, rl, al)) {
-          if (!offs.length || !Number.isFinite(stock)) continue;
-          if (eRead(offs, g.w) !== stock) moved++;
-          eWrite(offs, g.w, stock);
-        }
+    for (const v of bulkVariants(t)) {
+      nv++;
+      for (const g of t.groups) for (const [offs, stock] of g.sites(v, rl, al)) {
+        if (!offs.length || !Number.isFinite(stock)) continue;
+        if (eRead(offs, g.w) !== stock) moved++;
+        eWrite(offs, g.w, stock);
       }
     }
     return { nv, moved };
   }
-  function resetEnemyBulk() {
+  function resetBulk(t) {
     const rl = EPACKS_META.recLayout, al = EPACKS_META.auxLayout;
     let nv = 0;
-    for (const p of enemyPacksInScope(ENBULK.scope)) {
-      for (const e of p.enemies) for (const v of e.variants) {
-        nv++;
-        eRevert(v.rec, rl.size);
-        eRevert(v.aux, al.size);
-      }
+    for (const v of bulkVariants(t)) {
+      nv++;
+      eRevert(v.rec, rl.size);
+      eRevert(v.aux, al.size);
     }
     return nv;
   }
+  // ---- the multiplier card (same markup and behaviour in both views) ---------
+  // `unit` names what one row of the scope is, for the status line ("42 variant(s)").
+  function bulkCardHtml(t, unit) {
+    const parts = [];
+    const sc = detectStockScale(t);
+    const known = stockKnown(t), tuned = stockTuned(t);
+    const pctS = (x) => `${(x * 100).toFixed(x > 0.999 ? 0 : 1)}%`;
+    if (sc && sc.ok && !sc.matched)
+      parts.push(`<div class="warnbox">These ${esc2(t.noun)} records don't line up with the stock USA disc this editor
+        indexes (only ${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match a single scale) — a different
+        build, or edits made outside a whole-pack multiplier. Multipliers below work from <b>this file's</b>
+        values instead of the stock ones, and can compound if you save and re-apply.</div>`);
+    else if (tuned.length)
+      parts.push(`<div class="warnbox">This disc is <b>already tuned</b>: ${tuned.map((g) => `${g.label} ×${sc.groups[g.key].r}`).join(", ")},
+        measured against the stock USA disc (${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match${
+          sc.explained < 1 ? "; the rest are hand edits" : ""}). The multipliers below are prefilled with what's on the disc and multiply the <b>stock</b>
+        numbers, so re-applying ×${sc.groups[tuned[0].key].r} keeps it there instead of stacking.</div>`);
+    else if (known)
+      parts.push(`<div class="muted" style="margin:0 0 8px">Checked against the stock USA disc: these ${esc2(t.noun)} numbers are
+        stock (${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match exactly).</div>`);
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    const mfld = (g) => `<label class="field"><span>${g.mlabel} ×</span>
+      <input type="number" id="${t.id}${cap(g.key)}" class="${t.id}-mul" data-g="${g.key}" min="0" max="100" step="0.05" value="${t.mul[g.key]}"></label>`;
+    const hasDrops = t.groups.some((g) => g.drops);
+    parts.push(`<div class="card" style="margin:0 0 12px">
+      <div class="bag-h">Bulk tuning <span class="u">recomputed from ${known && t.stock ? "the stock disc's" : "this file's opening"} values — re-applying never compounds</span></div>
+      <div class="grid">
+        ${t.groups.map(mfld).join("")}
+        <label class="field"><span>Scope</span><select id="${t.id}Scope">
+          ${t.scopes.map((s) => `<option value="${s.v}"${t.mul.scope === s.v ? " selected" : ""}>${esc2(s.label)}</option>`).join("")}</select></label>
+      </div>
+      ${known ? `<label class="row" style="gap:6px;cursor:pointer;margin:8px 0 0"><input type="checkbox" id="${t.id}Stock"${t.stock ? " checked" : ""}>
+        <span>multiply the <b>stock</b> disc's values, not this file's <span class="u">· keeps ×1.2 at ×1.2 when you re-open a tuned ISO</span></span></label>` : ""}
+      <div class="row" style="margin-top:8px;gap:8px;align-items:center">
+        <button class="primary" id="${t.id}Apply">Apply multipliers</button>
+        <button id="${t.id}Reset">Reset scope to disc originals</button>
+        ${known ? `<button id="${t.id}StockRestore">Restore stock values</button>` : ""}
+      </div>
+      <div class="muted" style="margin-top:6px">Every value is computed from a fixed base, so running Apply twice
+        changes nothing and a new multiplier replaces the old one instead of stacking. Fields left at ×1 are not touched
+        (your per-${esc2(unit)} edits to them survive); Reset reverts <b>every</b> ${esc2(t.noun)} field in the scope to what this file
+        opened with, including manual edits${known ? `, and Restore writes the stock disc's own numbers back — the way to
+        undo a scale that is already saved into the file${hasDrops ? " (drop items and formations are left alone)" : ""}` : ""}.
+        ${hasDrops ? "Empty drop slots stay empty. HP floors at 1, Level caps at 99, drop weights at 1000." : "HP floors at 1, Level caps at 99."}</div>
+      ${t.note ? `<div class="muted" style="margin-top:6px">${t.note}</div>` : ""}
+    </div>`);
+    return parts.join("");
+  }
+  function wireBulkCard(t, host) {
+    qa(`input.${t.id}-mul`, host).forEach((inp) => {
+      inp.onchange = () => { t.mul[inp.dataset.g] = Math.max(0, +inp.value || 0); };
+    });
+    const scopeSel = q(`#${t.id}Scope`, host);
+    if (scopeSel) scopeSel.onchange = () => { t.mul.scope = scopeSel.value; };
+    const applyBtn = q(`#${t.id}Apply`, host);
+    if (applyBtn) applyBtn.onclick = () => {
+      const n = applyBulk(t);
+      const touched = t.groups.filter((g) => t.mul[g.key] !== 1);
+      setStatus(touched.length
+        ? `Applied ${touched.map((g) => `${g.key} ×${t.mul[g.key]}`).join(", ")} to ${n} variant(s). Review, then Save to write.`
+        : "All multipliers are ×1 — nothing to apply.", touched.length ? "ok" : "warn");
+      drawView();
+    };
+    const resetBtn = q(`#${t.id}Reset`, host);
+    if (resetBtn) resetBtn.onclick = () => {
+      const n = resetBulk(t);
+      setStatus(`Reverted ${n} variant(s) in scope to the disc's original values.`, "ok");
+      drawView();
+    };
+    const stockBox = q(`#${t.id}Stock`, host);
+    if (stockBox) stockBox.onchange = () => { t.stock = stockBox.checked; drawView(); };
+    const stockBtn = q(`#${t.id}StockRestore`, host);
+    if (stockBtn) stockBtn.onclick = () => {
+      const { nv, moved } = restoreStockValues(t);
+      setStatus(moved
+        ? `Restored the stock disc's values across ${nv} variant(s) — ${moved} field(s) moved. Review, then Save to write.`
+        : `All ${nv} variant(s) in scope already hold the stock disc's values.`, moved ? "ok" : "warn");
+      drawView();
+    };
+  }
+
+  // ---- Enemies (per-area stat/reward editor + bestiary reference) -------------
   function drawEnemies(host) {
     const rl = EPACKS_META && EPACKS_META.recLayout, al = EPACKS_META && EPACKS_META.auxLayout;
     const parts = [];
@@ -5584,47 +5709,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         Filter matches enemy names, archive tags or area names.</div>`);
       // Compare this file against the stock disc BEFORE the multiplier inputs render — the
       // comparison prefills them, so a disc already saved at ×1.2 opens showing ×1.2.
-      const sc = detectStockScale();
-      const known = stockKnown(), tuned = stockTuned();
-      const pctS = (x) => `${(x * 100).toFixed(x > 0.999 ? 0 : 1)}%`;
-      if (sc && sc.ok && !sc.matched)
-        parts.push(`<div class="warnbox">These packs don't line up with the stock USA disc this editor indexes
-          (only ${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match a single scale) — a different
-          build, or edits made outside a whole-pack multiplier. Multipliers below work from <b>this file's</b>
-          values instead of the stock ones, and can compound if you save and re-apply.</div>`);
-      else if (tuned.length)
-        parts.push(`<div class="warnbox">This disc is <b>already tuned</b>: ${tuned.map((g) => `${g.label} ×${sc.groups[g.key].r}`).join(", ")},
-          measured against the stock USA disc (${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match${
-            sc.explained < 1 ? "; the rest are hand edits" : ""}). The multipliers below are prefilled with what's on the disc and multiply the <b>stock</b>
-          numbers, so re-applying ×${sc.groups[tuned[0].key].r} keeps it there instead of stacking.</div>`);
-      else if (known)
-        parts.push(`<div class="muted" style="margin:0 0 8px">Checked against the stock USA disc: these enemy numbers are
-          stock (${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match exactly).</div>`);
-      const mfld = (id, label) =>
-        `<label class="field"><span>${label} ×</span><input type="number" id="${id}" class="eb-mul" min="0" max="100" step="0.05" value="${ENBULK[id.slice(2).toLowerCase()]}"></label>`;
-      parts.push(`<div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Bulk tuning <span class="u">recomputed from ${known && EB_STOCK ? "the stock disc's" : "this file's opening"} values — re-applying never compounds</span></div>
-        <div class="grid">
-          ${mfld("ebHp", "HP")}${mfld("ebStats", "All 8 stats")}${mfld("ebLv", "Level")}${mfld("ebExp", "EXP value")}
-          ${mfld("ebSp", "SP")}${mfld("ebPotch", "Potch")}${mfld("ebDropw", "Drop weights")}
-          <label class="field"><span>Scope</span><select id="ebScope">
-            <option value="all"${ENBULK.scope === "all" ? " selected" : ""}>all packs</option>
-            <option value="filtered"${ENBULK.scope === "filtered" ? " selected" : ""}>packs matching filter</option></select></label>
-        </div>
-        ${known ? `<label class="row" style="gap:6px;cursor:pointer;margin:8px 0 0"><input type="checkbox" id="ebStock"${EB_STOCK ? " checked" : ""}>
-          <span>multiply the <b>stock</b> disc's values, not this file's <span class="u">· keeps ×1.2 at ×1.2 when you re-open a tuned ISO</span></span></label>` : ""}
-        <div class="row" style="margin-top:8px;gap:8px;align-items:center">
-          <button class="primary" id="ebApply">Apply multipliers</button>
-          <button id="ebReset">Reset scope to disc originals</button>
-          ${known ? `<button id="ebStockRestore">Restore stock values</button>` : ""}
-        </div>
-        <div class="muted" style="margin-top:6px">Every value is computed from a fixed base, so running Apply twice
-          changes nothing and a new multiplier replaces the old one instead of stacking. Fields left at ×1 are not touched
-          (your per-enemy edits to them survive); Reset reverts <b>every</b> enemy field in the scope to what this file
-          opened with, including manual edits${known ? `, and Restore writes the stock disc's own numbers back — the way to
-          undo a scale that is already saved into the file (drop items and formations are left alone)` : ""}.
-          Empty drop slots stay empty. HP floors at 1, Level caps at 99, drop weights at 1000.</div>
-      </div>`);
+      parts.push(bulkCardHtml(ENEMY_BULK, "enemy"));
       const q2 = SEARCH;
       for (let pi = 0; pi < EPACKS.length; pi++) {
         const p = EPACKS[pi];
@@ -5671,37 +5756,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         buildPackBody(det, EPACKS[+det.dataset.ep], rl, al);
       });
     });
-    // bulk tuning controls
-    qa("input.eb-mul", host).forEach((inp) => {
-      inp.onchange = () => { ENBULK[inp.id.slice(2).toLowerCase()] = Math.max(0, +inp.value || 0); };
-    });
-    const scopeSel = q("#ebScope", host);
-    if (scopeSel) scopeSel.onchange = () => { ENBULK.scope = scopeSel.value; };
-    const applyBtn = q("#ebApply", host);
-    if (applyBtn) applyBtn.onclick = () => {
-      const n = applyEnemyBulk();
-      const touched = ["hp", "stats", "lv", "exp", "sp", "potch", "dropw"].filter((k) => ENBULK[k] !== 1);
-      setStatus(touched.length
-        ? `Applied ${touched.map((k) => `${k} ×${ENBULK[k]}`).join(", ")} to ${n} variant(s). Review, then Save to write.`
-        : "All multipliers are ×1 — nothing to apply.", touched.length ? "ok" : "warn");
-      drawView();
-    };
-    const resetBtn = q("#ebReset", host);
-    if (resetBtn) resetBtn.onclick = () => {
-      const n = resetEnemyBulk();
-      setStatus(`Reverted ${n} variant(s) in scope to the disc's original values.`, "ok");
-      drawView();
-    };
-    const stockBox = q("#ebStock", host);
-    if (stockBox) stockBox.onchange = () => { EB_STOCK = stockBox.checked; drawView(); };
-    const stockBtn = q("#ebStockRestore", host);
-    if (stockBtn) stockBtn.onclick = () => {
-      const { nv, moved } = restoreStockValues();
-      setStatus(moved
-        ? `Restored the stock disc's values across ${nv} variant(s) — ${moved} field(s) moved. Review, then Save to write.`
-        : `All ${nv} variant(s) in scope already hold the stock disc's values.`, moved ? "ok" : "warn");
-      drawView();
-    };
+    wireBulkCard(ENEMY_BULK, host);
   }
   // ---- War / major battles (unit stat editor + army-skill reference) ----------
   // Region hints for the archives that hold war packs (best-effort labels).
@@ -5734,6 +5789,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         Leader names marked (unit) are verified against the Suikosource guide; <i>Unit&nbsp;#N</i> records are unidentified
         leader units — edit them like any other. Each pack's title notes the chapter and story beat its battles belong to
         (matched against the guide's exact level/HP tables). Filter matches unit names, archive names or the battle context.</div>`);
+      // Bulk multipliers, same engine as the Enemies view but over the war half of the packs
+      // (and without the reward/drop groups, which war records don't carry). Drawn before the
+      // per-unit editors because the stock comparison prefills its inputs.
+      parts.push(bulkCardHtml(WAR_BULK, "unit"));
       const q2 = SEARCH;
       for (const [p, pi] of wpacks) {
         const hint = WAR_ARCH_HINTS[p.archive];
@@ -5776,6 +5835,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         buildPackBody(det, EPACKS[+det.dataset.ep], rl, al);
       });
     });
+    wireBulkCard(WAR_BULK, host);
   }
 
   function buildPackBody(det, p, rl, al) {
