@@ -208,6 +208,9 @@ input.search, input.picker-search {
   border-radius:6px; padding:2px 7px; background:var(--input-bg); }
 .need.n-gate { font-style:italic; color:var(--mut); }
 .need.short { border-color:var(--warnbd); color:var(--warn); }
+/* "just give it to me": stages the item into the current party's bag, or tops the purse up */
+.need .needbtn { margin-left:6px; padding:1px 7px; font-size:11px; vertical-align:baseline;
+  color:var(--acc2); border-color:var(--line); background:transparent; }
 .need .ok, .need .miss { font-size:11px; }
 /* team pills: single-letter team badges (Hugo/Chris/Geddoe/Thomas/Shared) */
 .tpill { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:5px; font-size:11px;
