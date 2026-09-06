@@ -261,6 +261,45 @@
         [69, "Sharon", "battle only"],
       ],
       STOCK: { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 },
+      // Ids the clamp admits once it is widened (see horseClamp). Every one of them is in
+      // the ground-ride saddle-offset table at 0x16E85E8, so the engine has a seat height
+      // for each. Ruby (42) and mskn (209) are NOT here: they sit below the clamp's 308
+      // base, which the widening moves the top of, not the bottom.
+      WIDE_VALID: [[325, "Karaya horse"], [353, "Karaya horse #2"],
+                   [359, "Le Buque horse"], [360, "Le Buque horse #2"]],
+    },
+
+    // ---- the clamp that limits the assigned horse to 308/309 -------------------
+    // `hasAssignedHorse` reads the u16 and then throws away anything outside a window two
+    // wide:
+    //
+    //     016C76E4  lhu   $a1, 0x66($v1)
+    //     016C76E8  addiu $v0, $a1, -0x134      ; -308
+    //     016C76EC  sltiu $v0, $v0, 2           ; 308 or 309, nothing else
+    //
+    // Six sites do it, all the same shape, and they are the only `addiu -0x134` / `sltiu`
+    // pairs in the whole PT_LOAD. Raising the 2 to 0x100 widens the window to 308-563,
+    // which brings in the Karaya horses and the Le Buque pair.
+    //
+    // Why this matters for Hugo specifically: his `+0x66` is 0 — he has no assigned horse
+    // at all, and rides only where a scene stages a `krum` and names it. His horse IS the
+    // Karaya horse: the RideOn handler at 0x179ED2C carries a fix-up written for exactly
+    // one pair, rider model 1 on mount 325/353, stripping his Fubar-rigged clip copies so
+    // the horse-rigged ones resolve. 325 is on the wrong side of the clamp.
+    //
+    // Inert on its own. Only six characters have a nonzero +0x66 and all are 308/309, every
+    // one of which stays inside the widened window — nothing changes until a wider id is
+    // actually picked on the Mounts tab.
+    horseClamp: {
+      WIDE: 0x0100,
+      sites: [
+        { off: 0x10EEEC, stock: 0x2C420002, alt: 0x2C420100 },   // hasAssignedHorse
+        { off: 0x10EF0C, stock: 0x2C630002, alt: 0x2C630100 },   // ...its second path ($v1)
+        { off: 0x146EDC, stock: 0x2C420002, alt: 0x2C420100 },   // party helpers
+        { off: 0x14711C, stock: 0x2C420002, alt: 0x2C420100 },
+        { off: 0x1471A8, stock: 0x2C420002, alt: 0x2C420100 },   // PartyPut position 7-12 guard
+        { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
+      ],
     },
 
     // ---- what actually happens when a pair mounts, in battle -------------------
@@ -922,6 +961,182 @@
     });
     return n;
   }
+
+  // ---- Rune power: the numbers the passives are worth -------------------------
+  // The switches above answer the engine's "does this character have rune N equipped?" with a
+  // yes. This is the other question a passive raises, and it is a completely separate patch: not
+  // WHETHER the effect runs, but HOW MUCH it is worth. Every one of these runes computes its
+  // effect from a literal baked into the instruction stream right after the check — Sunbeam's
+  // `addiu $v0,$v0,0xF` is the 15 HP a combat turn adds, Haziness' `slti $v0,$v0,0x1E` is the
+  // 30 in `rand(100) < 30` — so the magnitude is editable in place, in the same one-word,
+  // fully-reversible way the Status-effect strength controls edit theirs. Nothing moves and
+  // nothing is inserted; only the value inside an instruction the game already executes changes.
+  //
+  // These work on a STOCK disc. The rune still has to be equipped for any of it to happen —
+  // every site here lives INSIDE the `if (has rune)` branch, which is exactly why the effect is
+  // per-character even though the constant is global. Forcing a rune on above and raising its
+  // number here are independent, and can be done in either order or on their own.
+  //
+  // WHAT IS NOT HERE, and why. Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness
+  // and Fury have no magnitude at their sites at all — they set a state bit or gate a branch, so
+  // there is no number to move. Fire Sealing's fourth site (0x1115C4) is slot bookkeeping, not
+  // damage. Fortune has no site anywhere (see PS_UNMAPPED). And Sunbeam's walk-heal HP-per-tick
+  // could be forced to a flat N by overwriting its `mfc1 $s2,$f1` with an `addiu`, but that
+  // throws away the elapsed-interval count the stock code computes for no gain the interval
+  // knob below does not already give: shortening the interval scales the same rate, and leaves
+  // every instruction as the game shipped it.
+  //
+  // Four shapes of value, and the identity check that guards each is the shape's own:
+  //   imm   — `addiu $rt,$zero,N` / `slti $rt,$rs,N`: value is the low half-word, and a site is
+  //           only writable while the HIGH half (opcode + registers) still matches what we
+  //           decoded. Same rule as fxSiteOk.
+  //   sa    — `sll`/`srl $rd,$rt,N`: value is bits 10..6, so the identity check masks those out
+  //           and compares the rest of the word.
+  //   f32hi — `lui $at,0x3F00`: the top half of an IEEE-754 single (0.5) materialised inline.
+  //           Only the upper 16 bits exist, so a percentage round-trips to within ~0.002%.
+  //   f32   — a whole float in the executable's small-data literal pool. There is no opcode to
+  //           check, so the guard is the value itself being a sane positive number.
+  const F32B = new DataView(new ArrayBuffer(4));
+  const f32Bits = (v) => { F32B.setFloat32(0, v, true); return F32B.getUint32(0, true); };
+  const RF_KIND = {
+    imm:   { fits: (w, s) => ((w & 0xFFFF0000) >>> 0) === ((s & 0xFFFF0000) >>> 0),
+             get: (w) => w & 0xFFFF, put: (w, v) => withImm(w, v), width: 2, disp: "num" },
+    sa:    { fits: (w, s) => ((w & ~0x7C0) >>> 0) === ((s & ~0x7C0) >>> 0),
+             get: (w) => (w >>> 6) & 0x1F, put: (w, v) => (((w & ~0x7C0) >>> 0) | ((v & 0x1F) << 6)) >>> 0,
+             width: 4, disp: "word" },
+    f32hi: { fits: (w, s) => ((w & 0xFFFF0000) >>> 0) === ((s & 0xFFFF0000) >>> 0),
+             get: (w) => Math.round(f32Of(((w & 0xFFFF) << 16) >>> 0) * 100),
+             put: (w, v) => withImm(w, (f32Bits(v / 100) >>> 16) & 0xFFFF), width: 4, disp: "word" },
+    f32:   { fits: (w) => { const f = f32Of(w); return Number.isFinite(f) && f > 0 && f <= 600; },
+             get: (w) => Math.round(f32Of(w) * 1000) / 1000, put: (_w, v) => f32Bits(v),
+             width: 4, disp: "f32" },
+  };
+  // sll doubles, srl halves — the same field means opposite things, so each entry says which and
+  // the dropdown is generated from it rather than written out twice.
+  const RF_MULT = ["×1 (no change)", "×2", "×4", "×8", "×16", "×32"];
+  const RF_SHARE = ["all of it", "half", "a quarter", "an eighth", "a sixteenth"];
+  const RUNEFX = [
+    { id: 0x1BD, key: "sunWalk", g: "Outside battle", kind: "f32", stock: 0.3, min: 0.01, max: 60,
+      label: "Sunbeam — walk-heal: 1 HP every N seconds", step: 0.01, unit: "s",
+      help: "The walking half of Sunbeam heals 1 HP each time this many seconds of field time have "
+        + "passed. The loop adds the frame delta to a running total, and once the total passes this "
+        + "number it divides by it, heals that many HP into every party slot that answers yes, and "
+        + "clears the total — so halving this doubles the rate, and a value small enough to be "
+        + "crossed every frame heals once per frame. It is a float in the executable's small-data "
+        + "pool, and the walk-heal is the ONLY instruction in the whole image that reads it, so "
+        + "nothing else moves with it.",
+      sites: [[0x42C3B0, 0x3E99999A]] },
+    { id: 0x1BD, key: "sunTurn", g: "In battle", kind: "imm", stock: 15, min: 0, max: 9999,
+      label: "Sunbeam — HP healed each combat turn", unit: "HP",
+      help: "The literal `addiu $v0,$v0,0xF` immediately after the check: 15 HP added to the "
+        + "unit's current HP once per combat turn. The value is added to a u16 with a signed "
+        + "16-bit immediate, so the useful range stops at 32767.",
+      sites: [[0x261198, 0x2442000F]] },
+    { id: 0x1BA, key: "killer", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
+      label: "Killer — high-damage-hit chance", unit: "%",
+      help: "The chance the battle code already rolled is multiplied by this over 100, at both "
+        + "sites that roll it. 100 makes the rune do nothing; 0 makes it a penalty.",
+      sites: [[0x104088, 0x24020096], [0x104148, 0x24020096]] },
+    { id: 0x1BB, key: "counter", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
+      label: "Counter — counter-attack chance", unit: "%",
+      help: "×N/100 at all three sites that roll a counter. Note the FIRST site's result then "
+        + "runs into a hard cap the rune has no part in — `slti $v1,$s1,96` / `movn`, which "
+        + "pins anything at or above 96 to 95 — so past roughly 64% base chance that site "
+        + "stops responding. The other two sites have no such clamp.",
+      sites: [[0x1038EC, 0x24020096], [0x103B60, 0x24020096], [0x103D34, 0x24020096]] },
+    { id: 0x1BC, key: "gale", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
+      label: "Gale — SPD", unit: "%",
+      help: "SPD ×N/100. The result is masked to 16 bits right after, so keep the product under "
+        + "65535 or it wraps.",
+      sites: [[0x10FD34, 0x24020096]] },
+    { id: 0x1BF, key: "haziness", g: "In battle", kind: "imm", stock: 30, min: 0, max: 100,
+      label: "Haziness — chance the attack misses", unit: "%",
+      help: "The rune opens a `rand(100) < 30` roll, and this is the 30 — the rune's real "
+        + "number, which its menu text never states. 100 dodges everything the roll covers.",
+      sites: [[0x10380C, 0x2842001E]] },
+    { id: 0x1C0, key: "drain", g: "In battle", kind: "imm", stock: 3, min: 1, max: 999,
+      label: "Drain — self-heal is damage ÷ N", unit: "÷",
+      help: "A critical hit heals the attacker for the damage dealt divided by this. Smaller heals "
+        + "more; 1 gives back the whole hit. Zero is refused because the site divides by it.",
+      sites: [[0x245D78, 0x24020003]] },
+    { id: 0x1C1, key: "barrier", g: "In battle", kind: "imm", stock: 10, min: 1, max: 999,
+      label: "Barrier — reflect chance is the stat ÷ N", unit: "÷",
+      help: "The magic-reflect roll is `rand(100) < stat/N`, where the stat comes from the unit. "
+        + "Smaller reflects more often. Zero is refused because the site divides by it.",
+      sites: [[0x105218, 0x2403000A]] },
+    { id: 0x1CE, key: "hunter", g: "In battle", kind: "imm", stock: 5, min: 0, max: 9999,
+      label: "Hunter — damage is clamped to", unit: "dmg",
+      help: "The damage figure is replaced outright with this literal when the rune answers yes "
+        + "— the clamp that makes Hunter a capture tool. Raising it un-clamps the rune while "
+        + "leaving its item-drop half alone.",
+      sites: [[0x1035E8, 0x24030005]] },
+    { id: 0x1CD, key: "violence", g: "In battle", kind: "f32hi", stock: 50, min: 1, max: 100,
+      label: "Violence — goes berserk below this share of max HP", unit: "%",
+      help: "The unit's HP fraction is compared against an inline 0.5f (`lui $at,0x3F00`). Only the "
+        + "top half of the float is in the instruction, so a percentage is stored to about 0.002% "
+        + "— close enough that every whole percent reads back as itself.",
+      sites: [[0x244B54, 0x3C013F00]] },
+    { id: 0x1BE, key: "wall", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
+      label: "Wall — PDF multiplier",
+      help: "The damage site doubles PDF with a literal `sll $v1,$s3,1`. The shift is the multiplier, "
+        + "so it moves in powers of two. This is only Wall's defensive half — the eight "
+        + "battle-action gates that stop the character doing anything else are untouched.",
+      sites: [[0x104370, 0x00131840]] },
+    { id: 0x1C7, key: "dblStrike", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
+      label: "Double-Strike — damage dealt and taken",
+      help: "Two `sll $s0,$s0,1` sites — the attacker's copy and the defender's — written "
+        + "together, so the rune stays symmetrical. They still stack the way the stock rune does: "
+        + "when both sides wear one, both shifts apply.",
+      sites: [[0x1047C8, 0x00108040], [0x1047DC, 0x00108040]] },
+    { id: 0x1C3, key: "fireSeal", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
+      label: "Fire Sealing — damage taken from the doubled element",
+      help: "Fire Sealing zeroes one element's incoming damage and doubles another's; this is the "
+        + "doubling, at all three sites that scale elemental damage. The zeroed half is a branch, "
+        + "not a number, and the rune's fourth site is slot bookkeeping — neither is editable "
+        + "here.",
+      sites: [[0x104878, 0x00101040], [0x104FE0, 0x00111040], [0x10546C, 0x00101040]] },
+    { id: 0x1C8, key: "wizard", g: "Multipliers", kind: "sa", mult: "srl", stock: 1, min: 0, max: 4,
+      label: "Wizard — how much of the figure moves",
+      help: "Wizard halves with `srl ...,1` in two places — one adds the half in, the other "
+        + "halves what is left — and both are written together so the pair stays consistent. "
+        + "“all of it” is a shift of zero, which leaves the instruction a plain move.",
+      sites: [[0x10FD84, 0x00021042], [0x10FDA8, 0x00101042]] },
+    { id: 0x1C9, key: "warrior", g: "Multipliers", kind: "sa", mult: "srl", stock: 1, min: 0, max: 4,
+      label: "Warrior — how much of the figure moves",
+      help: "The same pair of halvings as Wizard, on the other pair of stats.",
+      sites: [[0x10FDDC, 0x00021042], [0x10FE00, 0x00101042]] },
+  ];
+  function rfSiteOk(off, stock, kind) {
+    if (!inBlk(off, 4)) return false;
+    return RF_KIND[kind].fits(readW(off, 4) >>> 0, stock >>> 0);
+  }
+  function rfState(e) {
+    if (!e.sites.every(([off, w]) => rfSiteOk(off, w, e.kind))) return { known: false };
+    const K = RF_KIND[e.kind];
+    const vals = e.sites.map(([off]) => K.get(readW(off, 4) >>> 0));
+    return { known: true, agree: vals.every((v) => v === vals[0]), value: vals[0], vals,
+      dirty: e.sites.some(([off]) => isDirty(off, 4)) };
+  }
+  // Registered per site and numbered, for the same reason fxWrite numbers its: three rows that
+  // all read "Counter — counter-attack chance" look like duplicates, "site 2 of 3" does not.
+  // An `imm` site registers its low HALF-WORD so the review list reads "150 -> 300"; the others
+  // move bits outside the immediate, so they register the whole word.
+  function rfWrite(e, v) {
+    const K = RF_KIND[e.kind];
+    const n = e.kind === "f32" ? Math.min(e.max, Math.max(e.min, Math.round((+v || 0) * 1000) / 1000))
+      : clampInt(v, e.min, e.max);
+    const nm = (REF.items && REF.items[e.id]) || `rune ${hex(e.id, 3)}`;
+    e.sites.forEach(([off, stock], i) => {
+      if (!rfSiteOk(off, stock, e.kind)) return;
+      writeW(off, 4, K.put(readW(off, 4) >>> 0, n));
+      const tail = e.sites.length > 1 ? ` (site ${i + 1} of ${e.sites.length})` : "";
+      reg(off, K.width, K.disp, "Rune power", `${nm} · ${e.label}${tail}`);
+    });
+    return n;
+  }
+  const rfChoices = (e) => (e.mult === "srl" ? RF_SHARE : RF_MULT).slice(e.min, e.max + 1);
+  const rfShow = (e, v) => (e.kind === "sa" ? (e.mult === "srl" ? RF_SHARE : RF_MULT)[v] || `shift ${v}`
+    : e.unit === "÷" ? `÷${v}` : `${v}${e.unit ? (e.unit === "%" ? "%" : " " + e.unit) : ""}`);
 
   const mipsSll = (rd, rt, sa) => (rt << 16) | (rd << 11) | (sa << 6);
   function potchWords(m) {      // -> [sll word, addu word] or null if unsupported
@@ -3125,9 +3340,22 @@
     return m ? m.name : `Location ${loc} (unidentified)`;
   };
   // Buy price, when the item has a gear record. Consumables have none, so they show "—".
+  //
+  // The gear field is a price TIER, not potch: it only ever holds 2..5 across the whole band,
+  // and the disc's price routine (VA 0x1773390) reads `ladder[tier - 1]` from the 15-step
+  // shared ladder — it materialises the ladder's address minus one word, then indexes by
+  // tier*4, which is the 1-based idiom. So resolve it rather than printing a "price" of 3.
+  function priceLadder() {
+    const [base, n, w] = PRICE_LADDER;
+    return Array.from({ length: n }, (_, i) => readW(base + i * w, w));
+  }
+  function tierPotch(tier) {
+    const lad = priceLadder();
+    return tier >= 1 && tier <= lad.length ? lad[tier - 1] : null;
+  }
   function shopPrice(id) {
     const g = id && scanGear()[id];
-    return g ? readW(g + GEAR.price, 4) : null;
+    return g ? tierPotch(readW(g + GEAR.price, 4)) : null;
   }
 
   function drawShops(host) {
@@ -4109,8 +4337,9 @@
     const horseOff = (roster) => l2base + roster * l2stride + MOUNTS.horse.off;
     const horseRows = MOUNTS.horse.riders.map(([rid, nm, cap]) => {
       const off = horseOff(rid), cur = r16(off), stock = MOUNTS.horse.STOCK[rid] || 0;
-      const known = MOUNTS.horse.VALID.some(([v]) => v === cur);
-      const opts = MOUNTS.horse.VALID.map(([v, lbl]) =>
+      const valid = horseValidOptions();
+      const known = valid.some(([v]) => v === cur);
+      const opts = valid.map(([v, lbl]) =>
         `<option value="${v}"${v === cur ? " selected" : ""}>${esc2(lbl)}${v === stock && v ? " (stock)" : ""}</option>`)
         .concat(known ? [] : [`<option value="${cur}" selected>${cur} — not honoured by the game</option>`]).join("");
       return `<label class="field"><span>${esc2(nm)} <span class="muted">${esc2(cap)}</span></span>
@@ -4184,24 +4413,34 @@
       </div>
       <div id="mountCards">${cards}</div>
       <div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · grants permission, doesn't stage the horse</span></div>
+        <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · stages a horse beside them</span></div>
         <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route: each character's own
           record can name a horse, and both the field and the battle gate honour it without the horse being in
           your party. Stock, this is what puts the six Zexen Knights on horseback — Chris on her own horse,
           the other five on the knight horse.</div>
-        <div class="warnbox" style="margin:0 0 8px"><b>This grants permission — it does not by itself put
-          anyone on a horse.</b> These horses are ordinary NPC models, not party members, so they hold no
-          battle slot: the <i>scene</i> still has to stage one. That is why Chris rides in some battles and
-          not others even though her record has always said 309. Setting this on a new character makes them
-          eligible wherever the game already stages a horse; it cannot add a horse to a fight that has none.
-          To <i>force</i> a horse in battle, use <b>Ruby</b> in the pair table above — she is a party member,
-          so she brings her own battle slot.</div>
+        <div class="muted" style="margin:0 0 8px"><b>It really does stage the horse.</b> When the party is
+          formed, <code>PartyPut</code> reads this value and writes the horse into the party list
+          <b>six positions along</b> — so party slot 3 gets a horse at position 9 — and scene setup then
+          builds it as a real actor standing next to them. A script mounts them by naming the rider with
+          bit <code>0x4000</code> set, which the engine resolves to "that actor's own horse". You can see
+          the result in the <b>Save Editor's party list</b>, in the Mount column.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>What it cannot do is write the script.</b> On the
+          field a mount only ever happens because a scene <i>asks</i> for one, so this makes a character
+          eligible everywhere and mounted only where a scene mounts the player. That is why Chris rides in
+          some scenes and not others. Two more things bite: the horse appears only once the party is
+          <b>re-formed</b> (the party list is saved state), and the model has to be loadable in the area
+          you are in. To <i>force</i> a mount in battle instead, use <b>Ruby</b> in the pair table above —
+          she is a party member, so she brings her own battle slot.</div>
         <div class="grid eq">${horseRows}</div>
         <details class="note"><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
             <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
-              are honoured</b>. Any other mount id is read and silently discarded — which is why the Karaya horse
-              and the flyers aren't offered here.</li>
+              are honoured</b> and any other mount id is read and silently discarded. That window is six
+              identical <code>sltiu</code> instructions, and the <b>Test</b> tab can widen it to 308–563 —
+              which adds the <b>Karaya horses</b> (325, 353) and the Le Buque pair. 325 is the one worth
+              having: Hugo ships with no assigned horse at all, and the Karaya horse is the mount the engine
+              was written around for him. The flyers stay out of reach either way — there is no ground saddle
+              offset for a griffon or a dragon.</li>
             <li>The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
               character, so it always has a battle slot and the pairing fires from party membership alone —
               that is why a re-paired Chris+Bright works in any fight with both deployed. An assigned horse
@@ -4399,12 +4638,29 @@
     };
   }
 
+  // ---- assigned-horse clamp (shared by the Mounts tab and the Test toggle) ----
+  // Read the live bytes rather than a flag, so the Mounts dropdown and the Test toggle can
+  // never disagree about whether the wider list is actually in the buffer.
+  function horseClampState() {
+    const st = MOUNTS.horseClamp.sites;
+    if (st.some((c) => !inBlk(c.off, 4))) return "absent";
+    const cur = st.map((c) => r32(c.off) >>> 0);
+    if (cur.every((v, i) => v === st[i].stock)) return "stock";
+    if (cur.every((v, i) => v === st[i].alt)) return "wide";
+    return "unknown";          // partially applied, or not this disc's code
+  }
+  function horseValidOptions() {
+    return horseClampState() === "wide"
+      ? MOUNTS.horse.VALID.concat(MOUNTS.horse.WIDE_VALID)
+      : MOUNTS.horse.VALID;
+  }
+
   // ---- Test: experiments that are not known to work ---------------------------
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "avatar";
-  const TESTS = [["avatar", "Field character"]];
+  const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"]];
   function drawTest(host) {
     host.innerHTML = `
       <div class="warnbox" style="margin:0 0 12px">
@@ -4421,6 +4677,64 @@
       <div id="testView"></div>`;
     qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
     if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
+    else if (TESTVIEW === "horse") drawHorseClamp(q("#testView", host));
+  }
+
+  // ---- Assigned horse: widen the clamp ----------------------------------------
+  function drawHorseClamp(host) {
+    const st = horseClampState();
+    if (st === "absent" || st === "unknown") {
+      host.innerHTML = `<div class="warnbox">The assigned-horse clamp isn't where this build expects
+        it, or is only half-applied — no edit offered. Expected six <code>sltiu</code> sites at
+        ${MOUNTS.horseClamp.sites.map((c) => "0x" + c.off.toString(16).toUpperCase()).join(", ")}.</div>`;
+      return;
+    }
+    const on = st === "wide";
+    const rows = MOUNTS.horseClamp.sites.map((c) => {
+      const cur = r32(c.off) >>> 0;
+      return `<tr><td class="sl">0x${c.off.toString(16).toUpperCase()}</td>
+        <td><code>${cur.toString(16).padStart(8, "0")}</code></td>
+        <td>${cur === c.stock ? '<span class="dim">stock · limit 2</span>'
+                              : '<span class="tag acc2">widened · limit 256</span>'}</td></tr>`;
+    }).join("");
+    host.innerHTML = `
+      <div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Assigned horse — wider list <span class="u">patches game code · not played</span></div>
+        <div class="muted" style="margin:0 0 8px">A character's <b>assigned horse</b> lives in one
+          u16 on the <b>Mounts</b> tab. The engine throws away any value outside a window two ids
+          wide, so stock you can only pick the two Zexen horses:
+          <code>addiu $v0, $a1, -0x134</code> then <code>sltiu $v0, $v0, 2</code>. This raises the
+          <code>2</code> to <code>256</code> at all six sites, widening the window to 308–563.</div>
+        <div class="muted" style="margin:0 0 8px">That adds the <b>Karaya horses</b> (325, 353) and
+          the <b>Le Buque pair</b> (359, 360) to the dropdown. The one that matters is 325:
+          <b>Hugo has no assigned horse at all</b>, and the Karaya horse is the mount he was
+          authored for — the RideOn handler carries a clip fix-up written for exactly one pair,
+          rider model 1 on mount 325/353. Ruby and <code>mskn</code> stay out of reach; they sit
+          below the window's base, which this does not move.</div>
+        <div class="muted" style="margin:0 0 8px"><b>What it does on its own: nothing.</b> Only six
+          characters ship a nonzero value and all are 308 or 309, well inside the widened window.
+          Nothing changes until you pick a wider horse on the Mounts tab.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>Untested in play.</b> The staging chain is
+          read off the disassembly and confirmed against save data — a real save shows Chris at
+          party position 3 with her horse at position 9, which is the <code>pos + 6</code> layout
+          this relies on. What has <i>not</i> been played is a character being given a horse they
+          do not ship with. Two things to expect: the horse only appears once the party is
+          <b>re-formed</b> (the list is saved state, and it is written when the party is built),
+          and the model still has to be loadable in the area you are standing in.</div>
+        <label class="field" style="max-width:420px">
+          <span>Assigned-horse list</span>
+          <select id="hcSel">
+            <option value="0"${on ? "" : " selected"}>Stock — Zexen horses only (308, 309)</option>
+            <option value="1"${on ? " selected" : ""}>Widened — also Karaya + Le Buque (325, 353, 359, 360)</option>
+          </select></label>
+        <table class="invtbl" style="margin-top:10px"><thead><tr><th>Site</th><th>Word</th><th>State</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+    q("#hcSel", host).onchange = (e) => {
+      const wide = e.target.value === "1";
+      MOUNTS.horseClamp.sites.forEach((c) => writeW(c.off, 4, wide ? c.alt : c.stock));
+      drawView();
+    };
   }
 
   // ---- Field character --------------------------------------------------------
@@ -5060,10 +5374,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const effs = GEAR.effs.map((eo) => effectSlotHTML(nm, base, eo)).join("");
       rows.push(`<details class="char" data-base="${base}"><summary><span class="chev">▸</span>
           <span class="nm">${esc2(nm)}</span><span class="muted">${hex(iid, 3)}</span>
-          <span class="lv">DEF ${r16(def)} · ${r32(price)}p</span></summary>
+          <span class="lv">DEF ${r16(def)} · tier ${r32(price)}${tierPotch(r32(price)) !== null ? ` = ${tierPotch(r32(price))}p` : ""}</span></summary>
         <div class="char-body"><div class="grid">
           <label class="field"><span>DEF</span><input type="number" class="gr" min="0" max="65535" value="${r16(def)}" data-off="${def}" data-w="2" data-dptr="${dptr}" data-g="${esc2(nm)}" data-l="DEF"></label>
-          <label class="field"><span>Price (potch)</span><input type="number" class="gr" min="0" max="4294967295" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price"></label>
+          <label class="field"><span>Price tier <span class="dim">1-15 on the shared ladder${tierPotch(r32(price)) !== null ? `, ${tierPotch(r32(price))} potch` : ""}</span></span>
+            <input type="number" class="gr" min="0" max="15" value="${r32(price)}" data-off="${price}" data-w="4" data-g="${esc2(nm)}" data-l="Price tier"></label>
         </div>
         <label class="field" style="margin-top:8px"><span>Name ${slotNoteHTML(nptr)}</span>
           <input type="text" class="ge-name" maxlength="${nameMax}" value="${esc2(nm)}" data-nptr="${nptr}" data-iid="${iid}" data-g="${esc2(nm)}"></label>
@@ -7232,6 +7547,72 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   }
   let PS_OPEN = 0;                     // which rune's character picker is expanded, if any
 
+  let rfOpen = false;
+  function rfCard() {
+    const groups = [];
+    for (const e of RUNEFX) if (!groups.includes(e.g)) groups.push(e.g);
+    const rows = groups.map((g) => {
+      const fields = RUNEFX.filter((e) => e.g === g).map((e) => {
+        const st = rfState(e), nm = runeInfo(e.id).name || hex(e.id, 3);
+        const head = `<span>${esc2(e.label)}
+          <span class="u" title="${esc2(nm + " — " + e.help)}">stock ${esc2(rfShow(e, e.stock))}</span></span>`;
+        // A read-only control keeps its class and key so it is still findable and still names
+        // the addresses that disagree — hiding it would leave a silent gap in the card.
+        if (!st.known) return `<label class="field">${head}
+          <input type="number" class="rf" data-k="${e.key}" value="" disabled
+            title="This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only."></label>`;
+        if (e.kind === "sa") {
+          const opts = rfChoices(e).map((t, i) => `<option value="${i + e.min}"${i + e.min === st.value ? " selected" : ""}>${esc2(t)}</option>`).join("");
+          return `<label class="field">${head}<select class="rf" data-k="${e.key}">${opts}</select></label>`;
+        }
+        return `<label class="field">${head}
+          <input type="number" class="rf" data-k="${e.key}" min="${e.min}" max="${e.max}"${e.step ? ` step="${e.step}"` : ""} value="${st.value}"></label>`;
+      }).join("");
+      return `<div class="bag-h" style="margin-top:10px">${esc2(g)}</div><div class="grid">${fields}</div>`;
+    }).join("");
+    const unknown = RUNEFX.filter((e) => !rfState(e).known).length;
+    const nSites = RUNEFX.reduce((a, e) => a + e.sites.length, 0);
+    return `<details class="card" id="rfBox"${rfOpen ? " open" : ""}>
+      <summary><b>Rune power</b> <span class="u">what a passive is worth once it does fire ·
+        ${RUNEFX.length} constants across ${new Set(RUNEFX.map((e) => e.id)).size} runes</span></summary>
+      <div class="muted" style="margin:8px 0 10px">The switches above decide <b>whether</b> a passive runs without
+        the rune. These decide <b>how much it is worth</b> — the literal the game multiplies, divides or adds by,
+        right after it has asked whether you have the rune. They work on a stock disc and need no switch: the rune
+        still has to be equipped, exactly as it always did. <b>Sunbeam heals 15 HP a combat turn and 1 HP every
+        0.3 seconds of walking</b>, and both of those numbers are here.</div>
+      <div class="warnbox" style="margin:0 0 10px">Like every other code constant in this editor these are
+        <b>global</b>: raising Killer's percentage raises it for everyone who equips a Killer Rune, enemies
+        included. Each control rewrites only the value inside an instruction the game already runs — the opcode and
+        registers stay as shipped — and ↺ puts the original back byte-for-byte.${unknown
+          ? ` <b>${unknown}</b> control(s) are read-only because this disc's instructions aren't what they patch.` : ""}</div>
+      ${rows}
+      <div class="muted" style="margin:10px 0 0">${nSites} sites, all inside the rune's own
+        <i>if&nbsp;equipped</i> branch, and all registered in the <b>Changes</b> tab under “Rune power”. The runes
+        with no control have no number at their sites — they set a state bit or open a branch, so there is nothing
+        to move.</div>
+      <div class="row" style="margin-top:10px"><button class="chip mini" id="rfReset">Restore all to stock</button></div>
+    </details>`;
+  }
+  function wireRf(host) {
+    const box = q("#rfBox", host); if (box) box.ontoggle = () => { rfOpen = box.open; };
+    qa(".rf", host).forEach((el) => {
+      const e = RUNEFX.find((x) => x.key === el.dataset.k); if (!e || el.disabled) return;
+      // The revert tooltip shows the value in the shape it actually has: a decimal for an
+      // immediate, the whole word for a shift, the float itself for the walk-heal interval.
+      markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
+      el.onchange = () => {
+        const n = rfWrite(e, el.value);
+        drawView();
+        setStatus(`${runeInfo(e.id).name || hex(e.id, 3)} — ${e.label}: ${rfShow(e, n)} `
+          + `(stock ${rfShow(e, e.stock)}).`, "ok");
+      };
+    });
+    const rb = q("#rfReset", host);
+    if (rb) rb.onclick = () => {
+      RUNEFX.forEach((e) => rfWrite(e, e.stock));
+      drawView(); setStatus("Rune power restored to stock.", "ok");
+    };
+  }
   function drawPassives(host) {
     const q2 = SEARCH;
     const keep = (p) => !q2 || psHaystack(p, runeInfo(p.id)).includes(q2);
@@ -7319,6 +7700,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
         What is untested is the <i>result</i>: no forced passive has been watched running in game, and the
         in-battle ones are new in this version. Keep a backup disc.</div>
+      ${rfCard()}
       <details class="card"><summary><b>Fortune, and why it is not here</b>
         <span class="u">the one support rune with no decoded site</span></summary>
         <div style="overflow-x:auto"><table class="invtbl">
@@ -7327,6 +7709,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <tbody>${gap || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody>
         </table></div>
       </details>`;
+    wireRf(host);
     const find = (b) => PASSIVES.find((x) => x.id === +b.dataset.id);
     const after = (p, n) => {
       const nm = runeInfo(p.id).name, chosen = psChars(p);
@@ -8059,6 +8442,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     });
     STATUSFX.forEach((f) => f.sites.forEach(([o], k) =>
       code(o, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    // Rune power. Named per site like the status constants, and the kind follows the shape of
+    // the value: an `imm` site only moves its low half-word, the others move bits outside it.
+    RUNEFX.forEach((f) => f.sites.forEach(([o], k) =>
+      code(o, `Rune power · ${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`,
+        RF_KIND[f.kind].disp === "num" ? "imm16" : RF_KIND[f.kind].disp)));
     SETS.counterSites.forEach((o, k) => code(o, `Destiny counter chance (site ${k + 1})`));
     SETS.counterOwnerSites.forEach((o, k) => code(o, `Counter bonus · which set owns it (site ${k + 1})`));
     code(SETS.healOwnerSite, "Pale Moon heal · which set owns it");
@@ -8124,6 +8512,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     ENC.sites.forEach((o, i) => word(o, ENC.stock[i], `Encounter rate · ${ENC.labels[i]}`));
     STATUSFX.forEach((f) => f.sites.forEach(([o, w], k) =>
       word(o, w, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    RUNEFX.forEach((f) => f.sites.forEach(([o, w], k) =>
+      word(o, w, `Rune power · ${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
     AVATAR.ACTORFB.sites.forEach((s, k) => word(s.off, s.stock, `Scene actor fallback · word ${k + 1}`));
     // 16-bit immediates: only the low half-word is the value, so compare that alone.
     const imm = (off, stock, label) => {

@@ -93,7 +93,9 @@ Editable per save:
   guessing. Each of those can also be **handed over**: an item goes into the bag of the party
   the save is currently playing (derived from the field-leader byte and that character's team —
   before the parties merge each protagonist carries their own bag, so "your inventory" is not
-  one place), and a potch price is topped up by exactly the shortfall. Both only stage the
+  one place), and a potch price is topped up by exactly the shortfall. An errand that says
+  **buy** is money, not goods — Dominic joins when you *buy* the Mole Armor from him, so that
+  one is priced off the disc (600 potch) and offers the top-up, never a free copy. Both only stage the
   change, so they still go through **Review changes**. It reflects staged edits live, so it
   doubles as a worklist for a completion run.
 - **Party** — the active battle party (up to 6), by character name.
@@ -198,7 +200,19 @@ rune restores the stock instruction exactly; clearing every rune puts the borrow
 byte-for-byte. None of it has been watched working in play — it's experimental, keep a backup.
 Not offered: *Fortune*, whose effect doesn't ask the question the other 22 ask (the searches that
 came up empty are recorded in the offsets doc so nobody repeats them), and Koroku's four dogs,
-whose character records live outside the array the table indexes),
+whose character records live outside the array the table indexes. The same tab
+also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
+constants across 12 runes, read out of the instruction each rune runs right after it has asked
+whether you have it. *Sunbeam heals 15HP a combat turn and 1HP every 0.3 seconds of walking*, and
+both of those numbers are editable, as are Killer's and Counter's ×150%, Gale's SPD boost,
+Haziness' real dodge chance (30%, which its menu text never states), Drain's and Barrier's
+divisors, Hunter's damage clamp, Violence's half-HP trigger, and the doubling/halving shifts
+behind Wall, Double-Strike, Fire Sealing, Wizard and Warrior. These need **no switch** and work
+on a stock disc — every site sits inside the rune's own *if equipped* branch, so the rune still
+has to be equipped — but like every code constant here they are **global**: raising Killer raises
+it for everyone who wears one, enemies included. Each control rewrites only the value inside an
+instruction the game already runs, checks the site is still the shape it decoded before writing,
+and reverts byte-for-byte),
 **Spells** (power / cast / element / target / AOE /
 status, plus a **rune reskin** — with quick presets like *Power 9999*, *Make AOE*, *Add
 poison* — that edits every spell a rune grants at once, for any of the 49 runes that grant
