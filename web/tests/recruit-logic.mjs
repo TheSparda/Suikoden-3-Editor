@@ -136,5 +136,62 @@ console.log("108-Stars checklist order (real s3_recruit_order.json):");
     groups.length === 1 && eq(groups[0].rows.map((r) => r.c.name), ["Hugo", "Jeane"]));
 }
 
+console.log("recruit prerequisites (real s3_recruit_needs.json):");
+{
+  const NEEDS = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8")).chars;
+
+  // The flagship case: the guide says "with the Rose Brooch in your inventory" and stops.
+  const rose = RC.needChips(NEEDS["Augustine"], {})[0];
+  check("an item's where AND when come through", /Rose Brooch/.test(rose.text)
+    && /Iksay Village's Item Shop/.test(rose.text) && /stages 1-3 of 3/.test(rose.text) && /20% a visit/.test(rose.text));
+  check("a rare find is called one, not passed off as stock", /rare find/.test(rose.text));
+
+  // a drop-sourced item names the enemy, its level, the odds and the area
+  const screw = RC.needChips(NEEDS["Belle"], {})[0];
+  check("a dropped item names enemy, level, odds and area",
+    /Screw/.test(screw.text) && /Lv\d+/.test(screw.text) && /%/.test(screw.text) && /Amur Plains/.test(screw.text));
+  check("the area the how-to already names is listed first", screw.text.indexOf("Amur Plains") < screw.text.indexOf("more"));
+
+  check("a guide line that only restates a disc-read counter is dropped", !/\(guide\)/.test(rose.text));
+
+  // one line per hunting ground, and one enemy per enemy
+  const bowl = RC.needChips(NEEDS["Mamie"], {})[0].text;
+  check("drops in the same place collapse to one clause", bowl.split("dropped by").length === 2);
+  check("the same enemy at two levels is one enemy", /Red Mantik Lv39\/45/.test(bowl));
+  check("droppers beyond the top few are counted, not hidden", /\+\d+ more dropper/.test(bowl));
+
+  // an item nothing in the repo covers says so rather than implying knowledge
+  const statue = RC.needChips(NEEDS["Billy"], {});
+  check("an unsourced item admits it", statue.every((c) => /no source in the editor's tables/.test(c.text)));
+
+  check("an item the guide's own line already places says so instead",
+    /only the line above/.test(RC.needChips(NEEDS["Scott"], {})[0].text));
+
+  // potch is measured against the purse this save is carrying
+  const rich = RC.needChips(NEEDS["Watari"], { gold: 250000 })[0];
+  const poor = RC.needChips(NEEDS["Watari"], { gold: 5000 })[0];
+  check("potch you have is marked ok", rich.kind === "potch" && rich.ok === true && /100,000 potch/.test(rich.text));
+  check("potch you are short of is marked short", poor.ok === false && /you have 5,000/.test(poor.text));
+  check("without a purse the potch chip makes no claim", RC.needChips(NEEDS["Watari"], {})[0].ok === null);
+
+  // prerequisite stars carry their guide position and whether you already have them
+  const ayame = RC.needChips(NEEDS["Ayame"], { recruited: (n) => n === "Watari" })[0];
+  check("a star you must bring is named with its guide position", /Bring Watari \(#50\)/.test(ayame.text) && ayame.ok === true);
+  const melville = RC.needChips(NEEDS["Melville"], { recruited: () => false });
+  check("a star you must recruit first is phrased as such", /Recruit Billy \(#29\)/.test(melville[0].text) && melville[0].ok === false);
+  check("a stated gate comes through in the guide's own words",
+    melville.some((c) => c.kind === "gate" && /Must have completed Hugo Chapter 1/.test(c.text)));
+
+  // the builder must not turn a mention into a requirement
+  check("a star you FIGHT is not a prerequisite", !(NEEDS["Nei"] && NEEDS["Nei"].first));
+  check("a co-join is not a prerequisite", !(NEEDS["Bright"] && NEEDS["Bright"].first));
+  check("a NEGATIVE party condition is not a prerequisite", !(NEEDS["Jefferson"] && NEEDS["Jefferson"].first));
+  check("an item the line says NOT to bring is not a need",
+    !(NEEDS["Barts"].items || []).some((i) => /Seeds/.test(i.name)));
+  check("nothing is invented for a star with no errand", !NEEDS["Kenji"]);
+
+  check("no needs at all renders nothing", RC.needChips(undefined, {}).length === 0);
+}
+
 console.log(fails ? `\nFAILED (${fails})` : "\nAll recruit-logic checks passed.");
 process.exit(fails ? 1 : 0);

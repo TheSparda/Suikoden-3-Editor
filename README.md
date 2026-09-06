@@ -84,8 +84,13 @@ Editable per save:
   Hugo / Chris / Geddoe / Thomas / shared spread, filters (recruited vs missing, optional vs
   story), the guide's how-to line under each missing **optional** star, **next in guide
   order** (the first one you can go and get), and a **＋ recruit** button that stages it
-  without leaving the list. It reflects staged edits live, so it doubles as a worklist for a
-  completion run.
+  without leaving the list. Under each how-to it also spells out **what that errand needs**:
+  where the item it asks for actually comes from and when (the disc's own shop counters — town,
+  regular stock vs rare find, the rare find's per-visit chance and which story stages carry it —
+  plus enemy drops with the enemy, level, odds and area, and treasure chests), the **potch price
+  measured against your purse**, and any star you have to **bring along or recruit first**, with
+  a ✓/✗ for whether you already have them. Where nothing is known it says so rather than
+  guessing. It reflects staged edits live, so it doubles as a worklist for a completion run.
 - **Party** — the active battle party (up to 6), by character name.
 - **Inventory** — every bag, split into Party Items vs Key/Valuables, with name-resolved
   item pickers, quantities, add and remove. The bag layout follows the save: before the
@@ -640,8 +645,9 @@ Editor/
   s3patch.py        ISO reader library + verified field tables. Its one consumer is
                     build_item_desc_extra.py; it is not a second editor.
   build_*.py        regenerate the guide reference data (skills, caps, growth, rune slots,
-                    bestiary, recruit flags, recruitment order, rune/food descriptions, room,
-                    sub-file and BGM indexes) from a pristine disc + the saved guide text
+                    bestiary, recruit flags, recruitment order and prerequisites, rune/food
+                    descriptions, room, sub-file and BGM indexes) from a pristine disc + the
+                    saved guide text
   suikosource/      saved Suikosource guide text the generators parse
   s3_*.json / *_ids.txt    verified id->name / description / guide reference data
   Suikoden3_ISO_offsets.md the reverse-engineering notebook — the source of truth for offsets

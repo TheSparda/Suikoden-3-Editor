@@ -396,6 +396,16 @@ console.log("Guide overlays + xdelta:");
     (Object.keys(j.chars).length === 108 && new Set(ns).size === ns.length && staged && j.extras.length === 4
       ? ok : bad)(`s3_recruit_order.json parses (${Object.keys(j.chars).length} stars, ${j.phases.length} stages, ${j.extras.length} non-star)`); }
   catch (e) { bad("s3_recruit_order.json — " + e.message); }
+  // ...and under each how-to, what that errand needs and where it comes from
+  (/s3_recruit_needs\.json/.test(app) && /needChips/.test(app) && /class="needs"/.test(app)
+    ? ok : bad)("108-Stars checklist says what each errand needs");
+  try { const j = JSON.parse(fs.readFileSync(path.join(REPO, "Editor", "s3_recruit_needs.json"), "utf8"));
+    const items = Object.values(j.chars).flatMap((c) => c.items || []);
+    const rose = (j.chars["Augustine"].items || [])[0];
+    (items.length >= 8 && rose && rose.name === "Rose Brooch" && rose.shops.length
+      && rose.shops[0].town === "Iksay Village" && rose.shops[0].kind === "rare"
+      ? ok : bad)(`s3_recruit_needs.json parses (${Object.keys(j.chars).length} stars, ${items.length} items)`); }
+  catch (e) { bad("s3_recruit_needs.json — " + e.message); }
   // manual "Force refresh" escape hatch: footer button that clears SW + caches and reloads
   (/id="forceRefreshBtn"/.test(html) && /#forceRefreshBtn/.test(app)
     ? ok : bad)("footer has an always-available Force-refresh button");
