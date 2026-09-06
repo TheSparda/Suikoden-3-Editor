@@ -210,7 +210,8 @@ node web/tests/field-avatar.mjs
 ## `e2e.mjs` — full end-to-end in headless Chromium (runs in CI)
 Drives the real ISO editor against a synthetic in-bounds ISO (`synth-iso.mjs`): load +
 version check, rune reskin + presets, spell target edit, per-field revert, undo/redo, gear
-DEF→description rewrite, food edit, skill-cap presets, Balance (hard-mode) preset, the
+DEF→description rewrite, food edit, skill-cap presets, the bulk growth/power scales (hard-mode
+presets, correct growth offsets, overwrite guard, filter scope), the
 bestiary view, the recruit section (per-character + story fade), the backup-nudge → confirm →
 byte-exact save path, **planted-byte assertions that the verified table offsets still decode
 correctly** (skill-max +16, growth HP@+0, rune Head/Right/Left), and no horizontal overflow at

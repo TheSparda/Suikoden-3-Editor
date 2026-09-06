@@ -144,10 +144,11 @@ Writes only the **changed byte-runs** (`diffRuns()` computes `[start,end)` range
 modal shows the safe-copy phase (no progress events → animated bar + elapsed timer), the write
 phase (real %), and finalize. On success, reset `ORIG = BUF.slice()` so the baseline is clean.
 
-### 3.4 Views (12)
-Characters, Growth, Support, Weapons, Shops, Spells (+ a **rune reskin** that edits every spell
-a rune grants at once, and optional description rewrites), Unites, Gear, Food, Balance
-(idempotent hard-mode multiplier presets, scaled from disk so they don't compound), Enemies
+### 3.4 Views (11)
+Characters, Growth (+ a **bulk scaling** card — the idempotent hard-mode multipliers, scaled
+from disk so they don't compound), Support, Weapons, Shops, Spells (+ a **rune reskin** that
+edits every spell a rune grants at once, a **bulk Power scale**, and optional description
+rewrites), Unites (+ the same bulk Power scale), Gear, Food, Enemies
 (name reference), Reference (item/skill id→name). Each field is registered (`FIELD_REG`) with
 its offset/width/kind/label so dirty-tracking, per-field revert, and the review list are
 generic.
