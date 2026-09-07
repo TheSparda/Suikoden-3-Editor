@@ -480,6 +480,9 @@ details.fold[open] > summary { margin:0 0 10px; }
 /* A closed fold can hide staged edits, so its header says how many are in there — in the
    same warn colour every other dirty control uses. */
 .fold-edited { color:var(--warn); }
+/* "click to expand" is advice for a CLOSED fold only — leaving it under an open one reads
+   like a broken instruction. */
+details.fold[open] .foldhint { display:none; }
 
 /* Labelled section divider. The Spells tab stacks two collapsed tool cards and then the
    spell table; without a captioned rule between them the three read as one list of bars. */

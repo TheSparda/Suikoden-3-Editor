@@ -89,7 +89,9 @@ await page.click('#isoTabs [data-v="food"]');
 await page.fill('input.fd[data-kind="heal"] >> nth=0', "321");
 await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
 await page.click('#isoTabs [data-v="chars"]');            // the rename panel lives above the char records
-await page.waitForSelector('input.rename[data-orig="Hugo"]', { timeout: 10000 });
+await page.waitForSelector("#rnBox", { timeout: 10000 });
+await page.locator("#rnBox > summary").click();          // ...and ships collapsed
+await page.waitForSelector('input.rename[data-orig="Hugo"]', { state: "visible", timeout: 10000 });
 await page.fill('input.rename[data-orig="Hugo"]', "Rex");   // shorter → space-padded to "Rex "
 
 await page.click("#isoSaveBtn");
