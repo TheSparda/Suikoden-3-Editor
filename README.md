@@ -654,10 +654,24 @@ disc holds, says what each one does and how it bites, and puts any of them back 
   positions 7–12 fill with mounts the game then has to stage in every area.
 - **Assigned-horse clamp** — the six `sltiu` sites that decide which horse ids count. Three
   are party helpers and one is `PartyPut`'s own position 7–12 guard.
-- **Battle mounts**, **Field character**, **Scene actor fallback** and **Story content** —
-  none of them add or remove a party member, and the card says so rather than implying it;
-  they are here because they are the rest of the surface, and because the field-character
-  whitelist is what lets the party reach states the engine never produces for itself.
+- **Battle mounts**, **Field character** and **Story content** — none of them add or remove
+  a party member, and the card says so rather than implying it; they are here because they
+  are the rest of the surface, and because the field-character whitelist is what lets the
+  party reach states the engine never produces for itself.
+
+The card **leads with the one entry that has been watched doing this**, and it is not the
+horse. The **Scene actor fallback** — an opt-in experiment on the Test tab — was reported on
+**2026-09-06** to stop the game adding party members correctly, and restoring its two words
+is what fixed it. It is labelled **confirmed harmful** in both places now, because the
+research had gone the other way: a census of 12,055 script actor references found the
+by-character-id namespace used *zero* times and concluded the patch "could never have
+fired". The census was right about scripts; the conclusion generalised past them.
+`FindActorByCharId` is the engine's general "which actor is this character" lookup and the
+party code calls it directly — and there **null is the answer**, meaning "no actor for that
+character is staged". The patch removes that answer and substitutes the party leader, so
+every caller asking "is this character here?" is told yes. See the correction in
+[`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md). The other five
+entries are mechanisms with no play report attached, and each one says so.
 
 Two things make it different from **Revert all**. It needs **no base disc** — every site
 carries its own stock value, read off a pristine `SLUS-20387` and re-verified from disc by
