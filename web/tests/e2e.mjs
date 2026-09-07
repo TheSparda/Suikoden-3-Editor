@@ -2728,11 +2728,34 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.check('details.char[data-i="0"] input.sp18[data-b="1"]'); await page.waitForTimeout(60);
   check("ticking a status makes the same roll meaningful",
     /no other record on this disc rolls this often/.test(await hint(0, "chance")));
+  // Element reads like Target — an enum whose company is the point. synth spells 0, 1 and 3 are
+  // Fire; spell2 is the Enhance family on its own.
+  check("Element names the other spells in its family",
+    /shared with 2 other spells/.test(await hint(0, "elementId")) && /Dancing Flames/.test(await hint(0, "elementId")));
+  check("an element nothing else uses says so", /no other spell on this disc is/.test(await hint(2, "elementId")));
+  // Cast is the field where naming the company would say nothing — 41 distinct values across 94
+  // spells on a real disc — so it reads as a place in the order instead. All four synth spells
+  // ship cast 50, so nothing is sooner or later until one moves.
+  // The fixture's four named spells all ship cast 50, above the 89 empty records at 0.
+  const cast0 = await hint(0, "cast");
+  check("cast reads as a place in the order, not a list of names",
+    /89 cast sooner, 0 later/.test(cast0), cast0.replace(/\s+/g, " ").slice(0, 90));
+  check("it names the same-cast records and the ends of the scale",
+    /the same cast as Dancing Flames/.test(cast0) && /run 0 .* to 50 /.test(cast0));
+  await page.fill('details.char[data-i="0"] input[data-k="cast"]', "5");
+  await page.dispatchEvent('details.char[data-i="0"] input[data-k="cast"]', "change");
+  await page.waitForTimeout(60);
+  check("moving one cast reorders both rows",
+    /89 cast sooner, 4 later/.test(await hint(0, "cast")) && /90 cast sooner, 0 later/.test(await hint(1, "cast")));
   // The folds are re-rendered by every edit, so an opened one has to come back open — a fold
-  // that shut itself the moment you typed would be worse than no fold at all.
+  // that shut itself the moment you typed would be worse than no fold at all. The click below is
+  // also the case that used to be EATEN: it lands right after the cast edit above, so the blur
+  // fires that field's change handler between mousedown and mouseup. If a refresh rebuilds the
+  // <summary> in there, the two halves of the click land on different elements and the browser
+  // fires the click on their common ancestor instead — no toggle, and nothing to see.
   const foldOpen = () => page.evaluate(() => document.querySelector('details.char[data-i="0"] .vhint[data-f="target"] details').open);
   await page.click('details.char[data-i="0"] .vhint[data-f="target"] summary'); await page.waitForTimeout(60);
-  check("a hint fold opens", (await foldOpen()) === true);
+  check("a hint fold opens on the first click after an edit", (await foldOpen()) === true);
   await page.fill('details.char[data-i="0"] input[data-k="power"]', "123");
   await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change");
   await page.waitForTimeout(80);
