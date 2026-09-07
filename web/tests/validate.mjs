@@ -384,10 +384,42 @@ console.log("Passive rune sites:");
         "synth-iso.mjs and iso.js agree on the three trampoline jal words");
     }
 
+    // Every rune must carry a confidence marker, and only the two words the tab knows how to
+    // render. A rune added later with no marker would silently show as "untested" — the safe
+    // direction, but it hides the omission, so require it explicitly. (Ported from v1.113.0,
+    // which introduced the markers; this version widened them from 2 runes to 22.)
+    const proofs = [...sw.matchAll(/proof: "(\w+)"/g)].map((m) => m[1]);
+    (proofs.length === ids.length ? ok : bad)(`every rune carries a proof marker (${proofs.length}/${ids.length})`);
+    const badProof = proofs.filter((x) => x !== "confirmed" && x !== "untested");
+    (badProof.length ? bad : ok)(badProof.length
+      ? `unknown proof marker(s): ${[...new Set(badProof)].join(", ")} — the tab only renders confirmed/untested`
+      : `proof markers are all confirmed/untested (${[...new Set(proofs)].join(", ")})`);
+    // Sunbeam's walk-heal was played on 2026-09-06 — but under the DROPPED-CALL patch shape, not
+    // this one. The report is kept in the rune's note as evidence about the site; it may not set
+    // the marker, because the trampoline it now goes through has never been played. Nothing here
+    // may read "confirmed" until somebody plays THIS build, and a passing test is not that.
+    (/id: 0x1BD, where: "both", proof: "untested"/.test(sw) ? ok : bad)(
+      "Sunbeam reads untested — its play report was earned under the previous patch shape");
+    (/id: 0x1B9, where: "field", proof: "untested"/.test(sw) ? ok : bad)("Champion's reads untested");
+    (proofs.includes("confirmed") ? bad : ok)(proofs.includes("confirmed")
+      ? "a rune is marked confirmed, but nothing has been watched working through the relocated helper"
+      : "nothing claims to be confirmed in play through the relocated helper");
+    (/watched working in game, through this mechanism/.test(iso) ? ok : bad)(
+      "the confirmed badge's tooltip says which mechanism it would be confirming");
+    // The play report itself must survive as recorded history — losing it would cost the one
+    // piece of real evidence this feature has.
+    (/played on 2026-09-06/.test(sw) && /previous patch shape/.test(sw) ? ok : bad)(
+      "Sunbeam's play report is kept, with the patch shape it was earned under");
+
     // The delay slot is the one word this editor must never touch: every entry in the table
     // carries it, the audit compares it, and the write path only ever rewrites `s.off`.
     (/writeW\(s\.off, 4, w\);/.test(iso) ? ok : bad)("psSyncSites rewrites the jal word and nothing else");
-    (/const PS_LEGACY_YES = 0x0004102B;/.test(iso) ? ok : bad)("v1.106.0's answer word is still recognised (0x0004102B)");
+    (/const PS_LEGACY_YES = 0x0004102B;/.test(iso) ? ok : bad)("v1.106.0–v1.113.0's answer word is still recognised (0x0004102B)");
+    // ...and recognised as the second of TWO words. The answer word on its own is an ordinary
+    // `sltu $v0,$zero,$a0` that occurs elsewhere in the image, so matching it alone would call
+    // a stock disc patched. The delay-slot word has to have moved up as well.
+    (/if \(a === \(s\.ds >>> 0\) && b === \(PS_LEGACY_YES >>> 0\)\) return "legacy";/.test(iso) ? ok : bad)(
+      "the legacy encoding is matched on BOTH words, not on the answer word alone");
   }
 }
 
