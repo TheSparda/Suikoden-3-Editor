@@ -3179,7 +3179,7 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
-      passives: "The support runes the engine asks about \u2014 Wall, Fury, Hunter, Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal and the rest \u2014 handed to THE CHARACTERS YOU CHOOSE, without equipping the rune and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune is the 23rd rune and a different shape \u2014 its check is not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so it gets a plain on/off tickbox, which costs nothing here because the battle-results loop only tests whether the count is nonzero: one Fortune is already as good as six. Prosperity\u2019s worn-set check sits in the same loop 0x54 bytes later and shares that switch, but it COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. NOTHING HERE HAS BEEN WATCHED WORKING IN PLAY and every row says so. Sunbeam\u2019s field walk-heal was played on 2026-09-06, but under the editor\u2019s previous patch shape, which dropped the call instead of retargeting it: that report proves the site and the effect, and says nothing about the trampoline, its register handling or the bitmap lookup. Keep a backup disc.",
+      passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. NOTHING HERE HAS BEEN WATCHED WORKING IN PLAY and every row says so. Sunbeam\u2019s field walk-heal was played on 2026-09-06, but under the editor\u2019s previous patch shape, which dropped the call instead of retargeting it: that report proves the site and the effect, and says nothing about the trampoline, its register handling or the bitmap lookup. Keep a backup disc.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -3254,6 +3254,54 @@
     }));
     drawRecords(q("#charRecs", host), "list1", REF.names.list1, LIST1_FIELDS, true);
   }
+  // ---- forced passives, on the character's own card ---------------------------
+  // The Passives tab asks "which characters have Wall?"; this asks "which runes does Hugo
+  // have?" — the same bitmaps, transposed. A card's record index IS the index the bitmaps use
+  // (PS_HOOK.pickMin..pickMax are list1 indices, which is what psNameOf reads), so no mapping
+  // is needed. Enablement for every rune lives here; the Passives tab keeps only the four
+  // party-wide effects, and a rune's STRENGTH is edited on the Runes tab.
+  const charPassiveIdx = (recBase) => (recBase - TABLES.list1[0]) / TABLES.list1[1];
+  function charPassivesHTML(recBase) {
+    const idx = charPassiveIdx(recBase);
+    if (!Number.isInteger(idx) || idx < PS_HOOK.pickMin || idx > PS_HOOK.pickMax) return "";
+    const rows = PASSIVES.map((p) => {
+      const nm = runeInfo(p.id).name || hex(p.id, 3);
+      const editable = psEditable(p), on = psHas(p, idx);
+      const st = psState(p);
+      const why = st === "legacy"
+        ? "an older patch forced this rune on for EVERYONE by dropping the call; clear it on the Passives tab first"
+        : !editable ? "this disc's code at one of this rune's sites is not what the editor decoded, so it is read-only"
+          : `${p.what} — ${PS_WHERE[p.where]}`;
+      return `<label class="pschip" title="${esc2(why)}">
+        <input type="checkbox" class="cpOn" data-id="${p.id}" data-c="${idx}"${on ? " checked" : ""}${
+          editable && st !== "legacy" ? "" : " disabled"}> ${esc2(nm)}</label>`;
+    }).join("");
+    const nOn = PASSIVES.filter((p) => psHas(p, idx)).length;
+    return `<div class="bag-h" style="margin-top:12px">Passive runes forced on
+        <span class="u" title="Each of these makes the engine answer YES to &quot;does this character have that rune equipped?&quot; for this character only — no rune, no rune slot. The effect's STRENGTH is edited on the Runes tab. Fortune is not here: its check lives in a battle overlay, not the executable.">${nOn
+          ? `${nOn} on` : "none"} · without equipping them</span></div>
+      <div class="muted" style="margin:0 0 6px">Ticking one installs a small helper into a dead
+        routine in the executable and sets this character's bit in that rune's table, so the
+        effect is <b>theirs alone</b> — enemies and everyone else are unaffected. Untick every
+        rune on every character and the helper is removed byte-for-byte.
+        <b>Experimental: no forced battle passive has been watched working in play.</b></div>
+      <div class="pschips">${rows}</div>`;
+  }
+  function wireCharPassives(scope) {
+    qa("input.cpOn", scope).forEach((b) => (b.onchange = () => {
+      const p = PASSIVES.find((x) => x.id === +b.dataset.id), idx = +b.dataset.c;
+      if (!p) return;
+      const next = b.checked ? psChars(p).concat(idx).sort((x, y) => x - y)
+        : psChars(p).filter((i) => i !== idx);
+      const n = psSetChars(p, next);
+      const nm = runeInfo(p.id).name || hex(p.id, 3), who = psNameOf(idx);
+      drawView();
+      setStatus(n === null ? `${nm} — nothing written; this disc's code doesn't match.`
+        : b.checked ? `${nm} forced on for ${who} only.`
+          : `${nm} — ${who} no longer has it forced${n ? `, ${n} character(s) still do` : ""}.`,
+        n === null ? "warn" : "ok");
+    }));
+  }
   function drawRecords(host, listKey, names, fields, lazy) {
     const [base, stride] = TABLES[listKey];
     const cnt = LIST_COUNT[listKey];
@@ -3270,14 +3318,21 @@
       `<details class="char" data-rec="${r.base}"><summary>
          <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span>
          <span class="muted">#${r.i}</span></summary>
-         <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label, listKey)}</div></div>
+         <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label, listKey)}</div>
+           <div class="cpBox">${lazy || listKey !== "list1" ? "" : charPassivesHTML(r.base)}</div></div>
        </details>`).join("");
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
       if (lazy) d.addEventListener("toggle", () => {
-        if (d.open && !d.dataset.built) { d.querySelector(".grid").innerHTML = recFields(rec, fields, lbl, listKey); wireFields(d, rec, lbl); d.dataset.built = "1"; }
+        if (d.open && !d.dataset.built) {
+          d.querySelector(".grid").innerHTML = recFields(rec, fields, lbl, listKey);
+          wireFields(d, rec, lbl);
+          const box = d.querySelector(".cpBox");
+          if (box && listKey === "list1") { box.innerHTML = charPassivesHTML(rec); wireCharPassives(box); }
+          d.dataset.built = "1";
+        }
       });
-      else wireFields(d, rec, lbl);
+      else { wireFields(d, rec, lbl); wireCharPassives(d); }
     });
   }
   // Support characters (list3) don't fight, so only their utility skills (the 0x1C..0x26 block:
@@ -7942,45 +7997,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return `<span class="u" style="color:${m[1]}" title="${esc2(p.note || m[2])}">${m[0]}</span>`;
   }
 
-  let rfOpen = false;
-  function rfCard() {
-    const groups = [];
-    for (const e of RUNEFX) if (!groups.includes(e.g)) groups.push(e.g);
-    const rows = groups.map((g) => {
-      const fields = RUNEFX.filter((e) => e.g === g).map((e) => rfField(e, false)).join("");
-      return `<div class="bag-h" style="margin-top:10px">${esc2(g)}</div><div class="grid">${fields}</div>`;
-    }).join("");
-    const unknown = RUNEFX.filter((e) => !rfState(e).known).length;
-    const nSites = RUNEFX.reduce((a, e) => a + e.sites.length, 0);
-    return `<details class="card" id="rfBox"${rfOpen ? " open" : ""}>
-      <summary><b>Rune power</b> <span class="u">what a passive is worth once it does fire ·
-        ${RUNEFX.length} constants across ${new Set(RUNEFX.map((e) => e.id)).size} runes</span></summary>
-      <div class="muted" style="margin:8px 0 10px">The switches above decide <b>whether</b> a passive runs without
-        the rune. These decide <b>how much it is worth</b> — the literal the game multiplies, divides or adds by,
-        right after it has asked whether you have the rune. They work on a stock disc and need no switch: the rune
-        still has to be equipped, exactly as it always did. <b>Sunbeam heals 15 HP a combat turn and 1 HP every
-        0.3 seconds of walking</b>, and both of those numbers are here.</div>
-      <div class="warnbox" style="margin:0 0 10px">Like every other code constant in this editor these are
-        <b>global</b>: raising Killer's percentage raises it for everyone who equips a Killer Rune, enemies
-        included. Each control rewrites only the value inside an instruction the game already runs — the opcode and
-        registers stay as shipped — and ↺ puts the original back byte-for-byte.${unknown
-          ? ` <b>${unknown}</b> control(s) are read-only because this disc's instructions aren't what they patch.` : ""}</div>
-      ${rows}
-      <div class="muted" style="margin:10px 0 0">${nSites} sites, all inside the rune's own
-        <i>if&nbsp;equipped</i> branch, and all registered in the <b>Changes</b> tab under “Rune power”. The runes
-        with no control have no number at their sites — they set a state bit or open a branch, so there is nothing
-        to move.</div>
-      <div class="row" style="margin-top:10px"><button class="chip mini" id="rfReset">Restore all to stock</button></div>
-    </details>`;
-  }
-  // Read the card's REAL open state out of the DOM, synchronously, right before anything
-  // re-renders. `ontoggle` alone is not enough: <details> fires toggle in a queued task, so a
-  // user who opens the card and immediately changes a value can re-render before that event is
-  // delivered — rfOpen is still false and the card they just opened snaps shut under them.
-  // (It also made the e2e racy: it passed for a while, then failed on the same bytes.)
-  const rfSyncOpen = () => { const b = q("#rfBox"); if (b) rfOpen = b.open; };
+  // The old Rune power CARD is gone: every strength control now lives on the rune's own row on
+  // the Runes tab (runePowerHTML), and the Passives tab carries no strength at all — it is the
+  // four party-wide effects' on/off switches and nothing else. rfField/rfState/rfWrite are
+  // unchanged and still shared; only the card that used to group them is retired.
   function wireRf(host) {
-    const box = q("#rfBox", host); if (box) box.ontoggle = () => { rfOpen = box.open; };
     qa(".rf", host).forEach((el) => {
       const e = RUNEFX.find((x) => x.key === el.dataset.k); if (!e || el.disabled) return;
       // The revert tooltip shows the value in the shape it actually has: a decimal for an
@@ -8008,36 +8029,36 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         }
       } else markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
       el.onchange = () => {
-        rfSyncOpen();
         const n = rfWrite(e, rfStored(e, +el.value || 0));
         drawView();
         setStatus(`${runeInfo(e.id).name || hex(e.id, 3)} — ${e.short || e.label}: `
           + `${rfShow(e, rfShown(e, n))} (stock ${rfStockShown(e)}).`, "ok");
       };
     });
-    const rb = q("#rfReset", host);
-    if (rb) rb.onclick = () => {
-      rfSyncOpen();
-      RUNEFX.forEach((e) => rfWrite(e, e.stock));
-      drawView(); setStatus("Rune power restored to stock.", "ok");
-    };
   }
 
+  // NO strength control on this tab. v1.123.0 split the editor by question:
+  //   Passives      — WHETHER a passive fires without the rune, for the four party-wide effects
+  //                   (Champion's and Sunbeam above, Fortune and Prosperity in auxSwCard).
+  //   Character card — the same question per unit, for every rune (charPassivesHTML).
+  //   Runes tab      — HOW MUCH each rune is worth (runePowerHTML, on the rune's own row).
+  // Prosperity's potch multiplier is not a rune strength at all — it is an armour-set bonus, and
+  // it stays on the Sets tab with the rest of that set's numbers.
   function drawPassives(host) {
-    // The Rune power card remembers whether it was open in `rfOpen`, which its `toggle` handler
-    // sets — but `toggle` is dispatched on a later task, so an edit made in the same tick as the
-    // click that opened it would re-render against a stale `false` and collapse the card under
-    // the user's hands. Read the outgoing card's own state instead; it is synchronous and it is
-    // the truth.
-    { const live = q("#rfBox"); if (live) rfOpen = live.open; }
     const q2 = SEARCH;
     const keep = (p) => !q2 || psHaystack(p, runeInfo(p.id)).includes(q2);
-    const rows = PASSIVES.filter(keep);
+    // This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion's and
+    // Sunbeam (the field runes, `where` field/both), plus Fortune's EXP multiplier and
+    // Prosperity's potch multiplier — the two reward multipliers that share one battle-results
+    // function. Per-unit enablement for every rune is on the character's own card; a rune's
+    // strength is on the Runes tab. `where === "battle"` is the line between them.
+    const PS_TAB = (p) => p.where !== "battle";
+    const rows = PASSIVES.filter(PS_TAB).filter(keep);
     const blk = psBlkState();
-    const nOn = PASSIVES.filter((p) => psState(p) === "on").length;
-    const nLegacy = PASSIVES.filter((p) => psState(p) === "legacy").length;
+    const nOn = PASSIVES.filter(PS_TAB).filter((p) => psState(p) === "on").length;
+    const nLegacy = PASSIVES.filter((p) => psState(p) === "legacy").length;   // any rune, incl. battle
     const nUnknown = PASSIVES.filter((p) => psState(p) === "unknown").length;
-    const nSites = PASSIVES.reduce((a, p) => a + p.sites.length, 0);
+    const nSites = PASSIVES.filter(PS_TAB).reduce((a, p) => a + p.sites.length, 0);
     const body = rows.map((p) => {
       const info = runeInfo(p.id), st = psState(p), [pill, why] = PS_STATE_LABEL[st];
       const chosen = psChars(p), open = PS_OPEN === p.id, editable = psEditable(p);
@@ -8116,9 +8137,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
         What is untested is the <i>result</i>: no passive has been watched running in game <i>through the
         relocated helper</i>, and the in-battle ones have never been watched at all. Keep a backup disc.</div>
-      ${auxSwCard()}
-      ${rfCard()}`;
-    wireRf(host);
+      ${auxSwCard()}`;
     wireAuxSw(host);
     const find = (b) => PASSIVES.find((x) => x.id === +b.dataset.id);
     const after = (p, n) => {

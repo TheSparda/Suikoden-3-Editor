@@ -313,23 +313,50 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   // does not carry them forward drops the whole feature silently: RUNEFX, RF_KIND and every
   // helper still exist and still parse, so nothing above this line notices. The e2e catches it
   // (#rfBox stops existing) but the e2e is slow and not always run — catch it in the fast suite.
-  (/\$\{rfCard\(\)\}/.test(iso) ? ok : bad)(
-    "drawPassives still renders the Rune power card (${rfCard()})");
+  // v1.123.0 moved the layout: rune STRENGTH is edited on the Runes tab only, per-unit
+  // ENABLEMENT is on the character's own card, and the Passives tab keeps the four party-wide
+  // effects. So the old "drawPassives renders rfCard()" guard is gone on purpose — what has to
+  // hold now is that each control still has exactly one home and none of them lost it.
+  (/\$\{runePowerHTML\(r\.id\)\}/.test(iso) ? ok : bad)(
+    "the Runes tab is still the home of every rune's Strength block");
+  // The Passives tab carries the four party-wide effects' SWITCHES and no strength at all:
+  // Champion's and Sunbeam as rune rows, Fortune and Prosperity via the overlay-switch card.
+  (/\$\{auxSwCard\(\)\}/.test(iso) ? ok : bad)(
+    "the Passives tab renders the two overlay switches (Fortune, Prosperity)");
+  (!/\$\{rfCard\(\)\}|\$\{psRewardCard\(\)\}/.test(iso) ? ok : bad)(
+    "...and no strength control — that lives on the Runes tab only");
+  (/const PS_TAB = \(p\) => p\.where !== "battle";/.test(iso) ? ok : bad)(
+    "the Passives tab is filtered to the non-battle runes (Champion's, Sunbeam)");
+  (/\$\{lazy \|\| listKey !== "list1" \? "" : charPassivesHTML\(r\.base\)\}/.test(iso) ? ok : bad)(
+    "the character card renders its forced-passives block");
+  (/wireCharPassives\(box\)/.test(iso) && /wireCharPassives\(d\)/.test(iso) ? ok : bad)(
+    "...and wires it on both the lazy and eager card paths");
+  // The transposition only works because a card's record index IS the bitmap index. If list1's
+  // base/stride ever moved relative to PS_HOOK's pick range this would silently tick the wrong
+  // character, so the derivation must stay arithmetic off TABLES.list1 rather than guessed.
+  (/const charPassiveIdx = \(recBase\) => \(recBase - TABLES\.list1\[0\]\) \/ TABLES\.list1\[1\];/.test(iso) ? ok : bad)(
+    "a card's forced-passive index is derived from TABLES.list1, not assumed");
   // Match the CALL, not the declaration — `function wireRf(host) {` also contains "wireRf(host)",
   // so a looser regex stays green with the call site deleted, which is the exact failure this
   // check exists to catch.
   (/\n\s*wireRf\(host\);/.test(iso) ? ok : bad)(
     "drawPassives still wires the Rune power controls (a wireRf(host); call, not just the declaration)");
-  // The same controls also render per-rune on the Runes tab, which is where someone looking up
-  // Sunbeam expects to find "HP a combat turn". Two call sites now, one per tab.
+  // Strength has exactly ONE home now: the rune's own row on the Runes tab. The Passives tab
+  // renders no `.rf` control at all, so wireRf must be called from exactly one place — two
+  // would mean a strength control had crept back onto another tab.
   (/\$\{runePowerHTML\(r\.id\)\}/.test(iso) ? ok : bad)(
     "drawRunes still renders each passive rune's Strength block");
-  ((iso.match(/\n\s*wireRf\(host\);/g) || []).length === 2 ? ok : bad)(
-    `wireRf is called from both tabs (found ${(iso.match(/\n\s*wireRf\(host\);/g) || []).length}, expected 2 — Passives and Runes)`);
-  // One renderer feeds both tabs. If they ever diverge into two copies, a knob added to RUNEFX
-  // silently appears on one tab only.
-  (/function rfField\(e, short\)/.test(iso) && /rfField\(e, false\)/.test(iso) && /rfField\(e, true\)/.test(iso) ? ok : bad)(
-    "both tabs render their controls through the one rfField()");
+  ((iso.match(/\n\s*wireRf\(host\);/g) || []).length === 1 ? ok : bad)(
+    `wireRf is called from the Runes tab only (found ${(iso.match(/\n\s*wireRf\(host\);/g) || []).length}, expected 1)`);
+  // One renderer still feeds both places that show a rune-power control: the Runes tab's
+  // per-rune Strength blocks (short labels) and the Passives tab's reward card (long labels).
+  // If they ever fork into two copies, a knob added to RUNEFX appears in only one of them.
+  (/function rfField\(e, short\)/.test(iso) && /rfField\(e, true\)/.test(iso) ? ok : bad)(
+    "the Runes tab's Strength blocks render through rfField()");
+  // The dead Rune power card must stay dead — leaving it would give strength two homes on two
+  // different tabs again, which is the thing v1.123.0 removed.
+  (!/function rfCard\(/.test(iso) ? ok : bad)(
+    "the old Rune power card is gone, not merely unreferenced");
   // The walk-heal is stored as an interval and shown as a rate; the snap-back is what keeps a
   // nudge-and-undo from leaving 1/3.33 = 0.3003 on the disc instead of the stock 0.3.
   (/Math\.abs\(shown - e\.stockShown\) < 0\.005\) return e\.stock/.test(iso) ? ok : bad)(
