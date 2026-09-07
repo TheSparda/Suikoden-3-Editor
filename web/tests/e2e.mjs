@@ -2441,9 +2441,15 @@ head("Food description — editable, auto-updates on heal, length-capped");
   await page.context().close();
 }
 
-head("Character rename panel — scoped, same-length-capped, staged");
+head("Character rename panel — collapsed, scoped, same-length-capped, staged");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="chars"]'); await page.waitForTimeout(80);
+  // The panel ships collapsed so the stat records sit at the top of the tab; the fields are in
+  // the DOM either way, so visibility is what says whether the fold is doing its job.
+  check("rename panel starts collapsed", !(await page.locator("#rnBox").evaluate((b) => b.open)));
+  check("rename fields hidden while collapsed", !(await page.isVisible('input.rename[data-orig="Hugo"]')));
+  await openFold(page, "#rnBox");
+  check("clicking the header expands it", await page.isVisible('input.rename[data-orig="Hugo"]'));
   check("rename inputs present (Hugo/Chris/Geddoe/Koroku)", (await page.locator("input.rename").count()) === 4);
   check("Hugo rename capped to 4 chars", +(await page.getAttribute('input.rename[data-orig="Hugo"]', "maxlength")) === 4);
   check("Geddoe rename capped to 6 chars", +(await page.getAttribute('input.rename[data-orig="Geddoe"]', "maxlength")) === 6);
@@ -2453,6 +2459,14 @@ head("Character rename panel — scoped, same-length-capped, staged");
     +(await page.getAttribute('input.rename[data-orig="Koroku"]', "maxlength")) === 6);
   await page.fill('input.rename[data-orig="Geddoe"]', "Gideon"); await page.dispatchEvent('input.rename[data-orig="Geddoe"]', "input"); await page.waitForTimeout(40);
   check("staged rename highlights", await page.evaluate(() => document.querySelector('input.rename[data-orig="Geddoe"]').classList.contains("dirty")));
+  check("the collapsed-card counter follows the staged rename",
+    (await page.textContent("#rnCount")) === "1 staged" && await page.isVisible("#rnCount"));
+  // Plenty of things in this tab redraw the whole view (a search, a per-field revert); the card
+  // the user opened — and the name they typed into it — both have to survive that.
+  await page.fill("#isoSearch", "1"); await page.waitForTimeout(80);
+  check("the open card survives a redraw", await page.isVisible('input.rename[data-orig="Geddoe"]'));
+  check("the staged name survives a redraw", (await page.inputValue('input.rename[data-orig="Geddoe"]')) === "Gideon");
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(80);
   // this harness uses the FS-Access (in-place) path, where renames can't reach disc-wide copies
   await page.click("#isoSaveBtn");
   check("rename-only in-place save warns it needs streaming", await statusHas(page, /streaming/i));
