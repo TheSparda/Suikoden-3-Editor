@@ -1305,6 +1305,8 @@ byte-for-byte are **identical in 26 of 27 halfwords** — one routine, stamped o
 
 ```
 0037 0028 1400 fffd      op 55  Cond(0x28 = RIDE, PLAYER)   <- the guard
+00ff fffc 0000           op 255                             <- the branch that consumes it
+0071 5400 0002           op 113 (PLAYER.mount)
 0018 1400 0002 fffe      op 24  RideOffSetS(PLAYER, 2)      <- dismount
 00b7 1400 0000 0032 0000 00ff fffe            op 183        <- the pickup itself
 00b5 0000 00NN 0000      op 181  ( NN = the only field that varies: 0x10 / 0x11 / 0x12 / 0x00 )
@@ -1346,6 +1348,50 @@ recoverable instruction length, which is what stops the chainer dead one instruc
 sandwich and is why this had to be found by byte-comparison rather than disassembly. The
 varying field at halfword 13 (`0x10`/`0x11`/`0x12`/`0x00`) is presumably which item, or which
 of several pickup animations, but that was not chased.
+
+
+### 14k. Who tests for "is the player mounted?" — and where
+
+`op 55/56` with subcommand `0x28`/`0x29` is a searchable 4-byte signature, so the question of
+how widely the engine cares about the ride state has a direct answer. **101 sites in `town`
+scripts, and 97 of them test `PLAYER`** (the other four test staged cast slots 36-38).
+
+It is not everywhere. Seven of the twenty-eight area archives carry one:
+
+| archive | RIDE/NORIDE tests | complete ground horse bundled? |
+|---|---|---|
+| **RVER** | 25 | no |
+| **LAST** · Ceremonial Site | 24 | no — `guli` only |
+| **MORI** · Zexen Forest | 20 | no — `guli_005` only |
+| **HAKA** | 10 | no |
+| **ICEW** | 10 | no |
+| **AKMT** · Kuput Forest | 8 | no — single stray clips |
+| **HNKT** · Budehuc Castle | 4 | **yes** — `krum` |
+| **ZKTR** · Brass Castle | **0** | **yes** — `zkum` |
+| **KRVI** · Karaya Village | **0** | **yes** — `krum` |
+| **HGB1** · Yaza Plain | **0** | **yes** — `krum` |
+
+**The distribution is inverted from the obvious guess, and the inversion is the point.** The
+three archives that actually stage a ground horse and do the mounting ask the question
+**zero** times. A scene that mounts you knows you are mounted; it has no reason to test. The
+guard exists for scenes that must cope with a player who **arrived** already mounted from
+somewhere else.
+
+So the RIDE test is effectively a **ride-through marker**, and it corroborates two earlier
+results that were reached by unrelated routes:
+
+- Field ride survives a map transition (§14f). If it did not, none of these 101 tests could
+  ever fire — every one of them is in an area that cannot mount you itself.
+- The `070` signature (§14g). LAST and ICEW carry every ride clip *except* mount-up, which was
+  read as "you can only ride into here". They are second and fifth on this list.
+
+RVER topping it at 25 is unexplained; its town files carry no readable scene ids and it was
+listed in §9 as having neither a mount nor a bundled rider.
+
+**Correction to §14j.** That section put `RideOffSetS` immediately after the guard. It does
+not: `op 255` sits between them, and the same `op 55 → op 255` pairing accounts for 97 of the
+101 sites. So `op 55` is the *test* and `op 255` is the *branch* that consumes it — which also
+means `op 255` is worth identifying if anyone wants to redirect one of these conditionals.
 
 
 ## Not established
