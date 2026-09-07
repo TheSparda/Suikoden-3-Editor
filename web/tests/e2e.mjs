@@ -175,6 +175,13 @@ async function dirtyHiddenIs(page, want) {
   await until(page, (w) => { const d = document.querySelector("#isoDirty"); return (!d || d.hidden) === w; }, want);
   return (await readDirty(page)) === want;
 }
+// ALWAYS ASSERT WITH THE MATCHING HELPER, NEVER THE NEGATED ONE. Both of these WAIT for the
+// state they name before reporting, so `!(await nothingStaged(p))` is a 10s dead wait: it asks
+// the badge to go hidden, the badge is showing (which is the whole point of the assertion),
+// until() times out, swallows it, and only then does the negation read the right answer. The
+// check PASSES, so nothing ever pointed at it — two of them plus one 30s swallowed
+// selectOption were 51s of the suite's 198s. `!(await nothingStaged(p))` is exactly
+// `await somethingStaged(p)` and vice versa; prefer the direct form and the wait does work.
 const nothingStaged = (page) => dirtyHiddenIs(page, true);    // badge hidden
 const somethingStaged = (page) => dirtyHiddenIs(page, false); // badge showing
 // Wait for the badge's label (it is rAF-repainted like its visibility) and return the text.
@@ -654,7 +661,7 @@ head("Passives view — the two overlay switches (Fortune EXP, Prosperity potch)
   check("...and each says why, rather than looking broken",
     /unavailable/.test(await page.getAttribute('input.auxsw[data-k="fortune"]', "title"))
     && /unavailable/.test(await page.getAttribute('input.auxsw[data-k="prosperity"]', "title")));
-  check("clicking a disabled switch stages nothing", !(await somethingStaged(page)));
+  check("clicking a disabled switch stages nothing", await nothingStaged(page));
   { const txt = await page.textContent("#auxSwBox");
     check("the card names both overlay addresses", /0x3F3E6938/.test(txt) && /0x3F3E698C/.test(txt));
     check("...and says both streaming copies move together", /streaming twins/.test(txt));
@@ -3419,7 +3426,7 @@ head("Status effect strength — what an effect is worth (engine constants)");
   await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spFxBox");
   await page.fill('input.fx[data-k="res3"]', "0");
   await page.dispatchEvent('input.fx[data-k="res3"]', "change"); await page.waitForTimeout(60);
-  check("an edit is staged", !(await nothingStaged(page)));
+  check("an edit is staged", await somethingStaged(page));
   await openFold(page, "#spFxBox");
   await page.click("#fxReset"); await page.waitForTimeout(80);
   check("restore-to-stock clears the change", await nothingStaged(page));
@@ -3935,8 +3942,11 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   check("a stage collapses", (await page.locator(".starstbl tbody tr:not(.phaserow)").count()) < rowsBefore);
   await page.click(".starstbl tr.phaserow .phasetog"); await page.waitForTimeout(60);
   check("a stage expands again", (await page.locator(".starstbl tbody tr:not(.phaserow)").count()) === rowsBefore);
-  // the per-row +recruit action stages a recruit and bumps the count to 4
-  await page.selectOption("#rteam", "Chris").catch(() => {});
+  // the per-row +recruit action stages a recruit and bumps the count to 4.
+  // #rteam only exists on the Recruit sub-tab, and we are on Stars — this is optional, hence
+  // the catch. It NEEDS the short timeout: bare `.catch(() => {})` swallows Playwright's 30s
+  // default, so this one line sat here costing 30s a run inside a check that passed.
+  await page.selectOption("#rteam", "Chris", { timeout: 1000 }).catch(() => {});
   const before = await page.textContent(".starsnum");
   await page.click(".starstbl [data-starsadd]"); await page.waitForTimeout(60);
   check("+recruit stages a recruit (count goes up)", (await page.textContent(".starsnum")) !== before && /\b4\b/.test(await page.textContent(".starsnum")));
