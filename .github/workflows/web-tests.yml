@@ -67,9 +67,39 @@ jobs:
       - name: Install Chromium
         run: npx playwright-core install --with-deps chromium
         working-directory: web/tests
-      - name: Playwright e2e (ISO editor + verified-offset fixture)
-        run: node e2e.mjs
+      # Sharded across worker processes (shard.mjs). CI runs the WHOLE suite — the
+      # E2E_TIER=fast subset is a local-iteration convenience and is not a gate.
+      # shard.mjs fails the job if the shards' section counts don't add up to the
+      # full suite, so a dropped shard can't pass as green.
+      - name: Playwright e2e (ISO editor + verified-offset fixture, sharded)
+        run: node shard.mjs
         working-directory: web/tests
       - name: Streaming save (the phone path — real service worker, byte-compared download)
         run: node stream-save.mjs
+        working-directory: web/tests
+
+  # Times the suite section-by-section against web/tests/timings.json and fails when a
+  # change makes e2e materially slower. Separate job because it runs the suite UNSHARDED:
+  # per-section times measured under worker contention aren't comparable to the baseline.
+  # It is advisory (continue-on-error) — the absolute numbers depend on the runner, so a
+  # noisy CI box should not block a merge. Read the log; if a section really grew, either
+  # fix it or take the cost deliberately with `node budget.mjs --update`.
+  e2e-budget:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install xdelta3
+        run: sudo apt-get install -y xdelta3
+      - name: Install e2e deps
+        run: npm install
+        working-directory: web/tests
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps chromium
+        working-directory: web/tests
+      - name: e2e timing budget (per-section, vs timings.json)
+        run: node budget.mjs
         working-directory: web/tests

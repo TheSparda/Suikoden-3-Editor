@@ -1,8 +1,19 @@
 # Web editor tests
 
-Fourteen suites, all runnable with plain Node (v18+). `npm test` runs the twelve browser-free
-ones; `npm run test:e2e` runs the Playwright suite; `version-drift.mjs` is a pre-push check
-run on its own (see below):
+All suites run with plain Node (v18+):
+
+| command | what it runs | time |
+| --- | --- | --- |
+| `npm test` | every browser-free suite | ~8s |
+| `npm run test:fast` | e2e smoke tier, 6 workers — **reduced coverage** | ~9s |
+| `npm run test:e2e` | the whole e2e suite sharded over 4 workers, + `stream-save.mjs` | ~43s |
+| `npm run test:e2e:serial` | the same, one process (what CI's timings come from) | ~150s |
+| `npm run test:budget` | times e2e section-by-section against `timings.json` | ~150s |
+| `npm run test:overlay` | the ISO-load overlay + boot gate | ~5s |
+
+`test:fast` is for the edit-and-check loop, not for clearing a commit — see
+[the e2e section](#running-it-in-under-a-minute--shardmjs-tiers-and-the-timing-budget).
+`version-drift.mjs` is a pre-push check run on its own (see below):
 
 ## `version-drift.mjs` — pre-push, catches the collision git can't
 
@@ -280,6 +291,116 @@ npm --prefix web/tests install          # installs playwright-core
 node web/tests/e2e.mjs                   # uses playwright's own chromium
 PW_CHROMIUM=/path/to/chrome node web/tests/e2e.mjs   # or point at an existing binary
 ```
+
+### Running it in under a minute — `shard.mjs`, tiers, and the timing budget
+
+The suite is 117 sections and ~150s if you run it end to end in one process. Three things cut
+that, and they compose:
+
+```bash
+cd web/tests
+npm run test:e2e        # whole suite, 4 workers      — ~42s
+npm run test:fast       # smoke tier, 6 workers       — ~9s, REDUCED COVERAGE
+npm run test:budget     # times it against the baseline
+node e2e.mjs            # everything, one process     — ~150s (what CI's numbers come from)
+E2E_ONLY=Runes node e2e.mjs        # just the sections whose name matches
+```
+
+**`shard.mjs`** splits the sections across worker *processes*. Processes, not parallel pages in
+one process, because `e2e.mjs` serves the fixture from a single module-level `served` buffer
+that ~13 sections swap out mid-test (`setServed(patched)` … `setServed(bytes)`). Two sections
+running at once in one process would read each other's fixture, and that shows up as an
+impossible byte assertion in whichever one lost the race — at random. Each worker gets its own
+process, HTTP server and port, so sections stay strictly sequential *within* a worker, which is
+the property the fixture swapping depends on.
+
+Four workers is the sweet spot on an 8-core machine; measured wall time is ~42s at 4, ~42s at 6,
+~41s at 8, and **worse** at 12 (~50s). Each worker is a headless Chromium plus a Node process,
+so this saturates well before it runs out of cores — past 8 the workers just contend.
+
+Sections are packed across shards **longest-first by their cost in `timings.json`**, which lands
+the four workers within a second of each other. Without that baseline it falls back to
+round-robin, and one worker draws several slow sections and finishes ~30% after the others.
+
+**`E2E_TIER=fast`** runs the ~33 sections listed in `tiers.json` — one per feature area, chosen
+for breadth per second. It is for the loop where you are changing one thing and want to know in
+ten seconds that you did not break something obvious. **It is not a gate**, it does not clear a
+commit, and CI never runs it: about a quarter of the suite's sections and a third of its time.
+If you add a view to the editor, add its section to `tiers.json`.
+
+A filtered or sharded run **never prints the unqualified `All e2e checks passed.`** It says how
+many sections it actually attempted and that the rest were not — for the same reason the abort
+guard in `e2e.mjs` exists. That guard covers a run that *died* early; this covers one that was
+never *asked* to do the work. Both produce a green-looking tail over sections that never ran, and
+in a repo where several sessions read each other's test output, "green" has to mean one thing.
+`shard.mjs` additionally fails the run if the shards' section counts don't add back up to the
+number selected, so a worker that dies without a verdict cannot pass as an absence.
+
+### `budget.mjs` — so the suite doesn't quietly get slow again
+
+The suite drifted to 198s over months, and no single commit was obviously to blame. When it was
+finally measured, **three lines accounted for 51s of it, inside checks that passed**: two
+assertions that called the staged-badge waiter for the state they were arguing *against* (so
+`until()` burned its full 10s, swallowed the timeout, and only then read the right answer), and
+a `selectOption(...).catch(() => {})` on an element that wasn't in the DOM, eating Playwright's
+30s default. A slow suite never turns red. It just gets slower until running it stops being
+something you do while you work.
+
+```bash
+node budget.mjs                    # run the suite, judge every section against timings.json
+node budget.mjs --update           # take the new numbers deliberately
+node budget.mjs --from <jsonl>     # judge timings a previous run already wrote
+E2E_TIMINGS=/tmp/t.jsonl node e2e.mjs    # ...which is how you get that file
+```
+
+**The per-section thresholds are the actual guard**: a section may grow by 50% or +1.2s
+(whichever is kinder) before it is flagged, and a brand-new section is flagged over 2.5s. At a
+~1s median section, run-to-run noise is ~150ms — nowhere near the +1.2s floor — so a section
+that genuinely got slower stands out. Renamed or deleted sections are reported too, because a
+rename silently stops the guard watching that section.
+
+The **whole-suite total is only a coarse backstop** (12%, or 15s, whichever is larger), and it
+is loose on purpose. Whole-suite wall time swings with whatever else the machine is doing: the
+baseline was taken on an idle box at 150.9s, and the very next run — with work in the background
+— came in at 158.8s. An 8s allowance failed that by 0.1s, which is how a check earns itself a
+reputation for crying wolf and gets switched off. The honest limitation of loosening it: creep
+spread thinly across many sections (+80ms each, ~+9s) sits under the floor and will *not* fail
+the run. It is still visible, because the total delta is printed every time and refreshing the
+baseline puts the new number in a reviewable diff — but it is not enforced.
+
+It runs the suite **unsharded**, on purpose: per-section times measured while three other workers
+fight for the same cores are inflated and not comparable to the baseline. Its CI job is
+`continue-on-error` — absolute times depend on the runner, so a noisy box should not block a
+merge — but if a section really did grow, either fix it or run `--update` and say in the commit
+message what bought the extra time.
+
+`timings.json` is therefore load-bearing twice over: the budget judges against it, and the
+sharder packs by it. If it goes stale the shards go lopsided and the run gets *slower*, which is
+a visible nudge to refresh it rather than a silent wrong answer.
+
+### Adding a section
+
+Sections are `head("name")` followed by a block, and the block is gated on the selection
+decision `head()` made:
+
+```js
+head("What this proves");
+if (ON) { const page = await newPage(); await loadIso(page);
+  check("...", ...);
+  await page.context().close();
+}
+```
+
+`ON` is a plain flag that `head()` just set, so a new section needs no bookkeeping — copy the
+two lines and go. It is a flag rather than an index on purpose: an indexed gate renumbers every
+section below any insertion, so one peer adding one section conflicts with every hunk after it.
+
+**Don't leave the gate off.** An ungated block runs in *every* shard while being counted in one,
+so it gets tested N times over, its output prints under whatever section header came before it,
+and a `pageerror` from it is attributed to the wrong section.
+
+A `newPage()` + `loadIso()` is ~230ms, so prefer reusing a page within a section over opening
+another; 120 of them are ~28s of the suite's time on their own.
 
 No real ISO is used or needed — the synthetic image is just the editable region with the
 USA version word and a few planted records. Verifying a **real** SLUS-20387 disc (edit →

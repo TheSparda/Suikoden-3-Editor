@@ -33,7 +33,93 @@ catch { console.log("SKIP e2e: playwright-core not installed."); process.exit(0)
 
 let fails = 0, section = "";
 const check = (name, cond, extra = "") => { console.log(`  ${cond ? "✓" : "✗"} ${name}${extra ? " — " + extra : ""}`); if (!cond) fails++; };
-const head = (s) => { section = s; console.log(s + ":"); };
+// ---- which sections this process runs ---------------------------------------------------
+// Selection is per SECTION — a head() and every block gated under it — decided once in
+// head() and read by each block's `if (ON)`. All three filters are opt-in: with none
+// of them set every section runs, so a bare `node e2e.mjs` still means the whole suite,
+// which is what CI runs.
+//
+//   E2E_ONLY=<regex>    only sections whose name matches (case-insensitive)
+//   E2E_TIER=fast       only the smoke tier — REDUCED COVERAGE, see tiers.json
+//   E2E_SHARD=k/n       shard k of n, for the parallel runner (shard.mjs)
+//   E2E_TIMINGS=<path>  append this run's per-section ms as JSON (budget.mjs reads it)
+//
+// A FILTERED RUN MUST NEVER PRINT THE UNQUALIFIED "All e2e checks passed." A partial run
+// that reads like a full one is the same false-green the abort guard below exists to make
+// impossible — the guard covers a run that DIED early, this covers one that was never asked
+// to do the work. finishRun() names the filter and the skip count on every filtered run.
+const ONLY = process.env.E2E_ONLY ? new RegExp(process.env.E2E_ONLY, "i") : null;
+const TIER = process.env.E2E_TIER || "";
+const SHARD = (() => {
+  const m = /^(\d+)\/(\d+)$/.exec(process.env.E2E_SHARD || "");
+  if (!m) return null;
+  const k = +m[1], n = +m[2];
+  if (n < 1 || k < 0 || k >= n) { console.log(`bad E2E_SHARD=${process.env.E2E_SHARD} (want k/n, 0 <= k < n)`); process.exit(2); }
+  return { k, n };
+})();
+let TIER_SET = null;
+if (TIER) {
+  try { TIER_SET = new Set(JSON.parse(fs.readFileSync(path.join(HERE, "tiers.json"), "utf8"))[TIER]); }
+  catch (e) { console.log(`E2E_TIER=${TIER} but tiers.json is unreadable: ${e.message}`); process.exit(2); }
+  if (!TIER_SET || !TIER_SET.size) { console.log(`E2E_TIER=${TIER} names no sections in tiers.json`); process.exit(2); }
+}
+// Shard assignment is COST-AWARE when timings.json is present: sections are packed
+// longest-first into the emptiest shard, so four workers finish together instead of one
+// worker drawing every slow section. Round-robin over selected index is the fallback, and
+// is also what any section missing from the baseline gets (a brand-new section has no
+// measured cost, so it cannot be packed — it just lands somewhere).
+//
+// The baseline is web/tests/timings.json, the same file budget.mjs guards. That is on
+// purpose: if it goes stale the shards go lopsided and the run gets slower, which is a
+// visible nudge to refresh it rather than a silent wrong answer.
+let BASELINE = null;
+try { BASELINE = JSON.parse(fs.readFileSync(path.join(HERE, "timings.json"), "utf8")).sections; } catch { /* optional */ }
+const SHARD_OF = new Map();
+if (SHARD && BASELINE) {
+  const eligible = Object.keys(BASELINE)
+    .filter((n) => (!ONLY || ONLY.test(n)) && (!TIER_SET || TIER_SET.has(n)))
+    .sort((a, b) => BASELINE[b] - BASELINE[a]);
+  const load = new Array(SHARD.n).fill(0);
+  for (const n of eligible) {
+    let b = 0;
+    for (let i = 1; i < SHARD.n; i++) if (load[i] < load[b]) b = i;
+    SHARD_OF.set(n, b); load[b] += BASELINE[n];
+  }
+}
+// `eligible` counts what the ONLY/TIER filters kept, BEFORE the shard split. The parallel
+// runner sums each worker's ran-count and checks it against this: that is the only thing
+// that proves every selected section landed in exactly one shard rather than none.
+let selSeen = 0, skippedSecs = 0, ranSecs = 0, eligibleSecs = 0;
+// Every section's block is gated on `if (ON)`, and head() sets ON. That is why the gate is a
+// bare flag and not an index into an array: sections are top-level statements in file order,
+// so a block always runs immediately after its own head(), and a flag needs no numbering.
+// An indexed gate would renumber every section below any insertion, which turns a peer adding
+// one section into a conflict in every hunk after it — this cost a rebase to learn.
+let ON = true;
+function wanted(name) {
+  if (ONLY && !ONLY.test(name)) return false;
+  if (TIER_SET && !TIER_SET.has(name)) return false;
+  eligibleSecs++;
+  if (!SHARD) return true;
+  const packed = SHARD_OF.get(name);
+  if (packed !== undefined) return packed === SHARD.k;
+  return (selSeen++ % SHARD.n) === SHARD.k;      // unmeasured (new) section
+}
+// ---- per-section timing ----------------------------------------------------------------
+// One clock, closed out by the next head() and by finishRun(), so a section's cost is
+// everything between its header and the next — the same thing a reader times by hand.
+const TIMES = [];
+let curStart = 0;
+function closeTimer() { if (section && curStart) TIMES.push({ name: section, ms: Date.now() - curStart }); curStart = 0; }
+const head = (s) => {
+  closeTimer();
+  ON = wanted(s);
+  if (!ON) { skippedSecs++; section = ""; return false; }
+  ranSecs++; section = s; curStart = Date.now(); console.log(s + ":");
+  return true;
+};
+const filterLabel = () => [ONLY && `E2E_ONLY=/${ONLY.source}/i`, TIER && `E2E_TIER=${TIER}`,
+  SHARD && `E2E_SHARD=${SHARD.k}/${SHARD.n}`].filter(Boolean).join(" ");
 
 const { bytes, armor, mapping } = buildSynthIso();
 let served = bytes;                       // tests can swap this before loading (bad/short ISOs)
@@ -92,7 +178,27 @@ function finishRun() {
       + `Every check after that point was SKIPPED, not passed \u2014 this run says nothing about them.`);
     process.exit(1);
   }
-  console.log(fails ? `\nFAILED (${fails})` : "\nAll e2e checks passed.");
+  closeTimer();
+  if (process.env.E2E_TIMINGS) {
+    try { fs.appendFileSync(process.env.E2E_TIMINGS, TIMES.map((t) => JSON.stringify(t)).join("\n") + "\n"); }
+    catch (e) { console.log("  ! could not write E2E_TIMINGS: " + e.message); }
+  }
+  const f = filterLabel();
+  const suite = ranSecs + skippedSecs;
+  // A filter that selected NOTHING is a typo, not a pass. Exiting 0 here would make
+  // `E2E_ONLY=Runez` (or a tiers.json name that drifted) print a cheerful green line over a
+  // run that tested absolutely nothing — the one outcome this suite must never produce.
+  if (f && eligibleSecs === 0) {
+    console.log(`\nFAILED \u2014 ${f} selected 0 of the ${suite} sections. Nothing ran, so nothing`
+      + ` was proved. Check the pattern (section names are the head() strings in this file).`);
+    process.exit(1);
+  }
+  const scope = f
+    ? `${ranSecs} of ${eligibleSecs} selected sections (suite has ${suite}) (${f})`
+      + ` \u2014 PARTIAL RUN, the other ${suite - ranSecs} were not attempted`
+    : `all ${ranSecs} sections`;
+  console.log(fails ? `\nFAILED (${fails}) \u2014 ${scope}`
+    : f ? `\ne2e checks passed for ${scope}.` : "\nAll e2e checks passed.");
   process.exit(fails ? 1 : 0);
 }
 async function abort(e) {
@@ -276,7 +382,7 @@ async function save(page) {
 
 // =====================================================================================
 head("Fallback (no File System Access → input loader)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript("Object.defineProperty(window,'showOpenFilePicker',{value:undefined})");
   await gotoIsoTab(page); await page.waitForTimeout(150);
   // Without FS Access we no longer hard-block: the loader offers a plain <input type=file>
@@ -287,7 +393,7 @@ head("Fallback (no File System Access → input loader)");
 }
 
 head("ISO validation");
-{ // Wait for the EXPECTED rejection text, not a fixed 300ms: reading the multi-MB fixture over
+if (ON) { // Wait for the EXPECTED rejection text, not a fixed 300ms: reading the multi-MB fixture over
   // HTTP can outlast any constant, which flaked ~1 run in 8. Waiting merely for "not still
   // loading" is not enough either — the loader's idle placeholder (".iso / .bin / .img · USA
   // release only") satisfies that instantly AND contains "USA", so a loose check would pass
@@ -322,7 +428,7 @@ head("ISO validation");
 }
 
 head("Overlap guard");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.fill("#isoSearch", "79"); await page.waitForTimeout(80);
   await openRec(page, "details.char"); await page.waitForTimeout(80);
   check("last record hides spill-over fields", (await page.locator("details.char[open] .char-body").innerText()).includes("overlap the next table"));
@@ -330,7 +436,7 @@ head("Overlap guard");
 }
 
 head("Byte-exact edits across every editable view");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const [l2b, l2s] = TABLES.list2, [l3b, l3s] = TABLES.list3, [l4b] = TABLES.list4;
   // Weapons (list4): ATK Lv1 (byte @ rec0+0)
   await page.click('#isoTabs [data-v="weapons"]'); await openRec(page, "details.char");
@@ -421,7 +527,7 @@ head("Byte-exact edits across every editable view");
 }
 
 head("Character pickers (item + skill) byte-exact");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="chars"]');
   await page.fill("#isoSearch", "1"); await page.waitForTimeout(60);
   await openRec(page, "details.char"); await page.waitForTimeout(80);
@@ -439,7 +545,7 @@ head("Character pickers (item + skill) byte-exact");
 }
 
 head("Rune + gear descriptions in the pickers (live, not from the bundled JSON)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // A rune's description is read straight out of the rune item table. Passive support runes
   // (Balance, Fury, ...) have no spell-table entry at all, so this table is their only source —
   // they used to render with no description line anywhere in the editor.
@@ -476,7 +582,7 @@ head("Rune + gear descriptions in the pickers (live, not from the bundled JSON)"
 }
 
 head("Armor sets view — decode, edit, byte-exact save");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="sets"]');
   await page.waitForSelector("#setCards details.char", { timeout: 3000 });
   check("all 5 set cards render", (await page.$$("#setCards details.char")).length === 5);
@@ -501,7 +607,7 @@ head("Armor sets view — decode, edit, byte-exact save");
 }
 
 head("Passives view — choose who gets a support rune for free");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="passives"]');
   await page.waitForSelector("button.psPick", { timeout: 3000 });
   // Every rune with a decoded site is offered now, not just the two field party loops: the
@@ -593,7 +699,7 @@ head("Passives view — choose who gets a support rune for free");
   await page.context().close();
 }
 head("Passives view — what it refuses to write");
-{ // A disc whose code is not what we decoded is read-only, never overwritten.
+if (ON) { // A disc whose code is not what we decoded is read-only, never overwritten.
   // Drift CHAMPION'S site, not Wall's: Wall is an in-battle rune and is no longer offered on
   // this tab, so asserting it is absent here would pass whether the guard worked or not.
   // Champion's is one of the two runes this tab owns, so its absence is real evidence.
@@ -644,7 +750,7 @@ head("Passives view — what it refuses to write");
 
 
 head("Passives view — the two overlay switches (Fortune EXP, Prosperity potch)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="passives"]');
   await page.waitForSelector("#auxSwBox", { timeout: 3000 });
   const keys = await page.$$eval(".auxsw", (n) => n.map((x) => x.dataset.k));
@@ -689,7 +795,7 @@ head("Passives view — the two overlay switches (Fortune EXP, Prosperity potch)
 }
 
 head("Passives view — rune power: what a passive is worth once it fires");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="runes"]');
   await page.waitForSelector("input.rf", { timeout: 3000 });
   // The card is a separate patch from the switches above it: these constants live INSIDE each
@@ -755,7 +861,7 @@ head("Passives view — rune power: what a passive is worth once it fires");
 }
 
 head("Passives view — rune power reverts and refuses a drifted disc");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="runes"]');
   await page.waitForSelector("input.rf", { timeout: 3000 });
   await page.fill('input.rf[data-k="killer"]', "400");
@@ -802,7 +908,7 @@ head("Passives view — rune power reverts and refuses a drifted disc");
 }
 
 head("Runes view — a passive rune's strength on its own row");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="runes"]');
   await page.waitForSelector(".invtbl", { timeout: 3000 });
   // Only the runes that HAVE a number get a Strength block. Sunbeam has two, and they are the
@@ -845,7 +951,7 @@ head("Runes view — a passive rune's strength on its own row");
 }
 
 head("Characters view — force a passive on this unit, from their own card");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="chars"]');
   await page.waitForSelector("details.char", { timeout: 3000 });
   await page.fill("#isoSearch", "Hugo"); await page.waitForTimeout(150);
@@ -909,7 +1015,7 @@ head("Characters view — force a passive on this unit, from their own card");
 }
 
 head("Characters view — a rune it cannot write stays read-only on the card");
-{ const patched = Uint8Array.from(bytes);
+if (ON) { const patched = Uint8Array.from(bytes);
   new DataView(patched.buffer).setUint32(0x1037F4, 0xDEADBEEF, true);   // Haziness' only site
   setServed(patched);
   const page = await newPage(); await loadIso(page);
@@ -934,7 +1040,7 @@ head("Characters view — a rune it cannot write stays read-only on the card");
 // part of the feature, not styling trivia: one column, a target you can hit with a thumb, and
 // the whole tile — not just the 13px box — toggling the rune.
 head("Characters view — the forced-passive tiles are thumb-sized on a phone");
-{ const page = await newPage({ width: 390, height: 844 }); await loadIso(page);
+if (ON) { const page = await newPage({ width: 390, height: 844 }); await loadIso(page);
   await page.click('#isoTabs [data-v="chars"]');
   await page.waitForSelector("details.char", { timeout: 3000 });
   await page.fill("#isoSearch", "Hugo"); await page.waitForTimeout(150);
@@ -980,7 +1086,7 @@ head("Characters view — the forced-passive tiles are thumb-sized on a phone");
   await page.context().close(); }
 
 head("Mounts view — rewrite the battle rider/mount pairs");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="mounts"]');
   await page.waitForSelector("#mountCards details.char", { timeout: 3000 });
   check("all 3 pair cards render", (await page.$$("#mountCards details.char")).length === 3);
@@ -1045,7 +1151,7 @@ head("Mounts view — rewrite the battle rider/mount pairs");
 }
 
 head("Mounted-pair mechanics — HP pooling and the Adrenaline pair-sum");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="mounts"]');
   await page.waitForSelector("select.mnt-mech", { timeout: 3000 });
   const mech = (off) => `select.mnt-mech[data-off="${off}"]`;
@@ -1070,7 +1176,7 @@ head("Mounted-pair mechanics — HP pooling and the Adrenaline pair-sum");
 }
 
 head("Field character — the whitelist that decides who you can walk around as");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
   await page.click('#testTabs [data-t="avatar"]');          // the tab opens on the switchboard now
@@ -1126,7 +1232,7 @@ head("Field character — the whitelist that decides who you can walk around as"
 }
 
 head("Field character — chips; Story content in its own view");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
   await page.click('#testTabs [data-t="avatar"]');          // the tab opens on the switchboard now
@@ -1230,7 +1336,7 @@ head("Field character — chips; Story content in its own view");
 }
 
 head("Encounter movement rules — what counts as moving");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encWalk", { timeout: 3000 });
   const lenOf = (r, off) => r.u32(off) & 0xFFFF;
@@ -1282,7 +1388,7 @@ head("Encounter movement rules — what counts as moving");
 }
 
 head("Encounter multipliers — walking / running / mounted, apart");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("input.enc-mult", { timeout: 3000 });
   const boxOf = (k) => `input.enc-mult[data-k="${k}"]`;
@@ -1332,7 +1438,7 @@ head("Non-stock code — a checkbox per patch, so a misbehaving disc can be bise
 // stage it. This switchboard's whole reason to exist is that a row must SURVIVE being switched
 // off, so you can turn one patch off, save, try the disc, and put it back if it wasn't the one.
 // That round trip is what this test pins — the table rendering is incidental.
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const view = async () => (await page.textContent("#isoView")).replace(/\s+/g, " ");
   const rowsNow = () => page.$$eval("[data-psw]", (els) => els.length);
 
@@ -1407,7 +1513,7 @@ head("Non-stock code — a checkbox per patch, so a misbehaving disc can be bise
 }
 
 head("Movement speed — the walk/run table and each character's class");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="movement"]');
   const f32 = (r, off) => { const b = Buffer.alloc(4); b.writeUInt32LE(r.u32(off) >>> 0, 0); return b.readFloatLE(0); };
   const runBox = (cls) => `input.spd-f[data-cls="${cls}"][data-col="run"]`;
@@ -1493,7 +1599,7 @@ head("Movement speed — the walk/run table and each character's class");
 // a byte check after the second save compares against the first save's output instead of the
 // disc. The byte-level verification is the block after this one, on a page that saves once.
 head("Movement speed — give one character its own speed");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="movement"]');
   await page.waitForSelector("#spdQApply", { timeout: 3000 });
   const settle = () => page.waitForSelector("#spdQApply", { timeout: 3000 });
@@ -1597,7 +1703,7 @@ head("Movement speed — give one character its own speed");
 
 // The same feature at the byte level, saving exactly once so "as loaded" still means the disc.
 head("Movement speed — quick-set writes the right bytes");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="movement"]');
   await page.waitForSelector("#spdQApply", { timeout: 3000 });
   const f32 = (r, off) => { const b = Buffer.alloc(4); b.writeUInt32LE(r.u32(off) >>> 0, 0); return b.readFloatLE(0); };
@@ -1626,7 +1732,7 @@ head("Movement speed — quick-set writes the right bytes");
 // Restore has to take the class assignments with it, or the members column disagrees with
 // the speeds beside it. On its own page, because a save rebases what "as loaded" means.
 head("Movement speed — restore covers speeds and classes together");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="movement"]');
   const runBox = (cls) => `input.spd-f[data-cls="${cls}"][data-col="run"]`;
   const openAdv = async () => {
@@ -1653,7 +1759,7 @@ head("Movement speed — restore covers speeds and classes together");
 }
 
 head("Reference — Music: playing the streamed audio off the disc");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // A cut-down index whose one stream points at the planted Svag in the synth disc.
   const BGM = { format: "s3bgm", schema: 1, kindBgm: 1,
     script: [{ archive: "TEST", label: "t", op: 59, track: 0x200, fade: 64, tail: 16, trackOff: 0 }],
@@ -1697,7 +1803,7 @@ head("Reference — Music: playing the streamed audio off the disc");
 }
 
 head("Reference — Music: a bad stream offset reports, it does not crash the page");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // An index pointing past the end of the disc — what a stale s3_bgm.json would look like.
   const BGM = { format: "s3bgm", schema: 1, kindBgm: 1, script: [], rooms: [],
     streams: [{ i: 0, sect: 0, sectors: 1, flags: 115, off: 0x7F000000,
@@ -1721,7 +1827,7 @@ head("Reference — Music: a bad stream offset reports, it does not crash the pa
 }
 
 head("Reference — Music: where the game picks a track, read-only");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
   await page.waitForSelector('[data-ref="bgm"]', { timeout: 3000 });
   await page.click('[data-ref="bgm"]');
@@ -1756,7 +1862,7 @@ head("Reference — Music: where the game picks a track, read-only");
 }
 
 head("Reference — Mounts browser, read-only");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
   await page.click('[data-ref="mountref"]');
   await page.waitForSelector("table.invtbl", { timeout: 3000 });
@@ -1780,7 +1886,7 @@ head("Reference — Mounts browser, read-only");
 }
 
 head("Assigned horse — the per-character list2 field, field + battle");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="mounts"]');
   await page.waitForSelector("select.mnt-horse", { timeout: 3000 });
   const sel = (roster) => `select.mnt-horse[data-off="${horseAddr(roster)}"]`;
@@ -1821,7 +1927,7 @@ head("Assigned horse — the per-character list2 field, field + battle");
 }
 
 head("Party formation — the no-base-disc check, and restoring a staged edit");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const card = async () => {
     await page.click('#isoTabs [data-v="changes"]');
     await page.waitForSelector(".bag-h", { timeout: 3000 });
@@ -1880,7 +1986,7 @@ head("Party formation — the no-base-disc check, and restoring a staged edit");
 }
 
 head("Party formation — a disc patched in an earlier session, put back in one click");
-{ // The case the card exists for: the change is already ON the disc, so nothing is staged and
+if (ON) { // The case the card exists for: the change is already ON the disc, so nothing is staged and
   // Revert all has nothing to revert. Hugo carries a Karaya horse (325) and the clamp is
   // widened at all six sites — three party helpers and PartyPut's own position 7-12 guard.
   const patched = bytes.slice();
@@ -1911,7 +2017,7 @@ head("Party formation — a disc patched in an earlier session, put back in one 
 }
 
 head("Party formation — story routing is held back from the one-button restore");
-{ // Blanking a story case is a FIX — it is what makes empty dialogue boxes render for a
+if (ON) { // Blanking a story case is a FIX — it is what makes empty dialogue boxes render for a
   // stand-in protagonist — so the blanket restore must not quietly undo it. It is still
   // reported, and it gets its own button.
   const patched = bytes.slice();
@@ -1939,7 +2045,7 @@ head("Party formation — story routing is held back from the one-button restore
 }
 
 head("Armor set effect ownership — reassign which set grants what");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="sets"]');
   await page.waitForSelector("#ownCounter", { timeout: 3000 });
   // stock owners decode: counter=Destiny(3), heal=Pale Moon(5), squeak=Mole(1), halving mask=4
@@ -1969,7 +2075,7 @@ head("Armor set effect ownership — reassign which set grants what");
 }
 
 head("Heal-owner round trip leaves no stray bytes");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="sets"]');
   await page.waitForSelector("#ownHeal", { timeout: 3000 });
   await page.selectOption("#ownHeal", "2");            // off stock -> repair patch written
@@ -1981,7 +2087,7 @@ head("Heal-owner round trip leaves no stray bytes");
 }
 
 head("Enemies view — real index unavailable on a small disc");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="enemies"]');
   await page.waitForTimeout(150);
   const txt = await page.textContent("#isoView");
@@ -2009,7 +2115,7 @@ const withTables = async (page) => {
 };
 
 head("Disc load defers the area tables to the views that need them");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await withTables(page);
   await page.addInitScript(SLICE_SPY);
   await loadIso(page);
@@ -2048,7 +2154,7 @@ head("Disc load defers the area tables to the views that need them");
 }
 
 head("Encounter's global scale draws without waiting for the per-area tables");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await withTables(page);
   // Hold the area read open so the half-drawn state is observable rather than a race.
   await page.addInitScript(`(() => { const _s = Blob.prototype.slice;
@@ -2071,7 +2177,7 @@ head("Encounter's global scale draws without waiting for the per-area tables");
 }
 
 head("A recipe reaches enemy data on a disc whose Enemies tab was never opened");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await withTables(page);
   await loadIso(page);
   // Straight from the loader to the patch button — no view has loaded the enemy windows, so
@@ -2093,8 +2199,9 @@ head("A recipe reaches enemy data on a disc whose Enemies tab was never opened")
 }
 
 head("An .xdelta touching enemy data loads the tables before judging it out of range");
-if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
-else { const page = await newPage();
+if (!ON) { /* section not selected */ }
+else if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else if (ON) { const page = await newPage();
   await withTables(page);
   await loadIso(page);
   // ENEMY_REC_A sits past ELF_END, so this patch is entirely out of block. Un-loaded windows
@@ -2111,7 +2218,7 @@ else { const page = await newPage();
 }
 
 head("A disc read that fails after open is retryable, not a dead tab");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await withTables(page);
   // Fail every ranged read EXCEPT the big ELF one, so the disc opens and only the deferred
   // tables break. This is the failure the old eager load could never hit: the file moving or
@@ -2146,7 +2253,7 @@ head("A disc read that fails after open is retryable, not a dead tab");
 }
 
 head("Closing a disc drops the deferred tables with it");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await withTables(page);
   await page.addInitScript(SLICE_SPY);
   await loadIso(page);
@@ -2168,7 +2275,7 @@ head("Closing a disc drops the deferred tables with it");
   await page.context().close();
 }
 head("Enemies editor — decode, edit, write-through both copies");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
   await loadIso(page);
   await page.click('#isoTabs [data-v="enemies"]');
@@ -2202,7 +2309,7 @@ head("Enemies editor — decode, edit, write-through both copies");
 }
 
 head("Enemies bulk tuning — idempotent multipliers + reset");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
   await loadIso(page);
   await page.click('#isoTabs [data-v="enemies"]');
@@ -2242,7 +2349,7 @@ head("Enemies bulk tuning — idempotent multipliers + reset");
 }
 
 head("Enemies — a disc that was already tuned reads its own multiplier back");
-{ // The state a re-opened tuned ISO is in: the bytes on the disc are scaled, and the pack
+if (ON) { // The state a re-opened tuned ISO is in: the bytes on the disc are scaled, and the pack
   // index still carries the STOCK numbers it was built from. Nothing in the file records the
   // multiplier, so the editor has to recover it by comparing the two.
   const V = ENEMY_TEST_PACKS.packs[0].enemies[0].variants[0];
@@ -2313,7 +2420,7 @@ head("Enemies — a disc that was already tuned reads its own multiplier back");
 }
 
 head("Zones & formations — decode, edit, write-through both copies");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
   await loadIso(page);
   await page.click('#isoTabs [data-v="enemies"]');
@@ -2345,7 +2452,7 @@ head("Zones & formations — decode, edit, write-through both copies");
 }
 
 head("Enemies editor — recipe export covers enemy bytes");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ENEMY_PACKS = ${JSON.stringify(ENEMY_TEST_PACKS)};`);
   await loadIso(page);
   await page.click('#isoTabs [data-v="enemies"]');
@@ -2363,7 +2470,7 @@ head("Enemies editor — recipe export covers enemy bytes");
 }
 
 head("War view — real index unavailable on a small disc, reference still shows");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="war"]');
   await page.waitForTimeout(150);
   const txt = await page.textContent("#isoView");
@@ -2376,7 +2483,7 @@ head("War view — real index unavailable on a small disc, reference still shows
 }
 
 head("War editor — decode, edit, write-through both copies, no reward fields");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_WAR_UNITS = ${JSON.stringify(WAR_TEST_UNITS)};`);
   await loadIso(page);
   // the war pack must NOT leak into the Enemies view or its bulk scope
@@ -2403,7 +2510,7 @@ head("War editor — decode, edit, write-through both copies, no reward fields")
 }
 
 head("War bulk tuning — multiply the opposition, scoped to leaders or troops");
-{ // The same engine the Enemies view runs, over the war half of the packs. What has to be
+if (ON) { // The same engine the Enemies view runs, over the war half of the packs. What has to be
   // true here and isn't testable there: the reward/drop multipliers must NOT exist (war
   // records carry no aux block), the leader/troop scopes must split on the unit id, and the
   // two views' multipliers must stay independent of each other.
@@ -2471,7 +2578,7 @@ head("War bulk tuning — multiply the opposition, scoped to leaders or troops")
 }
 
 head("War — a disc that was already tuned reads its own multiplier back");
-{ // Same recovery the Enemies view does, over the war index's stock baseline: the file records
+if (ON) { // Same recovery the Enemies view does, over the war index's stock baseline: the file records
   // no multiplier, only the numbers it produced, so re-opening a doubled disc has to recover
   // the scale by comparing against s3_war_units.json's stock lv/hp/stats.
   const V0 = WAR_TEST_UNITS.packs[0].enemies[0].variants[0];
@@ -2512,7 +2619,7 @@ head("War — a disc that was already tuned reads its own multiplier back");
 }
 
 head("Rune reskin + description rewrite");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
   await openFold(page, "#spReskinBox");
   // The rune picker is keyed by ITEM id now, not by a bundled name: it lists whatever this
@@ -2529,7 +2636,7 @@ head("Rune reskin + description rewrite");
 }
 
 head("Target / Area-of-effect independent highlight + AOE-preserving Target write");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]'); await openRec(page, 'details.char[data-i="0"]');
   const dirty = (k) => page.evaluate((k) => document.querySelector(`details.char[data-i="0"] select[data-k="${k}"]`).classList.contains("dirty"), k);
   // synth spell0 flags14 = 0x0A00 (target single 0x0A, AOE off). Turn AOE on → only AOE flags.
@@ -2544,7 +2651,7 @@ head("Target / Area-of-effect independent highlight + AOE-preserving Target writ
 }
 
 head("Spell description — editable, auto-updates on Power, length-capped");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]'); await openRec(page, 'details.char[data-i="0"]');
   const desc = 'details.char[data-i="0"] input.spdesc';
   check("spell description field present", await page.isVisible(desc));
@@ -2563,7 +2670,7 @@ head("Spell description — editable, auto-updates on Power, length-capped");
 }
 
 head("Unite description — editable + length-capped");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="unites"]'); await openRec(page, 'details.char[data-i="0"]');
   const desc = 'details.char[data-i="0"] input.undesc';
   check("unite description field present", await page.isVisible(desc));
@@ -2575,7 +2682,7 @@ head("Unite description — editable + length-capped");
 }
 
 head("Unite rosters — guide characters shown, searchable, read-only");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="unites"]'); await page.waitForTimeout(120);
   const row0 = 'details.char[data-i="0"]';
   check("roster summary on unite 0",
@@ -2602,7 +2709,7 @@ head("Unite rosters — guide characters shown, searchable, read-only");
 }
 
 head("Shops — counters by town and story stage, with rare finds");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="shops"]'); await page.waitForTimeout(120);
   // the fixture stocks location 0, which the shop index names Vinay del Zexay
   const locOpts = await page.locator("#shopLoc option").allTextContents();
@@ -2649,7 +2756,7 @@ head("Shops — counters by town and story stage, with rare finds");
 }
 
 head("Shops — a gap in a stock list is called out");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="shops"]'); await page.waitForTimeout(120);
   check("no warning on a contiguous list", !/hides the rest/.test(await page.textContent("#isoView")));
   // clear slot 2 of 3 — the game stops reading at the first empty slot, so slot 3 goes dark
@@ -2668,7 +2775,7 @@ head("Shops — a gap in a stock list is called out");
 // The fixture plants two dishes precisely so an off-by-one lands on the other one instead of
 // on zeroes, which a single-row fixture would have hidden.
 head("Food — each dish's name lines up with its own record");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
   const grid = await page.evaluate(() => [...document.querySelectorAll("#isoView tbody tr")].slice(0, 2).map((r) => ({
     name: r.querySelector("input.fdname")?.value ?? r.cells[1].textContent.trim(),
@@ -2698,7 +2805,7 @@ head("Food — each dish's name lines up with its own record");
 }
 
 head("Food description — editable, auto-updates on heal, length-capped");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]'); await page.waitForTimeout(80);
   const desc = "input.fddesc >> nth=0";
   check("food description field present", await page.isVisible(desc));
@@ -2713,7 +2820,7 @@ head("Food description — editable, auto-updates on heal, length-capped");
 }
 
 head("Character rename panel — collapsed, scoped, same-length-capped, staged");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="chars"]'); await page.waitForTimeout(80);
   // The panel ships collapsed so the stat records sit at the top of the tab; the fields are in
   // the DOM either way, so visibility is what says whether the fold is doing its job.
@@ -2745,7 +2852,7 @@ head("Character rename panel — collapsed, scoped, same-length-capped, staged")
 }
 
 head("Per-field revert + Revert all + badge");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "300"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change"); await page.waitForTimeout(60);
   const rev = page.locator('input.fd[data-kind="heal"]').first().locator('xpath=following-sibling::button[contains(@class,"revert")]');
@@ -2770,7 +2877,7 @@ head("Per-field revert + Revert all + badge");
 const origU32 = (p) => (bytes[p] | bytes[p + 1] << 8 | bytes[p + 2] << 16 | bytes[p + 3] << 24) >>> 0;
 
 head("Growth — bulk scaling (merged from Balance): idempotent, right offsets");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const [l2b, l2s] = TABLES.list2;
   const rec = l2b + 1 * l2s;
   // synth list2 rec1: HP@+0 = 9, PWR@+4 = 6, MDF@+9 = 4, and +8 = 3 (NOT a growth byte).
@@ -2799,7 +2906,7 @@ head("Growth — bulk scaling (merged from Balance): idempotent, right offsets")
 }
 
 head("Growth — collapsed-row summary, overwrite guard, filter scope");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const [l2b, l2s] = TABLES.list2;
   const rec = l2b + 1 * l2s;
   await page.click('#isoTabs [data-v="growth"]');
@@ -2844,7 +2951,7 @@ head("Growth — collapsed-row summary, overwrite guard, filter scope");
 }
 
 head("Spells / Unites — bulk Power scale (the difficulty presets' other halves)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const spPow = SPELL.off + 0x1C, unPow = UNITE.off + 0x1C;
   const pow0 = origU32(spPow);
   await page.click('#isoTabs [data-v="spells"]');
@@ -2887,7 +2994,7 @@ head("Spells / Unites — bulk Power scale (the difficulty presets' other halves
 }
 
 head("Global encounter rate — scale all three movement paths");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   check("Encounter is its own top-level tab", !!(await page.$('#isoTabs [data-v="encounter"]')));
@@ -2921,7 +3028,7 @@ head("Global encounter rate — scale all three movement paths");
 }
 
 head("Global encounter rate — 0% disables, 200% doubles");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "0"); await page.dispatchEvent("#encPct", "change");
@@ -2932,7 +3039,7 @@ head("Global encounter rate — 0% disables, 200% doubles");
     r.u32(ENC_SITES[0]) === 0x24020000 && r.u32(ENC_SITES[2]) === 0x24020000 && r.u32(ENC_SITES[3]) === 0x24020000);
   await page.context().close();
 }
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "200"); await page.dispatchEvent("#encPct", "change");
@@ -2944,7 +3051,7 @@ head("Global encounter rate — 0% disables, 200% doubles");
 }
 
 head("Global encounter rate — 100% is a byte-exact restore, input clamps");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
   await page.waitForSelector("#encPct", { timeout: 3000 });
   await page.fill("#encPct", "25"); await page.dispatchEvent("#encPct", "change");
@@ -2964,7 +3071,7 @@ head("Global encounter rate — 100% is a byte-exact restore, input clamps");
 }
 
 head("Per-area encounter rates — decode, split variants, byte-exact write");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
   await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
@@ -3000,7 +3107,7 @@ head("Per-area encounter rates — decode, split variants, byte-exact write");
 }
 
 head("Per-area encounter rates — presets scale from the disc and never compound");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_ROOMS = ${JSON.stringify(ROOM_TEST_INDEX)};`);
   await loadIso(page);
   await page.click('#isoTabs [data-v="encounter"]');
@@ -3026,7 +3133,7 @@ head("Per-area encounter rates — presets scale from the disc and never compoun
 }
 
 head("Per-area encounter rates — a file already saved at 50% says so, and Stock still restores");
-{ // The rates on the "disc" are halved; the room index still carries the stock ones. Nothing in
+if (ON) { // The rates on the "disc" are halved; the room index still carries the stock ones. Nothing in
   // the file records the halving, so the tab has to recover it by comparison.
   const halved = Uint8Array.from(bytes);
   { const dv = new DataView(halved.buffer);
@@ -3071,7 +3178,7 @@ head("Per-area encounter rates — a file already saved at 50% says so, and Stoc
 }
 
 head("Files browser — a Reference sub-tab, read-only, peeks real bytes");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`window.S3_TEST_SUBFILES = ${JSON.stringify(SUBFILE_TEST_INDEX)};`);
   await loadIso(page);
   check("Files is no longer a top-level tab", (await page.locator('#isoTabs [data-v="files"]').count()) === 0);
@@ -3099,7 +3206,7 @@ head("Files browser — a Reference sub-tab, read-only, peeks real bytes");
 }
 
 head("Reference — item sources, disc vs guide provenance, read-only");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
   await page.waitForSelector('[data-ref="sources"]', { timeout: 3000 });
   await page.click('[data-ref="sources"]');
@@ -3120,7 +3227,7 @@ head("Reference — item sources, disc vs guide provenance, read-only");
 }
 
 head("Reference — pickup locations, disc census vs guide chests");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
   await page.waitForSelector('[data-ref="places"]', { timeout: 3000 });
   await page.click('[data-ref="places"]');
@@ -3143,7 +3250,7 @@ head("Reference — pickup locations, disc census vs guide chests");
 }
 
 head("Runes — families, granted spells, who has it");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // Top-level tab since v1.97.0; it used to be a Reference sub-tab (`[data-ref="runes"]`).
   await page.click('#isoTabs [data-v="runes"]');
   await page.waitForSelector("table.invtbl", { timeout: 3000 });
@@ -3223,7 +3330,7 @@ head("Runes — families, granted spells, who has it");
 }
 
 head("Reference — skill lookup: types, per-rank effects, who can learn it");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
   await page.waitForSelector('[data-ref="skills"]', { timeout: 3000 });
   await page.click('[data-ref="skills"]');
@@ -3253,7 +3360,7 @@ head("Reference — skill lookup: types, per-rank effects, who can learn it");
 }
 
 head("Gear description overflow is rejected");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="gear"]'); await openRec(page, "details.char");
   const desc = page.locator("input.ge-desc").first();
   const max = +(await desc.getAttribute("maxlength"));
@@ -3266,7 +3373,7 @@ head("Gear description overflow is rejected");
 }
 
 head("Gear rename — in-place, slot-capped, and global");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // The name pointer sits at +0x40 of the record BEFORE the stats record (= base + GEAR.name).
   const nameVa = (bytes[GEAR.P + 0x40] | bytes[GEAR.P + 0x41] << 8 | bytes[GEAR.P + 0x42] << 16 | bytes[GEAR.P + 0x43] << 24) >>> 0;
   const nameOff = nameVa - ELF_VADDR + ELF_BASE, slot = armor.name.length;
@@ -3318,7 +3425,7 @@ head("Gear rename — in-place, slot-capped, and global");
 }
 
 head("Text tab — in-ELF strings: filtered, editable, length-capped, byte-exact");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="text"]');
   await page.waitForSelector("input.txt", { timeout: 5000 });
   const T = mapping.text;
@@ -3353,7 +3460,7 @@ head("Text tab — in-ELF strings: filtered, editable, length-capped, byte-exact
 }
 
 head("Status effect strength — what an effect is worth (engine constants)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
   await page.waitForSelector("#spFxBox");
   check("the status-strength card starts collapsed", !(await page.locator('input.fx[data-k="swLightning"]').isVisible()));
@@ -3421,7 +3528,7 @@ head("Status effect strength — what an effect is worth (engine constants)");
     check(`both resistance ladders were written (${all.length} sites)`, got.every((v) => v === 10), got.join(" / ")); }
   await page.context().close();
 }
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // "Restore all to stock" must put every immediate back, and stage nothing net
   await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spFxBox");
   await page.fill('input.fx[data-k="res3"]', "0");
@@ -3432,7 +3539,7 @@ head("Status effect strength — what an effect is worth (engine constants)");
   check("restore-to-stock clears the change", await nothingStaged(page));
   await page.context().close();
 }
-{ // A disc whose instruction no longer matches must go READ-ONLY rather than be written blind.
+if (ON) { // A disc whose instruction no longer matches must go READ-ONLY rather than be written blind.
   const drift = bytes.slice();
   const site = mapping.statusfx.find((f) => f.key === "swFire");
   new DataView(drift.buffer).setUint32(site.off, 0x00000000, true);   // clobber the instruction
@@ -3453,7 +3560,7 @@ head("Status effect strength — what an effect is worth (engine constants)");
 }
 
 head("Spell targeting + element: every byte the disc uses has a name");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]');
   // Fixture spell #2 carries target byte 0x05 and element 7 — the Sword/Amulet shape that used
   // to read "custom 0x05" in the dropdown and "undefined" in the summary line.
@@ -3484,7 +3591,7 @@ head("Spell targeting + element: every byte the disc uses has a name");
 }
 
 head("Reference — Classes: derived from skills, not stored (issue #13)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="ref"]');
   await page.waitForSelector('[data-ref="classes"]', { timeout: 3000 });
   await page.click('[data-ref="classes"]');
@@ -3516,7 +3623,7 @@ head("Duplicated descriptions — one edit writes both copies (issue #11)");
 // The Text tab can't reach these strings at all: its prose filter rejects every real one
 // ("DMGx0.4" trips the letter-then-digit reject), which is exactly why the only editable copy
 // used to be the spell record's — the copy the game's rune menu does NOT read.
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const T = mapping.twin;
   const read = (r, off, n) => { let s = ""; for (let i = 0; i < n; i++) { const c = r.at(off + i); if (!c) break; s += String.fromCharCode(c); } return s; };
   await page.click('#isoTabs [data-v="runes"]'); await page.waitForSelector("input.rdesc", { timeout: 5000 });
@@ -3540,7 +3647,7 @@ head("Duplicated descriptions — one edit writes both copies (issue #11)");
     !r.wrote(T.runeOff + T.text.length, 1) && !r.wrote(T.spellOff + T.text.length, 1));
   await page.context().close();
 }
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // …and it mirrors the other way too, from the Spells tab's own description field.
   const T = mapping.twin;
   await page.click('#isoTabs [data-v="spells"]');
@@ -3553,7 +3660,7 @@ head("Duplicated descriptions — one edit writes both copies (issue #11)");
   check("Spells-tab edit reached the rune copy as well", got === "DMGx1 to foes.");
   await page.context().close();
 }
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // A description that is NOT duplicated must stay a single write. The alias rule is
   // cross-table only: repeated text inside one table (the synth fixture gives four spells
   // their own copy of "Deals 100DMG") must NOT be linked.
@@ -3570,7 +3677,7 @@ head("Duplicated descriptions — one edit writes both copies (issue #11)");
 }
 
 head("Text tab — undo and per-field revert");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="text"]');
   await page.waitForSelector("input.txt", { timeout: 5000 });
   const T = mapping.text;
@@ -3592,7 +3699,7 @@ head("Text tab — undo and per-field revert");
 }
 
 head("Recipe export → reset → import round-trip");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "321"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#isoRecipeBtn")]);
@@ -3617,8 +3724,9 @@ head("Recipe export → reset → import round-trip");
 // These drive the real UI with patches built by REAL xdelta3 against the real synthetic ISO,
 // so they cover the whole path — magic sniffing, window walk, checksum, staging.
 head("Apply an .xdelta patch (built by real xdelta3)");
-if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
-else { const page = await newPage(); await loadIso(page);
+if (!ON) { /* section not selected */ }
+else if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else if (ON) { const page = await newPage(); await loadIso(page);
   // a patch that edits bytes inside the editable block
   const tgt = Uint8Array.from(bytes);
   const at = SPELL.off + 0x1C;                    // spell 0 power (u32) — inside the block
@@ -3644,8 +3752,9 @@ else { const page = await newPage(); await loadIso(page);
 }
 
 head("Apply patch — refusals");
-if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
-else { const page = await newPage(); await loadIso(page);
+if (!ON) { /* section not selected */ }
+else if (!xdelta3Available()) { console.log("  (xdelta3 not installed — skipped)"); }
+else if (ON) { const page = await newPage(); await loadIso(page);
   // 1. a patch that changes bytes OUTSIDE the editable block must be refused whole
   { const tgt = Uint8Array.from(bytes);
     tgt.set([1, 2, 3, 4], 0x1000);                // before ELF_BASE — can't be staged
@@ -3677,7 +3786,7 @@ else { const page = await newPage(); await loadIso(page);
 }
 
 head("Apply an .s3mod recipe through the same button (format sniffed, not by name)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
     patches: [{ off: SPELL.off + 0x1C, new: "2a000000" }] });
   const s = await uploadPatch(page, new TextEncoder().encode(recipe), "recipe.xdelta");   // WRONG extension on purpose
@@ -3688,7 +3797,7 @@ head("Apply an .s3mod recipe through the same button (format sniffed, not by nam
 }
 
 head("Enemies + Reference (read-only)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="enemies"]');
   const nEnemies = await page.locator(".invtbl tbody tr").count();
   check("bestiary renders (Lv/HP/drops)", nEnemies >= 5 && (await page.textContent(".invtbl thead")).includes("HP"));
@@ -3705,7 +3814,7 @@ head("Enemies + Reference (read-only)");
 }
 
 head("Save-progress UX + backup nudge (export path)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "200"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   const [dl] = await Promise.all([page.waitForEvent("download"), (async () => {
@@ -3723,7 +3832,7 @@ head("Save-progress UX + backup nudge (export path)");
 }
 
 head("Last opened ISO (persist handle + reopen)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // back the picked file with a REAL OPFS handle so it's IndexedDB-serializable (the plain
   // fake handle used elsewhere can't be structured-cloned into IndexedDB)
   await page.addInitScript(`window.showOpenFilePicker = async () => {
@@ -3762,7 +3871,7 @@ head("Last opened ISO (persist handle + reopen)");
 }
 
 head("Recruit section (save editor, Pyodide stubbed)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // Stub the Python engine so the save-editor UI renders headless (real Pyodide needs a CDN
   // this sandbox can't reach). Canned saves drive the Recruit view; the recruit STAGING math
   // is the real recruit-core.js, and the diff/review is the real buildDiff/openConfirm.
@@ -3821,7 +3930,7 @@ head("Recruit section (save editor, Pyodide stubbed)");
 }
 
 head("108 Stars dashboard (save editor, Pyodide stubbed)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // Same stub shape as the Recruit section. Hugo/Geddoe/Rico recruited; Chris (story),
   // Jeane + Lulu are optional recruits that should land in the "missing" worklist. Augustine
   // and Watari are there for the prerequisite chips: an item with a real source, and a potch
@@ -3957,7 +4066,7 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
 }
 
 head("Save <-> JSON round-trip (save editor, Pyodide stubbed)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.addInitScript(`
     const CHARS = [
       ['Hugo','Hugo',true], ['Chris','',false], ['Geddoe','Geddoe',true]
@@ -4018,7 +4127,7 @@ head("Save <-> JSON round-trip (save editor, Pyodide stubbed)");
 }
 
 head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // The carryover flags are whole-save state, so the stub carries a decoded `carryover`
   // block shaped exactly like s3save.detect_carryover() and a REF.carryover reference block.
   // The formulas themselves are covered by save_roundtrip.py; what this proves is the
@@ -4140,7 +4249,7 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
   await page.context().close();
 }
 head("Trinity Sight — points of view & chapters (save editor, Pyodide stubbed)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   // The flame mask and the per-POV progress counters are whole-save state, so the stub
   // carries a decoded `trinity` block shaped like s3save.decode_trinity() plus the
   // REF.trinity reference. Where those numbers COME from is save_roundtrip.py's job; what
@@ -4249,7 +4358,7 @@ head("Trinity Sight — points of view & chapters (save editor, Pyodide stubbed)
 }
 
 head("Undo/redo + skill-cap & rune presets");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const [l4b] = TABLES.list4;
   // undo/redo stack behaviour on a weapon ATK edit
   await page.click('#isoTabs [data-v="weapons"]'); await openRec(page, "details.char");
@@ -4290,7 +4399,7 @@ head("Undo/redo + skill-cap & rune presets");
   await page.context().close();
 }
 head("Damage+heal slot — move Shining Wind's split effect to another spell");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]'); await page.waitForSelector("#spSplitBox");
   check("the damage+heal card starts collapsed", !(await page.locator("#spSplitSpell").isVisible()));
   // two collapsed bars in a row are ambiguous — each section carries a captioned rule
@@ -4324,7 +4433,7 @@ head("Damage+heal slot — move Shining Wind's split effect to another spell");
   await page.context().close();
 }
 head("Damage+heal slot — restore puts the original bytes back");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spSplitBox");
   await page.selectOption("#spSplitSpell", "1");
   await page.click("#spSplitApply"); await page.waitForTimeout(60);
@@ -4335,7 +4444,7 @@ head("Damage+heal slot — restore puts the original bytes back");
   await page.context().close();
 }
 head("Skill-cap preset (Growth view)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   const [l2b] = TABLES.list2;
   await page.click('#isoTabs [data-v="growth"]'); await openRec(page, "details.char"); await page.waitForTimeout(60);
   const l2rec = +(await page.getAttribute("details.char[open]", "data-rec"));
@@ -4349,7 +4458,7 @@ head("Skill-cap preset (Growth view)");
 }
 
 head("Verified offset mappings (decode of planted bytes)");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   // Growth: the skill-max array starts at +16 (not +13) and the encoding is 5=B+ / 6=A;
   // HP growth is at +0 and PWR at +4. We planted these; assert the editor DECODES them.
   await page.click('#isoTabs [data-v="growth"]'); await openRec(page, `details.char[data-rec="${mapping.l2rec}"]`); await page.waitForTimeout(60);
@@ -4369,14 +4478,14 @@ head("Verified offset mappings (decode of planted bytes)");
 }
 
 head("Close returns to loader");
-{ const page = await newPage(); await loadIso(page);
+if (ON) { const page = await newPage(); await loadIso(page);
   await page.click("#isoClose"); await page.waitForTimeout(80);
   check("Close shows loader again", !!(await page.$("#isoPick")) && !(await page.$("#isoTabs")));
   await page.context().close();
 }
 
 head("Save editor tab still boots (structural)");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await dismissBoot(page);
   check("save loader present", !!(await page.$("#drop")));
@@ -4392,7 +4501,7 @@ head("Save editor tab still boots (structural)");
 // actually reach the DOM. Pyodide is aborted here, so we hand drawSlot() a synthetic decoded
 // save (the same shape s3save.decode_save returns) and drive the real render path.
 head("Save editor — guide overlays on character cards");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await dismissBoot(page);
   const built = await page.evaluate(async () => {
@@ -4440,7 +4549,7 @@ head("Save editor — guide overlays on character cards");
 // them, that a Fix stages a real edit (and only stages — nothing is written), and that the
 // finding then goes away. Pyodide is aborted here, so the same synthetic-save trick is used.
 head("Save editor — health check panel");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await dismissBoot(page);
   const r = await page.evaluate(async () => {
@@ -4539,7 +4648,7 @@ async function seedFieldCharacterSave(page) {
 }
 
 head("Save editor — Field character tab");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await dismissBoot(page);
   await seedFieldCharacterSave(page);
@@ -4591,7 +4700,7 @@ head("Save editor — Field character tab");
 // This tab carries more prose than any other save-editor view, so it is the one most likely
 // to push the layout wide. Measured on a real 320px viewport, not a resized element.
 head("Save editor — Field character tab at 320px");
-{ const page = await newPage({ width: 320, height: 480 });
+if (ON) { const page = await newPage({ width: 320, height: 480 });
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await dismissBoot(page);
   await seedFieldCharacterSave(page);
@@ -4613,7 +4722,7 @@ head("Save editor — Field character tab at 320px");
 // fire the browser's swipe-back -- leaving the editor with staged edits and landing wherever
 // the user came from. Reported in the wild as "clicking ISO Editor sometimes opens the repo".
 head("Sideways overscroll can't navigate away from the editor");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await loadIso(page);
   const r = await page.evaluate(() => {
     const t = document.querySelector("#isoTabs"), de = document.documentElement;
@@ -4639,7 +4748,7 @@ head("Sideways overscroll can't navigate away from the editor");
 // (a rune and the spell it grants each hold their own "Kite"), so a rename that wrote one copy
 // would leave the battle command showing the old name.
 head("Runes tab — rename and menu text");
-{
+if (ON) {
   const page = await newPage();
   await loadIso(page);
   const tabs = await page.$$eval("#isoTabs [data-v]", (b) => b.map((x) => x.dataset.v));
@@ -4736,7 +4845,7 @@ head("Runes tab — rename and menu text");
 // three shapes the disc uses (four spells / two / one) so the empty slots have to render as
 // controls rather than be hidden, and a write has to land on the right two bytes.
 head("Runes tab — spell slots (rune → spell binding)");
-{
+if (ON) {
   const page = await newPage();
   await loadIso(page);
   await page.click('#isoTabs [data-v="runes"]');
@@ -4827,7 +4936,7 @@ head("Runes tab — spell slots (rune → spell binding)");
 // to the base-disc picker — the edit exists only as a difference between two files, which is
 // exactly the situation that hid the Kite rune description for a whole release.
 head("Changes tab — already on this disc, vs a base disc");
-{
+if (ON) {
   const t = mapping.twin;
   const NEW_TEXT = "DMGx0.9 to foes in area.";     // same length: it has to fit the on-disc slot
   const patched = Uint8Array.from(bytes);
@@ -4892,7 +5001,7 @@ head("Changes tab — already on this disc, vs a base disc");
 // takes no base disc at all, and writes the decoded stock values back from the constants
 // web/tests/stock-restore.mjs checks against a pristine disc.
 head("Changes tab — restore code patches to stock, with no base disc");
-{
+if (ON) {
   const patched = Uint8Array.from(bytes);
   const dv = new DataView(patched.buffer);
   // Four patches from three groups, all of them ones the tab marks as able to hang a game.
@@ -4965,7 +5074,7 @@ head("Changes tab — restore code patches to stock, with no base disc");
 // "every site reads stock" refused this disc and would have made the leftover permanent
 // unless you also gave up a passive that works.
 head("Changes tab — a helper block nothing jumps into is leftover, not live");
-{
+if (ON) {
   const legacy = Uint8Array.from(bytes);
   const dv = new DataView(legacy.buffer);
   const unhex = (h) => { const c = h.replace(/[^0-9A-Fa-f]/g, ""), a = new Uint8Array(c.length >> 1);
@@ -5051,7 +5160,7 @@ head("Changes tab — a helper block nothing jumps into is leftover, not live");
 // real disc was found in: helper installed, call sites in the legacy inline shape, nothing
 // jumping into the block. Unticking the block row alone must be allowed here.
 head("Non-stock code — the leftover helper block unticks on its own");
-{
+if (ON) {
   const unhex = (h) => { const c = h.replace(/[^0-9A-Fa-f]/g, ""), a = new Uint8Array(c.length >> 1);
     for (let i = 0; i < a.length; i++) a[i] = parseInt(c.substr(i * 2, 2), 16); return a; };
   const legacy = Uint8Array.from(bytes);
@@ -5103,7 +5212,7 @@ head("Non-stock code — the leftover helper block unticks on its own");
 }
 
 head("Long descriptions collapse, and stay how you left them");
-{ const page = await newPage();
+if (ON) { const page = await newPage();
   await loadIso(page);
   await page.click('#isoTabs [data-v="runes"]'); await page.waitForTimeout(200);
 
@@ -5176,7 +5285,7 @@ head("Long descriptions collapse, and stay how you left them");
 }
 
 for (const [w, h] of [[360, 640], [320, 480]]) {
-  head(`Mobile ${w}px — no horizontal overflow`);
+  if (!head(`Mobile ${w}px — no horizontal overflow`)) continue;
   const page = await newPage({ width: w, height: h });
   await loadIso(page);
   let over = null;
