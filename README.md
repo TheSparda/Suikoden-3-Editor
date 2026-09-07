@@ -747,7 +747,8 @@ audit with a **checkbox per site** instead. Untick to stage the stock word, reti
 patch back, and the rows stay on screen either way — which is what lets you switch one patch
 off, save, try the disc, and switch it back if it wasn't the one. Risky sites are listed first
 with the reason, there are `Switch all off` / `Switch all back on` buttons for the whole set,
-and the same ordering rule is enforced (call sites before the relocated helper block). It reads
+and the same ordering rule is enforced — call sites before the relocated helper block, except
+that a block nothing jumps into unticks on its own. It reads
 the disc with your staged edits on top and needs no base disc; it covers **code only**, so for
 the data tables use the base-disc comparison above.
 
