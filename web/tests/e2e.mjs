@@ -2852,8 +2852,8 @@ head("Runes — families, granted spells, who has it");
   check("the only editable text fields are the name, the menu text and passive strength",
     kinds.every((k) => /^(rname|rdesc|rf)$/.test(k)), kinds.join(" | "));
   const sels = await page.$$eval("#isoView select", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable dropdowns are the spell slots and passive strength",
-    sels.length > 0 && sels.every((k) => /^(rspell|rf)$/.test(k)), sels.join(" | "));
+  check("the only editable dropdowns are the rune record's own fields and passive strength",
+    sels.length > 0 && sels.every((k) => /^(rspell|rcat|relem|rf)$/.test(k)), sels.join(" | "));
   check("no spell fields are duplicated onto this tab",
     (await page.locator("#isoView details.runefx, #isoView input.rfx, #isoView [data-fxpreset]").count()) === 0);
   // A rune is only editable when its table row still names it — the same check runeTblDesc()
@@ -4334,6 +4334,22 @@ head("Runes tab — spell slots (rune → spell binding)");
   await pickSlot(page, full.id, 3, "0");
   const r2 = await save(page);
   check("a slot can be emptied", r2.u16(slotOff(full.id, 3)) === 0, String(r2.u16(slotOff(full.id, 3))));
+
+  // Rune type (+0x16) is the field that separates the 45 runes the game gives a spell menu
+  // from the 27 special-attack ones it does not — filling slots on one of those 27 is
+  // confirmed not to work on its own, so this control is the only lever left to try. It has
+  // to be a real 2-byte write, and it must not disturb the slots sitting next to it.
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase()); await page.waitForTimeout(150);
+  const catSel = `#isoView select.rcat[data-id="${mapping.twin.rune.id}"]`;
+  check("an attack rune reads as a special-attack rune", (await page.inputValue(catSel)) === "2");
+  await page.selectOption(catSel, "0"); await page.waitForTimeout(150);
+  const r3 = await save(page);
+  const catOff = RUNE_TBL.off + mapping.twin.rune.id * RUNE_TBL.stride + RUNE_TBL.cat;
+  check("rune type writes its own two bytes", r3.u16(catOff) === 0, String(r3.u16(catOff)));
+  check("...and leaves the spell slot beside it alone",
+    r3.u16(slotOff(mapping.twin.rune.id, 0)) === mapping.twin.spellIdx + 1,
+    String(r3.u16(slotOff(mapping.twin.rune.id, 0))));
   await page.context().close();
 }
 

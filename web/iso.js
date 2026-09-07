@@ -1651,6 +1651,22 @@
   // the label shows the row — otherwise "#3 Blazing Wall" here and "#2 Blazing Wall" there
   // are the same spell under two numbers and the link between them looks wrong.
   const spellSlotLabel = (gid) => (gid ? `${spellSlotName(gid)} (#${gid - 1})` : "\u2014 empty \u2014");
+  // The two other decoded fields of the rune record. They matter because the spell slots alone
+  // are NOT enough on a special-attack rune: a Kite given four spells still fires slot 1 with no
+  // list (played 2026-09-06). Category is the only field that separates those 27 runes from the
+  // 45 the game does give a spell menu, so it is the lever to try — exposed, and labelled as the
+  // experiment it is rather than left as a byte only a hex editor can reach.
+  // Only 0 and 2 occur on a pristine disc (45 and 27 runes); an unknown value keeps its own row
+  // rather than being silently rewritten to one of these two.
+  const RUNE_CATS = [[0, "Magic / support"], [2, "Special attack"]];
+  const optList = (pairs, cur, fallback) => {
+    const known = pairs.some(([v]) => v === cur);
+    return (known ? pairs : [...pairs, [cur, fallback(cur)]])
+      .map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${esc2(l)}</option>`).join("");
+  };
+  const runeCatOpts = (cur) => optList(RUNE_CATS, cur, (v) => `type ${v} (not on a stock disc)`);
+  const runeElemOpts = (cur) => optList(Object.entries(ELEMENTS).map(([v, l]) => [+v, l]), cur,
+    (v) => `family ${v} (not on a stock disc)`);
 
   // ---- field schemas for the character/growth/support/weapon record tables ----
   // [label, offsetInRecord, widthBytes, kind]  (kind: item | skill | rank | num)
@@ -7655,6 +7671,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       descMax: own ? origSlotLen(dp) : 0,
       descCopies: own ? descCopyCount(vaOff(dp)) : 1,
       grants, slotIds, editable: trusted,
+      elem: trusted && inBlk(rec + RUNE_TBL.elem, 2) ? r16(rec + RUNE_TBL.elem) : 0,
+      cat: trusted && inBlk(rec + RUNE_TBL.cat, 2) ? r16(rec + RUNE_TBL.cat) : 0,
       owner: runeOwners()[nameKey(nm)] || "",
       holders: runeHolders()[nameKey(nm)] || [],
       sources: sourceRows(id),
@@ -7723,12 +7741,17 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
-        The passive support runes (Fortune, Balance, Fury…) ship with all four slots empty — what they do
-        is engine code, not a spell — so their slots are shown but writing one is untested territory,
-        unlike the magic and special-attack runes, where the game already reads every count from one
-        spell to four. Whichever slots you use, the levels a character has to reach before the later ones
-        unlock are <b>not</b> in this record and are not editable yet; test a reassigned rune in game
-        before building a run around it.
+        <b>What plays and what does not, as tested on hardware.</b> On a <b>magic or support rune</b>
+        (<i>Rune type</i> below reads “Magic / support”) the game already reads every count the disc
+        ships, one spell through four, so reassigning those slots is on solid ground. On a
+        <b>special-attack rune</b> — Kite, Phoenix, Goss, the 27 with <i>Rune type</i> “Special attack”
+        — it is <b>confirmed not to work by itself</b>: a Kite given four spells still fires slot 1 the
+        moment it is chosen, with no list to pick from. The slots are written correctly; the battle menu
+        simply never offers them. Setting <i>Rune type</i> to “Magic / support” is the experiment that
+        might open that menu — <b>untested, and it may change how the rune behaves in other ways</b>.
+        The passive support runes ship with all four slots empty and are untested territory of their own.
+        Whichever slots you use, the levels a character has to reach before the later ones unlock are
+        <b>not</b> in this record and are not located; test in game before building a run around it.
         What those runes do instead is engine code. For the twelve whose effect is built on a number —
         Sunbeam's <b>HP a combat turn</b> and <b>HP a second of walking</b>, Killer's and Counter's chances,
         Haziness' dodge roll, Hunter's damage clamp, the Wall/Double-Strike/Wizard multipliers and the rest —
@@ -7763,7 +7786,15 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                       >${esc2(spellSlotLabel(gid))}</option></select>
                     ${gid ? `<button class="spellchip link" data-spjump="${esc2(spellSlotName(gid))}" data-spi="${gid - 1}"
                         title="Open this spell's record on the Spells tab — power, cast, element, target, area and status">edit ↗</button>` : ""}
-                  </div>`).join("")}</div>`
+                  </div>`).join("")}
+                 <div class="runemeta">
+                   <label class="field"><span class="muted">Rune type
+                     <span class="u">which battle menu the game gives it</span></span>
+                     <select class="rcat" data-id="${r.id}">${runeCatOpts(r.cat)}</select></label>
+                   <label class="field"><span class="muted">Element family
+                     <span class="u">the rune's own, not its spells'</span></span>
+                     <select class="relem" data-id="${r.id}">${runeElemOpts(r.elem)}</select></label>
+                 </div></div>`
               : r.grants.length ? `<div class="grants">${r.grants.map((s) =>
                   `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
             ${runePowerHTML(r.id)}
@@ -7819,6 +7850,22 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         drawRunes(host);
       };
     });
+    // Rune type (+0x16) and element family (+0x14). Small option lists, so these render whole —
+    // it is the 94-spell slot lists that had to be lazy, not these.
+    [["select.rcat", RUNE_TBL.cat, "Rune type"], ["select.relem", RUNE_TBL.elem, "Element family"]]
+      .forEach(([sel, fieldOff, label]) => qa(sel, host).forEach((el) => {
+        const id = +el.dataset.id, off = RUNE_TBL.off + id * RUNE_TBL.stride + fieldOff;
+        if (!inBlk(off, 2)) { el.disabled = true; return; }
+        markField(el, off, 2, "num");
+        el.onchange = () => {
+          writeW(off, 2, clampInt(+el.value || 0, 0, 0xFFFF));
+          reg(off, 2, "num", itemName(id), label);
+          setStatus(sel === "select.rcat" && +el.value === 0
+            ? `${itemName(id)} is now a magic/support rune. Whether that gives it a spell menu is untested — try it in game.`
+            : `${itemName(id)}: ${label.toLowerCase()} changed. Review, then Save.`, "ok");
+          drawRunes(host);
+        };
+      }));
     // In-place rename. Same write as the menu text below: the string is overwritten where it
     // already sits and null-padded, so no pointer on the disc moves and every menu that names
     // the rune reads through the one pointer it always did. An empty box would leave the rune

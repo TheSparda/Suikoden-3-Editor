@@ -276,7 +276,7 @@ Kite  = item 365, record file 0x3EDD18, slots at 0x3EDD30
         07 00 00 00 | 00 00 02 00 | 4E 00 | 00 00 | 00 00 | 00 00
                                      ^Kite   ^^^^^^ three free slots
 ```
-Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0). The
+Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0), and the rune's element family and category alongside them (v1.104.0). The
 old `RUNE_SPELLS` hardcoded name map is **deleted** — the binding is read off the disc,
 so there is no second copy to drift.
 
@@ -285,16 +285,52 @@ Spell rows **80..93** (14 of the 94) are fully formed records — cast 50, targe
 single foe, power 100 — with **null name and description pointers**. They are spare
 slots. A genuinely new spell needs strings pointed at them; the record itself is ready.
 
+### PLAYED 2026-09-06: slots alone are NOT enough on a special-attack rune
+Kite (category `2`) was given four spells and played. Result: **choosing Kite fires slot 1
+immediately, with no list to pick from** — slots 2-4 are written correctly and simply never
+offered. So the binding above is right, and "fill a free slot" is *not* by itself the recipe
+for a multi-spell attack rune.
+
+What this does and does not settle:
+- It is **not** a count problem. Category-0 runes ship with 1, 2, 3 and 4 spells and all of
+  them list (Sword of Rage offers both *Sword of Rage* and *Fire Amulet*).
+- The only field separating the 27 that behave this way from the 45 that do not is
+  **category (+0x16)**: every special-attack rune is `2`, everything else is `0`.
+- **Setting +0x16 to 0 is the untested experiment.** Exposed as *Rune type* on the Runes tab
+  (v1.104.0) rather than left as a hex-only byte. It may well change other behaviour —
+  a category-2 rune is a free action, not a chant — so treat it as an experiment.
+- The cheap discriminator, if anyone doubts the mechanism works at all: **Blinking (id 335)
+  and Shield (id 336) are category 0 and each ship with slot 4 free.** Fill one. If a 4th
+  spell appears there, the slots are live and the problem is category-specific.
+
+### The consumer is NOT in the boot ELF
+Worth recording, because it is why three sessions of ELF hunting found nothing. The rune
+table is referenced from exactly **one** site in PT_LOAD — `0x16DBD44`, inside `itemRecord`
+(`0x16DBCD8`), which is a pure address calculator: five id bands, `jr $ra` in each.
+
+| id band | stride | base vaddr |
+|---|---|---|
+| 0x001-0x0A0 | 0x24 | 0x19A14BC (weapons) |
+| 0x0A1-0x13C | 0x44 | 0x1990E84 (gear) |
+| **0x13D-0x1CE** | **0x20** | **0x19A3778 (runes)** |
+| 0x1CF-0x202 | 0x14 | 0x19A734C |
+| 0x203+ | 0x10 | 0x199EE80 |
+
+Every field accessor around it (`0x16DC160`, `0x16DC1C0`, `0x16DC210`, `0x16DC300` …) gates
+on `id-1 < 0xA0` or a similar small range — i.e. they read the **weapon** band, not the rune
+band. Nothing in PT_LOAD reads a rune record's +0x14/+0x16/+0x18. The battle menu that
+consumes them lives in a **battle overlay**, the same class of code that hid the Fortune rune
+and the potch-per-wearer pair (see "battle overlay inside ETC.BIN", K = 0x4103A640). Anyone
+picking this up should start there, not in the ELF.
+
 ### What is still NOT known
 - **Unlock levels.** Which character level gates a rune's 2nd/3rd/4th spell is not in
   this record and has not been located. `0x42EE90` was tentatively called an unlock-level
   table on 2026-08-09; re-reading it, rows 1-3 and 17-21 are `(1, 20, 60, 99)` but rows
   4-16 and 22-37 are rising curves up to 950, and its keying is unconfirmed. Treat it as
-  unidentified.
-- **Whether an attack rune surfaces more than one spell.** Kite is category `2` (+0x16);
-  every magic rune is `0`. The menu code may read slot 1 only for category-2 runes. If a
-  reassigned Kite shows one spell in game, try setting +0x16 to 0 and +0x14 to an element
-  family so it is treated as a magic rune. **Untested — verify on the play disc.**
+  unidentified. It is a live alternative explanation for the Kite result above: if slots 2-4
+  are level-gated and the gate row for an attack rune is unreachable, the symptom is identical.
+- **Whether flipping category actually opens the menu.** Untested.
 
 Confirmed NOT possible from the spell table: visual/animation reskin (link fields
 correlate with behavior/kind, not graphics assets; visuals live in separate asset files).
