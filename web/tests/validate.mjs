@@ -1164,6 +1164,21 @@ console.log("In-ELF text heuristic:");
   (/input type="text" class="rname"/.test(iso) ? ok : bad)("the Runes tab renders a rename field");
   (/input type="text" class="rdesc"/.test(iso) ? ok : bad)("the Runes tab renders a menu-text field");
   (/qa\("input\.rname"/.test(iso) ? ok : bad)("the rename field is wired to a write");
+  // Same failure mode, twice more: a tab's hint outlived what the tab does. The Encounter hint
+  // said per-area base rates "aren't editable" for the 20 releases after they became editable,
+  // and the Passives hint still described the whole-party, two-rune, drop-the-call version after
+  // the tab had gone per-character across 22 runes with Fortune and Prosperity on their own
+  // switch. A hint is the only description most people read, so pin both corrections — and pin
+  // the caveat each one exists to carry, since that is the part a rewrite tends to drop.
+  const encHint = /\n\s*encounter: "([^"]*)"/.exec(iso);
+  (encHint && !/aren't editable/.test(encHint[1]) ? ok : bad)("the Encounter hint no longer says per-area rates aren't editable");
+  (encHint && /[Pp]er-area base rates are editable/.test(encHint[1]) ? ok : bad)("the Encounter hint says per-area base rates are editable");
+  (encHint && /RAISING ONE FROM 0 IS NOT/.test(encHint[1]) ? ok : bad)("the Encounter hint keeps the raising-from-0 caveat");
+  const psHint = /\n\s*passives: "([^"]*)"/.exec(iso);
+  (psHint && !/cannot be forced/.test(psHint[1]) ? ok : bad)("the Passives hint no longer says Fortune cannot be forced");
+  (psHint && !/CONFIRMED IN PLAY/.test(psHint[1]) ? ok : bad)("the Passives hint claims no play confirmation under this patch shape");
+  (psHint && /THE CHARACTERS YOU\s+CHOOSE/.test(psHint[1]) ? ok : bad)("the Passives hint says a passive goes to chosen characters");
+  (psHint && /OFF ENEMIES/.test(psHint[1]) ? ok : bad)("the Passives hint keeps the off-enemies guarantee");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
