@@ -643,6 +643,34 @@ disc — see `Editor/Suikoden3_ISO_offsets.md`).
 **Undo/redo.** Every edit is undoable (toolbar ↶/↷ or Ctrl/Cmd+Z / Shift+Z), on top of the
 existing per-field **↺** restore and **Revert all**.
 
+**Party formation — "my save adds party members on a stock disc but not on mine".** The
+**Changes** tab opens with a card for exactly that. Only six of this editor's settings can
+reach party formation at all, and it checks every one of them against the value a pristine
+disc holds, says what each one does and how it bites, and puts any of them back in one click:
+
+- **Assigned horse** (`list2 +0x66`) — the one that changes the *shape* of the party list.
+  When the party is formed, `PartyPut` writes the character's horse into the list **six
+  positions along**, so a horse occupies a party position of its own. Hand horses out and
+  positions 7–12 fill with mounts the game then has to stage in every area.
+- **Assigned-horse clamp** — the six `sltiu` sites that decide which horse ids count. Three
+  are party helpers and one is `PartyPut`'s own position 7–12 guard.
+- **Battle mounts**, **Field character**, **Scene actor fallback** and **Story content** —
+  none of them add or remove a party member, and the card says so rather than implying it;
+  they are here because they are the rest of the surface, and because the field-character
+  whitelist is what lets the party reach states the engine never produces for itself.
+
+Two things make it different from **Revert all**. It needs **no base disc** — every site
+carries its own stock value, read off a pristine `SLUS-20387` and re-verified from disc by
+`web/tests/party-fix.mjs` — and it therefore catches a change written in an **earlier
+session**, after the staged list has nothing left to revert. Restoring stages the stock bytes
+like any other edit: reviewable, undoable, nothing written until you save. **Story content is
+deliberately left out of the one-button restore** — blanking a case is what makes empty
+dialogue boxes render, so undoing it is a choice, not a repair, and it gets its own button.
+
+One thing the card cannot put back: **the party list is saved state**, written when the party
+is *built*. A list formed on a patched disc keeps its staged horses even after the disc is
+restored, so re-form the party in game afterwards.
+
 **Changes — what is already on this disc.** Every other tab reports what *you* staged this
 session; the review list is built as you edit, so it is a history, not a map. Open a disc
 somebody patched last month — or last release — and the editor had nothing to say about it.
