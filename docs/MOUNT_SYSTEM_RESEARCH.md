@@ -1297,6 +1297,57 @@ zero word is indistinguishable from zero-fill, the same false-positive class tha
 the pickup was seen in, which reduces the haystack to one town sub-file.
 
 
+### 14j. The herb pickup, decoded
+
+Located, after the play report narrowed it to **Zexen Forest (MORI), Chris's first chapter**.
+The routine repeats **28 times** across MORI's town sub-files, and six instances compared
+byte-for-byte are **identical in 26 of 27 halfwords** — one routine, stamped out per pickup:
+
+```
+0037 0028 1400 fffd      op 55  Cond(0x28 = RIDE, PLAYER)   <- the guard
+0018 1400 0002 fffe      op 24  RideOffSetS(PLAYER, 2)      <- dismount
+00b7 1400 0000 0032 0000 00ff fffe            op 183        <- the pickup itself
+00b5 0000 00NN 0000      op 181  ( NN = the only field that varies: 0x10 / 0x11 / 0x12 / 0x00 )
+00b5 0000 00ff fffc 0000 op 181
+0070 5400 0000           op 112 (PLAYER.mount)              <- re-pose the horse
+0016 1400 0000 fffe      op 22  RideOnSetS(PLAYER, 0)       <- remount, ZERO operand
+```
+
+Three things fall out of it.
+
+**The guard is real and it is the first instruction.** `op 55` with subcommand `0x28` is
+"is the player mounted?", which is exactly why picking up a herb on foot leaves you on foot —
+confirmed in play. The whole sandwich sits inside that branch.
+
+**The remount uses the zero-operand form**, `RideOn(PLAYER, 0)`, which the handler resolves to
+`rider + 0x180` (§14i). Not `0x5400`. So the single most reused mount instruction in the game
+addresses the horse purely as "the actor six slots along" — the slot `+0x66` fills. Nothing
+about the horse's identity appears anywhere in the routine.
+
+**`RideOff` is given `2`, not a mount.** Consistent with §14i: its second operand is a flag and
+the mount comes off the rider's `+0x250`.
+
+#### op 55/56 are conditionals, not `CameraTarget`
+
+`eds_dis.py` guessed those names and they were wrong; corrected. Both share handler
+`0x17AE4A8`, which reads a **subcommand** from param0 and a 32-bit value from params 1+2
+(`$a1 + ($v1 << 16)`), then dispatches on the subcommand through `0x17AE1E0`. Subcommands
+`0x28`/`0x29` are `RIDE`/`NORIDE`, evaluated at `0x177BDD0` — a function with **no `jal`
+callers**, i.e. reached through a table of condition evaluators, which is why the earlier
+call-graph work never connected it to anything.
+
+That also makes `op 55` the branch to look at for any "only when mounted" behaviour, and gives
+a second, safer place to force the mounted state than the global `sltu` at ISO `0x1C366C`
+(§14i): a single `0x0028` → `0x0029` in one script flips one pickup's guard without lying to
+every other `RIDE` test on the disc. Untested, and it would only ever affect that one pickup.
+
+**Still not established:** what `op 183` and `op 181` do individually — neither has a
+recoverable instruction length, which is what stops the chainer dead one instruction into the
+sandwich and is why this had to be found by byte-comparison rather than disassembly. The
+varying field at halfword 13 (`0x10`/`0x11`/`0x12`/`0x00`) is presumably which item, or which
+of several pickup animations, but that was not chased.
+
+
 ## Not established
 
 - What `mskn` (model 147/209) actually is — a Le Buque named NPC with a face portrait that is
