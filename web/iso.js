@@ -1731,6 +1731,7 @@
   // ---- state -----------------------------------------------------------------
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
+  let rnOpen = false; // ...and whether its card is expanded, kept across the redraws a stat edit triggers
   let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
   let ROOMS = [], ROOMS_SKIPPED = 0;        // per-area room tables (Encounter view)
   let RSCALE = null;  // cached stock-vs-disc comparison of those tables (see detectRoomScale)
@@ -2350,7 +2351,7 @@
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = NAME_ALIAS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
-    recipeExported = false; saveNudged = false; RENAMES = {};
+    recipeExported = false; saveNudged = false; RENAMES = {}; rnOpen = false;
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
     // The base disc itself is not: it is the pristine reference and outlives any one image.
@@ -3199,6 +3200,11 @@
     const host = q("#isoView");
     // remember which records are expanded so a re-render (e.g. a per-field revert) keeps your place
     const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
+    // Same for the Characters tab's rename card, read out of the DOM here rather than trusted
+    // from its `toggle` handler: <details> fires toggle on a later task, so opening the card and
+    // immediately editing a stat below would re-render while rnOpen is still false — and the
+    // card the user just opened would snap shut under them.
+    { const b = q("#rnBox", host); if (b) rnOpen = b.open; }
     const open = new Set(qa("details.char[open]", host).map(detKey));
     const y = window.scrollY;
     if (VIEW === "chars") { drawCharsView(host); }
@@ -3242,15 +3248,26 @@
     const rn = (RenameCore.RENAMEABLE || []).map((nm) =>
       `<label class="field" style="max-width:220px"><span>${nm} <span class="muted">(max ${nm.length})</span></span>
          <input type="text" class="rename${RENAMES[nm] ? " dirty" : ""}" data-orig="${nm}" maxlength="${nm.length}" placeholder="${esc2(nm)}" value="${esc2(RENAMES[nm] || "")}"></label>`).join("");
-    host.innerHTML = `<div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Rename characters <span class="u">experimental · same length only</span></div>
+    // Collapsed by default: renaming is a rare, disc-wide, streaming-save-only edit, and left
+    // open it pushed the stat records — the reason most people open this tab — below the fold.
+    // A closed card still says how many names are staged, in the same warn colour as the fields.
+    const staged = Object.keys(RENAMES).length;
+    host.innerHTML = `<details class="card fold" id="rnBox" style="margin:0 0 12px"${rnOpen ? " open" : ""}>
+        <summary class="bag-h"><span class="chev">▸</span>Rename characters
+          <span class="u">experimental · same length only<span class="foldhint"> · click to expand</span></span>
+          <b class="fold-edited" id="rnCount"${staged ? "" : ` style="display:none"`}>${staged} staged</b></summary>
         <div class="warnbox" style="margin:0 0 8px">Replaces the name <b>everywhere on the disc</b> (menus, battle, dialogue). Written by the streaming <b>“save patched copy”</b> — the desktop in-place save can't reach most copies. Same length only (shorter is space-padded). Back up first.</div>
-        <div class="grid">${rn}</div></div>
+        <div class="grid">${rn}</div></details>
       <div id="charRecs"></div>`;
+    const box = q("#rnBox", host); if (box) box.ontoggle = () => { rnOpen = box.open; };
     qa("input.rename", host).forEach((el) => (el.oninput = () => {
       const orig = el.dataset.orig, v = el.value.trim();
       if (v && v !== orig) RENAMES[orig] = v; else delete RENAMES[orig];
       el.classList.toggle("dirty", !!RENAMES[orig]);
+      // A closed card can hide staged renames, so the summary carries the count — update it in
+      // place rather than re-rendering, which would take the focus out of the field being typed.
+      const cnt = Object.keys(RENAMES).length, tag = q("#rnCount", host);
+      if (tag) { tag.textContent = `${cnt} staged`; tag.style.display = cnt ? "" : "none"; }
     }));
     drawRecords(q("#charRecs", host), "list1", REF.names.list1, LIST1_FIELDS, true);
   }
