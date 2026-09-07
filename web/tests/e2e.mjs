@@ -56,6 +56,42 @@ let browser;
 try { browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined }); }
 catch (e) { console.log("SKIP e2e: no Chromium (" + e.message.split("\n")[0] + ")."); srv.close(); process.exit(0); }
 
+// ---- abort guard -------------------------------------------------------------------------
+// The 104 blocks below are top-level statements, so a throw in one of them (a Playwright
+// timeout, most often) unwinds the whole module. Before this guard that killed the process
+// BEFORE the summary line, so the run ended in a bare stack trace with no verdict, no
+// cleanup, and — worst of all — no record that everything after the throw never ran at all.
+// Two sessions each concluded the other's tab was red off truncated runs like that.
+//
+// The rule this enforces: a throw is a FAILURE and is never mistakable for a pass. It counts
+// into the same `fails` the summary reads, the summary names the section that threw, and it
+// says in as many words that the rest was SKIPPED rather than green. A run that dies at line
+// N is evidence about nothing past N, and now it says so itself.
+//
+// This does NOT give per-block isolation — the run still stops at the first throw. Isolating
+// all 104 blocks means restructuring every one of them and is a separate change.
+let aborted = null;
+function finishRun() {
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ }
+  if (aborted) {
+    console.log(`\n  \u2717 ${aborted.section || "(before the first section)"} \u2014 THREW: ${aborted.err}`);
+    console.log(`\nFAILED (${fails + 1}) \u2014 aborted inside "${aborted.section || "(none)"}". `
+      + `Every check after that point was SKIPPED, not passed \u2014 this run says nothing about them.`);
+    process.exit(1);
+  }
+  console.log(fails ? `\nFAILED (${fails})` : "\nAll e2e checks passed.");
+  process.exit(fails ? 1 : 0);
+}
+async function abort(e) {
+  if (aborted) return;                       // first throw wins; ignore the cascade
+  aborted = { section, err: String((e && e.stack) || (e && e.message) || e).split("\n").slice(0, 3).join(" / ") };
+  try { await browser.close(); } catch { /* best effort */ }
+  try { srv.close(); } catch { /* best effort */ }
+  finishRun();
+}
+process.on("unhandledRejection", abort);
+process.on("uncaughtException", abort);
+
 const fakeHandle = () => `(() => { window.__writes = [];
   const h = { name: 's.iso', kind: 'file',
     getFile: async () => new File([await (await fetch('/synth.bin')).arrayBuffer()], 's.iso'),
@@ -4287,6 +4323,4 @@ for (const [w, h] of [[360, 640], [320, 480]]) {
 
 await browser.close();
 srv.close();
-fs.rmSync(TMP, { recursive: true, force: true });
-console.log(fails ? `\nFAILED (${fails})` : "\nAll e2e checks passed.");
-process.exit(fails ? 1 : 0);
+finishRun();
