@@ -3320,31 +3320,45 @@
   // is needed. Enablement for every rune lives here; the Passives tab keeps only the four
   // party-wide effects, and a rune's STRENGTH is edited on the Runes tab.
   const charPassiveIdx = (recBase) => (recBase - TABLES.list1[0]) / TABLES.list1[1];
+  // This list is a phone control first: it is the thing you are on this card to tick, and 22
+  // name chips packed into a 190px inner scroller (what the Passives tab's 75-name picker needs)
+  // is the wrong shape for a thumb. So it is a grid of full-width tiles instead — a ~48px target
+  // each, the on/off state readable from the tile's own border and tint rather than from a 13px
+  // checkbox glyph, and no nested scroller to fight the page's. The rune's menu text goes ON the
+  // tile because `title=` is unreachable on touch, and "what does this one even do" is the
+  // question you are asking at the moment you tick it; the same goes for the read-only and
+  // legacy states, which now say so in a badge instead of only in a tooltip.
   function charPassivesHTML(recBase) {
     const idx = charPassiveIdx(recBase);
     if (!Number.isInteger(idx) || idx < PS_HOOK.pickMin || idx > PS_HOOK.pickMax) return "";
     const rows = PASSIVES.map((p) => {
-      const nm = runeInfo(p.id).name || hex(p.id, 3);
+      const info = runeInfo(p.id), nm = info.name || hex(p.id, 3);
       const editable = psEditable(p), on = psHas(p, idx);
       const st = psState(p);
+      const locked = !editable || st === "legacy";
       const why = st === "legacy"
         ? "an older patch forced this rune on for EVERYONE by dropping the call; clear it on the Passives tab first"
         : !editable ? "this disc's code at one of this rune's sites is not what the editor decoded, so it is read-only"
           : `${p.what} — ${PS_WHERE[p.where]}`;
-      return `<label class="pschip" title="${esc2(why)}">
+      const tag = st === "legacy" ? "on for everyone" : !editable ? "read-only" : PS_WHERE_SHORT[p.where];
+      return `<label class="cprune${on ? " on" : ""}${locked ? " locked" : ""}" title="${esc2(why)}">
         <input type="checkbox" class="cpOn" data-id="${p.id}" data-c="${idx}"${on ? " checked" : ""}${
-          editable && st !== "legacy" ? "" : " disabled"}> ${esc2(nm)}</label>`;
+          locked ? " disabled" : ""}>
+        <span class="cpr-n">${esc2(nm)}</span>
+        <span class="cpr-w">${esc2(tag)}</span>
+        ${info.text ? `<span class="cpr-d">${esc2(info.text)}</span>` : ""}</label>`;
     }).join("");
     const nOn = PASSIVES.filter((p) => psHas(p, idx)).length;
     return `<div class="bag-h" style="margin-top:12px">Passive runes forced on
         <span class="u" title="Each of these makes the engine answer YES to &quot;does this character have that rune equipped?&quot; for this character only — no rune, no rune slot. The effect's STRENGTH is edited on the Runes tab. Fortune is not here: its check lives in a battle overlay, not the executable.">${nOn
-          ? `${nOn} on` : "none"} · without equipping them</span></div>
-      <div class="muted" style="margin:0 0 6px" data-sum="Ticking one gives that character the rune's effect and nobody else. Experimental: no forced battle passive has been watched working in play.">Ticking one installs a small helper into a dead
+          ? `${nOn} on` : "none"} · without equipping them</span>${nOn
+          ? `<button type="button" class="cpAllOff" data-c="${idx}">turn all ${nOn} off</button>` : ""}</div>
+      <div class="muted" style="margin:0 0 8px" data-sum="Ticking one gives that character the rune's effect and nobody else. Experimental: no forced battle passive has been watched working in play.">Ticking one installs a small helper into a dead
         routine in the executable and sets this character's bit in that rune's table, so the
         effect is <b>theirs alone</b> — enemies and everyone else are unaffected. Untick every
         rune on every character and the helper is removed byte-for-byte.
         <b>Experimental: no forced battle passive has been watched working in play.</b></div>
-      <div class="pschips">${rows}</div>`;
+      <div class="cprunes">${rows}</div>`;
   }
   function wireCharPassives(scope) {
     qa("input.cpOn", scope).forEach((b) => (b.onchange = () => {
@@ -3359,6 +3373,24 @@
         : b.checked ? `${nm} forced on for ${who} only.`
           : `${nm} — ${who} no longer has it forced${n ? `, ${n} character(s) still do` : ""}.`,
         n === null ? "warn" : "ok");
+    }));
+    // Undoing a handful of taps one tile at a time is the tedious half of this control on a
+    // phone, so the header carries the reverse of a tick: clear this character's bit in every
+    // rune's table at once. One re-render, one status line — and it only appears when there is
+    // something to clear.
+    qa("button.cpAllOff", scope).forEach((b) => (b.onclick = () => {
+      const idx = +b.dataset.c, cleared = [];
+      PASSIVES.forEach((p) => {
+        if (!psHas(p, idx)) return;
+        const n = psSetChars(p, psChars(p).filter((i) => i !== idx));
+        if (n !== null) cleared.push(runeInfo(p.id).name || hex(p.id, 3));
+      });
+      const who = psNameOf(idx);
+      drawView();
+      setStatus(cleared.length
+        ? `${who} — ${cleared.length} rune(s) no longer forced on: ${cleared.join(", ")}.`
+        : `${who} — nothing written; this disc's code doesn't match.`,
+        cleared.length ? "ok" : "warn");
     }));
   }
   function drawRecords(host, listKey, names, fields, lazy) {
@@ -8029,6 +8061,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
   };
   const PS_WHERE = { field: "asked on the field", battle: "asked in battle", both: "asked on the field and in battle" };
+  // Same three states, short enough to sit in a badge on a character card's rune tile.
+  const PS_WHERE_SHORT = { field: "field", battle: "battle", both: "field + battle" };
   const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what,
     p.proof || "", p.note || ""].join(" ").toLowerCase();
   const psSiteCount = (p) => `${p.sites.length} site${p.sites.length > 1 ? "s" : ""}`;
