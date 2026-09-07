@@ -5363,9 +5363,9 @@
   // on screen (unticked) after the audit stops reporting it.
   //
   // The one ordering rule is the relocated helper block's, and it is the same rule the
-  // Changes tab obeys: the dead routine cannot go back while a passive-rune `jal` still
-  // points into it, or a live jump lands in restored code. "Turn all off" therefore does the
-  // call sites first, and "turn all back on" does the block first.
+  // Changes tab obeys: the dead routine cannot go back while a `jal` still jumps into it, or
+  // a live jump lands in restored code. "Switch all off" therefore does the call sites first,
+  // and "switch all back on" does the block first. A block nothing reaches goes back alone.
   let PSW = null;                            // { rows: [...] }, rebuilt per disc
   const pswBytes = (off, n) => BUF.slice(off - ELF_BASE, off - ELF_BASE + n);
   const pswEq = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
@@ -5403,13 +5403,15 @@
     const cur = readW(r.off, r.w) >>> 0;
     return cur === r.patchVal ? "on" : cur === r.stockVal ? "off" : "other";
   }
-  const pswBlockFree = () => PASSIVES.every((p) => p.sites.every((s) => psSiteState(s) === "stock"));
+  // The guard is psBlockReachable, not "do the call sites read stock" — v1.137.0 separated
+  // those: a disc patched before the trampoline existed answers inline at its sites and never
+  // jumps into the block, so the block is unreachable leftover and safe to tidy on its own.
   // Returns false when the ordering rule holds the write back, so the caller can say so
   // instead of silently doing nothing.
   function pswSet(r, on) {
     if (!inBlk(r.off, pswLen(r))) return false;
     if (r.isBlock) {
-      if (!on && !pswBlockFree()) return false;
+      if (!on && psBlockReachable()) return false;
       writeBytes(r.off, on ? r.patchBytes : r.stockBytes);
     } else writeW(r.off, r.w, on ? r.patchVal : r.stockVal);
     FIELD_REG[r.off] = { group: on ? "Patch switched back on" : "Restored to stock",
@@ -5481,8 +5483,8 @@
     h += `</tbody></table></div>`;
     host.innerHTML = h;
 
-    const held = (n) => ` ${n} left alone — the relocated helper block only goes back once every ` +
-      `passive-rune site reads stock, and some sites are outside the loaded region.`;
+    const held = (n) => ` ${n} left alone — the relocated helper block only goes back once ` +
+      `nothing jumps into it, and some sites are outside the loaded region.`;
     qa("[data-psw]", host).forEach((cb) => {
       // A site holding a third value is neither on nor off, and the tri-state box says so
       // rather than picking one and looking wrong.
@@ -5495,8 +5497,8 @@
           ? `Staged — ${r.group} · ${r.label} goes back to its patched value when you save.`
           : `Staged — ${r.group} · ${r.label} goes back to stock when you save.`, "ok");
       } else {
-        setStatus("Left alone: the relocated helper block can only go back to the dead routine once " +
-          "every passive-rune call site reads stock again, or a live jump would land in it. " +
+        setStatus("Left alone: the relocated helper block can only go back to the dead routine " +
+          "once nothing jumps into it, or a live jump would land in restored code. " +
           "Use “Switch all off”, which does the call sites first.", "warn");
       }
       scheduleBadge(); drawView();
