@@ -96,6 +96,11 @@ const RUNEFX_SITES = [
   [0x10FE00, 0x00101042],
 ];
 const RUNEFX_FLOAT = [0x42C3B0, 0x3E99999A];   // Sunbeam walk-heal interval, 0.3f
+// Fortune is the one rune power site OUTSIDE the ELF block: its EXP multiplier lives in the
+// battle-results overlay, in both streaming copies. Bounds are the inverse of every other entry
+// — these must be out of the block and inside the aux window pair, not in it.
+const RUNEFX_AUX = [[0x3F3E6960, 0x24020002], [0x3F3EF160, 0x24020002]];
+const AUX_PAIR = [0x3F3E6960, 0x3F3EF160], AUX_WIN_LEN = 0x48;
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -146,6 +151,32 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
 }
 {
   const all = RUNEFX_SITES.concat([RUNEFX_FLOAT]);
+  // Fortune's pair: outside the ELF block by construction, inside the overlay windows, and the
+  // two streaming copies exactly 0x8800 apart (the spacing the potch pair already relies on).
+  {
+    const inBlock = RUNEFX_AUX.filter(([o]) => o >= ELF_BASE && o < ELF_END);
+    (inBlock.length ? bad : ok)(inBlock.length
+      ? `Fortune's overlay sites must NOT be in the ELF block: ${inBlock.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+      : "Fortune's two overlay sites are outside the ELF block, as overlay code must be");
+    const inWin = RUNEFX_AUX.every(([o]) => AUX_PAIR.some((w) => o >= w && o + 4 <= w + AUX_WIN_LEN));
+    (inWin ? ok : bad)(inWin
+      ? `both Fortune sites fall inside the battle-results windows (${AUX_WIN_LEN} bytes each)`
+      : "a Fortune site falls outside the aux window that is supposed to reach it — it would read as unavailable forever");
+    const gap = RUNEFX_AUX[1][0] - RUNEFX_AUX[0][0];
+    (gap === 0x8800 ? ok : bad)(gap === 0x8800
+      ? "the two streaming copies are 0x8800 apart, matching the potch pair"
+      : `the copies are 0x${gap.toString(16)} apart, not 0x8800 — one of them is misidentified`);
+    const isoTxt = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+    const listed = RUNEFX_AUX.every(([o, w]) =>
+      new RegExp(`\\[0x${o.toString(16).toUpperCase()},\\s*0x${w.toString(16).toUpperCase().padStart(8, "0")}\\]`, "i").test(isoTxt));
+    (listed ? ok : bad)(listed
+      ? "iso.js lists both Fortune sites with their stock word"
+      : "iso.js RUNEFX is missing/drifted for a Fortune site");
+    (/const AUX_WINDOWS = \[0x3F3E6960, 0x3F3EF160\]/.test(isoTxt) ? ok : bad)(
+      "AUX_WINDOWS starts early enough to reach Fortune's multiplier");
+    (/const AUX_LEN = 0x48/.test(isoTxt) && /AUX_MASK = 0x34, AUX_MULT = 0x3C/.test(isoTxt) ? ok : bad)(
+      "the potch offsets were shifted to match the moved window base (mask 0x34, mult 0x3C)");
+  }
   const oob = all.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
   if (oob.length) bad(`rune power sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
   else ok(`rune power sites (${all.length} in block: ${RUNEFX_SITES.length} code + 1 float)`);
@@ -192,8 +223,20 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   (/const RF_KIND = \{/.test(iso) && /imm:\s/.test(iso) && /sa:\s/.test(iso)
     && /f32hi:\s/.test(iso) && /f32:\s/.test(iso) ? ok : bad)(
     "RF_KIND still defines all four value shapes (imm / sa / f32hi / f32)");
-  (/rfSiteOk\(off, stock, e\.kind\)/.test(iso) ? ok : bad)(
+  (/if \(!rfSiteOk\(e, off, stock\)\) return;/.test(iso) ? ok : bad)(
     "rfWrite re-checks each site's stock shape before writing it");
+  // Fortune is the one entry outside the ELF block. Its accessor must route through the
+  // overlay, and it must go read-only when the overlay was never read rather than write into
+  // a window that is not there.
+  (/const rfPut = \(e, off, v\) => \(e\.aux \? auxW32/.test(iso) ? ok : bad)(
+    "aux-backed rune power writes go through the overlay writer, not writeW");
+  (/const w = auxR32\(off\);[\s\S]{0,120}?return w !== null/.test(iso) ? ok : bad)(
+    "an aux site with no overlay window loaded reads as unavailable, not writable");
+  // Fortune's revert cannot be exercised by the e2e — on a synth disc the control is never
+  // editable, so it can never become dirty there. Assert the wiring statically instead, and
+  // that it reverts across BOTH copies (auxRevertAt spans the pair) rather than just one.
+  (/auxRevertAt\(AUX_FORTUNE, 4\); drawView\(\);/.test(iso) ? ok : bad)(
+    "Fortune's revert restores the span across both streaming copies");
   // The card is rendered and wired from inside drawPassives, and those two call sites are the
   // ONLY coupling between Rune power and the rest of the tab. A rewrite of drawPassives that
   // does not carry them forward drops the whole feature silently: RUNEFX, RF_KIND and every

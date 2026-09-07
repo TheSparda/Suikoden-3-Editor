@@ -3206,6 +3206,8 @@ answer the following test accepts.
 guess — but nobody has walked past a weak encounter with it on yet. The tab marks the two
 differently for that reason, in the same confirmed / untested vocabulary the Mounts and Movement
 tabs use, and a marker is only ever moved by a play report, never by a passing test.
+**Fortune `0x1B8` — SUPERSEDED 2026-09-06, it was found. See "Fortune, found in the overlay" below.** The three searches recorded here were all correct and all searched the wrong file; kept because knowing *where it is not* is still what made the answer findable.
+
 **Fortune `0x1B8` is not here at all — WHERE IT IS NOT.** "Doubles experience value gained" is the
 one support rune with no decoded site, and three exhaustive searches came up empty, so
 nobody should repeat them: (a) its id 440 appears as an instruction immediate exactly eight
@@ -3527,3 +3529,73 @@ renders **confirmed / untested** and nothing else; all 22 runes read *untested*,
 included, and the play report lives in that rune's note where it can be read for what it is.
 `web/tests/validate.mjs` asserts that nothing claims *confirmed* and that the report text
 survives. A marker moves on a play report and never on a passing test.
+
+---
+
+## Fortune, found in the overlay (2026-09-06)
+
+The section above says Fortune has no decoded site and records three exhaustive searches that
+came up empty. **All three were correct, and all three searched the wrong file.** Fortune asks
+exactly the same question the other 22 support runes ask — it asks it in a **streaming battle
+overlay**, not in the boot ELF, so no scan of `PT_LOAD` could ever have found it.
+
+The way in was to stop looking for the rune and look for the *effect*. The editor already
+patches the **potch** award (`AUX_WINDOWS`, the Prosperity multiplier) at ISO `0x3F3E6994` — a
+reward, in overlay code. EXP is awarded by the same routine, so that is where Fortune had to be.
+
+**The check**, at ISO `0x3F3E6938` (streaming twin at `0x3F3EF138`, +0x8800):
+
+```
+3F3E6928  jal   0x017DC9F0          ; party unit #$s4
+3F3E6938  jal   0x0181B3B0          ; UnitHasItem(unit, itemId) — the same battle-side helper
+3F3E693C  addiu $a1,$zero,0x1b8     ; 0x1B8 = Fortune
+3F3E6940  addu  $s0,$s0,$v0         ; count holders across the party
+3F3E6954  addiu $a0,$zero,1         ; default multiplier
+3F3E6958  slti  $v1,$s0,1           ; count < 1 ?
+3F3E6960  addiu $v0,$zero,2         ; THE DOUBLING
+3F3E6964  movz  $a0,$v0,$v1         ; count nonzero -> multiplier = 2
+3F3E6970  sw    $a0,100($sp)
+```
+
+**The application**, 1064 bytes later in the same function, once per character:
+
+```
+3F3E6D88  lw    $v0,0($s0)          ; this character's EXP award
+3F3E6D94  lw    $a0,100($sp)        ; the multiplier
+3F3E6D98  mult  $v0,$v0,$a0         ; EXP *= multiplier
+3F3E6D9C  sw    $v0,0($s0)
+3F3E6DA0  addiu $s0,$s0,4           ; next character
+```
+
+**`0x00441018` is the R5900 THREE-operand `mult` (`rd=$v0`), not MIPS I's two-operand form.**
+Decoded as two-operand it writes only HI/LO, the `sw $v0` looks like a no-op, and the whole
+trail reads as a dead end — which is exactly how a disassembler that hardcodes `rd=$zero` for
+`mult` will show it. Worth fixing in any tooling used here.
+
+Two gameplay facts that fall out of the code and are not in the rune's text:
+- **One Fortune is as good as six.** The loop counts holders and then tests `count < 1`, so any
+  nonzero count gives the same ×2. A second copy adds nothing.
+- It multiplies the **per-character EXP award** after it is computed, so it stacks
+  multiplicatively with anything that scaled the award earlier.
+
+**Exactly two copies exist on the disc.** A full 4.3 GB scan for the 8-byte check pattern
+(`0C606CEC 240501B8`) returns `0x3F3E6938` and `0x3F3EF138` and nothing else.
+
+### Shipped
+
+`RUNEFX`'s one `aux: true` entry — the multiplier at `0x3F3E6960` / `0x3F3EF160`, stock word
+`24020002`. Because it is overlay code the window pair had to move: `AUX_WINDOWS` now starts at
+`0x3F3E6960` with `AUX_LEN = 0x48`, and the potch offsets inside it shifted to
+`AUX_MASK = 0x34`, `AUX_MULT = 0x3C`. Reads/writes route through `auxR32`/`auxW32` instead of the
+ELF block, and a disc whose overlay windows were never read shows the control as **unavailable**
+rather than writing into nothing — the same degradation the potch multiplier already has.
+
+**What is still not done:** the on/off switch. The check is decoded and the loop is party-wide
+(any yes doubles EXP for everyone), so forcing it would be *safe* in the way the two field sites
+are safe — unlike the battle sites, there is no per-unit leak. It is not wired because the
+switch machinery (`PASSIVES` / `PS_HOOK`) only reaches the ELF block. This would be a **52nd
+site** for anyone extending that work.
+
+**Untested in play.** Both copies are byte-verified against a pristine SLUS-20387 and the write
+round-trips byte-identically, but no altered multiplier has been watched taking effect in game.
+
