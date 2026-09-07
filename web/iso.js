@@ -1928,6 +1928,7 @@
   // Each Apply re-renders its whole view so the per-record fields show the new numbers, so
   // the open state AND the entered multipliers have to survive that redraw.
   let gbOpen = false, gbMults = {};                // Growth: stat -> multiplier (absent = 1.00)
+  let scOpen = false, scGrade = 7;                 // Growth: bulk skill-cap card + the grade it writes (7 = S)
   let spBulkOpen = false, spBulkPow = 1;           // Spells: whole-table Power multiplier
   let unBulkOpen = false, unBulkPow = 1;           // Unites: same
   let gearCache = null;                     // {itemId: absStatsOffset}
@@ -2874,11 +2875,12 @@
     }, 0);
     if (roomDirty > roomCovered)
       rows.push({ g: "Encounters", t: `${roomDirty - roomCovered} more room byte(s) changed (per-area rate presets)` });
-    // Bulk growth scaling (the Growth tab's card) rewrites up to 80 x 8 bytes at once — far too
-    // many to name one by one — so it lands here as a count. The spell and unite power scales are
-    // small enough to register per record, so those DO appear by name above.
+    // Bulk growth scaling (the Growth tab's card) rewrites up to 80 x 8 bytes at once, and its
+    // bulk skill-cap card up to 80 x 43 — far too many to name one by one — so both land here as
+    // a count. The spell and unite power scales are small enough to register per record, so
+    // those DO appear by name above.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
-    if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. bulk growth scaling)` });
+    if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. bulk growth or skill-cap presets)` });
     return rows;
   }
   let recipeExported = false, saveNudged = false;
@@ -3361,7 +3363,7 @@
     qa("#isoTabs [data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === VIEW));
     const hints = {
       chars: "Character starting stats (list 1): starting skills, ranks, equipped runes and gear.",
-      growth: "Per-character stat-growth rates, fixed skills, skill caps and starting level (list 2) — plus bulk scaling at the top of the tab: multiply every character's growth rate at once, with the Tougher / Hard / Brutal difficulty presets. This is where the old Balance tab went; the spell and unite halves of those presets are now on the Spells and Unites tabs.",
+      growth: "Per-character stat-growth rates, fixed skills, skill caps and starting level (list 2) — plus two bulk cards at the top of the tab: multiply every character's growth rate at once, with the Tougher / Hard / Brutal difficulty presets, and set the whole roster's 43 skill maximums (everyone to S, or just unlock the skills a character can't get). This is where the old Balance tab went; the spell and unite halves of those presets are now on the Spells and Unites tabs.",
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
@@ -3388,7 +3390,7 @@
     // short, renders its hint in full as before. Written out rather than derived because the
     // first sentence of most of these is a field list, not the point of the tab.
     const hintSums = {
-      growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling.",
+      growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
       spells: "The spell / rune-effect table: power, cast, element, target, area and status, all editable per spell.",
       runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
@@ -3896,10 +3898,10 @@
       if (SEARCH && !nm.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, label: nm, base: base + i * stride });
     }
-    const bulk = growthBulkHTML(rows);
+    const bulk = growthBulkHTML(rows) + capBulkHTML(rows);
     if (!rows.length) {
       host.innerHTML = bulk + `<div class="muted">no matches</div>`;
-      wireGrowthBulk(host, rows);
+      wireGrowthBulk(host, rows); wireCapBulk(host, rows);
       return;
     }
     host.innerHTML = bulk + rows.map((r) =>
@@ -3907,7 +3909,7 @@
          <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span><span class="muted">#${r.i}</span>
          <span class="lv gr-sum">${growthSummary(r.base)}</span></summary>
          <div class="char-body"></div></details>`).join("");
-    wireGrowthBulk(host, rows);
+    wireGrowthBulk(host, rows); wireCapBulk(host, rows);
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
       // Keep the collapsed line honest while the record is open — an edit to a growth field
@@ -6769,6 +6771,112 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         : `Nothing to change across ${where} — those are already the values on disc.`;
       setStatus(n ? "Growth multipliers staged." : "Growth rates already match those multipliers.", n ? "ok" : "warn");
     };
+  }
+
+  // ---- bulk skill caps: the Growth tab's second card -------------------------
+  // The "Max all (S)" chip inside a record already does this for one character; doing it for the
+  // whole roster meant opening 80 records. Two askable things live here and they are NOT the
+  // same write:
+  //   * "Set every skill to S" flattens the roster — everyone can take every skill to the top
+  //     grade, which is the point when you want a party with no locked-out builds at all.
+  //   * "Unlock only what they can't get" leaves every grade the disc already gives a character
+  //     alone and lifts ONLY the bytes reading 0 ("Can't get"). Hugo still can't out-magic
+  //     Chris; he just isn't shut out of the skill. The roster keeps its shape.
+  // The grade picker feeds both, so "unlock" can hand out a modest D instead of a free S.
+  //
+  // Unlike the growth scaler above these are absolute writes, not multipliers — there is nothing
+  // to scale from, so idempotence is free and "Restore the disc's caps" (which reads the pristine
+  // bytes) is the way back rather than a 1.00x pass.
+  //
+  // Deliberately NOT reg()'d: 80 x 43 is 3,440 bytes and naming each one would bury the review
+  // list under skill rows. They land in the "Bulk / other" count, same as a bulk growth scale.
+  function capOffs(recs) {
+    const [gb, gs] = TABLES.list2, out = [];
+    for (const i of recs) for (let k = 0; k < 43; k++) out.push(gb + i * gs + LIST2_SKILLMAX_START + k);
+    return out;
+  }
+  const dirtyCaps = (recs) => capOffs(recs).reduce((n, off) => n + (isDirty(off, 1) ? 1 : 0), 0);
+  // mode: "all" = every skill to `grade`; "locked" = only the bytes currently reading "Can't
+  // get"; "disc" = back to the pristine cap. Returns how many bytes actually moved, so the card
+  // can tell "nothing to do" apart from "done".
+  function setCaps(recs, grade, mode) {
+    let n = 0;
+    for (const off of capOffs(recs)) {
+      const cur = r8(off);
+      const nv = mode === "disc" ? o8(off) : mode === "locked" ? (cur === 0 ? grade : cur) : grade;
+      if (nv === cur) continue;
+      writeW(off, 1, nv); n++;
+    }
+    return n;
+  }
+  const gradeLabel = (v) => { const g = MAX_OPTS.find(([x]) => x === v); return g ? g[1] : String(v); };
+  function capBulkHTML(rows) {
+    // "Can't get" is excluded from the picker on purpose: writing 0 to all 43 skills for all 80
+    // characters is a roster nobody can build anything with, and the per-record "Clear all" chip
+    // is still there for the one character who should have nothing.
+    const opts = MAX_OPTS.filter(([v]) => v !== 0).map(([v, l]) =>
+      `<option value="${v}"${v === scGrade ? " selected" : ""}>${l}</option>`).join("");
+    // Same rule as the scaling card: the scope picker only appears while a filter is narrowing
+    // the roster, since with an empty box there is nothing to scope to.
+    const scoped = SEARCH && rows.length && rows.length < LIST_COUNT.list2;
+    const scope = scoped
+      ? `<label class="field" style="max-width:22em"><span>Apply to</span><select id="sc-scope">
+           <option value="all">all ${LIST_COUNT.list2} characters</option>
+           <option value="filter">the ${rows.length} matching “${esc2(SEARCH)}”</option></select></label>`
+      : "";
+    const g = gradeLabel(scGrade);
+    return `<details class="card fold" id="scBox" style="margin:0 0 12px"${scOpen ? " open" : ""}>
+      <summary class="bag-h"><span class="chev">▸</span>Bulk skill caps
+        <span class="u">all 43 skill maximums, whole roster · everyone to S, or just unlock what they can't get</span></summary>
+      <div class="muted" style="margin:0 0 10px" data-sum="Writes the 43 skill-max bytes for the whole roster: every skill to one grade, or only the can't-get ones unlocked. Restore puts the disc's caps back.">The same thing the <b>Max all</b>
+        chip does inside one record, for every character at once. <b>Set every skill to ${g}</b>
+        flattens the roster — anyone can take any skill to that grade. <b>Unlock only what they
+        can't get</b> is the gentler one: it leaves each character's own grades exactly as the disc
+        has them and lifts only the skills they simply can't learn, so the roster keeps its shape.
+        These are absolute writes, not multipliers, so <b>Restore the disc's caps</b> is the way
+        back — it reads the pristine bytes, which also means it discards anything typed into a
+        <b>Max:</b> field by hand. Fixed skills, free-skill count and growth rates are untouched.</div>
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        <label class="field" style="max-width:9em"><span>Grade</span>
+          <select id="sc-grade">${opts}</select></label>
+        <button class="primary mini" id="sc-all">Set every skill to ${g}</button>
+        <button type="button" class="chip mini" id="sc-lock">Unlock only what they can't get</button>
+        <button type="button" class="chip mini" id="sc-disc">Restore the disc's caps</button></div>
+      ${scope ? `<div style="margin-top:10px">${scope}</div>` : ""}
+      <div class="row" style="margin-top:10px"><span class="muted" id="sc-out"></span></div></details>`;
+  }
+  function wireCapBulk(host, rows) {
+    const box = q("#scBox", host); if (!box) return;
+    box.ontoggle = () => { scOpen = box.open; };
+    const sel = q("#sc-grade", host);
+    if (sel) sel.onchange = () => {
+      scGrade = +sel.value || 7;
+      const b = q("#sc-all", host);                 // keep the button honest about what it writes
+      if (b) b.textContent = `Set every skill to ${gradeLabel(scGrade)}`;
+    };
+    const apply = (mode) => {
+      const sc = q("#sc-scope", host);
+      const recs = growthRecs(sc ? sc.value : "all", rows);
+      // Only the flatten asks. "Unlock only" can't eat a cap someone typed (it touches nothing
+      // but the bytes reading "Can't get"), and discarding cap edits is exactly what the restore
+      // button is FOR — a confirm there would just be a second click on the way to what the
+      // label already promised.
+      if (mode === "all") {
+        const staged = dirtyCaps(recs);
+        if (staged && !confirm(`${staged} skill-cap edit(s) in scope will be overwritten. Continue?`)) return;
+      }
+      const n = setCaps(recs, scGrade, mode);
+      const where = sc && sc.value === "filter" ? `${recs.length} character(s)` : `all ${recs.length} characters`;
+      drawView();                                   // the per-character Max fields must redraw
+      const out = q("#sc-out");                     // ...which replaced the element we captured
+      if (out) out.textContent = n
+        ? `${n} skill-cap byte(s) ${mode === "disc" ? "restored" : "staged"} across ${where}. Review, then Save.`
+        : `Nothing to change across ${where} — those caps already read that way.`;
+      setStatus(n ? (mode === "disc" ? "Skill caps restored to the disc's values." : "Skill caps staged.")
+        : "Skill caps already match — nothing staged.", n ? "ok" : "warn");
+    };
+    const bind = (id, mode) => { const b = q(id, host); if (b) b.onclick = () => apply(mode); };
+    bind("#sc-all", "all"); bind("#sc-lock", "locked"); bind("#sc-disc", "disc");
   }
 
   // ---- bulk scaling: the Spells / Unites power cards --------------------------
