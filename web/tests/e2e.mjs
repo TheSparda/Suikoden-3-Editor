@@ -3576,7 +3576,19 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
   await dismissBoot(page);
   await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
   await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
-  await page.waitForSelector("#carryover", { timeout: 5000 });
+  await page.waitForSelector("#cofold", { timeout: 5000 });
+
+  // Whole-save state you set once: the section ships collapsed, and the closed header has to
+  // carry enough to answer "do I need to open this?" without opening it.
+  check("carryover + names start collapsed",
+    !(await page.locator("#cofold").evaluate((e) => e.open))
+    && !(await page.locator('input[data-carry="s2"]').isVisible()));
+  const foldSum = await page.textContent("#cofoldsum");
+  check("the collapsed header reports the flag state",
+    /Suikoden II not loaded/.test(foldSum) && /Suikoden I not loaded/.test(foldSum), foldSum);
+  await page.click("#cofold > summary"); await page.waitForTimeout(60);
+  check("clicking the header reveals the controls",
+    await page.locator('input[data-carry="s2"]').isVisible());
 
   const coText = await page.textContent("#carryover");
   check("both carryover rows render", (await page.locator("#carryover input[data-carry]").count()) === 2);
@@ -3588,6 +3600,10 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
   // Ticking the box is a staged change like any other: it lands in the review list...
   await page.check('input[data-carry="s2"]'); await page.waitForTimeout(50);
   check("ticking marks the checkbox dirty", await page.locator('input[data-carry="s2"]').evaluate((e) => e.classList.contains("dirty")));
+  // A fold that can be closed over a staged edit has to say so on the header, or the edit
+  // goes to Apply invisible.
+  check("the header counts the staged edit", /1 edit\(s\)/.test(await page.textContent("#cofoldsum")),
+    await page.textContent("#cofoldsum"));
   await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
   check("the review list names the carryover change",
     /Suikoden II data loaded: no → yes/.test(await page.textContent(".cf-list")));
@@ -3600,6 +3616,7 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
   await page.uncheck('input[data-carry="s2"]'); await page.waitForTimeout(50);
   check("returning a flag to its saved value clears the staging",
     await page.evaluate(() => !("s2" in CARRY)) && !(await page.locator('input[data-carry="s2"]').evaluate((e) => e.classList.contains("dirty"))));
+  check("the header drops the count with the edit", !/edit\(s\)/.test(await page.textContent("#cofoldsum")));
 
   // The Suikoden II bonus modal: enter the S2 numbers, stage the character upgrade.
   await page.click("#coBonus"); await page.waitForSelector("#cbOk", { timeout: 3000 });
