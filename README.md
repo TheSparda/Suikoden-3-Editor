@@ -740,6 +740,17 @@ you restore it **on its own**, keeping passives that work. (Found on a real disc
 the earlier "every call site must read stock" rule refused it, which would have made the
 leftover permanent unless you also gave up a working patch.)
 
+**Bisecting a disc that misbehaves — `Test` → `Non-stock code`.** The audit above restores in
+one direction: a row leaves the table the moment you stage it, so you cannot see what you
+already turned off, and you cannot put one back to compare. The Test tab opens on the same
+audit with a **checkbox per site** instead. Untick to stage the stock word, retick to put the
+patch back, and the rows stay on screen either way — which is what lets you switch one patch
+off, save, try the disc, and switch it back if it wasn't the one. Risky sites are listed first
+with the reason, there are `Switch all off` / `Switch all back on` buttons for the whole set,
+and the same ordering rule is enforced (call sites before the relocated helper block). It reads
+the disc with your staged edits on top and needs no base disc; it covers **code only**, so for
+the data tables use the base-disc comparison above.
+
 Use it when a patched disc and the game disagree. That is exactly how the duplicated rune
 descriptions (issue #11) stayed invisible for a release: the edit was on the disc, just on the
 copy the rune menu doesn't read.
