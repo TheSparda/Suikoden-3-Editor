@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "health-core.js", "text-core.js", "vcdiff.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "blurb-core.js", "recruit-core.js", "rename-core.js", "guide-core.js", "health-core.js", "text-core.js", "vcdiff.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -612,6 +612,7 @@ let nSkills = 0; for (const l of skillsTxt.split(/\r?\n/)) { const p = l.trim().
 console.log("App shell:");
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
+(/src=["']blurb-core\.js["']/.test(html) ? ok : bad)("index.html loads blurb-core.js before app.js");
 (/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
 (/src=["']guide-core\.js["']/.test(html) ? ok : bad)("index.html loads guide-core.js before app.js");
 (/src=["']health-core\.js["']/.test(html) ? ok : bad)("index.html loads health-core.js before app.js");
@@ -620,7 +621,10 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
   (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js");
-  (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js"); }
+  (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js");
+  // blurb-core.js is what collapses the long tab descriptions. Left out of the precache it
+  // would 404 offline and every one of those blocks would render as its full wall of text.
+  (/blurb-core\.js/.test(sw) ? ok : bad)("service worker precaches blurb-core.js"); }
 // Boot gate: loading a memory card is inert until Pyodide is up, so a block covers that card.
 // Three things about it are load-bearing and easy to break later, so assert them statically:
 // it must be in the MARKUP (built from script it would flash the dead UI first), it must sit
