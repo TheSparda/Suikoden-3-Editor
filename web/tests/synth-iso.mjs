@@ -230,17 +230,11 @@ export const spdClassAddr = (rec) => TABLES.list2[0] + rec * TABLES.list2[1] + M
 export const HORSE_OFF = 0x66;
 export const HORSE_STOCK = { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 };
 export const horseAddr = (roster) => TABLES.list2[0] + roster * TABLES.list2[1] + HORSE_OFF;
-// Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
-// the two rounding sweeteners, and the Adrenaline Power pair-sum.
-export const MECH = {
-  pool:       { off: 0x226F64, stock: 0x10400030, alt: 0x10000030 },
-  roundRider: { off: 0x226FF4, stock: 0x24c60001 },
-  roundMount: { off: 0x226FF8, stock: 0x26100001 },
-  adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
-};
-// The six `sltiu $vX, $vX, 2` sites that clamp the assigned horse to 308/309. Planted stock
-// because the Changes tab's code audit reads them: an unplanted zero here would have the
-// fixture report six code patches it does not carry.
+// The six `sltiu rX, rY, 2` sites that clamp the assigned horse to 308/309 — three of them
+// party helpers and one PartyPut's own position 7-12 guard. Planted stock because three
+// controls read them: the Changes tab's code audit (an unplanted zero would have the fixture
+// report six code patches it does not carry), its Party formation card, and the Test tab's
+// widen control, which would otherwise read "not this build".
 export const HORSE_CLAMP = [
   { off: 0x10EEEC, stock: 0x2C420002, alt: 0x2C420100 },
   { off: 0x10EF0C, stock: 0x2C630002, alt: 0x2C630100 },
@@ -249,6 +243,14 @@ export const HORSE_CLAMP = [
   { off: 0x1471A8, stock: 0x2C420002, alt: 0x2C420100 },
   { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
 ];
+// Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
+// the two rounding sweeteners, and the Adrenaline Power pair-sum.
+export const MECH = {
+  pool:       { off: 0x226F64, stock: 0x10400030, alt: 0x10000030 },
+  roundRider: { off: 0x226FF4, stock: 0x24c60001 },
+  roundMount: { off: 0x226FF8, stock: 0x26100001 },
+  adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
+};
 // Rune power (iso.js RUNEFX): the magnitudes the passive runes are worth, planted stock so the
 // Passives tab's controls decode and a write has a real instruction to rewrite the value inside.
 // `kind` mirrors iso.js so the e2e can assert the right bits moved — an `imm` write must leave
