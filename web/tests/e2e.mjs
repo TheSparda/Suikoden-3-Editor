@@ -1189,6 +1189,18 @@ head("Field character — chips; Story content in its own view");
     check("...and gives the measured reason it could never help", /exactly zero times/i.test(txt));
     check("...and reports the play confirmation", /Confirmed in play/i.test(txt));
     check("...and points an affected disc at the repair", /Changes/.test(txt) && /Code patches/.test(txt));
+    // The retirement rests on TWO independent play reports the same day, not one: the scene
+    // freeze origin/main recorded, and a disc that stopped adding party members correctly.
+    // The second is the one the Party formation card was built around, so the section has to
+    // carry it too — a reader who arrives with a broken party must not have to infer that
+    // this is their patch.
+    { const flat = txt.replace(/\s+/g, " ");
+      check("...and reports the party-formation symptom as well",
+        /stopped adding party members correctly/i.test(flat));
+      check("...and corrects the script census it used to over-read",
+        /never from a script/i.test(flat));
+      check("...and points at the Party formation card that leads with it",
+        /Party formation/.test(flat)); }
     check("no control can turn the fallback on any more",
       (await page.$("#avActorFb")) === null); }
   // Nothing was saved between the story save above and here, so an empty dirty badge is a
@@ -1717,6 +1729,123 @@ head("Assigned horse — the per-character list2 field, field + battle");
   check("Chris's record is cleared", r.u16(horseAddr(2)) === 0);
   check("untouched Borus still 308", r.u16(horseAddr(20)) === HORSE_STOCK[20]);
   await page.context().close();
+}
+
+head("Party formation — the no-base-disc check, and restoring a staged edit");
+{ const page = await newPage(); await loadIso(page);
+  const card = async () => {
+    await page.click('#isoTabs [data-v="changes"]');
+    await page.waitForSelector(".bag-h", { timeout: 3000 });
+    return (await page.textContent("#isoView")).replace(/\s+/g, " ");
+  };
+  // A freshly loaded synthetic disc plants every one of these at its stock value, so the card
+  // must say so — and must say so with no base disc chosen, which is the entire reason it
+  // exists alongside the comparison below it.
+  { const txt = await card();
+    check("a stock disc reads all stock", /Party formation all stock/.test(txt));
+    check("...and says nothing changes party formation", /Nothing on this disc changes party formation/.test(txt));
+    check("...with no base disc chosen", /Choose a base disc/.test(txt));
+    check("the one-button restore isn't offered when there is nothing to restore",
+      (await page.$("#pfAll")) === null);
+    // The one entry with a play report has to be readable without opening anything, and
+    // has to say WHICH setting it is — that is the answer to the question the card exists
+    // for (reported 2026-09-06: the scene actor fallback stopped party members being added).
+    check("the confirmed finding is stated up front, on a stock disc too",
+      /one has actually been watched doing this/.test(txt) && /Scene actor fallback/.test(txt));
+    check("...dated, so the claim can be traced to its report", /2026-09-06/.test(txt));
+    check("...and it carries a confirmed badge the other five don't",
+      (await page.$$('.tag.acc2')).length >= 1
+      && /confirmed to break party addition/.test(txt));
+    check("...while the other five say they are mechanisms with no report",
+      /mechanisms with no play report attached/.test(txt)); }
+  // The Test tab keeps the record of the retired patch, and must name the party symptom there
+  // too — a reader who arrives with a broken party should recognise it where the patch used to
+  // live, not only on the screen that repairs it. Wait on #avStock: #avActorFb is gone.
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector("#avStock", { timeout: 3000 });
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    // The toggle is retired (v1.135.0), so the Test tab's job here is to keep the record: say
+    // the control is gone, and name BOTH play reports so a reader who arrives with a broken
+    // party recognises their own symptom rather than only the scene freeze.
+    check("the Test tab says the fallback's toggle was removed", /has been removed/i.test(txt));
+    check("...and names the party-formation symptom",
+      /stopped adding party members correctly/i.test(txt)); }
+  // Hand Hugo a horse he doesn't ship with. That is the edit most likely to be behind
+  // "adding party members stopped working": PartyPut stages the horse at pos+6, so it takes a
+  // party-list position of its own.
+  await page.click('#isoTabs [data-v="mounts"]');
+  await page.waitForSelector("select.mnt-horse", { timeout: 3000 });
+  await page.selectOption(`select.mnt-horse[data-off="${horseAddr(1)}"]`, "308");
+  { const txt = await card();
+    check("a staged horse shows up as one changed site", /Assigned horse 1 of 80 changed/.test(txt));
+    check("...named, with stock and current side by side", /assigned horse 0 → 308/.test(txt));
+    check("the one-button restore appears and counts only that site", /Restore 1 site\(s\) to stock/.test(txt)); }
+  await page.click('[data-pf="horse"]');
+  { const txt = await card();
+    check("restoring the group puts the card back to all stock", /Party formation all stock/.test(txt));
+    // Net zero against the disc, so there is nothing left to write — which is the honest
+    // outcome and the reason this half asserts the card rather than a save.
+    check("...and leaves nothing staged", await readDirty(page)); }
+  await page.context().close();
+}
+
+head("Party formation — a disc patched in an earlier session, put back in one click");
+{ // The case the card exists for: the change is already ON the disc, so nothing is staged and
+  // Revert all has nothing to revert. Hugo carries a Karaya horse (325) and the clamp is
+  // widened at all six sites — three party helpers and PartyPut's own position 7-12 guard.
+  const patched = bytes.slice();
+  const pdv = new DataView(patched.buffer, patched.byteOffset, patched.byteLength);
+  pdv.setUint16(horseAddr(1), 325, true);
+  HORSE_CLAMP.forEach((c) => pdv.setUint32(c.off, c.alt >>> 0, true));
+  setServed(patched);
+  const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="changes"]');
+  await page.waitForSelector("#pfAll", { timeout: 3000 });
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("both settings are reported changed", /2 of 6 setting\(s\) are not stock/.test(txt));
+    check("the horse already on the disc is named", /assigned horse 0 → 325/.test(txt));
+    check("all six clamp sites are counted", /Assigned-horse clamp 6 of 6 changed/.test(txt));
+    check("the button covers all seven sites", /Restore 7 site\(s\) to stock/.test(txt));
+    check("nothing is staged, so Revert all could not have found this", await readDirty(page)); }
+  await page.click("#pfAll");
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("one button puts both settings back", /Party formation all stock/.test(txt)); }
+  { const r = await save(page);
+    check("the clamp is `sltiu …, 2` at all six sites",
+      HORSE_CLAMP.every((c) => r.u32(c.off) === (c.stock >>> 0)),
+      HORSE_CLAMP.map((c) => r.u32(c.off).toString(16)).join(" "));
+    check("...and the horse the widened window admitted is gone", r.u16(horseAddr(1)) === 0);
+    check("...while Chris keeps the horse she ships with", r.u16(horseAddr(2)) === HORSE_STOCK[2]); }
+  await page.context().close();
+  setServed(bytes);
+}
+
+head("Party formation — story routing is held back from the one-button restore");
+{ // Blanking a story case is a FIX — it is what makes empty dialogue boxes render for a
+  // stand-in protagonist — so the blanket restore must not quietly undo it. It is still
+  // reported, and it gets its own button.
+  const patched = bytes.slice();
+  const pdv = new DataView(patched.buffer, patched.byteOffset, patched.byteLength);
+  const koroku = STORY_CASES[8][0];                       // the case comparing 0x36
+  pdv.setUint32(koroku, avatarWord(0x7FFF, "eq"), true);  // an id the leader byte can't hold
+  setServed(patched);
+  const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="changes"]');
+  await page.waitForSelector("#pfAll", { timeout: 3000 });
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("the blanked story case is reported", /Story content 1 of 9 changed/.test(txt));
+    check("...and named as left out of the blanket restore", /Story content is left out of that/.test(txt));
+    check("...which therefore promises nothing", /Restore 0 site\(s\) to stock/.test(txt));
+    check("the card says it is a fix, not a bug", /here to be READ rather than reset/.test(txt)); }
+  check("the blanket restore is disabled with only story changed",
+    await page.$eval("#pfAll", (b) => b.disabled));
+  await page.click('[data-pf="story"]');
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("its own button still restores it", /Party formation all stock/.test(txt)); }
+  { const r = await save(page);
+    check("...and Koroku's case compares 0x36 again", r.u16(koroku) === 0x36); }
+  await page.context().close();
+  setServed(bytes);
 }
 
 head("Armor set effect ownership — reassign which set grants what");

@@ -643,6 +643,53 @@ disc — see `Editor/Suikoden3_ISO_offsets.md`).
 **Undo/redo.** Every edit is undoable (toolbar ↶/↷ or Ctrl/Cmd+Z / Shift+Z), on top of the
 existing per-field **↺** restore and **Revert all**.
 
+**Party formation — "my save adds party members on a stock disc but not on mine".** The
+**Changes** tab opens with a card for exactly that. Only six of this editor's settings can
+reach party formation at all, and it checks every one of them against the value a pristine
+disc holds, says what each one does and how it bites, and puts any of them back in one click:
+
+- **Assigned horse** (`list2 +0x66`) — the one that changes the *shape* of the party list.
+  When the party is formed, `PartyPut` writes the character's horse into the list **six
+  positions along**, so a horse occupies a party position of its own. Hand horses out and
+  positions 7–12 fill with mounts the game then has to stage in every area.
+- **Assigned-horse clamp** — the six `sltiu` sites that decide which horse ids count. Three
+  are party helpers and one is `PartyPut`'s own position 7–12 guard.
+- **Battle mounts**, **Field character** and **Story content** — none of them add or remove
+  a party member, and the card says so rather than implying it; they are here because they
+  are the rest of the surface, and because the field-character whitelist is what lets the
+  party reach states the engine never produces for itself.
+
+The card **leads with the one entry that has been watched doing this**, and it is not the
+horse. The **Scene actor fallback** — a former opt-in experiment on the Test tab — was
+reported on **2026-09-06** to stop the game adding party members correctly, and separately
+the same day to freeze a scene transition. Restoring its two words fixed both. Its toggle
+has since been **retired**, so this card is how a disc that already carries it gets found
+and put back.
+
+That finding also corrected the research, which had gone the other way: a census of 12,055
+script actor references found the by-character-id namespace used *zero* times, and the doc
+concluded the patch "could never have fired". The census was right about scripts; the
+conclusion generalised past them. `FindActorByCharId` is the engine's general "which actor
+is this character" lookup and the party and mount code calls it **directly** — and there
+**null is the answer**, meaning "no actor for that character is staged". The patch removes
+that answer and substitutes the party leader, so every caller asking "is this character
+here?" is told yes and handed the leader. Party formation is built out of that question,
+which is why it is the subsystem that shows the damage. See the correction in
+[`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md). The other five
+entries are mechanisms with no play report attached, and each one says so.
+
+Two things make it different from **Revert all**. It needs **no base disc** — every site
+carries its own stock value, read off a pristine `SLUS-20387` and re-verified from disc by
+`web/tests/party-fix.mjs` — and it therefore catches a change written in an **earlier
+session**, after the staged list has nothing left to revert. Restoring stages the stock bytes
+like any other edit: reviewable, undoable, nothing written until you save. **Story content is
+deliberately left out of the one-button restore** — blanking a case is what makes empty
+dialogue boxes render, so undoing it is a choice, not a repair, and it gets its own button.
+
+One thing the card cannot put back: **the party list is saved state**, written when the party
+is *built*. A list formed on a patched disc keeps its staged horses even after the disc is
+restored, so re-form the party in game afterwards.
+
 **Changes — what is already on this disc.** Every other tab reports what *you* staged this
 session; the review list is built as you edit, so it is a history, not a map. Open a disc
 somebody patched last month — or last release — and the editor had nothing to say about it.

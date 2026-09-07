@@ -617,6 +617,48 @@ That **retires the actor fallback** shipped under `Test`. It patched the null re
 town script. The patch could never have fired, which is exactly what playtesting found; now
 there is a reason rather than a suspicion. It also retires the reasoning in §9 that led to it.
 
+> **CORRECTED 2026-09-06 by a playtest report — "could never have fired" was wrong, and this
+> is the second time in this document that a census got generalised past what it measured.**
+>
+> **The observations — two of them, the same day, from two directions.** On one disc carrying
+> this patch **the game stopped adding party members correctly**; on another it **froze the Brass
+> Castle → plains transition** with only Chris's horse staged. Restoring the two words at ISO
+> `0x1FD238`/`0x1FD23C` fixed both, each on the same save that had just failed. So the patch
+> fires, and it does harm — the one thing this section confidently ruled out. The toggle that
+> applied it was **retired in v1.135.0**; the constants stay, because detecting and repairing an
+> affected disc is what they are worth now.
+>
+> **Where the reasoning went wrong.** The table above is a census of **script handles**, and it
+> is still correct: scenes really never name a character by id. The error is the next sentence.
+> `FindActorByCharId` is not reached only from script handle decoding — it is the engine's
+> general "which actor is this character" lookup, and the **party and mount code calls it
+> directly**. §14a of [`MOUNT_SYSTEM_RESEARCH.md`](MOUNT_SYSTEM_RESEARCH.md) records one such
+> caller in passing: the window `i - 6 <u 6` it declines to search *is* the party block's mount
+> range, which is only a meaningful thing to skip because party code is asking. "No script uses
+> this namespace" was measured; "this exit is never taken" was inferred from it, and does not
+> follow.
+>
+> **Why the damage lands on the party specifically (inference, not a traced hang).** The entire
+> content of the patch is that this lookup **stops returning null**. Null is not a failure to
+> its callers — it is the answer *"no actor for that character is staged"*, and it is the only
+> answer they have. Substituting the player's actor means every caller that asked *"is this
+> character here?"* is told **yes**, and handed the leader. Party formation is built out of that
+> question (`PartyPut` → `StageActor` → `HorseActorPos` all resolve a position to a character to
+> an actor), so it is both the subsystem most exposed to the change and the one where a wrong
+> *yes* is silent rather than a crash. That is read off the code; the hang was not caught in the
+> act.
+>
+> **What survives.** The census, the slot-shaped hypothesis in the next paragraph, and the fact
+> that the patch never fixed the freeze it was written for. What does not survive is the claim
+> that it is inert. The editor now ships the opposite verdict: the toggle is **gone**, the Test
+> tab keeps the section as a record of the dead end, and the Changes tab opens with a **Party
+> formation** card that leads with this finding and restores the two words in one click.
+>
+> **The lesson, restated because this document keeps relearning it.** §14d of the mount doc was
+> corrected the same way and on the same day: an argument from *"the archive does not name that
+> model"* to *"the model cannot load"*. Both times a real measurement of one surface was read as
+> a fact about the whole engine. A census bounds what it counted, and nothing else.
+
 **Where this points instead.** The plain-slot path bounds-checks against `ctx->0x03` and
 returns null for an out-of-range slot (`0x17B5B8C`). So the candidate is: a scene stages N
 actors by slot, scene setup places fewer than N because the avatar is not the character the
