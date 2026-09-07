@@ -1,6 +1,6 @@
 # Web editor tests
 
-Thirteen suites, all runnable with plain Node (v18+). `npm test` runs the eleven browser-free
+Fourteen suites, all runnable with plain Node (v18+). `npm test` runs the twelve browser-free
 ones; `npm run test:e2e` runs the Playwright suite; `version-drift.mjs` is a pre-push check
 run on its own (see below):
 
@@ -128,6 +128,40 @@ place the merged strings are asserted — against the real committed data.
 ```bash
 node web/tests/desc-merge.mjs
 ```
+
+## `blurb-core.mjs` — the collapsed long descriptions, no browser
+
+Every tab in this editor explains itself at length, and the longest block is 2,900 characters
+sitting on top of the table it describes. `web/blurb-core.js` collapses each of those to a
+one-line summary with a **Show more** button, keeping the full text in the DOM but hidden.
+
+Two halves are checked. The pure half is the gate (a block earns a button past 240 characters
+**or** past three sentences) and the fallback summariser used when a block asks for a derived
+summary rather than a written one.
+
+The other half is the ~80 summaries actually shipped — as `data-sum` attributes in `iso.js`,
+`app.js` and `index.html`, plus the `hintSums` / `SUBHINT_SUM` objects for the two hint
+elements that every tab reuses. The property that makes that population fragile is that
+**expanded state is keyed by the summary text**: both editors rebuild whole tabs into
+`innerHTML`, so there is no element to hang the state off. Two blocks that happen to share a
+summary would therefore open and close together, on different tabs, for no visible reason —
+so uniqueness is asserted rather than hoped for. Also checked: every long tab hint has a
+written summary (a missing one silently degrades to a derived first sentence, which for most
+of these is a field list rather than the point of the tab), no summary is written for a hint
+the gate leaves whole, no summary carries a double quote (it lives in an HTML attribute inside
+a JS template literal, so one would truncate the attribute and spray the rest into the
+markup), and the Save Editor's `chars` hint is **excluded** on purpose — it carries the live
+"recruited only" checkbox, and collapsing it would hide a control.
+
+```bash
+node web/tests/blurb-core.mjs
+```
+
+`e2e.mjs` drives the browser half: the collapse renders, the hidden text is still reachable by
+`textContent` and find-in-page, the toggle sets `aria-expanded`, the shared tab hint
+re-collapses with its own summary on each tab, a short hint is left alone — and, the one that
+has bitten this repo before, an expanded block survives a filter keystroke, a staged edit and
+a tab round-trip instead of snapping shut.
 
 ## `changes-core.mjs` — the Changes tab's diff join, no browser
 The Changes tab's whole claim is that its list is **complete**: every byte that differs

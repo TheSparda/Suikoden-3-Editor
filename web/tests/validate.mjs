@@ -16,7 +16,7 @@ const bad = (m) => { console.log("  ✗ " + m); failures++; };
 
 // 1) JS syntax
 console.log("JS syntax:");
-for (const f of ["app.js", "iso.js", "sw.js", "recruit-core.js", "rename-core.js", "guide-core.js", "health-core.js", "text-core.js", "vcdiff.js"]) {
+for (const f of ["app.js", "iso.js", "sw.js", "blurb-core.js", "recruit-core.js", "rename-core.js", "guide-core.js", "health-core.js", "text-core.js", "vcdiff.js"]) {
   try { execFileSync(process.execPath, ["--check", path.join(WEB, f)]); ok(f); }
   catch (e) { bad(`${f} — ${String(e.stderr || e).split("\n")[0]}`); }
 }
@@ -96,6 +96,19 @@ const RUNEFX_SITES = [
   [0x10FE00, 0x00101042],
 ];
 const RUNEFX_FLOAT = [0x42C3B0, 0x3E99999A];   // Sunbeam walk-heal interval, 0.3f
+// Fortune is the one rune power site OUTSIDE the ELF block: its EXP multiplier lives in the
+// battle-results overlay, in both streaming copies. Bounds are the inverse of every other entry
+// — these must be out of the block and inside the aux window pair, not in it.
+const RUNEFX_AUX = [[0x3F3E6960, 0x24020002], [0x3F3EF160, 0x24020002]];
+const AUX_PAIR = [0x3F3E6938, 0x3F3EF138], AUX_WIN_LEN = 0x70;
+// The two overlay SWITCHES, which share those windows: the equipped/worn check each bonus asks
+// before it pays out. Each is a word pair — the `jal` and the delay slot the patch swaps — and
+// like the multiplier above them the bounds are inverted: out of the ELF block, inside a window.
+// [window-relative offset, stock jal, stock delay slot, the answer written when forced on]
+const AUXSW_SITES = [
+  ["fortune",    0x00, 0x0C606CEC, 0x240501B8, 0x24020001],
+  ["prosperity", 0x54, 0x0C606CDC, 0x0220202D, 0x2402FFFF],
+];
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -146,6 +159,95 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
 }
 {
   const all = RUNEFX_SITES.concat([RUNEFX_FLOAT]);
+  // Fortune's pair: outside the ELF block by construction, inside the overlay windows, and the
+  // two streaming copies exactly 0x8800 apart (the spacing the potch pair already relies on).
+  {
+    const inBlock = RUNEFX_AUX.filter(([o]) => o >= ELF_BASE && o < ELF_END);
+    (inBlock.length ? bad : ok)(inBlock.length
+      ? `Fortune's overlay sites must NOT be in the ELF block: ${inBlock.map(([o]) => "0x" + o.toString(16)).join(", ")}`
+      : "Fortune's two overlay sites are outside the ELF block, as overlay code must be");
+    const inWin = RUNEFX_AUX.every(([o]) => AUX_PAIR.some((w) => o >= w && o + 4 <= w + AUX_WIN_LEN));
+    (inWin ? ok : bad)(inWin
+      ? `both Fortune sites fall inside the battle-results windows (${AUX_WIN_LEN} bytes each)`
+      : "a Fortune site falls outside the aux window that is supposed to reach it — it would read as unavailable forever");
+    const gap = RUNEFX_AUX[1][0] - RUNEFX_AUX[0][0];
+    (gap === 0x8800 ? ok : bad)(gap === 0x8800
+      ? "the two streaming copies are 0x8800 apart, matching the potch pair"
+      : `the copies are 0x${gap.toString(16)} apart, not 0x8800 — one of them is misidentified`);
+    const isoTxt = fs.readFileSync(path.join(REPO, "web", "iso.js"), "utf8");
+    const listed = RUNEFX_AUX.every(([o, w]) =>
+      new RegExp(`\\[0x${o.toString(16).toUpperCase()},\\s*0x${w.toString(16).toUpperCase().padStart(8, "0")}\\]`, "i").test(isoTxt));
+    (listed ? ok : bad)(listed
+      ? "iso.js lists both Fortune sites with their stock word"
+      : "iso.js RUNEFX is missing/drifted for a Fortune site");
+    (/const AUX_WINDOWS = \[0x3F3E6938, 0x3F3EF138\]/.test(isoTxt) ? ok : bad)(
+      "AUX_WINDOWS starts early enough to reach both overlay equipped checks");
+    (/const AUX_LEN = 0x70/.test(isoTxt) && /const AUX_FORTUNE = 0x28;/.test(isoTxt)
+      && /const AUX_MASK = 0x5C, AUX_MULT = 0x64;/.test(isoTxt) ? ok : bad)(
+      "the offsets inside the window were shifted to match the moved base "
+      + "(fortune 0x28, mask 0x5C, mult 0x64)");
+    // The switches: every derived offset must land inside the window, the two copies must stay
+    // 0x8800 apart, and no switch's word pair may collide with a value control in the same
+    // window — the multiplier and the mask are edited independently and a shared word would
+    // mean one control silently eating the other's write.
+    const relOf = (name) => (isoTxt.match(new RegExp(`\\b${name} = (0x[0-9A-Fa-f]+)`)) || [])[1];
+    const relFort = relOf("AUX_FORTUNE"), relMask = relOf("AUX_MASK"), relMult = relOf("AUX_MULT");
+    (relFort && relMask && relMult ? ok : bad)(relFort && relMask && relMult
+      ? "the window's value offsets can still be read out of iso.js"
+      : "AUX_FORTUNE / AUX_MASK / AUX_MULT could not be parsed out of iso.js — the collision check below is checking nothing");
+    const valSpans = [[parseInt(relFort, 16), 4], [parseInt(relMask, 16), 4], [parseInt(relMult, 16), 8]];
+    const REL_CONST = { fortune: "AUX_FORT_CHK", prosperity: "AUX_PROSP_CHK" };
+    for (const [key, rel, jal, ds, yes] of AUXSW_SITES) {
+      // The offset iso.js actually uses, not the one this file wishes it used.
+      const relSrc = parseInt(relOf(REL_CONST[key]) || "NaN", 16);
+      (relSrc === rel ? ok : bad)(relSrc === rel
+        ? `${REL_CONST[key]} is still 0x${rel.toString(16).toUpperCase()} (${key}'s check inside the window)`
+        : `${REL_CONST[key]} reads 0x${Number.isNaN(relSrc) ? "??" : relSrc.toString(16)} in iso.js, not the decoded 0x${rel.toString(16)}`);
+      const fits = rel >= 0 && rel + 8 <= AUX_WIN_LEN;
+      (fits ? ok : bad)(fits
+        ? `the ${key} switch's word pair fits inside the ${AUX_WIN_LEN}-byte window`
+        : `the ${key} switch's word pair runs past the end of the window — it would read as unavailable forever`);
+      const oob = AUX_PAIR.map((w) => w + rel).filter((o) => o >= ELF_BASE && o < ELF_END);
+      (oob.length ? bad : ok)(oob.length
+        ? `the ${key} switch must be overlay code, not in the ELF block`
+        : `the ${key} switch's two copies are outside the ELF block, as overlay code must be`);
+      const clash = valSpans.some(([o, n]) => rel < o + n && o < rel + 8);
+      (clash ? bad : ok)(clash
+        ? `the ${key} switch's word pair overlaps a value control in the same window`
+        : `the ${key} switch does not overlap the multiplier, the mask or Fortune's EXP value`);
+      // The stock words and the forced answer are the whole patch; drift here writes a
+      // different instruction than the one the disassembly was checked against.
+      const hx = (w) => "0x" + w.toString(16).toUpperCase().padStart(8, "0");
+      const listed = new RegExp(`key: "${key}", rel: AUX_\\w+, jal: ${hx(jal)}, ds: ${hx(ds)}, yes: ${hx(yes)},`)
+        .test(isoTxt);
+      (listed ? ok : bad)(listed
+        ? `iso.js's ${key} switch still carries its stock jal, delay slot and forced answer`
+        : `iso.js's ${key} switch has drifted from the decoded words (${hx(jal)} / ${hx(ds)} / ${hx(yes)})`);
+    }
+    // Both copies always move together, and the read side refuses a disc where they disagree.
+    (/for \(const w of AUX\) \{\s*\n\s*if \(w\.tag !== "potch"\) continue;\s*\n\s*auxW32\(w\.off \+ sw\.rel,/.test(isoTxt) ? ok : bad)(
+      "auxSwSet writes every loaded overlay copy, not just the first");
+    (/return st\.every\(\(x\) => x === "on"\) \? "on" : st\.every\(\(x\) => x === "off"\) \? "off" : "mixed";/.test(isoTxt) ? ok : bad)(
+      "a disc whose two copies disagree reads as mixed, and mixed is not editable");
+    (/const auxSwEditable = \(sw\) => \{ const x = auxSwState\(sw\); return x === "on" \|\| x === "off"; \};/.test(isoTxt) ? ok : bad)(
+      "only the stock and the forced states are writable — a stranger's patch is read-only");
+    (/const auxSwRevert = \(sw\) => auxRevertAt\(sw\.rel, 8\);/.test(isoTxt) ? ok : bad)(
+      "the switch's revert restores both words across both streaming copies");
+    // Same two-call coupling the Rune power card has: rendered and wired from the tab, and the
+    // Prosperity one also renders on the Sets tab next to the numbers it multiplies.
+    (/\$\{auxSwCard\(\)\}/.test(isoTxt) ? ok : bad)(
+      "drawPassives still renders the overlay switch card (${auxSwCard()})");
+    (/\$\{auxSwField\(auxSwById\("prosperity"\)\)\}/.test(isoTxt) ? ok : bad)(
+      "drawSets still renders the Prosperity switch beside the potch numbers");
+    ((isoTxt.match(/\n\s*wireAuxSw\(host\);/g) || []).length === 2 ? ok : bad)(
+      `wireAuxSw is called from both tabs (found ${(isoTxt.match(/\n\s*wireAuxSw\(host\);/g) || []).length}, expected 2 — Passives and Sets)`);
+    // Nothing is decoded-but-unswitchable any more, so the old gap list must be gone rather
+    // than left rendering an empty table under a heading that says Fortune has no site.
+    (/PS_UNMAPPED/.test(isoTxt) ? bad : ok)(
+      /PS_UNMAPPED/.test(isoTxt)
+        ? "iso.js still carries PS_UNMAPPED — Fortune is switchable now, so the gap list is stale"
+        : "the decoded-but-unswitchable gap list is gone (Fortune has a switch)");
+  }
   const oob = all.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
   if (oob.length) bad(`rune power sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
   else ok(`rune power sites (${all.length} in block: ${RUNEFX_SITES.length} code + 1 float)`);
@@ -192,30 +294,69 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   (/const RF_KIND = \{/.test(iso) && /imm:\s/.test(iso) && /sa:\s/.test(iso)
     && /f32hi:\s/.test(iso) && /f32:\s/.test(iso) ? ok : bad)(
     "RF_KIND still defines all four value shapes (imm / sa / f32hi / f32)");
-  (/rfSiteOk\(off, stock, e\.kind\)/.test(iso) ? ok : bad)(
+  (/if \(!rfSiteOk\(e, off, stock\)\) return;/.test(iso) ? ok : bad)(
     "rfWrite re-checks each site's stock shape before writing it");
+  // Fortune is the one entry outside the ELF block. Its accessor must route through the
+  // overlay, and it must go read-only when the overlay was never read rather than write into
+  // a window that is not there.
+  (/const rfPut = \(e, off, v\) => \(e\.aux \? auxW32/.test(iso) ? ok : bad)(
+    "aux-backed rune power writes go through the overlay writer, not writeW");
+  (/const w = auxR32\(off\);[\s\S]{0,120}?return w !== null/.test(iso) ? ok : bad)(
+    "an aux site with no overlay window loaded reads as unavailable, not writable");
+  // Fortune's revert cannot be exercised by the e2e — on a synth disc the control is never
+  // editable, so it can never become dirty there. Assert the wiring statically instead, and
+  // that it reverts across BOTH copies (auxRevertAt spans the pair) rather than just one.
+  (/auxRevertAt\(AUX_FORTUNE, 4\); drawView\(\);/.test(iso) ? ok : bad)(
+    "Fortune's revert restores the span across both streaming copies");
   // The card is rendered and wired from inside drawPassives, and those two call sites are the
   // ONLY coupling between Rune power and the rest of the tab. A rewrite of drawPassives that
   // does not carry them forward drops the whole feature silently: RUNEFX, RF_KIND and every
   // helper still exist and still parse, so nothing above this line notices. The e2e catches it
   // (#rfBox stops existing) but the e2e is slow and not always run — catch it in the fast suite.
-  (/\$\{rfCard\(\)\}/.test(iso) ? ok : bad)(
-    "drawPassives still renders the Rune power card (${rfCard()})");
+  // v1.123.0 moved the layout: rune STRENGTH is edited on the Runes tab only, per-unit
+  // ENABLEMENT is on the character's own card, and the Passives tab keeps the four party-wide
+  // effects. So the old "drawPassives renders rfCard()" guard is gone on purpose — what has to
+  // hold now is that each control still has exactly one home and none of them lost it.
+  (/\$\{runePowerHTML\(r\.id\)\}/.test(iso) ? ok : bad)(
+    "the Runes tab is still the home of every rune's Strength block");
+  // The Passives tab carries the four party-wide effects' SWITCHES and no strength at all:
+  // Champion's and Sunbeam as rune rows, Fortune and Prosperity via the overlay-switch card.
+  (/\$\{auxSwCard\(\)\}/.test(iso) ? ok : bad)(
+    "the Passives tab renders the two overlay switches (Fortune, Prosperity)");
+  (!/\$\{rfCard\(\)\}|\$\{psRewardCard\(\)\}/.test(iso) ? ok : bad)(
+    "...and no strength control — that lives on the Runes tab only");
+  (/const PS_TAB = \(p\) => p\.where !== "battle";/.test(iso) ? ok : bad)(
+    "the Passives tab is filtered to the non-battle runes (Champion's, Sunbeam)");
+  (/\$\{lazy \|\| listKey !== "list1" \? "" : charPassivesHTML\(r\.base\)\}/.test(iso) ? ok : bad)(
+    "the character card renders its forced-passives block");
+  (/wireCharPassives\(box\)/.test(iso) && /wireCharPassives\(d\)/.test(iso) ? ok : bad)(
+    "...and wires it on both the lazy and eager card paths");
+  // The transposition only works because a card's record index IS the bitmap index. If list1's
+  // base/stride ever moved relative to PS_HOOK's pick range this would silently tick the wrong
+  // character, so the derivation must stay arithmetic off TABLES.list1 rather than guessed.
+  (/const charPassiveIdx = \(recBase\) => \(recBase - TABLES\.list1\[0\]\) \/ TABLES\.list1\[1\];/.test(iso) ? ok : bad)(
+    "a card's forced-passive index is derived from TABLES.list1, not assumed");
   // Match the CALL, not the declaration — `function wireRf(host) {` also contains "wireRf(host)",
   // so a looser regex stays green with the call site deleted, which is the exact failure this
   // check exists to catch.
   (/\n\s*wireRf\(host\);/.test(iso) ? ok : bad)(
     "drawPassives still wires the Rune power controls (a wireRf(host); call, not just the declaration)");
-  // The same controls also render per-rune on the Runes tab, which is where someone looking up
-  // Sunbeam expects to find "HP a combat turn". Two call sites now, one per tab.
+  // Strength has exactly ONE home now: the rune's own row on the Runes tab. The Passives tab
+  // renders no `.rf` control at all, so wireRf must be called from exactly one place — two
+  // would mean a strength control had crept back onto another tab.
   (/\$\{runePowerHTML\(r\.id\)\}/.test(iso) ? ok : bad)(
     "drawRunes still renders each passive rune's Strength block");
-  ((iso.match(/\n\s*wireRf\(host\);/g) || []).length === 2 ? ok : bad)(
-    `wireRf is called from both tabs (found ${(iso.match(/\n\s*wireRf\(host\);/g) || []).length}, expected 2 — Passives and Runes)`);
-  // One renderer feeds both tabs. If they ever diverge into two copies, a knob added to RUNEFX
-  // silently appears on one tab only.
-  (/function rfField\(e, short\)/.test(iso) && /rfField\(e, false\)/.test(iso) && /rfField\(e, true\)/.test(iso) ? ok : bad)(
-    "both tabs render their controls through the one rfField()");
+  ((iso.match(/\n\s*wireRf\(host\);/g) || []).length === 1 ? ok : bad)(
+    `wireRf is called from the Runes tab only (found ${(iso.match(/\n\s*wireRf\(host\);/g) || []).length}, expected 1)`);
+  // One renderer still feeds both places that show a rune-power control: the Runes tab's
+  // per-rune Strength blocks (short labels) and the Passives tab's reward card (long labels).
+  // If they ever fork into two copies, a knob added to RUNEFX appears in only one of them.
+  (/function rfField\(e, short\)/.test(iso) && /rfField\(e, true\)/.test(iso) ? ok : bad)(
+    "the Runes tab's Strength blocks render through rfField()");
+  // The dead Rune power card must stay dead — leaving it would give strength two homes on two
+  // different tabs again, which is the thing v1.123.0 removed.
+  (!/function rfCard\(/.test(iso) ? ok : bad)(
+    "the old Rune power card is gone, not merely unreferenced");
   // The walk-heal is stored as an interval and shown as a rate; the snap-back is what keeps a
   // nudge-and-undo from leaving 1/3.33 = 0.3003 on the disc instead of the stock 0.3.
   (/Math\.abs\(shown - e\.stockShown\) < 0\.005\) return e\.stock/.test(iso) ? ok : bad)(
@@ -244,18 +385,21 @@ console.log("Passive rune sites:");
   const FIELD = [0x149F90, 0x14A1B4];                        // the two field party loops
   const grab = (name) => (iso.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n  \\];`)) || [])[1];
   const sw = grab("PASSIVES");
-  const unmapped = (iso.match(/const PS_UNMAPPED = \[([^\]]*)\]/) || [])[1];
+  // Fortune is not in PASSIVES: its check is overlay code, so it is switched by AUXSW instead.
+  // Coverage of the support-rune band therefore has to count both tables, and this reads the
+  // rune ids out of AUXSW rather than trusting a constant here.
+  const auxsw = (iso.match(/const AUXSW = \[([\s\S]*?)\n  \];/) || [])[1];
   // PS_HOOK's keys (off, len, rows, stride) are common words, so read them out of the object
   // literal itself rather than out of the whole file — `off: 0x3EC2A0` belongs to a spell table.
   const hook = (iso.match(/const PS_HOOK = \{([\s\S]*?)\n  \};/) || [])[1] || "";
   const num = (k) => { const m = hook.match(new RegExp(`\\b${k}:\\s*(0x[0-9A-Fa-f]+|\\d+)`)); return m ? Number(m[1]) : undefined; };
   const hexStr = (k) => (hook.match(new RegExp(`\\n    ${k}:\\n([\\s\\S]*?),(?:\\n|$)`)) || [])[1];
-  if (!sw || unmapped === undefined) bad("could not read PASSIVES / PS_UNMAPPED out of iso.js");
+  if (!sw || auxsw === undefined) bad("could not read PASSIVES / AUXSW out of iso.js");
   else {
     const ids = [...sw.matchAll(/\{ id: (0x[0-9A-Fa-f]+),/g)].map((m) => parseInt(m[1], 16));
     const sites = [...sw.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal: (0x[0-9A-Fa-f]+), ds: (0x[0-9A-Fa-f]+), k: "(\w+)" \}/g)]
       .map((m) => ({ off: parseInt(m[1], 16), jal: parseInt(m[2], 16) >>> 0, ds: parseInt(m[3], 16) >>> 0, k: m[4] }));
-    const gaps = unmapped.split(",").map((x) => parseInt(x.trim(), 16)).filter((n) => !isNaN(n));
+    const gaps = [...auxsw.matchAll(/\bid: (0x[0-9A-Fa-f]+)/g)].map((m) => parseInt(m[1], 16));
     (sites.length === 51 ? ok : bad)(`${sites.length} call sites parsed (expected 51)`);
     (ids.length === 22 ? ok : bad)(`${ids.length} runes carry sites (expected 22)`);
 
@@ -281,7 +425,7 @@ console.log("Passive rune sites:");
       missing.length || stray.length || dupes.length
         ? `the support-rune band 0x1B8..0x1CE is not covered exactly once: missing ${missing.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, `
           + `stray ${stray.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, repeated ${dupes.map((i) => "0x" + i.toString(16)).join(", ") || "none"}`
-        : `every support rune 0x1B8..0x1CE appears exactly once (${uniq.size} ids, Fortune the one named gap)`);
+        : `every support rune 0x1B8..0x1CE appears exactly once (${uniq.size} ids, Fortune the one switched through the overlay)`);
 
     const oobP = sites.filter((s) => s.off < ELF_BASE || s.off + 8 > ELF_END);
     (oobP.length ? bad : ok)(oobP.length
@@ -384,10 +528,42 @@ console.log("Passive rune sites:");
         "synth-iso.mjs and iso.js agree on the three trampoline jal words");
     }
 
+    // Every rune must carry a confidence marker, and only the two words the tab knows how to
+    // render. A rune added later with no marker would silently show as "untested" — the safe
+    // direction, but it hides the omission, so require it explicitly. (Ported from v1.113.0,
+    // which introduced the markers; this version widened them from 2 runes to 22.)
+    const proofs = [...sw.matchAll(/proof: "(\w+)"/g)].map((m) => m[1]);
+    (proofs.length === ids.length ? ok : bad)(`every rune carries a proof marker (${proofs.length}/${ids.length})`);
+    const badProof = proofs.filter((x) => x !== "confirmed" && x !== "untested");
+    (badProof.length ? bad : ok)(badProof.length
+      ? `unknown proof marker(s): ${[...new Set(badProof)].join(", ")} — the tab only renders confirmed/untested`
+      : `proof markers are all confirmed/untested (${[...new Set(proofs)].join(", ")})`);
+    // Sunbeam's walk-heal was played on 2026-09-06 — but under the DROPPED-CALL patch shape, not
+    // this one. The report is kept in the rune's note as evidence about the site; it may not set
+    // the marker, because the trampoline it now goes through has never been played. Nothing here
+    // may read "confirmed" until somebody plays THIS build, and a passing test is not that.
+    (/id: 0x1BD, where: "both", proof: "untested"/.test(sw) ? ok : bad)(
+      "Sunbeam reads untested — its play report was earned under the previous patch shape");
+    (/id: 0x1B9, where: "field", proof: "untested"/.test(sw) ? ok : bad)("Champion's reads untested");
+    (proofs.includes("confirmed") ? bad : ok)(proofs.includes("confirmed")
+      ? "a rune is marked confirmed, but nothing has been watched working through the relocated helper"
+      : "nothing claims to be confirmed in play through the relocated helper");
+    (/watched working in game, through this mechanism/.test(iso) ? ok : bad)(
+      "the confirmed badge's tooltip says which mechanism it would be confirming");
+    // The play report itself must survive as recorded history — losing it would cost the one
+    // piece of real evidence this feature has.
+    (/played on 2026-09-06/.test(sw) && /previous patch shape/.test(sw) ? ok : bad)(
+      "Sunbeam's play report is kept, with the patch shape it was earned under");
+
     // The delay slot is the one word this editor must never touch: every entry in the table
     // carries it, the audit compares it, and the write path only ever rewrites `s.off`.
     (/writeW\(s\.off, 4, w\);/.test(iso) ? ok : bad)("psSyncSites rewrites the jal word and nothing else");
-    (/const PS_LEGACY_YES = 0x0004102B;/.test(iso) ? ok : bad)("v1.106.0's answer word is still recognised (0x0004102B)");
+    (/const PS_LEGACY_YES = 0x0004102B;/.test(iso) ? ok : bad)("v1.106.0–v1.113.0's answer word is still recognised (0x0004102B)");
+    // ...and recognised as the second of TWO words. The answer word on its own is an ordinary
+    // `sltu $v0,$zero,$a0` that occurs elsewhere in the image, so matching it alone would call
+    // a stock disc patched. The delay-slot word has to have moved up as well.
+    (/if \(a === \(s\.ds >>> 0\) && b === \(PS_LEGACY_YES >>> 0\)\) return "legacy";/.test(iso) ? ok : bad)(
+      "the legacy encoding is matched on BOTH words, not on the answer word alone");
   }
 }
 
@@ -436,6 +612,7 @@ let nSkills = 0; for (const l of skillsTxt.split(/\r?\n/)) { const p = l.trim().
 console.log("App shell:");
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 (/src=["']iso\.js["']/.test(html) ? ok : bad)("index.html loads iso.js");
+(/src=["']blurb-core\.js["']/.test(html) ? ok : bad)("index.html loads blurb-core.js before app.js");
 (/src=["']recruit-core\.js["']/.test(html) ? ok : bad)("index.html loads recruit-core.js before app.js");
 (/src=["']guide-core\.js["']/.test(html) ? ok : bad)("index.html loads guide-core.js before app.js");
 (/src=["']health-core\.js["']/.test(html) ? ok : bad)("index.html loads health-core.js before app.js");
@@ -444,7 +621,10 @@ const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
 { const sw = fs.readFileSync(path.join(WEB, "sw.js"), "utf8");
   (/iso\.js/.test(sw) && /recruit-core\.js/.test(sw) ? ok : bad)("service worker precaches iso.js + recruit-core.js");
   (/guide-core\.js/.test(sw) ? ok : bad)("service worker precaches guide-core.js");
-  (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js"); }
+  (/health-core\.js/.test(sw) ? ok : bad)("service worker precaches health-core.js");
+  // blurb-core.js is what collapses the long tab descriptions. Left out of the precache it
+  // would 404 offline and every one of those blocks would render as its full wall of text.
+  (/blurb-core\.js/.test(sw) ? ok : bad)("service worker precaches blurb-core.js"); }
 // Boot gate: loading a memory card is inert until Pyodide is up, so a block covers that card.
 // Three things about it are load-bearing and easy to break later, so assert them statically:
 // it must be in the MARKUP (built from script it would flash the dead UI first), it must sit
@@ -509,6 +689,10 @@ console.log("QoL guards:");
     ? ok : bad)("save-editor renders guide notes on stats, rune slots and skill slots");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/RenameCore\.streamReplacer/.test(iso) && /src=["']rename-core\.js["']/.test(html) ? ok : bad)("ISO editor wires the character-rename streaming replacer");
+  // The rename panel is a fold, and its open state is read back out of the DOM at redraw time —
+  // a card that trusted only its `toggle` handler would snap shut on the next edit in the tab.
+  (/<details class="card fold" id="rnBox"/.test(iso) && /q\("#rnBox", host\); if \(b\) rnOpen = b\.open/.test(iso)
+    ? ok : bad)("the character-rename panel is collapsible and keeps its open state across a redraw");
   (/function markFlagsField/.test(iso) ? ok : bad)("ISO editor has bit-aware Target/AOE highlight");
   (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) && /class="fddesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite + food descriptions");
   (/<input type="file" id="isoFileInput">/.test(iso) ? ok : bad)("ISO file input has no restrictive accept filter (Android can select .iso)");
@@ -1015,6 +1199,35 @@ console.log("In-ELF text heuristic:");
   (/input type="text" class="rname"/.test(iso) ? ok : bad)("the Runes tab renders a rename field");
   (/input type="text" class="rdesc"/.test(iso) ? ok : bad)("the Runes tab renders a menu-text field");
   (/qa\("input\.rname"/.test(iso) ? ok : bad)("the rename field is wired to a write");
+  // Same failure mode, five times over: a tab's hint outlived what the tab does. The Encounter
+  // hint said per-area base rates "aren't editable" for the 20 releases after they became
+  // editable; the Passives hint still described the whole-party, two-rune, drop-the-call version
+  // after the tab had gone per-character across 22 runes with Fortune and Prosperity on their own
+  // switch; and Enemies, Sets and Food each named a fraction of their tab — no spawn formations,
+  // no effect ownership, no rename. None of the last three was WRONG, which is why they survived
+  // so long: a hint that undersells its tab hides a feature just as well as one that denies it.
+  // A hint is the only description most people read, so pin every correction — and pin the caveat
+  // each one exists to carry, since that is the part a rewrite tends to drop.
+  const encHint = /\n\s*encounter: "([^"]*)"/.exec(iso);
+  (encHint && !/aren't editable/.test(encHint[1]) ? ok : bad)("the Encounter hint no longer says per-area rates aren't editable");
+  (encHint && /[Pp]er-area base rates are editable/.test(encHint[1]) ? ok : bad)("the Encounter hint says per-area base rates are editable");
+  (encHint && /RAISING ONE FROM 0 IS NOT/.test(encHint[1]) ? ok : bad)("the Encounter hint keeps the raising-from-0 caveat");
+  const psHint = /\n\s*passives: "([^"]*)"/.exec(iso);
+  (psHint && !/cannot be forced/.test(psHint[1]) ? ok : bad)("the Passives hint no longer says Fortune cannot be forced");
+  (psHint && !/CONFIRMED IN PLAY/.test(psHint[1]) ? ok : bad)("the Passives hint claims no play confirmation under this patch shape");
+  (psHint && /THE CHARACTERS YOU\s+CHOOSE/.test(psHint[1]) ? ok : bad)("the Passives hint says a passive goes to chosen characters");
+  (psHint && /OFF ENEMIES/.test(psHint[1]) ? ok : bad)("the Passives hint keeps the off-enemies guarantee");
+  const enHint = /\n\s*enemies: "([^"]*)"/.exec(iso);
+  (enHint && /SPAWNS AND FORMATIONS/.test(enHint[1]) ? ok : bad)("the Enemies hint names the spawns + formations editor");
+  (enHint && /CRASH THE GAME/.test(enHint[1]) ? ok : bad)("the Enemies hint keeps the off-roster-monster caveat");
+  (enHint && /bulk multipliers/i.test(enHint[1]) ? ok : bad)("the Enemies hint names the bulk multipliers");
+  const setsHint = /\n\s*sets: "([^"]*)"/.exec(iso);
+  (setsHint && /EFFECT OWNERSHIP/.test(setsHint[1]) ? ok : bad)("the Sets hint names the effect-ownership controls");
+  (setsHint && /cannot be added, only moved/.test(setsHint[1]) ? ok : bad)("the Sets hint keeps the no-new-effects caveat");
+  (setsHint && /COMPOUNDS per member/.test(setsHint[1]) ? ok : bad)("the Sets hint says the forced potch bonus compounds");
+  const foodHint = /\n\s*food: "([^"]*)"/.exec(iso);
+  (foodHint && /renaming the dish/.test(foodHint[1]) ? ok : bad)("the Food hint says a dish can be renamed");
+  (foodHint && /IN PLACE/.test(foodHint[1]) ? ok : bad)("the Food hint keeps the written-in-place length cap");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
