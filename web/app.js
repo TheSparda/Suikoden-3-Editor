@@ -441,6 +441,12 @@ let DISPLACED = 0;
 // Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
 // flags are whole-save state, not a character field.
 let CARRY;
+// Carryover + names fold: whole-save state you set once and never touch again, so it starts
+// closed and stays as the user last left it across slot switches and Reset.
+let COFOLD = false;
+// Set by drawSlot; openCarryoverBonus ticks the s2 box from outside and has to keep the
+// collapsed header's edit count honest.
+let refreshCoFold = () => {};
 
 function renderEditor() {
   const ed = $("#editor");
@@ -483,6 +489,26 @@ function drawSlot() {
       <span class="muted" style="font-size:12px">${where} · ${esc(Object.values(f.names || {}).join(" / "))}${f.customNames ? "" : " (defaults)"}</span></label>`;
   };
 
+  // The collapsed header has to answer "do I need to open this?" on its own: the flag state,
+  // the two player-entered names, and — since a fold can hide staged edits — whether anything
+  // in there is currently dirty.
+  const coFoldSummary = () => {
+    const bits = ["s2", "s1"].filter((g) => co[g]).map((g) => {
+      const on = CARRY[g] !== undefined ? CARRY[g] : co[g].loaded;
+      return `${g === "s2" ? "Suikoden II" : "Suikoden I"} ${on ? "loaded" : "not loaded"}`;
+    });
+    ["flameChampion", "castle"].forEach((k) => {
+      const n = (s.names || []).find((x) => x.key === k);
+      const v = n && (NAMES[k] !== undefined ? NAMES[k] : n.value);
+      if (v) bits.push(v);
+    });
+    // Same no-op filter buildDiff() uses: a name typed back to what the save already holds
+    // is not an edit, and the header must not claim it is.
+    const edits = Object.keys(CARRY).length + Object.entries(NAMES)
+      .filter(([k, v]) => { const n = (s.names || []).find((x) => x.key === k); return n && v !== n.value; }).length;
+    return bits.map(esc).join(" · ") + (edits ? ` · <b class="fold-edited">${edits} edit(s)</b>` : "");
+  };
+
   const names = (s.names || []).map((n) =>
     `<label class="field"><span>${esc(n.label)}</span>
        <input type="text" maxlength="${n.max}" value="${esc(n.value || "")}"
@@ -511,20 +537,24 @@ function drawSlot() {
     ${warns}
     <div class="card">
       <div class="muted" style="margin:-2px 0 8px">${metaBits}</div>
-      <h3 class="sec">Suikoden I / II carryover</h3>
-      <div class="grid" id="carryover" style="gap:6px">
-        ${coRow("s2", "Suikoden II")}${coRow("s1", "Suikoden I")}
-      </div>
-      <div class="muted" style="font-size:12px;margin:6px 0 0">
-        Suikoden III only ever reads a <b>Suikoden II</b> memory-card save; the Suikoden I
-        hero and country come out of that save too, which is why both flags live together.
-        Ticking a box sets the bit the game's own scripts test — the carryover names below
-        are what it makes them say.
-        ${CR.chars.length ? `The import also upgrades ${CR.chars.map((c) => esc(c.name)).join(", ")}:` : ""}
-        <button id="coBonus" style="margin-left:4px">Suikoden II bonus…</button>
-      </div>
-      <h3 class="sec">Names</h3>
-      <div class="grid" id="names">${names}</div>
+      <details class="fold" id="cofold"${COFOLD ? " open" : ""}>
+        <summary class="bag-h"><span class="chev">▸</span>Suikoden I / II carryover &amp; names
+          <span class="u" id="cofoldsum">${coFoldSummary()}</span></summary>
+        <h3 class="sec" style="margin-top:6px">Carryover flags</h3>
+        <div class="grid" id="carryover" style="gap:6px">
+          ${coRow("s2", "Suikoden II")}${coRow("s1", "Suikoden I")}
+        </div>
+        <div class="muted" style="font-size:12px;margin:6px 0 0">
+          Suikoden III only ever reads a <b>Suikoden II</b> memory-card save; the Suikoden I
+          hero and country come out of that save too, which is why both flags live together.
+          Ticking a box sets the bit the game's own scripts test — the carryover names below
+          are what it makes them say.
+          ${CR.chars.length ? `The import also upgrades ${CR.chars.map((c) => esc(c.name)).join(", ")}:` : ""}
+          <button id="coBonus" style="margin-left:4px">Suikoden II bonus…</button>
+        </div>
+        <h3 class="sec">Names</h3>
+        <div class="grid" id="names">${names}</div>
+      </details>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
         <input type="number" min="0" max="999999999" id="goldfld"
@@ -567,14 +597,18 @@ function drawSlot() {
       </div>
     </div>`;
 
+  refreshCoFold = () => { const el = $("#cofoldsum"); if (el) el.innerHTML = coFoldSummary(); };
+  $("#cofold").ontoggle = (e) => { COFOLD = e.target.open; };
   $$("input[data-name]").forEach((inp) => (inp.oninput = () => {
     inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
     NAMES[inp.dataset.name] = inp.value;
+    refreshCoFold();
   }));
   $$("input[data-carry]").forEach((cb) => (cb.onchange = () => {
     const g = cb.dataset.carry, was = (s.carryover?.[g] || {}).loaded;
     if (cb.checked === was) delete CARRY[g]; else CARRY[g] = cb.checked;
     cb.classList.toggle("dirty", cb.checked !== was);
+    refreshCoFold();
   }));
   const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
   $("#goldfld").oninput = (e) => {
@@ -643,7 +677,35 @@ function showSub() {
       `<b>one per slot</b> — click <b>+ Add item</b> once per copy.`;
     drawItems();
   }
+  collapseSubhint();
   refreshHealthBadge();     // pending edits move the count; refresh whenever the view changes
+}
+
+// One-line versions of the sub-view hints above, for the "Show more" collapse
+// (blurb-core.js). Only the long ones need an entry; a view with none renders its hint whole.
+//
+// `chars` is deliberately absent. Its hint carries the live "recruited only" checkbox, and
+// collapsing the block would put that control behind the button — the prose would be tidier
+// and the tab would lose a filter.
+const SUBHINT_SUM = {
+  recruit: "Bulk-recruit units into a protagonist's pre-merge team in one action, with the canonical presets.",
+  stars: "Recruitment completion across the 108 Stars of Destiny, in the order you can actually get them in.",
+  field: "Who you run around the map as — picking someone also stages the party changes that stop cutscenes freezing.",
+  health: "A read-through of this save, pending edits included, for the states the game never writes itself.",
+};
+
+// #subhint is one element every sub-view writes over, so its collapse is rebuilt on each
+// switch rather than left standing: the innerHTML above has already wiped the last view's
+// structure, and clearing data-blurbed is what re-arms the pass. Run synchronously so the
+// full hint never flashes before it collapses.
+function collapseSubhint() {
+  const hint = $("#subhint");
+  if (!hint) return;
+  hint.className = "muted";                 // drop .blurb / .open from the previous view
+  hint.removeAttribute("data-blurbed");
+  const sum = SUBHINT_SUM[SUB];
+  if (sum) hint.setAttribute("data-sum", sum); else hint.removeAttribute("data-sum");
+  if (sum && self.BlurbCore && self.BlurbCore.applyBlurbs) self.BlurbCore.applyBlurbs(hint);
 }
 
 // ---- guide reference overlays ----------------------------------------------
@@ -891,7 +953,7 @@ function drawRecruit() {
 
   $("#subview").innerHTML = `
     <div class="warnbox" style="margin:0 0 10px">Best used for <b>optional</b> recruits. <span class="story-tag">⚠ story</span> characters (faded) auto-join via the story — recruiting or un-recruiting them manually is unneeded and can soft-lock an early save. Keep a backup.</div>
-    <div class="muted" style="margin:0 0 8px">Tick a character's <b>team(s)</b> — a unit can be on <b>several</b> protagonists' teams at once (H/C/G/T, or <b>All</b>), so e.g. a Hugo recruit can also show up while you play Chris. This is a real game mechanic: after the parties merge, the game itself puts shared characters on Hugo + Chris + Geddoe at once. Keep a backup.</div>
+    <div class="muted" style="margin:0 0 8px" data-sum="Tick a character's teams — a unit can be on several protagonists' teams at once, which is a real game mechanic once the parties merge.">Tick a character's <b>team(s)</b> — a unit can be on <b>several</b> protagonists' teams at once (H/C/G/T, or <b>All</b>), so e.g. a Hugo recruit can also show up while you play Chris. This is a real game mechanic: after the parties merge, the game itself puts shared characters on Hugo + Chris + Geddoe at once. Keep a backup.</div>
     <div class="row" style="gap:10px;margin-bottom:8px">
       <label class="field" style="max-width:240px"><span>Default team for new recruits</span><select id="rteam">${teamSel}</select></label>
       <span class="muted">Recruited ${total} · Hugo ${counts.Hugo} · Chris ${counts.Chris} · Geddoe ${counts.Geddoe} · Thomas ${counts.Thomas} · shared ${counts[""]}</span>
@@ -1118,6 +1180,10 @@ function drawStars() {
     // Runes, armour and key items are one per slot with the count left at 0; only real
     // stackables carry a quantity. Same rule the Inventory tab writes.
     INV[t.slot] = itemStackable(id) ? { id, qty: 1 } : { id };
+    // Point the Inventory tab at the sub-tab this item actually lands in. Key items and party
+    // items are separate lists there, so a Screw staged while that tab is on Party Items would
+    // be nowhere to be seen — which reads as an add that didn't take.
+    INVCAT = itemCategory(id) === "key" ? "key" : "regular";
     setStatus(`${itemLabel(id)} → ${t.region}, slot ${t.slot} — staged, not yet saved`);
     drawStars(); refreshHealthBadge();
   }));
@@ -1285,7 +1351,7 @@ function drawField() {
       — because those are the only ids whose field model the engine will load.
       <div id="leaderparty" style="margin:4px 0 0;color:var(--acc2)"></div></div>
     <h3 class="sec">How it works</h3>
-    <div class="muted" style="font-size:12px">
+    <div class="muted" style="font-size:12px" data-sum="You can play as a stand-in, but the character they are standing in for has to leave the party. Everything below is disassembly confirmed in play.">
       <p style="margin:0 0 8px">Everything below was worked out by disassembling the boot ELF and
       then confirming it in play, each way round. The short version: <b>you can play as a
       stand-in, but the character they are standing in for has to leave the party.</b></p>
@@ -1340,7 +1406,7 @@ function drawField() {
       ${esc(charLabel(lead))}. Scenes drive slot 1 and the camera follows the field character —
       while those disagree, a scene will freeze. Re-pick above to put them in step, or fix it
       on the <b>Party</b> tab.</div>` : ""}
-    <div class="warnbox" style="margin:8px 0 0">
+    <div class="warnbox" style="margin:8px 0 0" data-sum="Hugo, Chris, Geddoe and Thomas are the story-safe picks; the rest work in scenes but are stand-ins. Keep a backup save.">
       <b>Hugo, Chris, Geddoe and Thomas are the story-safe picks.</b> The rest work <i>in
       scenes</i> — Koroku has been played through scene after scene, speaking the protagonist's
       lines — but they are stand-ins, so a scene written around something only the real
@@ -1360,7 +1426,7 @@ function drawField() {
           <b>${n.ok ? "✓" : "✕"} ${esc(n.short)}</b></span></div>
         <div class="muted" style="font-size:12px;margin:4px 0 0">${esc(n.long)}</div></div>`;
     }).join("")}
-    <div class="muted" style="font-size:12px;margin:8px 0 0">
+    <div class="muted" style="font-size:12px;margin:8px 0 0" data-sum="Koroku is the one real casualty and it is not fixable from here — his model carries none of the fourteen examine / pick-up clips.">
       <b>Koroku is the one real casualty, and it isn't fixable from here.</b> The disc's motion
       table names a clip per animation slot, and his model carries <b>none of the fourteen
       examine / pick-up clips</b> — Luc's carries them, which is exactly why Luc is fine.
@@ -1510,11 +1576,11 @@ function drawParty() {
   const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =
     (anyFilled ? "" : `<div class="warnbox">This save's active-party table is empty — common in early chapters where story events set the field party. Assignments here may be overwritten by the next event on a very early save.</div>`) +
-    (mismatch ? `<div class="warnbox">Slot 1 holds ${esc(REF.charById[eff0] || "id " + eff0)} but the
+    (mismatch ? `<div class="warnbox" data-sum="Party slot 1 and the field character disagree, which freezes scripted scenes. Set them to the same character.">Slot 1 holds ${esc(REF.charById[eff0] || "id " + eff0)} but the
        <b>field character</b> is ${esc(REF.charById[lead] || "id " + lead)}. Scripted scenes drive the
        protagonist as party slot 1 while the camera follows the field character — when those disagree
        a scene animates one and waits on the other, and freezes. Set them to the same character.</div>` : "") +
-    `<div class="muted" style="margin:0 0 8px;font-size:12px">This is the <b>party list</b>
+    `<div class="muted" style="margin:0 0 8px;font-size:12px" data-sum="This is the party list, not the battle formation — that table is re-derived from this list every time you Apply.">This is the <b>party list</b>
        (save <code>0x3216</code>) — who is in your party, in order. It is not the <b>battle
        formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
        re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
@@ -1524,7 +1590,7 @@ function drawParty() {
     `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th><th>Battle pos.</th><th>Mount</th></tr></thead><tbody>${rows}</tbody></table>` +
     (anyFilled ? `<div class="card" style="margin:12px 0 0">
       <div class="bag-h">Battle formation <span class="u">save 0x3240 · six positions</span></div>
-      <div class="muted" style="margin:0 0 8px">A <b>separate table</b> from the party list, and the
+      <div class="muted" style="margin:0 0 8px" data-sum="A separate table from the party list, and the one the game actually reads to build the party.">A <b>separate table</b> from the party list, and the
         one the game actually reads to build the party. Each position holds the <i>index</i> of a
         party member, so gaps and reordering are normal — the game writes both. It is also what a
         story join looks at for free space, not the party list.</div>
@@ -1541,7 +1607,7 @@ function drawParty() {
       <div class="muted" style="margin:8px 0 0;font-size:12px">${
         form.filter((v) => !v).length} of 6 free — a character who joins by story event needs one
         of these empty, or the join is silently dropped.</div></div>` : "") +
-    (anyFilled ? `<div class="muted" style="margin:8px 0 0;font-size:12px">A <b>mount</b> is staged
+    (anyFilled ? `<div class="muted" style="margin:8px 0 0;font-size:12px" data-sum="A mount is staged six positions along in the same table, and the game rewrites that slot from the ISO's assigned-horse field on every party change.">A <b>mount</b> is staged
        in the same table, six positions along (save <code>0x3222</code>). Removing a member takes
        their mount with them.
        <br><b>Two halves decide whether a horse appears.</b> This dropdown picks <i>which</i> model
@@ -1582,8 +1648,18 @@ function drawItems() {
   const s = saves[curSlot];
   const inv = s.inventory || [];
   const wantKey = INVCAT === "key";
-  const nKey = inv.reduce((a, b) => a + b.items.filter((it) => it.category === "key").length, 0);
-  const nReg = inv.reduce((a, b) => a + b.items.length, 0) - nKey;
+  // Slots staged this session — this tab's "+ Add item" and the 108-Stars checklist's
+  // "＋ add to <bag>" both park a slot in ADDED and write the item into INV. They are part of
+  // the inventory the moment they are staged, so they count toward the tab badges and the
+  // bag's used tally; a Screw that lands in Hugo's bag while the badge still reads
+  // "Key / Valuables (0)" reads as an add that silently failed.
+  const stagedIn = (bi) => ADDED[bi] || [];
+  const stagedId = (sl) => (INV[sl] || {}).id || 0;
+  const stagedIds = Object.values(ADDED).flat().map(stagedId).filter(Boolean);
+  const nKey = inv.reduce((a, b) => a + b.items.filter((it) => it.category === "key").length, 0)
+    + stagedIds.filter((id) => itemCategory(id) === "key").length;
+  const nReg = inv.reduce((a, b) => a + b.items.length, 0)
+    + stagedIds.length - nKey;
 
   // Equipment, runes and key items are ONE PER SLOT in this game: the count field is 0 and
   // several copies live in several slots. A count > 0 on one of them is an entry the game
@@ -1593,9 +1669,13 @@ function drawItems() {
   const qtyCell = (it) => it.stackable
     ? `<input type="number" min="1" max="9" style="width:74px" data-invslot="${it.slot}" data-k="qty" data-def="${it.qty}" value="${Math.max(1, it.qty)}">`
     : `<span class="muted" title="this item is one-per-slot — the game stores several copies as several slots, with the count left at 0">1 <span class="dim">per slot</span></span>`;
-  const rowHTML = (it) => `<tr>
+  // A staged slot is flagged the way every other pending edit is — changed-row tint plus a
+  // "staged" pill — so it can't be mistaken for something the save already held. Its picker's
+  // baseline is 0 (the empty slot it came from), which keeps it marked whatever you pick.
+  const rowHTML = (it) => `<tr class="${it.added ? "dirtyrow" : ""}">
       <td class="sl">${it.slot}</td>
-      <td><button type="button" class="picker" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.id}">${esc(itemLabel(it.id))}</button>${
+      <td><button type="button" class="picker${it.added && it.id ? " dirty" : ""}" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.added ? 0 : it.id}">${esc(itemLabel(it.id))}</button>${
+        it.added && it.id ? ` <span class="pill" title="added this session — staged, not yet written to the save">staged</span>` : ""}${
         it.displayed ? ` <span class="pill" title="this item is currently on display in the castle">on display</span>` : ""}</td>
       <td>${qtyCell(it)}</td>
       <td class="ty">${it.category}</td>
@@ -1609,16 +1689,19 @@ function drawItems() {
     // A slot added this session shows whatever has been staged into it — the checklist's
     // "＋ get it" fills one in directly, and an empty row where the Rose Brooch is supposed to
     // be would read as if the add had failed. Still-empty ones stay in the tab you added from.
-    const added = (ADDED[bi] || []).map((sl) => {
+    const added = stagedIn(bi).map((sl) => {
       const st = INV[sl] || {}, id = st.id || 0;
-      return { slot: sl, id, qty: st.qty || 0, stackable: id ? itemStackable(id) : true,
+      return { slot: sl, id, added: true, qty: st.qty || 0, stackable: id ? itemStackable(id) : true,
                category: id ? itemCategory(id) : (wantKey ? "key" : "consumable") };
     }).filter((r) => !r.id || (r.category === "key") === wantKey);
     const list = items.concat(added);
     // Only append AFTER the bag's last used entry: the game keeps each bag packed from its
     // base and adds new pickups at the tail, so a slot in an interior gap can be dropped
     // the next time it repacks the list.
-    const free = (bag.appendSlots || bag.freeSlots || []).filter((sl) => !(ADDED[bi] || []).includes(sl));
+    const free = (bag.appendSlots || bag.freeSlots || []).filter((sl) => !stagedIn(bi).includes(sl));
+    // What the bag holds once the staged adds are written — an empty slot claimed by
+    // "+ Add item" isn't an item yet, so it only comes off `free`, not onto `used`.
+    const used = bag.used + stagedIn(bi).filter(stagedId).length;
     const rows = list.map(rowHTML).join("") || `<tr><td colspan="5" class="muted">no items</td></tr>`;
     // A team's CARRIED bag being empty before the merge means their chapter hasn't started:
     // the game stocks that bag itself at the start of the chapter, overwriting whatever is
@@ -1629,7 +1712,7 @@ function drawItems() {
            The game stocks the bag when that chapter begins and overwrites what's there — so add items after you've played as them, not before.</div>`
       : "";
     return `<div class="bag"><div class="bag-h">${esc(bag.region)}
-        <span class="u">${bag.used}/${bag.capacity} slots</span>
+        <span class="u">${used}/${bag.capacity} slots</span>
         ${free.length ? `<button class="chip mini" data-addbag="${bi}" data-freeslot="${free[0]}">+ Add item</button>
            <span class="u">${free.length} free</span>` : `<span class="u">bag full</span>`}</div>
       ${unstarted}
@@ -1845,7 +1928,7 @@ function openCarryoverBonus() {
   ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Suikoden II bonus">
       <div class="modal-h"><b>Suikoden II bonus</b><button class="modal-x" aria-label="close">✕</button></div>
       <div class="cf-list">
-        <div class="muted" style="padding:0 0 8px">Enter what each character was in your Suikoden II
+        <div class="muted" style="padding:0 0 8px" data-sum="Enter what each character was in your Suikoden II save. The carryover can only ever level them up, and only seven runes can arrive this way.">Enter what each character was in your Suikoden II
           save. The level applied is the game's own: <code>cur + cur×max(0, S2level−50)/100</code>,
           capped at 99, +5 more if they were level 99 — so it can only ever level them up.
           Weapon level gains <code>max(0, S2weaponLv−10)/2</code>. Leave a value at 0 to skip it.
@@ -1886,6 +1969,7 @@ function openCarryoverBonus() {
     // NOT drawSlot() — that is the Reset button, and it would throw the staging away.
     const cb = $('input[data-carry="s2"]');
     if (cb && CARRY.s2 !== undefined) { cb.checked = CARRY.s2; cb.classList.add("dirty"); }
+    refreshCoFold();
     showSub(); refreshHealthBadge();
     setStatus(`Staged ${n} change(s) from the Suikoden II bonus — review before applying.`, "ok");
   };

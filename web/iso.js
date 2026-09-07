@@ -743,35 +743,39 @@
   // `where` is where in the game the ask happens, because that is what a "yes" means: a field ask
   // runs once per party slot, a battle ask runs for whichever unit is acting.
   const PASSIVES = [
-    { id: 0x1B9, where: "field", proof: "expected",
+    { id: 0x1B9, where: "field", proof: "untested",
       what: "The field encounter roll (VA 0x1702740) walks party slots 1–6 asking this, and turns on "
         + "the weak-foe skip if any of them says yes — so one chosen character covers the whole party.",
-      note: "The same site shape as Sunbeam's walk-heal, one function away, and Sunbeam has been "
-        + "watched working — so this is expected rather than a guess. Nobody has yet walked past a "
-        + "weak encounter with it on.",
+      note: "Nobody has walked past a weak encounter with this on. It was marked expected while the "
+        + "editor answered by dropping the call — Sunbeam's identical patch shape one function away "
+        + "had been played — but this version answers from a relocated helper, which nobody has "
+        + "played either, so that reasoning no longer carries.",
       sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
-    { id: 0x1BA, where: "battle",
+    { id: 0x1BA, where: "battle", proof: "untested",
       what: "Multiplies the high-damage-hit chance by 150/100, at both sites that roll it.",
       sites: [{ off: 0x10407C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" },
               { off: 0x10413C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" }] },
-    { id: 0x1BB, where: "battle",
+    { id: 0x1BB, where: "battle", proof: "untested",
       what: "Multiplies the counter-attack chance by 150/100 at all three sites that roll it.",
       sites: [{ off: 0x1038E0, jal: 0x0C5B2CE0, ds: 0x240501BB, k: "rec" },
               { off: 0x103B54, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" },
               { off: 0x103D28, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" }] },
-    { id: 0x1BC, where: "battle", what: "Multiplies SPD by 150/100.",
+    { id: 0x1BC, where: "battle", proof: "untested", what: "Multiplies SPD by 150/100.",
       sites: [{ off: 0x10FD28, jal: 0x0C5B2CE0, ds: 0x240501BC, k: "rec" }] },
-    { id: 0x1BD, where: "both", proof: "expected",
+    { id: 0x1BD, where: "both", proof: "untested",
       what: "Both halves of the rune: the field walk-heal (VA 0x17029A0, once per party slot) and "
         + "the +15 HP a combat turn adds (the literal `addiu $v0,$v0,0xF` right after the check).",
-      note: "The walk-heal site is CONFIRMED IN PLAY (2026-09-06): forced to yes, the party healed "
-        + "by walking with nobody carrying the rune. That proves the site and the effect. What has "
-        + "changed since is only how the yes is delivered — a retargeted call into the relocated "
-        + "helper instead of a word written over the call — so the effect is proven and this "
-        + "delivery of it is not. The in-battle half has never been watched at all.",
+      note: "The walk-heal site WAS played on 2026-09-06, under the editor's previous patch shape: "
+        + "forced to yes by dropping the call, the party healed by walking with nobody carrying the "
+        + "rune. Kept here because it is real evidence — it proves 0x14A1B4 is the right site and "
+        + "that the code around it accepts a synthesised $v0 — but it is not evidence about this "
+        + "version, which keeps the call and retargets it at a relocated helper. The trampoline\'s "
+        + "own correctness, its $ra/$v0 handling and the bitmap lookup are all untested, so this "
+        + "reads untested until somebody plays THIS build. The in-battle half has never been "
+        + "watched at all.",
       sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" },
               { off: 0x261184, jal: 0x0C5B2CE0, ds: 0x240501BD, k: "rec" }] },
-    { id: 0x1BE, where: "battle",
+    { id: 0x1BE, where: "battle", proof: "untested",
       what: "Doubles PDF at the damage site — and turns on the other half of the rune at eight "
         + "battle-action sites, which is what stops the character doing anything else.",
       sites: [{ off: 0x104368, jal: 0x0C5B2CE0, ds: 0x02129821, k: "rec" },
@@ -784,77 +788,83 @@
               { off: 0x25CC54, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
               { off: 0x25CC9C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
               { off: 0x25CD5C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" }] },
-    { id: 0x1BF, where: "battle",
+    { id: 0x1BF, where: "battle", proof: "untested",
       what: "Opens the dodge roll — the code right after is `rand(100) < 30`, so the 30% is the "
         + "rune's real number.",
       sites: [{ off: 0x1037F4, jal: 0x0C5B2CE0, ds: 0x240501BF, k: "rec" }] },
-    { id: 0x1C0, where: "battle", what: "The critical-hit self-heal.",
+    { id: 0x1C0, where: "battle", proof: "untested", what: "The critical-hit self-heal.",
       sites: [{ off: 0x245D6C, jal: 0x0C606CEC, ds: 0x240501C0, k: "unit" }] },
-    { id: 0x1C1, where: "battle", what: "The magic-reflect roll.",
+    { id: 0x1C1, where: "battle", proof: "untested", what: "The magic-reflect roll.",
       sites: [{ off: 0x105200, jal: 0x0C5B2CE0, ds: 0x0200202D, k: "rec" }] },
-    { id: 0x1C2, where: "battle",
+    { id: 0x1C2, where: "battle", proof: "untested",
       what: "Clears the unbalance status bit (0x10) in both places the state is rebuilt.",
       sites: [{ off: 0x1100AC, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" },
               { off: 0x1100E0, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" }] },
-    { id: 0x1C3, where: "battle",
+    { id: 0x1C3, where: "battle", proof: "untested",
       what: "Zeroes incoming damage of one element and doubles another, at all four sites that "
         + "scale elemental damage.",
       sites: [{ off: 0x104858, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x104FC0, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x10544C, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x1115C4, jal: 0x0C5B2CE0, ds: 0xAFA40000, k: "rec" }] },
-    { id: 0x1C4, where: "battle",
+    { id: 0x1C4, where: "battle", proof: "untested",
       what: "Three sites in the target picker: the one that decides a single-target attack may "
         + "not land here.",
       sites: [{ off: 0x22E694, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
               { off: 0x22EB04, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
               { off: 0x230B44, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" }] },
-    { id: 0x1C5, where: "battle", what: "The other side of the same picker — preferred target.",
+    { id: 0x1C5, where: "battle", proof: "untested", what: "The other side of the same picker — preferred target.",
       sites: [{ off: 0x230B64, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" },
               { off: 0x23AC20, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" }] },
-    { id: 0x1C6, where: "battle",
+    { id: 0x1C6, where: "battle", proof: "untested",
       what: "The auto-item action, in the turn planner and again where the action is issued.",
       sites: [{ off: 0x23B9CC, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" },
               { off: 0x259C48, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" }] },
-    { id: 0x1C7, where: "battle",
+    { id: 0x1C7, where: "battle", proof: "untested",
       what: "Doubles damage dealt AND damage taken — the two sites are the attacker's copy and "
         + "the defender's, and the shifts are literal `sll ...,1`.",
       sites: [{ off: 0x1047BC, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" },
               { off: 0x1047D0, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" }] },
-    { id: 0x1C8, where: "battle",
+    { id: 0x1C8, where: "battle", proof: "untested",
       what: "Moves half of the SKL-derived figure into MGC. Two sites: one adds the half, one "
         + "halves what is left.",
       sites: [{ off: 0x10FD64, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" },
               { off: 0x10FD9C, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" }] },
-    { id: 0x1C9, where: "battle", what: "The same pair of sites for REP into PWR.",
+    { id: 0x1C9, where: "battle", proof: "untested", what: "The same pair of sites for REP into PWR.",
       sites: [{ off: 0x10FDBC, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" },
               { off: 0x10FDF4, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" }] },
-    { id: 0x1CA, where: "battle",
+    { id: 0x1CA, where: "battle", proof: "untested",
       what: "Sets the asleep state at battle start and the berserk state on waking — the two "
         + "status writes right after each check.",
       sites: [{ off: 0x244B1C, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" },
               { off: 0x25DFC8, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" }] },
-    { id: 0x1CB, where: "battle", what: "The turn-4 wake-up.",
+    { id: 0x1CB, where: "battle", proof: "untested", what: "The turn-4 wake-up.",
       sites: [{ off: 0x2611C8, jal: 0x0C606CEC, ds: 0x240501CB, k: "unit" }] },
-    { id: 0x1CC, where: "battle",
+    { id: 0x1CC, where: "battle", proof: "untested",
       what: "Always berserk: one site in the stat module and two that set the state in battle.",
       sites: [{ off: 0x105634, jal: 0x0C5B2CE0, ds: 0x240501CC, k: "rec" },
               { off: 0x25DFE8, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" },
               { off: 0x2610D0, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" }] },
-    { id: 0x1CD, where: "battle", what: "The berserk-on-heavy-damage trigger.",
+    { id: 0x1CD, where: "battle", proof: "untested", what: "The berserk-on-heavy-damage trigger.",
       sites: [{ off: 0x244B3C, jal: 0x0C606CEC, ds: 0x240501CD, k: "unit" }] },
-    { id: 0x1CE, where: "battle",
+    { id: 0x1CE, where: "battle", proof: "untested",
       what: "Clamps the damage dealt (the site writes a literal 5 over it) and turns on the "
         + "item-drop side.",
       sites: [{ off: 0x1035E0, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
               { off: 0x104838, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
               { off: 0x2463CC, jal: 0x0C606CEC, ds: 0x240501CE, k: "unit" }] },
   ];
-  // Fortune is the one support rune with no decoded site at all (see the note above). Named here
-  // so the tab can say so by name rather than just leaving a gap in the list.
-  const PS_UNMAPPED = [0x1B8];
-  // v1.106.0's encoding, kept only so a disc patched by that version is READ correctly rather
-  // than mistaken for a stranger's patch. Nothing writes it any more.
+  // Fortune has no site in the EXECUTABLE, which was never the same as no site at all: its
+  // check is `jal 0x181B3B0` / `addiu $a1,$zero,0x1B8` in the battle-results OVERLAY at
+  // 0x3F3E6938 (and its streaming twin 0x3F3EF138), where no amount of searching PT_LOAD could
+  // have found it. It is not in this table because this table is the relocated-helper machinery
+  // and that reaches the ELF block only — Fortune is switched by AUXSW instead, which writes
+  // through the overlay windows. So there is no longer any decoded check without a switch.
+  // The encoding v1.106.0 through v1.113.0 wrote (the versions in between changed markers, prose
+  // and tests, never bytes), kept only so a disc patched by one of them is READ correctly rather
+  // than mistaken for a stranger's patch. Nothing writes it any more. It is TWO words and both are
+  // checked — the delay-slot instruction moved up into the jal's word, then this one — because the
+  // answer word alone also occurs in ordinary code.
   const PS_LEGACY_YES = 0x0004102B;          // sltu $v0,$zero,$a0
   // ---- the helper block ------------------------------------------------------
   const psHex = (s) => { const a = new Uint8Array(s.length >> 1); for (let i = 0; i < a.length; i++) a[i] = parseInt(s.substr(i * 2, 2), 16); return a; };
@@ -988,7 +998,7 @@
   // WHAT IS NOT HERE, and why. Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness
   // and Fury have no magnitude at their sites at all — they set a state bit or gate a branch, so
   // there is no number to move. Fire Sealing's fourth site (0x1115C4) is slot bookkeeping, not
-  // damage. Fortune has no site anywhere (see PS_UNMAPPED). And Sunbeam's walk-heal HP-per-tick
+  // damage. Fortune IS here now, in the overlay (see its entry). And Sunbeam's walk-heal HP-per-tick
   // could be forced to a flat N by overwriting its `mfc1 $s2,$f1` with an `addiu`, but that
   // throws away the elapsed-interval count the stock code computes for no gain the interval
   // knob below does not already give: shortening the interval scales the same rate, and leaves
@@ -1047,6 +1057,35 @@
         + "interval is a float in the executable's small-data pool and this loop is the only "
         + "instruction in the whole image that reads it, so nothing else moves with it.",
       sites: [[0x42C3B0, 0x3E99999A]] },
+    // Fortune \u2014 the one entry that is NOT in the boot ELF, and the reason three exhaustive
+    // PT_LOAD searches concluded it had no site at all. Its equipped-check and its multiplier
+    // both live in the battle-results OVERLAY (see AUX_WINDOWS), ~1 GB into the disc:
+    //
+    //   3F3E6938  jal 0x181B3B0 / addiu $a1,$zero,0x1B8   count party members holding Fortune
+    //   3F3E6954  addiu $a0,$zero,1                       default multiplier
+    //   3F3E6958  slti  $v1,$s0,1                         nobody has it?
+    //   3F3E6960  addiu $v0,$zero,2                       <- THIS, the doubling
+    //   3F3E6964  movz  $a0,$v0,$v1                       someone has it -> take the 2
+    //   ...1064 bytes later, per character:
+    //   3F3E6D94  lw   $a0,100($sp)
+    //   3F3E6D98  mult $v0,$v0,$a0                        EXP *= multiplier
+    //
+    // That `mult` is the R5900 THREE-operand form (rd=$v0), so it really does write the product
+    // back; read as the two-operand MIPS I `mult` it looks like a no-op and the whole trail
+    // reads as a dead end. Exactly two copies exist on the disc, 0x8800 apart \u2014 a full-image
+    // scan for the 8-byte check pattern finds those two and nothing else.
+    { id: 0x1B8, key: "fortune", g: "After the battle", kind: "imm", aux: true,
+      stock: 2, min: 0, max: 999,
+      label: "Fortune \u2014 EXP multiplier", short: "EXP multiplier", unit: "\u00D7",
+      help: "What the battle-results loop multiplies every character's EXP by. The loop above it "
+        + "counts how many party members hold a Fortune Rune and picks 2 over 1 when the count "
+        + "is NONZERO \u2014 so one Fortune already doubles EXP for the whole party and a second "
+        + "one adds nothing at all. 1 disables the rune; 0 zeroes every EXP award. It is a real "
+        + "integer multiply rather than a shift, so any value works arithmetically, but only 1 "
+        + "and 2 are values the game itself ever produces \u2014 anything else is untested. "
+        + "Written to both streaming copies. This is overlay code, not the executable, so it is "
+        + "only editable once the disc's battle-results windows have been read.",
+      sites: [[0x3F3E6960, 0x24020002], [0x3F3EF160, 0x24020002]] },
     { id: 0x1BD, key: "sunTurn", g: "In battle", kind: "imm", stock: 15, min: 0, max: 9999,
       label: "Sunbeam — HP healed each combat turn", short: "HP / combat turn", unit: "HP",
       help: "The literal `addiu $v0,$v0,0xF` immediately after the check: 15 HP added to the "
@@ -1127,16 +1166,31 @@
       help: "The same pair of halvings as Wizard, on the other pair of stats.",
       sites: [[0x10FDDC, 0x00021042], [0x10FE00, 0x00101042]] },
   ];
-  function rfSiteOk(off, stock, kind) {
+  // An `aux` entry reads and writes the battle-results OVERLAY instead of the ELF block.
+  // Everything else about it is identical — same shape guard, same stock word, same value
+  // maths, same renderer, same wiring. Only the accessor changes.
+  const rfRead = (e, off) => (e.aux ? auxR32(off) : readW(off, 4));
+  const rfOrig = (e, off) => (e.aux ? auxO32(off) : origW(off, 4));
+  const rfPut = (e, off, v) => (e.aux ? auxW32(off, v) : writeW(off, 4, v));
+  function rfSiteOk(e, off, stock) {
+    if (e.aux) {
+      // null means the overlay window was never read — a short disc, or a fixture that does
+      // not reach 1 GB. Unavailable is not the same as "not what we decoded", but both have to
+      // end in a read-only control rather than a write into nothing.
+      const w = auxR32(off);
+      return w !== null && RF_KIND[e.kind].fits(w >>> 0, stock >>> 0);
+    }
     if (!inBlk(off, 4)) return false;
-    return RF_KIND[kind].fits(readW(off, 4) >>> 0, stock >>> 0);
+    return RF_KIND[e.kind].fits(readW(off, 4) >>> 0, stock >>> 0);
   }
   function rfState(e) {
-    if (!e.sites.every(([off, w]) => rfSiteOk(off, w, e.kind))) return { known: false };
+    if (!e.sites.every(([off, w]) => rfSiteOk(e, off, w)))
+      return { known: false, missing: !!e.aux && !auxHasPotch() };
     const K = RF_KIND[e.kind];
-    const vals = e.sites.map(([off]) => K.get(readW(off, 4) >>> 0));
+    const vals = e.sites.map(([off]) => K.get(rfRead(e, off) >>> 0));
     return { known: true, agree: vals.every((v) => v === vals[0]), value: vals[0], vals,
-      dirty: e.sites.some(([off]) => isDirty(off, 4)) };
+      dirty: e.aux ? e.sites.some(([off]) => (rfRead(e, off) >>> 0) !== (rfOrig(e, off) >>> 0))
+        : e.sites.some(([off]) => isDirty(off, 4)) };
   }
   // Registered per site and numbered, for the same reason fxWrite numbers its: three rows that
   // all read "Counter — counter-attack chance" look like duplicates, "site 2 of 3" does not.
@@ -1148,8 +1202,11 @@
       : clampInt(v, e.min, e.max);
     const nm = (REF.items && REF.items[e.id]) || `rune ${hex(e.id, 3)}`;
     e.sites.forEach(([off, stock], i) => {
-      if (!rfSiteOk(off, stock, e.kind)) return;
-      writeW(off, 4, K.put(readW(off, 4) >>> 0, n));
+      if (!rfSiteOk(e, off, stock)) return;
+      rfPut(e, off, K.put(rfRead(e, off) >>> 0, n));
+      // Overlay offsets sit outside the ELF block, so FIELD_REG cannot carry them; the aux
+      // review block decodes those by hand instead (see the Armor sets / Rune power rows).
+      if (e.aux) return;
       const tail = e.sites.length > 1 ? ` (site ${i + 1} of ${e.sites.length})` : "";
       reg(off, K.width, K.disp, "Rune power", `${nm} · ${e.label}${tail}`);
     });
@@ -1182,7 +1239,9 @@
       <span class="u" title="${esc2(nm + " — " + e.help)}">stock ${esc2(rfStockShown(e))}</span></span>`;
     if (!st.known) return `<label class="field">${head}
       <input type="number" class="rf" data-k="${e.key}" value="" disabled
-        title="This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only."></label>`;
+        title="${st.missing
+          ? "unavailable — this value lives in the disc's battle-results overlay, and those windows have not been read (a short or partial disc image)"
+          : `This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only.`}"></label>`;
     if (e.kind === "sa") {
       const opts = rfChoices(e).map((t, i) => `<option value="${i + e.min}"${i + e.min === st.value ? " selected" : ""}>${esc2(t)}</option>`).join("");
       return `<label class="field">${head}<select class="rf" data-k="${e.key}">${opts}</select></label>`;
@@ -1229,9 +1288,23 @@
   //   +8 sll / +12 addu      (the multiplier)
   // Read once on ISO load, then ride along every save/export path. No undo integration:
   // the Sets view gives each aux field its own restore control instead.
-  const AUX_WINDOWS = [0x3F3E6994, 0x3F3EF194];   // the potch overlay pair (16 bytes each)
-  const AUX_LEN = 16;
-  const AUX_MASK = 0, AUX_MULT = 8;        // offsets within a potch window
+  // The battle-results overlay pair. Two streaming copies of one function, 0x8800 apart, and
+  // byte-identical across the whole window. The base has moved back twice: first 0x34, to reach
+  // Fortune's EXP multiplier, and now another 0x28, to reach the two EQUIPPED CHECKS that decide
+  // whether either bonus applies at all. Everything this editor patches in the overlay is inside
+  // one 0x70 span, so one window per copy still covers it.
+  //
+  //   +0x00  jal 0x181B3B0 / +0x04 addiu $a1,$zero,0x1B8   does this party member hold Fortune?
+  //   +0x28  addiu $v0,$zero,2                             Fortune: the EXP multiplier
+  //   +0x54  jal 0x181B370 / +0x58 daddu $a0,$s1,$zero      which armour set is this member wearing?
+  //   +0x5C  andi  $v0,$v0,mask                            which armour set owns the potch bonus
+  //   +0x64  sll / +0x68 addu                              the potch multiplier itself
+  const AUX_WINDOWS = [0x3F3E6938, 0x3F3EF138];
+  const AUX_LEN = 0x70;
+  const AUX_FORT_CHK = 0x00;               // offsets within a battle-results window
+  const AUX_FORTUNE = 0x28;
+  const AUX_PROSP_CHK = 0x54;
+  const AUX_MASK = 0x5C, AUX_MULT = 0x64;
   // AUX holds three kinds of window, told apart by `tag`:
   //   "potch" — the two fixed 16-byte overlay windows (Sets view). Read when the disc opens.
   //   "enemy" — coalesced spans covering enemy and war stat records, reward blocks and spawn
@@ -1280,6 +1353,160 @@
   // Saving makes the written bytes the new "original", which is also the baseline the stock
   // comparison measures against — so drop its cached verdict and let it re-measure.
   const auxMarkSaved = () => { AUX.forEach((w) => { w.orig = w.buf.slice(); }); resetBulkScales(); RSCALE = null; };
+
+  // ---- the two overlay switches: force an equipped/worn check to yes ----------
+  // The battle-results function asks two ownership questions before it pays out, and both are
+  // the same shape as the equipped checks on the Passives tab: a `jal` to a query helper whose
+  // answer lands in $v0, with the argument set up in the branch delay slot. Forcing one on is
+  // the two-word patch the Passives tab used before it grew a relocated helper — move the delay
+  // slot instruction UP into the jal's word, then write the answer into the word it vacated.
+  // Nothing is inserted, nothing moves, and the instruction order stays exactly the stock order.
+  //
+  // These two are safe to force in a way the 49 in-battle checks are not. Both loops run AFTER
+  // the battle, over your own party only, and neither answer has any per-unit consequence: no
+  // enemy is ever asked, and nothing downstream re-reads who said yes. That is the same reason
+  // the two field party loops were always switchable — there is no per-unit resolution to leak.
+  //
+  // The answers differ because the two callers use them differently:
+  //   Fortune     `addu $s0,$s0,$v0` counts the answer, then `slti $v1,$s0,1` tests nonzero, so
+  //               a plain 1 per party member is enough — and correct, since ANY nonzero count
+  //               gives the same x2. (The field sites write `sltu $v0,$zero,$a0` because their
+  //               $a0 is a party-slot handle that is 0 for an empty slot; there is no such
+  //               handle here.)
+  //   Prosperity  `andi $v0,$v0,mask` tests the answer against the ownership mask the Sets tab
+  //               edits, so the answer has to satisfy whatever mask is written: -1 does, for
+  //               every mask except 0 ("no set"), which turns the bonus off for everyone anyway.
+  const AUXSW = [
+    { key: "fortune", rel: AUX_FORT_CHK, jal: 0x0C606CEC, ds: 0x240501B8, yes: 0x24020001,
+      name: "Fortune", need: "carry the rune", group: "Passive runes", id: 0x1B8,
+      label: "Fortune — double EXP with nobody carrying the rune",
+      review: "Fortune — the equipped check",
+      help: "The battle-results loop asks each party member whether they hold a Fortune Rune and "
+        + "counts the yeses; any nonzero count doubles EXP for the whole party. Ticking this "
+        + "answers yes for every member without calling the helper, so the bonus is always on. "
+        + "One is as good as six, so this is exactly as strong as handing one character the rune "
+        + "— no more. What it multiplies by is the EXP multiplier under Rune power." },
+    { key: "prosperity", rel: AUX_PROSP_CHK, jal: 0x0C606CDC, ds: 0x0220202D, yes: 0x2402FFFF,
+      name: "Prosperity", need: "wear the set", group: "Armor sets",
+      label: "Prosperity — the potch bonus with nobody wearing the set",
+      review: "Prosperity — the worn-set check",
+      help: "The same loop asks each party member which armour set they are wearing and multiplies "
+        + "the potch award once per member whose set is in the ownership mask (stock: Prosperity "
+        + "or Destiny). Ticking this answers yes for every member. Unlike Fortune this one "
+        + "COMPOUNDS — the multiplier applies per member, so a full party of six at the stock "
+        + "×3 pays 3⁶ = ×729. Both numbers are on the Sets tab: the multiplier itself and, "
+        + "under Effect ownership, the mask. Setting that mask to “no set (off)” turns the bonus "
+        + "off for everyone, forced or not." },
+  ];
+  const auxSwById = (k) => AUXSW.find((x) => x.key === k);
+  // A switch is one of exactly three things per copy, and both copies must agree: stock, ours,
+  // or a stranger's. Anything else goes read-only, the rule every other code control follows.
+  function auxSwState(sw) {
+    const wins = AUX.filter((w) => w.tag === "potch");
+    if (wins.length !== AUX_WINDOWS.length) return "oob";
+    const st = wins.map((w) => {
+      const a = auxR32(w.off + sw.rel) >>> 0, b = auxR32(w.off + sw.rel + 4) >>> 0;
+      if (a === (sw.jal >>> 0) && b === (sw.ds >>> 0)) return "off";
+      if (a === (sw.ds >>> 0) && b === (sw.yes >>> 0)) return "on";
+      return "other";
+    });
+    if (st.some((x) => x === "other")) return "other";
+    return st.every((x) => x === "on") ? "on" : st.every((x) => x === "off") ? "off" : "mixed";
+  }
+  const auxSwEditable = (sw) => { const x = auxSwState(sw); return x === "on" || x === "off"; };
+  // Both streaming copies always move together — a disc with one patched and one not is the
+  // "mixed" state above, and it is read-only precisely so this can never produce one.
+  function auxSwSet(sw, on) {
+    if (!auxSwEditable(sw)) return false;
+    for (const w of AUX) {
+      if (w.tag !== "potch") continue;
+      auxW32(w.off + sw.rel, (on ? sw.ds : sw.jal) >>> 0);
+      auxW32(w.off + sw.rel + 4, (on ? sw.yes : sw.ds) >>> 0);
+    }
+    return true;
+  }
+  const auxSwDirty = (sw) => auxDirtyAt(sw.rel, 8);
+  const auxSwRevert = (sw) => auxRevertAt(sw.rel, 8);
+  // ONE renderer for both switches, used by the Passives tab (both of them, beside the 22
+  // in-executable ones) and by the Sets tab (Prosperity alone, beside the potch numbers it
+  // multiplies). Same class and data-k either way, so wireAuxSw drives it without knowing which
+  // tab it is on — the arrangement rfField already uses across Passives and Runes.
+  const AUXSW_WHY = {
+    oob: "unavailable — this check lives in the disc's battle-results overlay, and those windows "
+      + "have not been read (a short or partial disc image)",
+    other: "read-only — this disc's code at the check is neither the stock call nor this editor's "
+      + "patch, so it is somebody else's edit and will not be written over",
+    mixed: "read-only — the two streaming copies of this check disagree, so one was patched "
+      + "without the other",
+  };
+  function auxSwField(sw) {
+    const st = auxSwState(sw), on = st === "on", why = AUXSW_WHY[st];
+    // `id` is set only for the switch that belongs to an actual rune, and it earns the same
+    // "what the game says" the Passives table shows: the item's own menu text, so the code
+    // column beside it can be compared against what the game claims.
+    const said = sw.id ? runeInfo(sw.id).text || "" : "";
+    return `<label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 2px">
+        <input type="checkbox" class="auxsw" data-k="${sw.key}"${on ? " checked" : ""}${
+          why ? ` disabled title="${esc2(why)}"` : ""}>
+        <b>${esc2(sw.label)}</b>${said ? ` <span class="u" title="${esc2(said)}">what the game says</span>` : ""}${
+          why ? ` <span class="muted" style="font-size:12px">${
+            esc2(st === "oob" ? "unavailable on this disc image" : "read-only on this disc")}</span>` : ""}</label>
+      <div class="muted" style="font-size:12px;margin:0 0 10px 26px">${esc2(sw.help)}</div>`;
+  }
+  function wireAuxSw(host) {
+    qa(".auxsw", host).forEach((el) => {
+      const sw = auxSwById(el.dataset.k); if (!sw) return;
+      // Same dirty mark and same ↺ as every other overlay control, driven off the window's own
+      // before-image. auxSwRevert spans BOTH streaming copies, which is what keeps a revert
+      // from leaving one of them patched.
+      const dirty = auxSwDirty(sw);
+      el.classList.toggle("dirty", dirty);
+      if (dirty && !el._revBtn) {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+        btn.title = "Restore the check this disc came with (both streaming copies)";
+        btn.setAttribute("aria-label", "Restore the original check in both streaming copies");
+        btn.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); auxSwRevert(sw); drawView(); };
+        el.insertAdjacentElement("afterend", btn);
+        el._revBtn = btn; btn.classList.add("show");
+      }
+      if (el.disabled) return;
+      el.onchange = () => {
+        const on = el.checked, written = auxSwSet(sw, on);
+        drawView();
+        setStatus(!written
+          ? `${sw.name} — nothing written; this disc's code at the check isn't what the editor decoded.`
+          : on ? `${sw.name} — forced on for the whole party; nobody has to ${sw.need}.`
+            : `${sw.name} — back to stock (somebody has to ${sw.need} again).`, written ? "ok" : "warn");
+      };
+    });
+  }
+  // Rendered as a plain card, never a <details>: a card that tracks its own open state snaps
+  // shut on the first edit, because `toggle` fires on a later task than the re-render.
+  function auxSwCard() {
+    const oob = AUXSW.some((sw) => auxSwState(sw) === "oob");
+    return `<div class="card" id="auxSwBox" style="margin:0 0 12px">
+      <div class="bag-h">Forced on in the battle-results overlay
+        <span class="u">two more checks — not in the executable, ~1 GB into the disc</span></div>
+      <div class="muted" style="margin:0 0 10px" data-sum="Two more ownership checks live in the battle-results overlay rather than the executable — and unlike the switches above, these two are safe to force.">The routine that pays out after a battle asks two ownership
+        questions of its own, and neither is in the executable, which is why no search of it ever found them:
+        they live in the <b>battle-results overlay</b> at <code>0x3F3E6938</code> and <code>0x3F3E698C</code>,
+        with streaming twins <code>0x8800</code> later. Both copies are written together and a revert restores
+        both. <b>These two are safe to force in a way the checks above are not</b>: each loop runs after the
+        fight is over, walks your own party and nobody else, and its answer has no per-unit consequence — no
+        enemy is ever asked, and nothing downstream re-reads who said yes. The patch is the older two-word
+        shape rather than the relocated helper: the delay-slot instruction moves up into the
+        <code>jal</code>'s word and the answer goes in the word it vacated, so one call disappears and
+        nothing else moves.</div>
+      ${AUXSW.map(auxSwField).join("")}
+      ${oob ? `<div class="muted" style="margin:0 0 10px">Both switches are <b>unavailable</b> because this
+        disc's overlay windows were not read — the image stops short of the ~1&nbsp;GB mark they live at.</div>` : ""}
+      <div class="warnbox" style="margin:2px 0 0" data-sum="Experimental — byte-verified and fully revertible, but no forced EXP or potch bonus has been watched landing in a running game. Keep a backup disc."><b>Experimental — not yet seen working in play.</b> Both
+        checks are decoded from a pristine USA SLUS-20387 and byte-verified before anything is written, and
+        unticking restores the stock words in both copies exactly. What nobody has watched is the
+        <i>result</i>: no forced EXP or potch bonus has been seen landing in a running game. A marker moves on
+        a play report and never on a passing test. Keep a backup disc.</div></div>`;
+  }
   // Multi-offset field helpers for enemy edits: one logical field lives at the same
   // relative spot in every pack copy; write all, dirty/revert consider all.
   function eRead(offs, w) { return w === 1 ? auxR8(offs[0]) : w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
@@ -1424,6 +1651,22 @@
   // the label shows the row — otherwise "#3 Blazing Wall" here and "#2 Blazing Wall" there
   // are the same spell under two numbers and the link between them looks wrong.
   const spellSlotLabel = (gid) => (gid ? `${spellSlotName(gid)} (#${gid - 1})` : "\u2014 empty \u2014");
+  // The two other decoded fields of the rune record. They matter because the spell slots alone
+  // are NOT enough on a special-attack rune: a Kite given four spells still fires slot 1 with no
+  // list (played 2026-09-06). Category is the only field that separates those 27 runes from the
+  // 45 the game does give a spell menu, so it is the lever to try — exposed, and labelled as the
+  // experiment it is rather than left as a byte only a hex editor can reach.
+  // Only 0 and 2 occur on a pristine disc (45 and 27 runes); an unknown value keeps its own row
+  // rather than being silently rewritten to one of these two.
+  const RUNE_CATS = [[0, "Magic / support"], [2, "Special attack"]];
+  const optList = (pairs, cur, fallback) => {
+    const known = pairs.some(([v]) => v === cur);
+    return (known ? pairs : [...pairs, [cur, fallback(cur)]])
+      .map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${esc2(l)}</option>`).join("");
+  };
+  const runeCatOpts = (cur) => optList(RUNE_CATS, cur, (v) => `type ${v} (not on a stock disc)`);
+  const runeElemOpts = (cur) => optList(Object.entries(ELEMENTS).map(([v, l]) => [+v, l]), cur,
+    (v) => `family ${v} (not on a stock disc)`);
 
   // ---- field schemas for the character/growth/support/weapon record tables ----
   // [label, offsetInRecord, widthBytes, kind]  (kind: item | skill | rank | num)
@@ -1488,6 +1731,7 @@
   // ---- state -----------------------------------------------------------------
   let isoHandle = null, isoName = "", isoFile = null;   // isoFile: the source File (for streaming)
   let RENAMES = {};   // { "Hugo": "Rex", ... } staged character renames (applied disc-wide on streaming save)
+  let rnOpen = false; // ...and whether its card is expanded, kept across the redraws a stat edit triggers
   let EPACKS = [], EPACKS_META = null, EPACKS_SKIPPED = 0;   // loaded enemy packs (Enemies view)
   let ROOMS = [], ROOMS_SKIPPED = 0;        // per-area room tables (Encounter view)
   let RSCALE = null;  // cached stock-vs-disc comparison of those tables (see detectRoomScale)
@@ -2080,8 +2324,9 @@
       return setStatus(`Not a USA (SLUS-20387) Suikoden III ISO — version word 0x${hex(ver, 8)} ≠ 0x${hex(VERSION_VAL, 8)}. ` +
         `Only the USA release is supported.`, "err");
     }
-    // The only windows read on open are the potch overlay pair — two 16-byte reads that keep
-    // the Sets view synchronous. Everything else the disc needs (enemy, war and room tables,
+    // The only windows read on open are the battle-results overlay pair — two 0x70-byte reads
+    // that keep the Sets and Passives views synchronous (the potch multiplier and its owner
+    // mask, Fortune's EXP multiplier, and both overlay switches all live inside them). Everything else the disc needs (enemy, war and room tables,
     // ~45 ranged reads scattered over 3.6 GB) is deferred to loadDiscTables(); see the note
     // there. Optional the same way it always was: an unreadable window just makes that one
     // control read-only, never blocks the load.
@@ -2106,7 +2351,7 @@
     Object.keys(EREG).forEach((k) => delete EREG[k]);
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = NAME_ALIAS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
-    recipeExported = false; saveNudged = false; RENAMES = {};
+    recipeExported = false; saveNudged = false; RENAMES = {}; rnOpen = false;
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
     // The base disc itself is not: it is the pristine reference and outlives any one image.
@@ -2398,6 +2643,19 @@
       const oldMask = auxO32(w0 + AUX_MASK) & 0xFFFF, newMask = auxR32(w0 + AUX_MASK) & 0xFFFF;
       if (oldMask !== newMask)
         rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
+      // Fortune shares this window (it is the same battle-results function), and its offsets are
+      // outside the ELF block, so FIELD_REG can't carry it — decode the row here like the two above.
+      const oldF = auxO32(w0 + AUX_FORTUNE) & 0xFFFF, newF = auxR32(w0 + AUX_FORTUNE) & 0xFFFF;
+      if (oldF !== newF)
+        rows.push({ g: "Rune power", t: `Fortune — EXP multiplier: ×${oldF} → ×${newF} (both overlay copies)` });
+      // ...and the same for the two overlay switches, which are two words each rather than one.
+      for (const sw of AUXSW) {
+        if (!auxSwDirty(sw)) continue;
+        const st = auxSwState(sw);
+        rows.push({ g: sw.group, t: `${sw.review}: ${st === "on"
+          ? "forced to yes for the whole party"
+          : st === "off" ? "back to the game's own call" : "changed"} (both overlay copies)` });
+      }
     }
     // Enemy and room fields (registered on edit; dirty state re-checked live so reverts
     // drop out of the list). Room rows are counted apart so the per-area bulk summary
@@ -2922,26 +3180,73 @@
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
-      passives: "The passive support runes that work OUTSIDE battle \u2014 Champion\u2019s (no encounters with weaker foes) and Sunbeam\u2019s walk-heal \u2014 forced on WITHOUT equipping them, and without spending a rune slot. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups. Both field checks are LOOPS OVER PARTY SLOTS 1\u20136, so answering yes there means everyone in your party has the rune \u2014 exactly what it does when six people wear one, and there are no enemies on the field to leak it to. The other 21 runes (and Sunbeam\u2019s in-battle half) are decoded and listed at the bottom of the tab but have NO switch: a call site frees one instruction word for the answer, which is enough for \u201cyes\u201d and not enough for \u201cyes, if this is Hugo\u201d, and the battle-side lookup never receives the character at all \u2014 it resolves whichever unit is acting, so forcing it would arm every unit in the fight, enemies included. Sunbeam is CONFIRMED IN PLAY (2026-09-06): switched on, the party heals by walking with nobody carrying the rune \u2014 which is also the first evidence that the approach itself works. Champion\u2019s is the identical patch shape one function away and is expected to work, but is still marked untested until somebody plays it. Fortune is listed and cannot be forced: its effect does not ask the question the other 22 ask.",
+      passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. NOTHING HERE HAS BEEN WATCHED WORKING IN PLAY and every row says so. Sunbeam\u2019s field walk-heal was played on 2026-09-06, but under the editor\u2019s previous patch shape, which dropped the call instead of retargeting it: that report proves the site and the effect, and says nothing about the trampoline, its register handling or the bitmap lookup. Keep a backup disc.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
       test: "Experimental patches that are not known to work. Right now: Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
-      sets: "Armor sets: which items complete each of the 5 sets, plus the set-bonus constants patched out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal share).",
-      food: "Consumable / food table: heal amount and proc chance %.",
+      sets: "Armor sets: which items complete each of the 5 sets, the set-bonus constants patched straight out of the game code (potch multiplier per wearer, Destiny\u2019s counter chance, Pale Moon\u2019s heal share), and EFFECT OWNERSHIP \u2014 which set grants which effect. Every bonus is a hard-coded check on the set number, so the potch bonus, the bonus counter chance, heal-on-hit, counter-damage halving and Mole\u2019s squeaky footsteps can each be pointed at a different set and one set can hold several \u2014 but a genuinely NEW effect cannot be added, only moved. Two of those checks are bit tests rather than equality, which is why they offer set combinations instead of single sets. Prosperity\u2019s worn-set check carries its forced-on switch here too, the same one the Passives tab shows: ticked, every party member counts as wearing the set \u2014 and this multiplier COMPOUNDS per member, so six members at the stock \u00d73 pay 3\u2076 = \u00d7729. The multiplier itself lives in a streaming battle overlay rather than the executable, so it reads unavailable on a disc whose overlay this editor cannot verify. Each set shows the bonus decoded off the code beside what the Suikosource guide claims; where they disagree (the guide\u2019s Prosperity \u00d77, Guardian\u2019s counter +50%) the code is what this disc does.",
+      food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description. Both strings are written IN PLACE over their own bytes and capped to the slot the disc reserves, and a dish\u2019s name is the very string the item table points at \u2014 there is no second copy to drift, so the recipe list, the item menu and every picker move together. The checkbox at the top rewrites the \u201cHeals N HP\u201d / \u201cN% chance\u201d numbers inside the description to match what you type, so the text does not end up contradicting the table.",
       text: "In-ELF UI text: battle messages, menu labels, prize/error prompts and character blurbs. Each string is capped to its original byte length (growing one would need repointing). Story dialogue lives in packed event files off the ELF and is not editable.",
-      encounter: "How often random battles trigger, as one global percentage of the game's stock rate. 100 = unchanged, 50 = half as often, 200 = twice, 0 = none. Per-area base rates live in the packed map archives and aren't editable. Below that, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
-      enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded from each area's battle packs and written back to every streaming copy. Suikosource bestiary included as reference.",
+      encounter: "How often random battles trigger. The percentage at the top is one global scale over the game's stock rate \u2014 100 = unchanged, 50 = half as often, 200 = twice, 0 = none \u2014 and the three per-movement multipliers under it are what that slider is made of (stock 100 walking, 120 running, 150 galloping). Per-area base rates are editable too, below: every area on the disc with its own per-map rate, read out of the packed archives \u2014 23 areas, 133 chapter-variant tables, 1,612 map records \u2014 each with None / Half / Stock / Double presets that never compound when re-applied, and a row per map for the rate and the post-battle grace distance. Lowering a rate is always safe; RAISING ONE FROM 0 IS NOT, because a map the game never fights on has no monster party loaded for it, so rows sitting at the disc's 0 are tagged and an area with no battle zones indexed is flagged in full. Last, Movement rules control what counts as moving at all \u2014 the game checks which animation you are playing before it rolls, so walking and running can be switched off independently (walk in peace, run to fight), and the run test's second range can be pointed at the animal run cycle so Koroku and Fubar trigger encounters when they run.",
+      enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded straight from each area's battle packs \u2014 81 packs, 715 enemies, 1,961 stat variants \u2014 and written back to EVERY STREAMING COPY at once. There is no global monster table, so the same Blade Bunny is a different record in every region it appears in and is tuned per area. Bulk multipliers scale HP, all 8 stats, level, EXP, SP, potch or drop weights across every pack or just the ones the filter is showing, and they normally measure from the STOCK disc's numbers, so re-applying \u00d71.2 stays \u00d71.2 instead of stacking to \u00d71.44 and \u201crestore stock values\u201d can undo a scale already saved into a file; on a disc the index doesn't describe the tab says so and falls back to this file's own values rather than writing someone else's numbers over yours. Each zone's SPAWNS AND FORMATIONS are editable as well: which monster each spawn slot holds and which stat variant of it, and the encounter groups themselves \u2014 a relative weight and one member pick per slot, so raising a weight makes that group show up more often. The slot picker only offers the pack's own roster, because a monster from another pack would spawn with no model loaded and CRASH THE GAME, and a formation can shrink but never grow past its original size (fixed allocation on disc). A pack whose offsets don't verify against a pristine disc ships read-only rather than wrong. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, every packed sub-file on the disc, and where the game decides which music plays. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
       changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
     };
-    q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
+    // One-line versions of the hints above, for the "Show more" collapse (blurb-core.js).
+    // Only the long ones need an entry: a tab with no summary here, or one whose hint runs
+    // short, renders its hint in full as before. Written out rather than derived because the
+    // first sentence of most of these is a field list, not the point of the tab.
+    const hintSums = {
+      growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling.",
+      shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
+      spells: "The spell / rune-effect table: power, cast, element, target, area and status, all editable per spell.",
+      runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
+      passives: "The support runes whose passive can be forced on without the rune equipped, and what each one is worth.",
+      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table.",
+      mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
+      movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
+      story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
+      test: "Experimental patches that are not known to work. Read the warnings on the tab before using any of them.",
+      text: "The UI, battle and menu strings inside the executable. Each is capped to its original byte length.",
+      encounter: "How often random battles trigger, as one percentage of the game's stock rate, plus the per-map rates.",
+      war: "War-battle units: level, HP and the 8 combat stats of every soldier, leader unit and war monster.",
+      ref: "Read-only lookups: items, classes, skills, item sources, packed sub-files, mounts, music and treasure.",
+      changes: "What differs between your disc and a pristine base disc, what you have staged, and a code-patch audit.",
+      gear: "Equipment records: name, DEF, price, description and all five effect slots.",
+      sets: "The five armour sets, the set-bonus constants patched out of the game code, and which set grants which effect.",
+      food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description.",
+      enemies: "Per-area enemy editor: stats, rewards and drops for every enemy in every battle pack, plus each zone's spawns and formations.",
+    };
+    // #isoHint is one element reused by every tab, so its collapse has to be rebuilt each
+    // time rather than left in place: setting textContent wipes whatever structure the last
+    // tab's blurb left behind, and clearing data-blurbed is what re-arms the pass. Done
+    // synchronously so the full hint never flashes before collapsing.
+    {
+      const hint = q("#isoHint");
+      const sub = VIEW === "ref" && REF_HINT[REF_KIND];       // a Reference sub-tab's own hint
+      const txt = sub || hints[VIEW] || "";
+      hint.textContent = txt;
+      hint.className = "muted";                      // drop .blurb / .open from the last tab
+      hint.removeAttribute("data-blurbed");
+      // A summary only belongs to the hint it was written for: on a Reference sub-tab the text
+      // is REF_HINT's, so fall through to the derived summary rather than captioning it with
+      // the parent tab's. (Those are all short today and the length gate leaves them whole.)
+      if (txt) hint.setAttribute("data-sum", (sub ? "" : hintSums[VIEW]) || "");
+      else hint.removeAttribute("data-sum");
+      if (self.BlurbCore && self.BlurbCore.applyBlurbs) self.BlurbCore.applyBlurbs(hint);
+    }
     const host = q("#isoView");
     // remember which records are expanded so a re-render (e.g. a per-field revert) keeps your place
     const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
+    // Same for the Characters tab's rename card, read out of the DOM here rather than trusted
+    // from its `toggle` handler: <details> fires toggle on a later task, so opening the card and
+    // immediately editing a stat below would re-render while rnOpen is still false — and the
+    // card the user just opened would snap shut under them.
+    { const b = q("#rnBox", host); if (b) rnOpen = b.open; }
     const open = new Set(qa("details.char[open]", host).map(detKey));
     const y = window.scrollY;
     if (VIEW === "chars") { drawCharsView(host); }
@@ -2985,17 +3290,76 @@
     const rn = (RenameCore.RENAMEABLE || []).map((nm) =>
       `<label class="field" style="max-width:220px"><span>${nm} <span class="muted">(max ${nm.length})</span></span>
          <input type="text" class="rename${RENAMES[nm] ? " dirty" : ""}" data-orig="${nm}" maxlength="${nm.length}" placeholder="${esc2(nm)}" value="${esc2(RENAMES[nm] || "")}"></label>`).join("");
-    host.innerHTML = `<div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Rename characters <span class="u">experimental · same length only</span></div>
+    // Collapsed by default: renaming is a rare, disc-wide, streaming-save-only edit, and left
+    // open it pushed the stat records — the reason most people open this tab — below the fold.
+    // A closed card still says how many names are staged, in the same warn colour as the fields.
+    const staged = Object.keys(RENAMES).length;
+    host.innerHTML = `<details class="card fold" id="rnBox" style="margin:0 0 12px"${rnOpen ? " open" : ""}>
+        <summary class="bag-h"><span class="chev">▸</span>Rename characters
+          <span class="u">experimental · same length only<span class="foldhint"> · click to expand</span></span>
+          <b class="fold-edited" id="rnCount"${staged ? "" : ` style="display:none"`}>${staged} staged</b></summary>
         <div class="warnbox" style="margin:0 0 8px">Replaces the name <b>everywhere on the disc</b> (menus, battle, dialogue). Written by the streaming <b>“save patched copy”</b> — the desktop in-place save can't reach most copies. Same length only (shorter is space-padded). Back up first.</div>
-        <div class="grid">${rn}</div></div>
+        <div class="grid">${rn}</div></details>
       <div id="charRecs"></div>`;
+    const box = q("#rnBox", host); if (box) box.ontoggle = () => { rnOpen = box.open; };
     qa("input.rename", host).forEach((el) => (el.oninput = () => {
       const orig = el.dataset.orig, v = el.value.trim();
       if (v && v !== orig) RENAMES[orig] = v; else delete RENAMES[orig];
       el.classList.toggle("dirty", !!RENAMES[orig]);
+      // A closed card can hide staged renames, so the summary carries the count — update it in
+      // place rather than re-rendering, which would take the focus out of the field being typed.
+      const cnt = Object.keys(RENAMES).length, tag = q("#rnCount", host);
+      if (tag) { tag.textContent = `${cnt} staged`; tag.style.display = cnt ? "" : "none"; }
     }));
     drawRecords(q("#charRecs", host), "list1", REF.names.list1, LIST1_FIELDS, true);
+  }
+  // ---- forced passives, on the character's own card ---------------------------
+  // The Passives tab asks "which characters have Wall?"; this asks "which runes does Hugo
+  // have?" — the same bitmaps, transposed. A card's record index IS the index the bitmaps use
+  // (PS_HOOK.pickMin..pickMax are list1 indices, which is what psNameOf reads), so no mapping
+  // is needed. Enablement for every rune lives here; the Passives tab keeps only the four
+  // party-wide effects, and a rune's STRENGTH is edited on the Runes tab.
+  const charPassiveIdx = (recBase) => (recBase - TABLES.list1[0]) / TABLES.list1[1];
+  function charPassivesHTML(recBase) {
+    const idx = charPassiveIdx(recBase);
+    if (!Number.isInteger(idx) || idx < PS_HOOK.pickMin || idx > PS_HOOK.pickMax) return "";
+    const rows = PASSIVES.map((p) => {
+      const nm = runeInfo(p.id).name || hex(p.id, 3);
+      const editable = psEditable(p), on = psHas(p, idx);
+      const st = psState(p);
+      const why = st === "legacy"
+        ? "an older patch forced this rune on for EVERYONE by dropping the call; clear it on the Passives tab first"
+        : !editable ? "this disc's code at one of this rune's sites is not what the editor decoded, so it is read-only"
+          : `${p.what} — ${PS_WHERE[p.where]}`;
+      return `<label class="pschip" title="${esc2(why)}">
+        <input type="checkbox" class="cpOn" data-id="${p.id}" data-c="${idx}"${on ? " checked" : ""}${
+          editable && st !== "legacy" ? "" : " disabled"}> ${esc2(nm)}</label>`;
+    }).join("");
+    const nOn = PASSIVES.filter((p) => psHas(p, idx)).length;
+    return `<div class="bag-h" style="margin-top:12px">Passive runes forced on
+        <span class="u" title="Each of these makes the engine answer YES to &quot;does this character have that rune equipped?&quot; for this character only — no rune, no rune slot. The effect's STRENGTH is edited on the Runes tab. Fortune is not here: its check lives in a battle overlay, not the executable.">${nOn
+          ? `${nOn} on` : "none"} · without equipping them</span></div>
+      <div class="muted" style="margin:0 0 6px" data-sum="Ticking one gives that character the rune's effect and nobody else. Experimental: no forced battle passive has been watched working in play.">Ticking one installs a small helper into a dead
+        routine in the executable and sets this character's bit in that rune's table, so the
+        effect is <b>theirs alone</b> — enemies and everyone else are unaffected. Untick every
+        rune on every character and the helper is removed byte-for-byte.
+        <b>Experimental: no forced battle passive has been watched working in play.</b></div>
+      <div class="pschips">${rows}</div>`;
+  }
+  function wireCharPassives(scope) {
+    qa("input.cpOn", scope).forEach((b) => (b.onchange = () => {
+      const p = PASSIVES.find((x) => x.id === +b.dataset.id), idx = +b.dataset.c;
+      if (!p) return;
+      const next = b.checked ? psChars(p).concat(idx).sort((x, y) => x - y)
+        : psChars(p).filter((i) => i !== idx);
+      const n = psSetChars(p, next);
+      const nm = runeInfo(p.id).name || hex(p.id, 3), who = psNameOf(idx);
+      drawView();
+      setStatus(n === null ? `${nm} — nothing written; this disc's code doesn't match.`
+        : b.checked ? `${nm} forced on for ${who} only.`
+          : `${nm} — ${who} no longer has it forced${n ? `, ${n} character(s) still do` : ""}.`,
+        n === null ? "warn" : "ok");
+    }));
   }
   function drawRecords(host, listKey, names, fields, lazy) {
     const [base, stride] = TABLES[listKey];
@@ -3013,14 +3377,21 @@
       `<details class="char" data-rec="${r.base}"><summary>
          <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span>
          <span class="muted">#${r.i}</span></summary>
-         <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label, listKey)}</div></div>
+         <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label, listKey)}</div>
+           <div class="cpBox">${lazy || listKey !== "list1" ? "" : charPassivesHTML(r.base)}</div></div>
        </details>`).join("");
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
       if (lazy) d.addEventListener("toggle", () => {
-        if (d.open && !d.dataset.built) { d.querySelector(".grid").innerHTML = recFields(rec, fields, lbl, listKey); wireFields(d, rec, lbl); d.dataset.built = "1"; }
+        if (d.open && !d.dataset.built) {
+          d.querySelector(".grid").innerHTML = recFields(rec, fields, lbl, listKey);
+          wireFields(d, rec, lbl);
+          const box = d.querySelector(".cpBox");
+          if (box && listKey === "list1") { box.innerHTML = charPassivesHTML(rec); wireCharPassives(box); }
+          d.dataset.built = "1";
+        }
       });
-      else wireFields(d, rec, lbl);
+      else { wireFields(d, rec, lbl); wireCharPassives(d); }
     });
   }
   // Support characters (list3) don't fight, so only their utility skills (the 0x1C..0x26 block:
@@ -3441,7 +3812,7 @@
           <select id="shopStage" style="display:block;width:100%">${stageOpts}</select></label>
         <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="shopEmpty"${SHOP_EMPTY ? " checked" : ""}> <span>show empty slots</span></label>
       </div>
-      <div class="muted" style="margin-top:6px">Each counter keeps four inventories and the game
+      <div class="muted" style="margin-top:6px" data-sum="Each counter keeps four inventories and the game swaps between them as the story advances.">Each counter keeps four inventories and the game
         swaps between them as the story advances, so stage 1 is the earliest stock and the last
         stage the richest. The stock list ends at the first empty slot — anything after a gap is
         invisible in-game.</div>
@@ -3776,11 +4147,11 @@
     const unknown = STATUSFX.filter((e) => !fxState(e).known).length;
     return `<details class="card" id="spFxBox"${spFxOpen ? " open" : ""}>
       <summary><b>Status effect strength</b> <span class="u">what an effect is actually worth · ${STATUSFX.length} engine constants</span></summary>
-      <div class="warnbox" style="margin:8px 0">These are <b>code</b> constants, not table entries, so each one is
+      <div class="warnbox" style="margin:8px 0" data-sum="These are code constants, so each one is global: raising the fire figure raises it for every character and every weapon in the game.">These are <b>code</b> constants, not table entries, so each one is
         <b>global</b>: raising the fire figure raises it for every character and every Sword of Rage in the game.
         Percentages are of the value the battle code already computed. ${unknown ? `<b>${unknown}</b> control(s) are
         read-only because this disc's instructions don't match what they patch.` : ""}</div>
-      <div class="muted" style="margin:0 0 8px">The Spells tab picks <b>which</b> effect fires; this picks <b>how much
+      <div class="muted" style="margin:0 0 8px" data-sum="The Spells tab picks which effect fires; this picks how much it is worth. Turn duration stays uneditable.">The Spells tab picks <b>which</b> effect fires; this picks <b>how much
         it is worth</b>. Turn duration is still not editable — the status setter does take a strength argument, but every
         live caller computes it at runtime, and the one routine that reads per-status strengths out of a record is dead
         code with no references anywhere in the executable.</div>
@@ -3853,7 +4224,7 @@
     return `<details class="card fold" id="spSplitBox" style="margin:0 0 12px"${spSplitOpen ? " open" : ""}>
       <summary class="bag-h"><span class="chev">▸</span>Damage + heal
         <span class="u">the one spell that hits foes and heals allies</span></summary>
-      <div class="muted" style="margin:0 0 10px">Shining Wind is the only spell that does two different things to
+      <div class="muted" style="margin:0 0 10px" data-sum="Shining Wind's damage-and-heal behaviour is hardcoded to one spell number, so this moves the trick to another spell rather than copying it.">Shining Wind is the only spell that does two different things to
         the two sides — and the game hardcodes it by spell number, not by any field on the record. Hand that number
         to a different spell and it inherits the whole behaviour: foes take its <b>Power</b> as damage, allies are
         healed the amount below and have their status cleared. There is exactly one such slot in the game, so this
@@ -4433,11 +4804,11 @@
             <input type="number" class="mnt-round" data-off="${d.off}" min="0" max="999" value="${r16(d.off)}"></label>`)).join("");
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
         <div class="bag-h">Battle mounts <span class="u">re-pairing confirmed in-game · patches game code</span></div>
-        <div class="muted" style="margin:0 0 8px">The engine asks one question before seating a rider —
+        <div class="muted" style="margin:0 0 8px" data-sum="The engine gates riders with three hardcoded comparisons, and these dropdowns rewrite them — so any rider below can be put on Fubar, Bright or Ruby.">The engine asks one question before seating a rider —
           <i>is this rider allowed on this mount?</i> — and answers it from three hard-coded comparisons.
           These dropdowns rewrite those three, so <b>any rider below can be put on Fubar, Bright or Ruby</b>.
           There is no fourth slot to add.</div>
-        <div class="muted" style="margin:0 0 8px"><b>Re-pairing works, including across mount types.</b>
+        <div class="muted" style="margin:0 0 8px" data-sum="Re-pairing is confirmed in play, across mount types too (Hugo+Bright, Chris+Bright). What has no precedent yet is a flyer-rigged rider on Ruby."><b>Re-pairing works, including across mount types.</b>
           Two re-pairings have been played through an emulator. <b>Hugo + Bright</b> mounts and fights
           correctly even though Hugo's mounted clips were authored for a griffon and Bright is a dragon.
           <b>Chris + Bright</b> then settled the harder case — a rider whose clips were authored around a
@@ -4458,23 +4829,23 @@
             <li><b>Riders</b> listed by default are the models that carry the <code>301/320/340</code>
               <i>mounted battle</i> clips — Hugo, Chris, Roland, Leo, Percival, Borus, Futch, Franz, and
               Sharon (partial). Those are the ones with an animation to play once they are seated.</li>
-            <li><b>“Rigged for”</b> is the class of mount a rider's mounted clips were built around: Hugo's for
+            <li data-sum="“Rigged for” is the mount class a rider's clips were built around: same class is expected to work, across classes is untested."><b>“Rigged for”</b> is the class of mount a rider's mounted clips were built around: Hugo's for
               a griffon and Futch's for a dragon (<i>flyer</i>), Chris's and the Zexen knights' for a horse,
               Franz's for Ruby (<i>horse</i>). Same class → <span class="mcf exp">• expected</span>;
               across classes → <span class="mcf unt">? untested</span>. Hugo+Bright is the one cross-mount
               case that has actually been played, and it works — which is encouraging for the rest, but
               flyer→flyer is a smaller jump than horse-rig→flyer.</li>
-            <li><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and
+            <li data-sum="Mounts are the party members whose model has a battle animation set: Fubar, Bright and Ruby."><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and
               Ruby. The field horses the Zexen knights and Hugo ride have no battle animations at all, so they
               aren't offered here — the <b>Assigned horse</b> card below is the route for those.</li>
-            <li><b>Riders with no bank</b> (Geddoe, Thomas, Salome, Juan) are hidden behind the checkbox
+            <li data-sum="Riders with no mounted-battle bank still link to the mount but keep their normal pose — Geddoe's ride set is field-only."><b>Riders with no bank</b> (Geddoe, Thomas, Salome, Juan) are hidden behind the checkbox
               above. The comparison chain accepts them — it's a pure id compare — but they link to the mount
               and then keep their normal battle pose, because the motion call fails on the missing clips.
               Geddoe <i>does</i> have a full <i>field</i> ride set, so the game can show him on horseback out
               of battle; that is what the Assigned horse card gives him.</li>
             <li><b>One rider, two mounts</b> works: set two pairs to the same rider with different mounts
               (e.g. Hugo+Fubar and Hugo+Bright). The comparisons are checked in order and fall through cleanly.</li>
-            <li>Rider seating in battle does <i>not</i> use the field saddle-offset table, so an unusual pair
+            <li data-sum="Battle seating ignores the field saddle-offset table, so nothing mis-seats an unusual pair — and nothing corrects it either.">Rider seating in battle does <i>not</i> use the field saddle-offset table, so an unusual pair
               won't be mis-seated by it — but that also means nothing corrects the seat height either, which
               is exactly why a cross-class pairing is marked untested rather than expected.</li>
           </ul></details>
@@ -4482,17 +4853,17 @@
       <div id="mountCards">${cards}</div>
       <div class="card" style="margin:0 0 12px">
         <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · stages a horse beside them</span></div>
-        <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route: each character's own
+        <div class="muted" style="margin:0 0 8px" data-sum="The game's other mount route: a character's own record can name a horse, honoured without that horse being in your party.">The game's <i>other</i> mount route: each character's own
           record can name a horse, and both the field and the battle gate honour it without the horse being in
           your party. Stock, this is what puts the six Zexen Knights on horseback — Chris on her own horse,
           the other five on the knight horse.</div>
-        <div class="muted" style="margin:0 0 8px"><b>It really does stage the horse.</b> When the party is
+        <div class="muted" style="margin:0 0 8px" data-sum="PartyPut reads this value and stages the horse into the party list six positions along, where scene setup builds it as a real actor."><b>It really does stage the horse.</b> When the party is
           formed, <code>PartyPut</code> reads this value and writes the horse into the party list
           <b>six positions along</b> — so party slot 3 gets a horse at position 9 — and scene setup then
           builds it as a real actor standing next to them. A script mounts them by naming the rider with
           bit <code>0x4000</code> set, which the engine resolves to "that actor's own horse". You can see
           the result in the <b>Save Editor's party list</b>, in the Mount column.</div>
-        <div class="warnbox" style="margin:0 0 8px"><b>What it cannot do is write the script.</b> On the
+        <div class="warnbox" style="margin:0 0 8px" data-sum="What it cannot do is write the script: this makes a character eligible everywhere, but mounted only where a scene mounts the player."><b>What it cannot do is write the script.</b> On the
           field a mount only ever happens because a scene <i>asks</i> for one, so this makes a character
           eligible everywhere and mounted only where a scene mounts the player. That is why Chris rides in
           some scenes and not others. Two more things bite: the horse appears only once the party is
@@ -4502,19 +4873,19 @@
         <div class="grid eq">${horseRows}</div>
         <details class="note" data-fold="horses"${mntFolds.horses ? " open" : ""}><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
-            <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
+            <li data-sum="Only ids 308–309 are honoured, and the Test tab can widen that window to 308–563 — which is how Hugo reaches the Karaya horse he was authored for.">The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
               are honoured</b> and any other mount id is read and silently discarded. That window is six
               identical <code>sltiu</code> instructions, and the <b>Test</b> tab can widen it to 308–563 —
               which adds the <b>Karaya horses</b> (325, 353) and the Le Buque pair. 325 is the one worth
               having: Hugo ships with no assigned horse at all, and the Karaya horse is the mount the engine
               was written around for him. The flyers stay out of reach either way — there is no ground saddle
               offset for a griffon or a dragon.</li>
-            <li>The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
+            <li data-sum="The pair table and this card fail in opposite ways: reach beats reliability on one, reliability beats reach on the other.">The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
               character, so it always has a battle slot and the pairing fires from party membership alone —
               that is why a re-paired Chris+Bright works in any fight with both deployed. An assigned horse
               needs no party slot but has no battle presence of its own, so it appears only where the scene
               already puts a horse. Reach beats reliability on one, reliability beats reach on the other.</li>
-            <li><b>field+battle</b> characters carry both mounted animation banks. <b>field</b>-only ones
+            <li data-sum="Characters with both animation banks ride everywhere; field-only ones ride on the map but keep their normal battle pose."><b>field+battle</b> characters carry both mounted animation banks. <b>field</b>-only ones
               (Geddoe, Thomas, Salome) will ride correctly on the map but keep their normal pose in battle —
               <i>Geddoe rides perfectly well outside combat</i>, which is the one thing the pair table above
               can't give him.</li>
@@ -4624,7 +4995,7 @@
     const fallsThrough = AVATAR.STOCK_SET.filter((id) => !known.has(id));
     host.innerHTML = `<div class="bag">
         <div class="bag-h">Story content <span class="u">confirmed in play · patches game code</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="The fix for empty dialogue boxes when you play as someone the game did not plan for — the leader byte picks your model and your story content at once.">
           <b>The fix for empty dialogue boxes when you play as someone the game didn't plan for.</b>
           The party-leader byte does two jobs: it names your field model, and it selects
           <i>whose</i> events and dialogue a town loads. Change who you walk around as and you
@@ -4644,7 +5015,7 @@
         <div class="row" style="gap:8px;margin:10px 0 0"><button class="chip" id="storyStock">Restore stock</button></div>
 
         <div class="bag-h" style="margin:16px 0 0">Setting it up</div>
-        <div class="muted" style="font-size:12px">
+        <div class="muted" style="font-size:12px" data-sum="Two edits in two different files: set the character to Hugo's story content here, then pick them in the Save Editor's Field character tab.">
           <p style="margin:0 0 6px">Two edits in two different places, and they are edits to two
           different files. Do both, in this order:</p>
           <p style="margin:0 0 4px"><b>1 · Here, on the disc.</b> Set the character you intend
@@ -4661,7 +5032,7 @@
         </div>
 
         <div class="bag-h" style="margin:16px 0 0">How it works</div>
-        <div class="muted" style="font-size:12px">
+        <div class="muted" style="font-size:12px" data-sum="One function turns the leader byte into a team index, and an id it has never heard of falls through to Hugo's index 0 — which is the whole trick.">
           <p style="margin:0 0 4px"><b>One switch turns the id into an index.</b> A single function
           (<code>0x${AVATAR.STORY.switchVa.toString(16).toUpperCase()}</code>) compares the leader
           byte against a short list of ids and returns a <b>team index</b> — 0–7. That index
@@ -4731,7 +5102,7 @@
   const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"]];
   function drawTest(host) {
     host.innerHTML = `
-      <div class="warnbox" style="margin:0 0 12px">
+      <div class="warnbox" style="margin:0 0 12px" data-sum="Experimental — widening the model whitelist rewrites game code and is not confirmed in play, and story scripts reset the leader byte at chapter transitions.">
         <b>Experimental — rewrites game code, and is not confirmed in play.</b>
         <b>Field character</b> widens the model whitelist past the stock eight. Everyone beyond
         it is untested: Yuber and Lucia were both seen to hang a scene, though that was before
@@ -4768,12 +5139,12 @@
     host.innerHTML = `
       <div class="card" style="margin:0 0 12px">
         <div class="bag-h">Assigned horse — wider list <span class="u">patches game code · not played</span></div>
-        <div class="muted" style="margin:0 0 8px">A character's <b>assigned horse</b> lives in one
+        <div class="muted" style="margin:0 0 8px" data-sum="A character's assigned horse is one u16 on the Mounts tab, and the engine honours only a window two ids wide. This widens it.">A character's <b>assigned horse</b> lives in one
           u16 on the <b>Mounts</b> tab. The engine throws away any value outside a window two ids
           wide, so stock you can only pick the two Zexen horses:
           <code>addiu $v0, $a1, -0x134</code> then <code>sltiu $v0, $v0, 2</code>. This raises the
           <code>2</code> to <code>256</code> at all six sites, widening the window to 308–563.</div>
-        <div class="muted" style="margin:0 0 8px">That adds the <b>Karaya horses</b> (325, 353) and
+        <div class="muted" style="margin:0 0 8px" data-sum="Widening the window adds the Karaya horses and the Le Buque pair. 325 is the one worth having: Hugo ships with no assigned horse at all.">That adds the <b>Karaya horses</b> (325, 353) and
           the <b>Le Buque pair</b> (359, 360) to the dropdown. The one that matters is 325:
           <b>Hugo has no assigned horse at all</b>, and the Karaya horse is the mount he was
           authored for — the RideOn handler carries a clip fix-up written for exactly one pair,
@@ -4782,7 +5153,7 @@
         <div class="muted" style="margin:0 0 8px"><b>What it does on its own: nothing.</b> Only six
           characters ship a nonzero value and all are 308 or 309, well inside the widened window.
           Nothing changes until you pick a wider horse on the Mounts tab.</div>
-        <div class="warnbox" style="margin:0 0 8px"><b>Untested in play.</b> The staging chain is
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Untested in play — the staging chain is read off the disassembly, but nobody has yet been given a horse they do not ship with."><b>Untested in play.</b> The staging chain is
           read off the disassembly and confirmed against save data — a real save shows Chris at
           party position 3 with her horse at position 9, which is the <code>pos + 6</code> layout
           this relies on. What has <i>not</i> been played is a character being given a horse they
@@ -4899,14 +5270,14 @@
     host.innerHTML = `
       <div class="bag">
         <div class="bag-h">Field character <span class="u">patches game code · untested beyond the stock eight</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Your field character is the party-leader byte at save 0x12, and one hardcoded list of eight ids decides whether its model may load. Widen it here.">
           The character you run around the map as is the <b>party-leader byte at save 0x12</b>, and
           that byte names a <b>model</b>. One function decides whether that model is ever requested,
           and it is a hardcoded list of eight ids. Widen it here, then pick the character on the
           <b>Save Editor → Field character</b> tab. Nothing about the party, the story
           or the scripts changes: this only stops the loader from refusing the id.
         </div>
-        <div class="warnbox" style="margin:0 0 10px">
+        <div class="warnbox" style="margin:0 0 10px" data-sum="What bites beyond the whitelist is scripts, not loading: a scripted scene can hang whoever you pick, including the eight the game ships.">
           What bites beyond the whitelist is scripts, not loading: a <b>scripted scene can hang</b>
           whoever you pick, including the eight the game ships — Koroku is one of them and hangs.
           Being able to load a model is not the same as the game knowing what to do with it.
@@ -4925,7 +5296,7 @@
           <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
         </div>
         <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup · untested</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Scripts name actors two ways, and the by-character-id one returns nothing when that character is absent — which is exactly where the game stops.">
           Scripts name an actor two ways. <b>"The player"</b> resolves through the leader byte and
           works for anyone — which is why your avatar walks into the scene, and why talking to
           NPCs is fine. <b>"The character whose id is N"</b> scans the scene's actor records for
@@ -4937,7 +5308,7 @@
           <input type="checkbox" id="avActorFb"${actorFbOn ? " checked" : ""}>
           <b>An actor nobody can find falls back to the player</b>
           <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
-        <div class="warnbox" style="margin:0 0 10px">
+        <div class="warnbox" style="margin:0 0 10px" data-sum="Tried in play and it did not fix the hang: town scripts address actors by slot, so this exit is never taken. Kept only as a record.">
           <b>Tried in play, and it did not fix the hang \u2014 and now we know why.</b> The event
           scripts have since been located and disassembled: across <b>12,055 actor references in
           every town script on the disc, the by-character-id namespace this patch fixes is used
@@ -5223,7 +5594,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     host.innerHTML = `
       <div class="bag">
         <div class="bag-h">Field movement speed <span class="u">plain data · no code patched · confirmed in play</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Field walk and run speeds come from a 14-row table keyed on a movement class, not from code. Stock is 2.0 walking for the whole cast.">
           How fast a character walks and runs <b>on the field</b> is a <b>table</b>, not code. Every field
           object gets a walk speed and a run speed from one of 14 rows, and which row it reads is a
           <b>movement class</b> stored on the character. Stock, <b>walking is 2.0 for the whole cast</b>
@@ -5231,19 +5602,19 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           Hugo (6.0) covers a third more ground than as Chris (4.5). Mounts are
           ordinary field objects with their own class, so a mount's row is the mounted speed.
         </div>
-        <div class="note" style="margin:0 0 10px">
+        <div class="note" style="margin:0 0 10px" data-sum="Confirmed in play: Koroku at 12 ran at 2× and at 18 at 3×, so the number is linear — work in multiples of the class's stock.">
           <b>Confirmed in play.</b> Koroku is class 0, which ships at run <b>${MOVESPD.CONFIRMED.stock}.0</b>;
           set to <b>12</b> he ran at <b>2&times;</b> and at <b>18</b> at <b>3&times;</b>. The number is
           <b>linear</b> — double it to go twice as fast — so you can work in multiples of whatever the
           character's class ships with, and the line under the boxes says which multiple you have typed.
         </div>
-        <div class="warnbox" style="margin:0 0 10px">
+        <div class="warnbox" style="margin:0 0 10px" data-sum="Field only — the battle unit spawner overwrites both speeds from the character's loaded battle asset, which is not in the executable.">
           <b>Field only — this does not change battle movement.</b> The table's values reach every
           object, but the battle unit spawner immediately overwrites both speeds from the character's
           <b>loaded battle asset</b>, which lives in the packed archives and not in the executable.
           Nothing overwrites a field object, so on the field these are the values that stay.
         </div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Most of the cast is in this table because a field object is anyone the field walks around, not because you can play as them.">
           Most of the cast here can never be the character you walk around <i>as</i> — that is a
           separate list of eight ids (see the <b>Test</b> tab). They are in the table because a field
           object is anyone the field walks around: the recruits standing about Budehuc Castle, and
@@ -5253,7 +5624,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         </div>
         <div class="bag-h" style="margin:0 0 8px">Give one character its own speed
           <span class="u">picks a spare row for you</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Speed is stored per class, so a character gets its own only when a row is free — the editor shares, retunes or spends a row for you.">
           Speed is stored per <i>class</i>, not per character, so a character can only have its
           own speed if a row is free to hold it. Set a number here and the editor sorts that out:
           it retunes the row in place when nobody else is in it, points you at an existing row
@@ -5296,7 +5667,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         </div>
         <table class="invtbl">${head}<tbody>${used.map(classRow).join("")}</tbody></table>
         <details class="note" style="margin:10px 0 0"><summary>What &ldquo;time scale&rdquo; means, and when to touch it</summary>
-          <p style="margin:8px 0">It is that object's <b>clock multiplier</b> &mdash; not an
+          <p style="margin:8px 0" data-sum="Time scale is that object's clock multiplier: animation and movement both run at that rate, so 2.0 is twice as fast at everything.">It is that object's <b>clock multiplier</b> &mdash; not an
           animation-only setting. Once per frame the engine takes how much real time has passed,
           multiplies it by this number, and hands the result both to the character's animation
           clock <i>and</i> to the step that moves them. So <b>2.0</b> means &ldquo;this character
@@ -5313,12 +5684,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
               also speeds up everything you might not want faster: idle fidgets, turning on the
               spot, and the wind-up and stop at each end of a walk.</li>
           </ul>
-          <p style="margin:8px 0">So a small rise in both usually looks better than a big rise in
+          <p style="margin:8px 0" data-sum="A small rise in both Run and Time scale usually looks better than a big rise in either — which is how the engine itself uses the field.">So a small rise in both usually looks better than a big rise in
           either. The engine agrees, which is the best evidence for what the field is for: a party
           member who has fallen behind is given a temporary <b>1.2</b> or <b>1.3</b> to hurry them
           along, and one movement state computes it as <i>current speed &divide; intended speed</i>
           &mdash; exactly the correction that keeps a stride matching the ground.</p>
-          <p style="margin:8px 0"><b>One caveat.</b> What you set here is the character's
+          <p style="margin:8px 0" data-sum="What you set is the character's starting clock; followers and scripted walks write over it while they last."><b>One caveat.</b> What you set here is the character's
           <i>starting</i> clock. The situations above write over it while they last, so a party
           follower or anyone mid-way through a scripted walk may not keep your value. The engine
           clamps it at 10000, and every class ships at 1.0.</p>
@@ -5591,8 +5962,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
             <select id="setHeal">${[0, 1, 2, 3, 4].map((k) =>
               `<option value="${k}"${k === curHeal ? " selected" : ""}>${healLabel[k]}</option>`).join("")}</select></label>
         </div>
+        <div style="margin:10px 0 0">${auxSwField(auxSwById("prosperity"))}</div>
         <details class="note"><summary>Disassembly-verified behavior — what each set really does</summary>
-          <div style="margin-top:4px">The potch multiplier applies once per party member wearing
+          <div style="margin-top:4px" data-sum="The disassembly says the potch multiplier stacks per wearer and Guardian only halves counter damage — the Suikosource numbers do not match the code.">The potch multiplier applies once per party member wearing
           Prosperity <i>or</i> Destiny and stacks (two wearers at ×3 = ×9). The counter chance only fires for a Destiny wearer <b>without</b>
           the Counter Attack skill (damage = own PWR + support PWR, ÷3). Guardian's real effect is a halving check on counter damage
           (Pale Moon matches it too — likely a dev bug). Mole just squeaks. The Suikosource guide's “Prosperity ×7” and
@@ -5614,7 +5986,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <ul style="margin:4px 0 0 18px">
             <li><b>The potch and halving checks are bit tests</b>, not equality — the game does <code>setNumber &amp; mask</code>. Because the
               sets are numbered 1–5, only 8 groupings are reachable, which is exactly what those two dropdowns list.</li>
-            <li><b>Bonus counter damage is divided by the set number itself</b> (the code reuses that register). Stock Destiny is #3, hence
+            <li data-sum="Bonus counter damage is divided by the set number itself, so moving the effect between sets changes the divisor."><b>Bonus counter damage is divided by the set number itself</b> (the code reuses that register). Stock Destiny is #3, hence
               ÷3; moving it to Mole (#1) means no division at all, while Pale Moon (#5) divides by 5. The hint under the dropdown tracks this.</li>
           </ul></details>
       </div>
@@ -5734,6 +6106,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       syncTitle(ownPotchEl);
       markPair(ownPotchEl, maskDirty(), maskRevert, maskSetNames(origMask));
     }
+    // The same switch also renders on the Passives tab, off the same renderer — the potch
+    // numbers are here, so the control that decides whether they apply at all belongs here too.
+    wireAuxSw(host);
   }
 
   // ---- Text (in-ELF UI strings) ----------------------------------------------
@@ -5771,7 +6146,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ? `<div class="muted" style="margin:8px 0 0">Showing the first ${shown.length} of ${hits.length} matches — type in the filter to narrow.</div>` : "";
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
         <div class="bag-h">In-ELF text <span class="u">${all.length} strings · in-place, length-capped</span></div>
-        <div class="warnbox" style="margin:0 0 8px">Each string is written back over its <b>original bytes</b> and can't grow — longer text is
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Each string is written back over its original bytes and cannot grow. Story dialogue is not here — it lives outside the executable.">Each string is written back over its <b>original bytes</b> and can't grow — longer text is
           rejected, shorter is null-padded. These are UI/battle/menu strings and character blurbs; <b>story dialogue is not here</b>
           (it lives in packed event files outside the executable and no editor in this repo can reach it).</div>
         ${rows ? `<div class="grid">${rows}</div>` : `<div class="muted">no matches</div>`}${capped}</div>`;
@@ -5874,7 +6249,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return `<details class="card fold" id="gbBox" style="margin:0 0 12px"${gbOpen ? " open" : ""}>
       <summary class="bag-h"><span class="chev">▸</span>Bulk scaling
         <span class="u">multiply every character's growth rate at once · Tougher / Hard / Brutal</span></summary>
-      <div class="muted" style="margin:0 0 10px">Scales from the disc's <b>original</b> numbers, not the
+      <div class="muted" style="margin:0 0 10px" data-sum="Scales from the disc's original numbers, so presets never stack and 1.00× puts everything back. Growth bytes cap at 15.">Scales from the disc's <b>original</b> numbers, not the
         current ones — so presets don't stack, and 1.00× puts everything back rather than staging
         another edit. Growth bytes cap at <b>15</b>, so multipliers above 1 saturate quickly. This nerfs
         the <i>party</i>; to push the other side up, use the bulk multipliers on the <b>Enemies</b> and
@@ -6042,7 +6417,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       </div>
       <div class="bag" style="margin:0 0 4px">
         <div class="bag-h">Per-movement multipliers <span class="u">what the slider above is made of</span></div>
-        <div class="muted" style="margin:0 0 10px">The roll is <code>area rate &times; multiplier / 100</code>,
+        <div class="muted" style="margin:0 0 10px" data-sum="The roll is area rate × multiplier / 100, and the multiplier comes from how you are moving — 100 walking, 120 running, 150 galloping.">The roll is <code>area rate &times; multiplier / 100</code>,
           and the game picks the multiplier from how you are moving. Stock is
           <b>100</b> walking, <b>120</b> running, <b>150</b> galloping — running is riskier than walking,
           and a mount is riskier still. Set them apart to change that shape rather than just its size:
@@ -6159,7 +6534,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     host.innerHTML = `
       <div class="bag" style="margin:16px 0 0">
         <div class="bag-h">Movement rules <span class="u">what counts as moving · patches game code</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Before that rate is used at all, the game checks which animation you are playing — walking and running are separate terms.">
           Before the rate above is even used, the game checks which <b>animation</b> your character is
           playing. Walking and running are separate tests, and if neither matches, the roll is skipped
           entirely. That makes two things possible that a rate slider can't do.
@@ -6311,24 +6686,24 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const scaled = rknown && rsc.rate.sure && rsc.rate.r !== 1;
     const parts = [`<h3 class="sec">Per-area base rates</h3>`,
       !rsc.ok ? "" :
-      !rsc.matched ? `<div class="warnbox" style="margin:0 0 10px">These room tables don't line up with the stock
+      !rsc.matched ? `<div class="warnbox" style="margin:0 0 10px" data-sum="These room tables do not line up with the stock USA disc, so the presets scale this file's rates and can compound.">These room tables don't line up with the stock
           USA disc this editor indexes (only ${Math.round(rsc.explained * 100)}% of ${rsc.samples} values match a
           single scale) — a different build, or per-map edits. The presets below scale <b>this file's</b> rates
           instead of the stock ones, so they can compound if you save and come back.</div>`
-      : scaled ? `<div class="warnbox" style="margin:0 0 10px">These rates are <b>already scaled</b>: the disc sits at
+      : scaled ? `<div class="warnbox" style="margin:0 0 10px" data-sum="These rates are already scaled, and the presets work from the stock numbers rather than the ones now in this file.">These rates are <b>already scaled</b>: the disc sits at
           <b>${rpct(rsc.rate.r)}</b> of the stock disc's rates (${Math.round(rsc.explained * 100)}% of ${rsc.samples}
           values match${rsc.explained < 1 ? "; the rest are per-map edits" : ""}). The presets scale the <b>stock</b> numbers, so Half is half of
           stock rather than half again, and <b>Stock</b> puts the disc's own rates back — even though this file
           no longer holds them.</div>`
       : `<div class="muted" style="margin:0 0 10px">Checked against the stock USA disc: these rates are stock
           (${Math.round(rsc.explained * 100)}% of ${rsc.samples} values match exactly).</div>`,
-      `<div class="muted" style="margin:0 0 10px">Each map's own rate, read straight from the packed archives —
+      `<div class="muted" style="margin:0 0 10px" data-sum="Each map's own rate, read straight off the packed archives; the percentage above multiplies these. 0 means no random battles on that map.">Each map's own rate, read straight from the packed archives —
         the percentage above multiplies <b>these</b>. <b>0</b> means no random battles on that map, which is how
         the game marks towns and interiors; the disc's field and dungeon maps sit between <b>2 and 9</b>.
         <b>Grace</b> is how far you must travel after a battle before another can trigger. A rate at or above 100
         makes every roll a battle. Areas carry the disc's own archive tag with its in-game location and, where
         the enemy index knows them, the game's map ids.</div>`,
-      `<div class="warnbox" style="margin:0 0 10px">Lowering a rate is always safe. <b>Raising one from 0 is not</b> —
+      `<div class="warnbox" style="margin:0 0 10px" data-sum="Lowering a rate is always safe. Raising one from 0 is not — the game loads no monster party for a map it never fights on.">Lowering a rate is always safe. <b>Raising one from 0 is not</b> —
         a map the game never fights on has no monster party loaded for it, so forcing an encounter there is not a
         state the game builds. Rows sitting at the disc's 0 are tagged <span class="opt-tag">no battles</span>, and
         an area with no battle zones indexed is flagged in full.</div>`];
@@ -6644,7 +7019,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const known = stockKnown(t), tuned = stockTuned(t);
     const pctS = (x) => `${(x * 100).toFixed(x > 0.999 ? 0 : 1)}%`;
     if (sc && sc.ok && !sc.matched)
-      parts.push(`<div class="warnbox">These ${esc2(t.noun)} records don't line up with the stock USA disc this editor
+      parts.push(`<div class="warnbox" data-sum="These records do not line up with the stock USA disc, so the multipliers work from this file's values and can compound.">These ${esc2(t.noun)} records don't line up with the stock USA disc this editor
         indexes (only ${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match a single scale) — a different
         build, or edits made outside a whole-pack multiplier. Multipliers below work from <b>this file's</b>
         values instead of the stock ones, and can compound if you save and re-apply.</div>`);
@@ -6674,7 +7049,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <button id="${t.id}Reset">Reset scope to disc originals</button>
         ${known ? `<button id="${t.id}StockRestore">Restore stock values</button>` : ""}
       </div>
-      <div class="muted" style="margin-top:6px">Every value is computed from a fixed base, so running Apply twice
+      <div class="muted" style="margin-top:6px" data-sum="Every value is recomputed from a fixed base, so re-applying never compounds and a new multiplier replaces the old one instead of stacking.">Every value is computed from a fixed base, so running Apply twice
         changes nothing and a new multiplier replaces the old one instead of stacking. Fields left at ×1 are not touched
         (your per-${esc2(unit)} edits to them survive); Reset reverts <b>every</b> ${esc2(t.noun)} field in the scope to what this file
         opened with, including manual edits${known ? `, and Restore writes the stock disc's own numbers back — the way to
@@ -6723,7 +7098,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const parts = [];
     const ZPACKS = EPACKS.filter((p) => !p.war);
     if (ZPACKS.length && rl && al) {
-      parts.push(`<div class="muted" style="margin:0 0 8px">Per-area enemy packs decoded straight from the disc
+      parts.push(`<div class="muted" style="margin:0 0 8px" data-sum="Per-area enemy packs decoded straight off the disc. Each pack exists as several streaming copies, and an edit writes every copy at once.">Per-area enemy packs decoded straight from the disc
         (${ZPACKS.length} pack${ZPACKS.length === 1 ? "" : "s"}${EPACKS_SKIPPED ? `, ${EPACKS_SKIPPED} unavailable on this disc` : ""}).
         Each pack exists as several streaming copies — edits write <b>every copy</b> at once. Stat order is the
         character convention (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK); drop weights are out of 1000 (128 ≈ 12.8%).
@@ -6802,7 +7177,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const parts = [];
     const wpacks = EPACKS.map((p, pi) => [p, pi]).filter(([p]) => p.war);
     if (wpacks.length && rl && al) {
-      parts.push(`<div class="muted" style="margin:0 0 8px">Every war-battle combatant found on the disc: faction soldiers
+      parts.push(`<div class="muted" style="margin:0 0 8px" data-sum="Every war-battle combatant on the disc, per archive, so the same soldier can be tuned per battle. Your own units use their save-file stats.">Every war-battle combatant found on the disc: faction soldiers
         (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy <b>leader units</b> and the chapter-5 war monsters
         (${wpacks.length} pack${wpacks.length === 1 ? "" : "s"}${WPACKS_SKIPPED ? `, ${WPACKS_SKIPPED} unavailable on this disc` : ""}).
         Each archive feeds the battles staged from that region, so the same soldier can be tuned per battle; edits write every
@@ -6900,7 +7275,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     if ((p.zones || []).length) {
       html.push(`<div class="bag-h" style="margin-top:14px">Zones &amp; spawn formations
         <span class="u">which monsters appear where, and in what groups</span></div>
-      <div class="muted" style="margin:0 0 8px">Each zone is a map area (the game's own name, e.g. <code>mori_101</code>).
+      <div class="muted" style="margin:0 0 8px" data-sum="Spawn slots pick which monster each slot holds; formations are the encounter groups that draw from those slots.">Each zone is a map area (the game's own name, e.g. <code>mori_101</code>).
         Its <b>spawn slots</b> pick which monster (and which stat variant) each slot holds — swap a slot's monster and every
         formation using that slot spawns the new one. <b>Formations</b> are the encounter groups: relative weight, then one
         pick per member from the slots. Member count can shrink but not exceed the group's original size (fixed allocation
@@ -7121,7 +7496,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const total = idx.archives.reduce((a, x) => a + x.files.length, 0);
     const tally = {};
     idx.archives.forEach((a) => a.files.forEach((fl) => { const k = kinds[fl[2]]; tally[k] = (tally[k] || 0) + 1; }));
-    const parts = [refTabs(), `<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
+    const parts = [refTabs(), `<div class="muted" style="margin:0 0 10px" data-sum="Every packed sub-file on the disc, from the directory in DATA/FSECT.BIN. Read-only — Peek reads the first 256 bytes of a blob off your disc.">Every packed sub-file on the disc —
       <b>${total.toLocaleString()}</b> across ${idx.archives.length} archives — from the directory in
       <code>DATA/FSECT.BIN</code>. ${kinds.map((k) => `<b>${tally[k] || 0}</b> ${k}`).join(" · ")}.
       Read-only: the editable pieces inside these files have their own views. <b>Peek</b> reads the first
@@ -7264,7 +7639,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
              <span class="muted">${esc2(r.detail)}</span></div>`).join("")}</td></tr>`;
     });
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Where each item can be found. Rows tagged
+      `<div class="muted" style="margin:0 0 10px" data-sum="Where each item can be found: rows tagged disc are decoded off this disc's enemy tables, rows tagged guide are Suikosource text. Nothing here is editable.">Where each item can be found. Rows tagged
         <span class="srctag disc">disc</span> are decoded from <b>this</b> disc's enemy tables — the enemy,
         which archive's pack, that variant's level and the drop weight out of 1000. Rows tagged
         <span class="srctag guide">guide</span> are text from the Suikosource <i>Rare Armor</i> guide.
@@ -7310,7 +7685,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <td>${c.items.map((i) => `<span class="pkitem">${esc2(itemName(+i.item))}</span>`).join(" ")}</td></tr>`;
       });
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Where the game hides things. The first table is counted off
+      `<div class="muted" style="margin:0 0 10px" data-sum="Where the game hides things — chest and corpse pickups counted off your disc, plus the guide's treasure-boss chests. Nothing here is editable.">Where the game hides things. The first table is counted off
         <b>your disc</b> — the map objects the game itself names <code>takara</code> (宝, a chest),
         <code>emono</code> (獲物, a lootable corpse) and <code>herb_*</code>. An archive ships the same maps
         several times over, one set per chapter, so the count is the most any single variant carries rather
@@ -7410,6 +7785,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       descMax: own ? origSlotLen(dp) : 0,
       descCopies: own ? descCopyCount(vaOff(dp)) : 1,
       grants, slotIds, editable: trusted,
+      elem: trusted && inBlk(rec + RUNE_TBL.elem, 2) ? r16(rec + RUNE_TBL.elem) : 0,
+      cat: trusted && inBlk(rec + RUNE_TBL.cat, 2) ? r16(rec + RUNE_TBL.cat) : 0,
       owner: runeOwners()[nameKey(nm)] || "",
       holders: runeHolders()[nameKey(nm)] || [],
       sources: sourceRows(id),
@@ -7462,7 +7839,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${RUNE_GROUPS.map(([k, label, , , note]) => `<button class="chip${RUNE_GROUP === k ? " on" : ""} mini"
         data-rgrp="${k}" title="${esc2(note)}">${esc2(label)} (${tally(k)})</button>`).join("")}</div>`;
     host.innerHTML = chips +
-      `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
+      `<div class="muted" style="margin:0 0 10px" data-sum="Every rune: what it does, its four spell slots, and who carries it. Reassigning slots is proven on magic and support runes and confirmed not to work by itself on special-attack runes.">Every rune in the game: what it does, which spells it
         grants, and who carries it. Names and descriptions come off <b>this</b> disc's rune table, so an edit
         made here or on the Text tab shows everywhere the editor names that rune.
         <b>Spells granted</b> is the rune's own record, not a lookup: every rune holds
@@ -7478,12 +7855,17 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
-        The passive support runes (Fortune, Balance, Fury…) ship with all four slots empty — what they do
-        is engine code, not a spell — so their slots are shown but writing one is untested territory,
-        unlike the magic and special-attack runes, where the game already reads every count from one
-        spell to four. Whichever slots you use, the levels a character has to reach before the later ones
-        unlock are <b>not</b> in this record and are not editable yet; test a reassigned rune in game
-        before building a run around it.
+        <b>What plays and what does not, as tested on hardware.</b> On a <b>magic or support rune</b>
+        (<i>Rune type</i> below reads “Magic / support”) the game already reads every count the disc
+        ships, one spell through four, so reassigning those slots is on solid ground. On a
+        <b>special-attack rune</b> — Kite, Phoenix, Goss, the 27 with <i>Rune type</i> “Special attack”
+        — it is <b>confirmed not to work by itself</b>: a Kite given four spells still fires slot 1 the
+        moment it is chosen, with no list to pick from. The slots are written correctly; the battle menu
+        simply never offers them. Setting <i>Rune type</i> to “Magic / support” is the experiment that
+        might open that menu — <b>untested, and it may change how the rune behaves in other ways</b>.
+        The passive support runes ship with all four slots empty and are untested territory of their own.
+        Whichever slots you use, the levels a character has to reach before the later ones unlock are
+        <b>not</b> in this record and are not located; test in game before building a run around it.
         What those runes do instead is engine code. For the twelve whose effect is built on a number —
         Sunbeam's <b>HP a combat turn</b> and <b>HP a second of walking</b>, Killer's and Counter's chances,
         Haziness' dodge roll, Hunter's damage clamp, the Wall/Double-Strike/Wizard multipliers and the rest —
@@ -7518,7 +7900,15 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                       >${esc2(spellSlotLabel(gid))}</option></select>
                     ${gid ? `<button class="spellchip link" data-spjump="${esc2(spellSlotName(gid))}" data-spi="${gid - 1}"
                         title="Open this spell's record on the Spells tab — power, cast, element, target, area and status">edit ↗</button>` : ""}
-                  </div>`).join("")}</div>`
+                  </div>`).join("")}
+                 <div class="runemeta">
+                   <label class="field"><span class="muted">Rune type
+                     <span class="u">which battle menu the game gives it</span></span>
+                     <select class="rcat" data-id="${r.id}">${runeCatOpts(r.cat)}</select></label>
+                   <label class="field"><span class="muted">Element family
+                     <span class="u">the rune's own, not its spells'</span></span>
+                     <select class="relem" data-id="${r.id}">${runeElemOpts(r.elem)}</select></label>
+                 </div></div>`
               : r.grants.length ? `<div class="grants">${r.grants.map((s) =>
                   `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
             ${runePowerHTML(r.id)}
@@ -7574,6 +7964,22 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         drawRunes(host);
       };
     });
+    // Rune type (+0x16) and element family (+0x14). Small option lists, so these render whole —
+    // it is the 94-spell slot lists that had to be lazy, not these.
+    [["select.rcat", RUNE_TBL.cat, "Rune type"], ["select.relem", RUNE_TBL.elem, "Element family"]]
+      .forEach(([sel, fieldOff, label]) => qa(sel, host).forEach((el) => {
+        const id = +el.dataset.id, off = RUNE_TBL.off + id * RUNE_TBL.stride + fieldOff;
+        if (!inBlk(off, 2)) { el.disabled = true; return; }
+        markField(el, off, 2, "num");
+        el.onchange = () => {
+          writeW(off, 2, clampInt(+el.value || 0, 0, 0xFFFF));
+          reg(off, 2, "num", itemName(id), label);
+          setStatus(sel === "select.rcat" && +el.value === 0
+            ? `${itemName(id)} is now a magic/support rune. Whether that gives it a spell menu is untested — try it in game.`
+            : `${itemName(id)}: ${label.toLowerCase()} changed. Review, then Save.`, "ok");
+          drawRunes(host);
+        };
+      }));
     // In-place rename. Same write as the menu text below: the string is overwritten where it
     // already sits and null-padded, so no pointer on the disc moves and every menu that names
     // the rune reads through the one pointer it always did. An empty box would leave the rune
@@ -7619,7 +8025,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     off: ["off", "stock — this rune only does anything for someone who has it equipped"],
     on: ["ON", "this disc answers “yes” for the characters chosen here, and the stock answer for everyone else"],
     mixed: ["PARTLY", "some of this rune's sites point at the helper and some are stock — set it, or clear it, to make them agree"],
-    legacy: ["older patch", "an earlier version of this editor forced this rune on for everyone by dropping the call. Clear it to use the per-character form."],
+    legacy: ["older patch", "v1.106.0–v1.113.0 of this editor forced this rune on for everyone by dropping the call. Clear it to use the per-character form."],
     unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
   };
   const PS_WHERE = { field: "asked on the field", battle: "asked in battle", both: "asked on the field and in battle" };
@@ -7636,12 +8042,13 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   }
   let PS_OPEN = 0;                     // which rune's character picker is expanded, if any
   // The badge beside each rune. Same vocabulary the Mounts tab uses, so "confirmed" means the same
-  // thing on both tabs: somebody played it, not that a test passed. "expected" is the tier this
-  // version needs and Mounts already has: the SITE has been watched working, but the mechanism
-  // that now answers it — a retargeted call rather than a word written over the call — has not.
+  // thing on both tabs: somebody played it, not that a test passed. There are deliberately only
+  // two tiers. A middle one was tried and removed: Sunbeam's play report was earned under the
+  // previous patch shape, and reasoning from "the site works" to "therefore this mechanism works"
+  // is exactly the inference a badge should not make on the reader's behalf. The evidence is kept
+  // in the rune's note, where it can be read for what it is.
   const PS_PROOF = {
     confirmed: ["confirmed", "var(--ok)", "watched working in game, through this mechanism"],
-    expected: ["expected", "var(--acc2)", "the site has been watched working, but not through the relocated helper"],
     untested: ["untested", "var(--warn)", "decoded and byte-verified, but not yet watched working in game"],
   };
   function psProofHTML(p) {
@@ -7649,81 +8056,68 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return `<span class="u" style="color:${m[1]}" title="${esc2(p.note || m[2])}">${m[0]}</span>`;
   }
 
-  let rfOpen = false;
-  function rfCard() {
-    const groups = [];
-    for (const e of RUNEFX) if (!groups.includes(e.g)) groups.push(e.g);
-    const rows = groups.map((g) => {
-      const fields = RUNEFX.filter((e) => e.g === g).map((e) => rfField(e, false)).join("");
-      return `<div class="bag-h" style="margin-top:10px">${esc2(g)}</div><div class="grid">${fields}</div>`;
-    }).join("");
-    const unknown = RUNEFX.filter((e) => !rfState(e).known).length;
-    const nSites = RUNEFX.reduce((a, e) => a + e.sites.length, 0);
-    return `<details class="card" id="rfBox"${rfOpen ? " open" : ""}>
-      <summary><b>Rune power</b> <span class="u">what a passive is worth once it does fire ·
-        ${RUNEFX.length} constants across ${new Set(RUNEFX.map((e) => e.id)).size} runes</span></summary>
-      <div class="muted" style="margin:8px 0 10px">The switches above decide <b>whether</b> a passive runs without
-        the rune. These decide <b>how much it is worth</b> — the literal the game multiplies, divides or adds by,
-        right after it has asked whether you have the rune. They work on a stock disc and need no switch: the rune
-        still has to be equipped, exactly as it always did. <b>Sunbeam heals 15 HP a combat turn and 1 HP every
-        0.3 seconds of walking</b>, and both of those numbers are here.</div>
-      <div class="warnbox" style="margin:0 0 10px">Like every other code constant in this editor these are
-        <b>global</b>: raising Killer's percentage raises it for everyone who equips a Killer Rune, enemies
-        included. Each control rewrites only the value inside an instruction the game already runs — the opcode and
-        registers stay as shipped — and ↺ puts the original back byte-for-byte.${unknown
-          ? ` <b>${unknown}</b> control(s) are read-only because this disc's instructions aren't what they patch.` : ""}</div>
-      ${rows}
-      <div class="muted" style="margin:10px 0 0">${nSites} sites, all inside the rune's own
-        <i>if&nbsp;equipped</i> branch, and all registered in the <b>Changes</b> tab under “Rune power”. The runes
-        with no control have no number at their sites — they set a state bit or open a branch, so there is nothing
-        to move.</div>
-      <div class="row" style="margin-top:10px"><button class="chip mini" id="rfReset">Restore all to stock</button></div>
-    </details>`;
-  }
-  // Read the card's REAL open state out of the DOM, synchronously, right before anything
-  // re-renders. `ontoggle` alone is not enough: <details> fires toggle in a queued task, so a
-  // user who opens the card and immediately changes a value can re-render before that event is
-  // delivered — rfOpen is still false and the card they just opened snaps shut under them.
-  // (It also made the e2e racy: it passed for a while, then failed on the same bytes.)
-  const rfSyncOpen = () => { const b = q("#rfBox"); if (b) rfOpen = b.open; };
+  // The old Rune power CARD is gone: every strength control now lives on the rune's own row on
+  // the Runes tab (runePowerHTML), and the Passives tab carries no strength at all — it is the
+  // four party-wide effects' on/off switches and nothing else. rfField/rfState/rfWrite are
+  // unchanged and still shared; only the card that used to group them is retired.
   function wireRf(host) {
-    const box = q("#rfBox", host); if (box) box.ontoggle = () => { rfOpen = box.open; };
     qa(".rf", host).forEach((el) => {
       const e = RUNEFX.find((x) => x.key === el.dataset.k); if (!e || el.disabled) return;
       // The revert tooltip shows the value in the shape it actually has: a decimal for an
       // immediate, the whole word for a shift, the float itself for the walk-heal interval.
-      markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
+      // markField reads isDirty/origW/revertRange, all of which are ELF-block only — an aux
+      // entry gets its dirty mark and revert driven off the overlay's own before-image instead.
+      if (e.aux) {
+        // Same dirty mark and same ↺ as every other control, driven off the overlay's own
+        // before-image. auxRevertAt reverts the span across BOTH streaming copies at once,
+        // which is what keeps the two from drifting apart.
+        const dirty = rfState(e).dirty;
+        el.classList.toggle("dirty", dirty);
+        if (dirty && !el._revBtn) {
+          const btn = document.createElement("button");
+          btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+          const was = RF_KIND[e.kind].get(rfOrig(e, e.sites[0][0]) >>> 0);
+          btn.title = `Restore original (${rfShow(e, was)})`;
+          btn.setAttribute("aria-label", `Restore original value (${rfShow(e, was)})`);
+          btn.onclick = (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            auxRevertAt(AUX_FORTUNE, 4); drawView();
+          };
+          el.insertAdjacentElement("afterend", btn);
+          el._revBtn = btn; btn.classList.add("show");
+        }
+      } else markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
       el.onchange = () => {
-        rfSyncOpen();
         const n = rfWrite(e, rfStored(e, +el.value || 0));
         drawView();
         setStatus(`${runeInfo(e.id).name || hex(e.id, 3)} — ${e.short || e.label}: `
           + `${rfShow(e, rfShown(e, n))} (stock ${rfStockShown(e)}).`, "ok");
       };
     });
-    const rb = q("#rfReset", host);
-    if (rb) rb.onclick = () => {
-      rfSyncOpen();
-      RUNEFX.forEach((e) => rfWrite(e, e.stock));
-      drawView(); setStatus("Rune power restored to stock.", "ok");
-    };
   }
 
+  // NO strength control on this tab. v1.123.0 split the editor by question:
+  //   Passives      — WHETHER a passive fires without the rune, for the four party-wide effects
+  //                   (Champion's and Sunbeam above, Fortune and Prosperity in auxSwCard).
+  //   Character card — the same question per unit, for every rune (charPassivesHTML).
+  //   Runes tab      — HOW MUCH each rune is worth (runePowerHTML, on the rune's own row).
+  // Prosperity's potch multiplier is not a rune strength at all — it is an armour-set bonus, and
+  // it stays on the Sets tab with the rest of that set's numbers.
   function drawPassives(host) {
-    // The Rune power card remembers whether it was open in `rfOpen`, which its `toggle` handler
-    // sets — but `toggle` is dispatched on a later task, so an edit made in the same tick as the
-    // click that opened it would re-render against a stale `false` and collapse the card under
-    // the user's hands. Read the outgoing card's own state instead; it is synchronous and it is
-    // the truth.
-    { const live = q("#rfBox"); if (live) rfOpen = live.open; }
     const q2 = SEARCH;
     const keep = (p) => !q2 || psHaystack(p, runeInfo(p.id)).includes(q2);
-    const rows = PASSIVES.filter(keep);
+    // This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion's and
+    // Sunbeam (the field runes, `where` field/both), plus Fortune's EXP multiplier and
+    // Prosperity's potch multiplier — the two reward multipliers that share one battle-results
+    // function. Per-unit enablement for every rune is on the character's own card; a rune's
+    // strength is on the Runes tab. `where === "battle"` is the line between them.
+    const PS_TAB = (p) => p.where !== "battle";
+    const rows = PASSIVES.filter(PS_TAB).filter(keep);
     const blk = psBlkState();
-    const nOn = PASSIVES.filter((p) => psState(p) === "on").length;
-    const nLegacy = PASSIVES.filter((p) => psState(p) === "legacy").length;
+    const nOn = PASSIVES.filter(PS_TAB).filter((p) => psState(p) === "on").length;
+    const nLegacy = PASSIVES.filter((p) => psState(p) === "legacy").length;   // any rune, incl. battle
     const nUnknown = PASSIVES.filter((p) => psState(p) === "unknown").length;
-    const nSites = PASSIVES.reduce((a, p) => a + p.sites.length, 0);
+    const nSites = PASSIVES.filter(PS_TAB).reduce((a, p) => a + p.sites.length, 0);
     const body = rows.map((p) => {
       const info = runeInfo(p.id), st = psState(p), [pill, why] = PS_STATE_LABEL[st];
       const chosen = psChars(p), open = PS_OPEN === p.id, editable = psEditable(p);
@@ -7750,15 +8144,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <td><span class="u" title="${esc2(why)}">${pill}</span></td>
       </tr>`;
     }).join("");
-    const gap = PS_UNMAPPED.filter((id) => !q2 || (REF.items[id] || "").toLowerCase().includes(q2))
-      .map((id) => `<tr class="muted">
-        <td><b>${esc2(REF.items[id] || hex(id, 3))}</b><div style="font-size:11px">no site found · id ${hex(id, 3)}</div></td>
-        <td>${esc2(runeTblDesc(id) || (REF.runeFood && REF.runeFood[String(id)]) || "—")}</td>
-        <td colspan="3">Nothing to switch, and nothing found to switch it at. Its item id appears nowhere in the game
-          code as an argument, no call to any of the three equipped-rune lookups passes it, and no data table
-          pairs it with another support-rune id — so whatever grants this bonus does not ask the question the
-          other 22 ask.</td>
-      </tr>`).join("");
     const blkLine = blk === "hook"
       ? `The helper is installed at <code>0x${hex(PS_HOOK.off, 6)}</code> (VA <code>0x${hex(PS_HOOK.va, 7)}</code>).
          Clearing every rune removes it and puts the dead routine back byte-for-byte.`
@@ -7767,7 +8152,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         : `<b>This disc's code at <code>0x${hex(PS_HOOK.off, 6)}</code> is neither the dead routine nor this
            editor's helper</b>, so nothing here can be written. Load a disc this editor recognises.`;
     host.innerHTML = `
-      <div class="muted" style="margin:0 0 10px">A support rune does nothing until someone equips it, and then only
+      <div class="muted" style="margin:0 0 10px" data-sum="Pick who gets a support rune's passive for free. The rune itself is untouched, and where the code column and the menu text disagree, the code is what is true of this disc.">A support rune does nothing until someone equips it, and then only
         for them. This tab keeps the “and then only for them” and removes the “until someone equips it”: pick who
         gets a passive for free, and the game answers <b>yes</b> for exactly those characters and its own stock
         answer for everybody else. The rune itself is untouched — still buyable, still equippable, still doing the
@@ -7784,8 +8169,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <th style="width:26%">Who gets it</th><th style="width:80px">State</th></tr></thead>
         <tbody>${body || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody>
       </table></div>
-      <div class="muted" style="margin:8px 0 0">All ${nSites} decoded checks are reachable, and the way they are
-        reached is a <b>retargeted call</b>: the site's <code>jal</code> keeps being a <code>jal</code> and its
+      <div class="muted" style="margin:8px 0 0" data-sum="Every check is reached by a retargeted call into a relocated 288-byte helper plus a per-rune bitmap — which is also what keeps a forced battle passive off enemies.">All ${nSites} decoded checks in the executable are reachable, and
+        the way they are reached is a <b>retargeted call</b>: the site's <code>jal</code> keeps being a <code>jal</code> and its
         branch delay slot is never touched, so only one word per site changes and the instruction order is exactly
         the stock order. The new target is a 288-byte helper relocated over a routine at VA
         <code>0x${hex(PS_HOOK.va, 7)}</code> that nothing in the image references, plus a
@@ -7794,32 +8179,25 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         VA <code>0x${hex(PS_HOOK.recBase, 7)}</code>, which is also what keeps a forced battle passive
         <b>off enemies</b>: an enemy's record is heap-allocated and can never land inside that array. Every write
         shows up per site, and per rune, in the <b>Changes</b> tab under “Passive runes”.</div>
-      <div class="muted" style="margin:6px 0 0">Not offered: <b>Fortune</b>, which has no decoded site at all
-        (below), and the four dogs (Koichi, Connie, Kosanji, Kogoro) — they are list1 records 76–79 but the game
-        keeps their character records in a separate block at VA <code>0x196560C</code>, outside the array this
-        table indexes.</div>
-      <div class="okbox" style="margin:12px 0 10px"><b>One of these has been watched working (2026-09-06):</b>
-        Sunbeam's field walk-heal. Forced to yes, the party healed by walking with nobody carrying the rune —
-        which proves the <i>site</i> and the <i>effect</i>, and with them that answering this one question with a
-        yes is all a passive needs. It was proven with the previous patch shape, where the call was dropped and
-        the answer written into the word it vacated; this version answers the same question a different way, so
-        Sunbeam and Champion's are marked <b>expected</b> rather than confirmed, and everything else is
-        <b>untested</b>. This tab will not upgrade a marker on a passing test — only on a play report.</div>
-      <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Every
+      <div class="muted" style="margin:6px 0 0" data-sum="Not offered here: the four dogs, whose records sit outside the array this table indexes. Fortune is absent for a different reason and gets its own switch below.">Not offered here: the four dogs (Koichi, Connie, Kosanji, Kogoro)
+        — they are list1 records 76–79 but the game keeps their character records in a separate block at VA
+        <code>0x196560C</code>, outside the array this table indexes. <b>Fortune</b> is not in the table either,
+        but it is not missing: its check is not in the executable at all, so it gets its own switch below.</div>
+      <div class="muted" style="margin:12px 0 4px" data-sum="Sunbeam's field walk-heal was watched working, but under the editor's previous patch shape — so every rune here still reads untested."><b>What has been played, and what it proves.</b> On 2026-09-06
+        Sunbeam's field walk-heal was watched working: forced to yes, the party healed by walking with nobody
+        carrying the rune. That was under the editor's <i>previous</i> patch shape, which dropped the call and
+        wrote the answer into the word it vacated. It is real evidence — it proves 0x14A1B4 is the right site and
+        that the code around it accepts a synthesised <code>$v0</code> — but it says nothing about the machinery
+        this version adds: the trampoline itself, its <code>$ra</code>/<code>$v0</code> handling, the bitmap
+        lookup, and whether 0x16BF1E0 is as dead in a running game as it is in the image. So <b>every rune here
+        reads untested</b>, that one included. A marker moves on a play report and never on a passing test.</div>
+      <div class="warnbox" style="margin:12px 0 10px" data-sum="Experimental — every site is byte-checked and revertible, but no passive has been watched running in game through the relocated helper. Keep a backup disc."><b>Experimental — not yet seen working in play.</b> Every
         site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, the helper is
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
         What is untested is the <i>result</i>: no passive has been watched running in game <i>through the
         relocated helper</i>, and the in-battle ones have never been watched at all. Keep a backup disc.</div>
-      ${rfCard()}
-      <details class="card"><summary><b>Fortune, and why it is not here</b>
-        <span class="u">the one support rune with no decoded site</span></summary>
-        <div style="overflow-x:auto"><table class="invtbl">
-          <thead><tr><th style="width:14%">Rune</th><th style="width:20%">What the game says</th>
-            <th>Why there is nothing to switch</th></tr></thead>
-          <tbody>${gap || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody>
-        </table></div>
-      </details>`;
-    wireRf(host);
+      ${auxSwCard()}`;
+    wireAuxSw(host);
     const find = (b) => PASSIVES.find((x) => x.id === +b.dataset.id);
     const after = (p, n) => {
       const nm = runeInfo(p.id).name, chosen = psChars(p);
@@ -7941,7 +8319,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${SKILL_TYPES.map(([t, note]) => `<button class="chip${SKILL_TYPE === t ? " on" : ""} mini"
         data-styp="${t}" title="${esc2(note)}">${t === "Utility" ? "Utility (support)" : t} (${tally(t)})</button>`).join("")}</div>`;
     host.innerHTML = refTabs() + chips +
-      `<div class="muted" style="margin:0 0 10px">Every skill, what each rank of it is actually worth, and who
+      `<div class="muted" style="margin:0 0 10px" data-sum="Every skill and what each rank of it is worth. Guide rows carry the per-character caps; the On this disc line is read live and follows your staged edits.">Every skill, what each rank of it is actually worth, and who
         can get there. Effect numbers and the per-character caps are from the Suikosource skills guide
         (<span class="srctag guide">guide</span>); the <b>On this disc</b> line is read live out of the loaded
         ISO (<span class="srctag disc">disc</span>) and follows your staged edits. <b>Utility</b> are the
@@ -8054,12 +8432,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <td><span class="muted">${c.slots.map((x) => `${esc2(skillName(x.id))} ${rankLabel(x.rk)}`).join(", ")}</span></td></tr>`);
     }
     host.innerHTML = refTabs() +
-      `<div class="warnbox" style="margin:0 0 10px"><b>There is no class byte.</b> A character's class is
+      `<div class="warnbox" style="margin:0 0 10px" data-sum="There is no class byte — a class is derived from a character's top two skills every time it is drawn, so change the skills instead."><b>There is no class byte.</b> A character's class is
         worked out from their own skill list every time the game draws it: the skills they actually have are
         sorted by rank, and the top two are looked up in a 43&times;43 table of class words. So the way to
         change someone's class is to change their <b>skills</b> (Characters tab) — there is no field to set,
         and nothing here is editable.</div>
-      <div class="muted" style="margin:0 0 10px">Read live off <b>this</b> disc: the word pool at
+      <div class="muted" style="margin:0 0 10px" data-sum="Read live off this disc: the class word pool and the 43×43 table, with the derivation copied from the game's own display routine.">Read live off <b>this</b> disc: the word pool at
         <code>0x${hex(CLASS_POOL.off, 6)}</code> and the class table at <code>0x${hex(CLASS_TBL.off, 6)}</code>,
         with the derivation copied from the game's own display routine (VA <code>0x169B5F8</code>). The table's
         column index is the skill id, all 43 of them — Shield Protect gives &ldquo;Shield Knight&rdquo;, Fire
@@ -8136,12 +8514,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const tbl = (head, rows) => `<table class="invtbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
       rows.join("") || `<tr><td colspan="${head.length}" class="muted">no matches</td></tr>`}</tbody></table>`;
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Decoded off this disc. Capability is read from <b>clip
+      `<div class="muted" style="margin:0 0 10px" data-sum="Decoded off this disc. Capability comes from clip containment, and only the battle pair table has been confirmed in an emulator.">Decoded off this disc. Capability is read from <b>clip
         containment</b> — a clip belongs to the record whose payload holds it. Bundling is <b>asset
         residency</b>, not proof a scene mounts anyone. Only the battle pair table has been confirmed in an
         emulator (the three stock pairs plus Hugo+Bright and Chris+Bright); everything else on this page is
         static analysis.</div>
-      <div class="muted" style="margin:0 0 10px">The <b>311 / 321-322 family</b> in the rider table is which
+      <div class="muted" style="margin:0 0 10px" data-sum="The 311 / 321-322 split says which mount system authored a rider's clips. It is structural, not flyer-vs-horse, and it did not stop Chris riding Bright.">The <b>311 / 321-322 family</b> in the rider table is which
         mount system authored that rider's mounted-battle clips: <b>311</b> = the three-pair table (Hugo,
         Futch, Franz, Sharon), <b>321/322</b> = the assigned horse (Chris and the Zexen knights). No model
         carries both. It is a structural split, not flyer-vs-horse — Franz is 311 and Ruby is a horse — and
@@ -8290,7 +8668,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         esc2(fmt(v.se))}</td><td>${v.rooms}</td></tr>`);
 
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Music is <b>not</b> a table in the executable — two
+      `<div class="muted" style="margin:0 0 10px" data-sum="Music is not one table in the executable: two places pick a track — event-script cues and room records — and both are decoded off this disc.">Music is <b>not</b> a table in the executable — two
         places pick a track, and this is both of them, decoded off this disc.
         <b>${idx.script.length.toLocaleString()}</b> script cues (event-script opcode 59/60, an 18-byte
         instruction whose third halfword is the track) and <b>${idx.rooms.length.toLocaleString()}</b> room
@@ -8298,7 +8676,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <code>+0x24</code> — which is why ambience reads 0 indoors and non-zero on field maps.
         <b>${trk.size}</b> distinct track ids in all, and the <b>${(idx.streams || []).length}</b>
         streamed tracks the disc actually carries \u2014 playable below.</div>
-      <div class="muted" style="margin:0 0 10px">The request function is <code>0x17AEA38</code>; kind 1 is
+      <div class="muted" style="margin:0 0 10px" data-sum="How a cue is identified: tag 0x1000 marks BGM, and a raw opcode hit counts only if the words that are zero in every confirmed instruction are zero in it too.">The request function is <code>0x17AEA38</code>; kind 1 is
         BGM because its tag in the table at <code>0x1983020</code> is <code>0x1000</code>, exactly the bit
         masked off before the current-track comparison. A raw scan for the opcode also matches ordinary
         data, so a cue counts only if the operand words that are zero in every disassembler-confirmed
@@ -8827,7 +9205,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     CHG_AUX = { rows: Object.values(byTag), err: "" };
     drawView();
   }
-  const CHG_AUX_LABEL = { potch: "Armor sets (potch overlay)", enemy: "Enemies", room: "Encounter rates (per area)", war: "War units" };
+  const CHG_AUX_LABEL = { potch: "Battle-results overlay (EXP + potch)", enemy: "Enemies", room: "Encounter rates (per area)", war: "War units" };
 
   // ---- export the applied diff ------------------------------------------------
   // Same .s3mod the staged-edit export writes, so a patch lifted off one disc can be
@@ -8858,7 +9236,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const stagedBytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
     const audit = chgCodeAudit(ODV);
 
-    let h = `<div class="muted" style="margin:0 0 10px">Two different questions, kept apart on purpose.
+    let h = `<div class="muted" style="margin:0 0 10px" data-sum="Already on this disc compares your image against a pristine base disc you point at; Staged is what you have changed since opening it and not yet saved.">Two different questions, kept apart on purpose.
       <b>Already on this disc</b> compares the image you have open against a pristine base disc you
       point at — that is the list of everything ever written to it, by this editor or any other, and it
       is the only way to see a change that was applied in an earlier session. <b>Staged</b> is what you
@@ -8967,7 +9345,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     // ---- code audit ----
     h += `<div class="card"><div class="bag-h">Code patches, checked against their stock values
       <span class="u">no base disc needed</span></div>
-      <div class="muted" style="margin:0 0 8px">Every patch this editor makes to the game's CODE replaces
+      <div class="muted" style="margin:0 0 8px" data-sum="Every code patch replaces a word this repo has decoded, so those need no second file. It says nothing about the data tables.">Every patch this editor makes to the game's CODE replaces
       a word this repo has decoded and documented, so those can be checked without a second file. This
       says nothing about the data tables — items, stats, shops, text — which is what the base disc above
       is for.</div>`;

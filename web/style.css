@@ -477,6 +477,12 @@ details.fold > summary { list-style:none; cursor:pointer; user-select:none; marg
 details.fold > summary::-webkit-details-marker { display:none; }
 details.fold > summary:hover .chev { color:var(--acc2); }
 details.fold[open] > summary { margin:0 0 10px; }
+/* A closed fold can hide staged edits, so its header says how many are in there — in the
+   same warn colour every other dirty control uses. */
+.fold-edited { color:var(--warn); }
+/* "click to expand" is advice for a CLOSED fold only — leaving it under an open one reads
+   like a broken instruction. */
+details.fold[open] .foldhint { display:none; }
 
 /* Labelled section divider. The Spells tab stacks two collapsed tool cards and then the
    spell table; without a captioned rule between them the three read as one list of bars. */
@@ -515,3 +521,30 @@ details.fold[open] > summary { margin:0 0 10px; }
 .mcfrow { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
 .mcfrow > .mcf { flex:0 0 auto; }
 .mcfrow > .muted { flex:1 1 200px; min-width:0; }
+/* Rune type + element family sit under the four slots: same record, but they change what the
+   game DOES with those slots rather than what is in them, so they are separated rather than
+   mixed into the numbered list. */
+.runemeta { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.runemeta .field { flex:1 1 130px; }
+
+/* ===== Collapsed long descriptions ("Show more") — see blurb-core.js =====
+   Every tab in here explains itself at length, and the longest of those blocks is 2,900
+   characters sitting on top of the table it describes. The prose is kept; what changes is
+   that a block opens as its one-line summary with the rest a click away.
+
+   The container keeps whatever class it already had (.muted, .warnbox, a bare <div>), so a
+   collapsed warning is still warn-coloured and a collapsed caption still reads as muted —
+   only the flow changes. The summary is inline so the button follows it on the same line
+   like a "…more"; the expanded body is a block (some of these hold <p> and <ul> children),
+   so there the button drops beneath it. */
+.blurb-sum { display:inline; }
+.blurb-full { display:block; }
+/* The `hidden` attribute has to beat the two rules above — a UA `[hidden]` rule does not,
+   since a class selector outranks it. Both halves stay in the DOM either way: textContent
+   and the browser's own find-in-page still reach the full text. */
+.blurb-sum[hidden], .blurb-full[hidden] { display:none; }
+.blurb-tog { background:none; border:0; padding:0; margin:0 0 0 6px; font:inherit; font-size:12px;
+  color:var(--acc2); cursor:pointer; white-space:nowrap; }
+.blurb-tog:hover { text-decoration:underline; }
+.blurb-tog:focus-visible { outline:2px solid var(--focusring); outline-offset:2px; border-radius:3px; }
+.blurb.open > .blurb-tog { display:inline-block; margin:4px 0 0; }

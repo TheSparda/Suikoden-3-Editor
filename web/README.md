@@ -46,6 +46,7 @@ to downloads through the service worker (a ~4 GB image can't be held in memory),
 | `guide-core.js` | Joins Suikosource guide data onto characters by name (overlay notes) |
 | `health-core.js` | Save-rule constants (item stackability, field caps, slot categories) + the health audit |
 | `text-core.js` | In-ELF string scanner + prose filter for the Text tab |
+| `blurb-core.js` | Collapses the long tab descriptions to a summary + **Show more** button |
 | `vcdiff.js` | `.xdelta` (RFC 3284 VCDIFF) encoder **and** decoder |
 | `sw.js` | Service worker: offline cache, share target, streaming ISO download |
 | `manifest.webmanifest`, `icons/` | PWA install metadata and home-screen icons |

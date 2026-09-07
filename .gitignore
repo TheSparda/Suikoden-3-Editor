@@ -45,3 +45,4 @@ Guides/
 
 # web test deps
 web/tests/node_modules
+web/tests/package-lock.json
