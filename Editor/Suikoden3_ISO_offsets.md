@@ -276,7 +276,7 @@ Kite  = item 365, record file 0x3EDD18, slots at 0x3EDD30
         07 00 00 00 | 00 00 02 00 | 4E 00 | 00 00 | 00 00 | 00 00
                                      ^Kite   ^^^^^^ three free slots
 ```
-Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0). The
+Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0), and the rune's element family and category alongside them (v1.125.0). The
 old `RUNE_SPELLS` hardcoded name map is **deleted** — the binding is read off the disc,
 so there is no second copy to drift.
 
@@ -285,16 +285,52 @@ Spell rows **80..93** (14 of the 94) are fully formed records — cast 50, targe
 single foe, power 100 — with **null name and description pointers**. They are spare
 slots. A genuinely new spell needs strings pointed at them; the record itself is ready.
 
+### PLAYED 2026-09-06: slots alone are NOT enough on a special-attack rune
+Kite (category `2`) was given four spells and played. Result: **choosing Kite fires slot 1
+immediately, with no list to pick from** — slots 2-4 are written correctly and simply never
+offered. So the binding above is right, and "fill a free slot" is *not* by itself the recipe
+for a multi-spell attack rune.
+
+What this does and does not settle:
+- It is **not** a count problem. Category-0 runes ship with 1, 2, 3 and 4 spells and all of
+  them list (Sword of Rage offers both *Sword of Rage* and *Fire Amulet*).
+- The only field separating the 27 that behave this way from the 45 that do not is
+  **category (+0x16)**: every special-attack rune is `2`, everything else is `0`.
+- **Setting +0x16 to 0 is the untested experiment.** Exposed as *Rune type* on the Runes tab
+  (v1.125.0) rather than left as a hex-only byte. It may well change other behaviour —
+  a category-2 rune is a free action, not a chant — so treat it as an experiment.
+- The cheap discriminator, if anyone doubts the mechanism works at all: **Blinking (id 335)
+  and Shield (id 336) are category 0 and each ship with slot 4 free.** Fill one. If a 4th
+  spell appears there, the slots are live and the problem is category-specific.
+
+### The consumer is NOT in the boot ELF
+Worth recording, because it is why three sessions of ELF hunting found nothing. The rune
+table is referenced from exactly **one** site in PT_LOAD — `0x16DBD44`, inside `itemRecord`
+(`0x16DBCD8`), which is a pure address calculator: five id bands, `jr $ra` in each.
+
+| id band | stride | base vaddr |
+|---|---|---|
+| 0x001-0x0A0 | 0x24 | 0x19A14BC (weapons) |
+| 0x0A1-0x13C | 0x44 | 0x1990E84 (gear) |
+| **0x13D-0x1CE** | **0x20** | **0x19A3778 (runes)** |
+| 0x1CF-0x202 | 0x14 | 0x19A734C |
+| 0x203+ | 0x10 | 0x199EE80 |
+
+Every field accessor around it (`0x16DC160`, `0x16DC1C0`, `0x16DC210`, `0x16DC300` …) gates
+on `id-1 < 0xA0` or a similar small range — i.e. they read the **weapon** band, not the rune
+band. Nothing in PT_LOAD reads a rune record's +0x14/+0x16/+0x18. The battle menu that
+consumes them lives in a **battle overlay**, the same class of code that hid the Fortune rune
+and the potch-per-wearer pair (see "battle overlay inside ETC.BIN", K = 0x4103A640). Anyone
+picking this up should start there, not in the ELF.
+
 ### What is still NOT known
 - **Unlock levels.** Which character level gates a rune's 2nd/3rd/4th spell is not in
   this record and has not been located. `0x42EE90` was tentatively called an unlock-level
   table on 2026-08-09; re-reading it, rows 1-3 and 17-21 are `(1, 20, 60, 99)` but rows
   4-16 and 22-37 are rising curves up to 950, and its keying is unconfirmed. Treat it as
-  unidentified.
-- **Whether an attack rune surfaces more than one spell.** Kite is category `2` (+0x16);
-  every magic rune is `0`. The menu code may read slot 1 only for category-2 runes. If a
-  reassigned Kite shows one spell in game, try setting +0x16 to 0 and +0x14 to an element
-  family so it is treated as a magic rune. **Untested — verify on the play disc.**
+  unidentified. It is a live alternative explanation for the Kite result above: if slots 2-4
+  are level-gated and the gate row for an attack rune is unreachable, the symptom is identical.
+- **Whether flipping category actually opens the menu.** Untested.
 
 Confirmed NOT possible from the spell table: visual/animation reskin (link fields
 correlate with behavior/kind, not graphics assets; visuals live in separate asset files).
@@ -1253,13 +1289,18 @@ everyone not wearing one.
   reverts it when the owner moves back (round-trip leaves zero bytes changed).
 
 **Web editor note — AUX WINDOWS.** The web ISO editor only holds the ~3.75 MB ELF
-block, but the two potch instruction pairs live ~1 GB into the disc. iso.js now
-also reads two 16-byte "aux windows" (0x3F3E6994, 0x3F3EF194 — each covering the
-set-ownership `andi` mask at +0 and the multiplier sll/addu pair at +8) on load and threads
+block, but the two potch instruction pairs live ~1 GB into the disc. iso.js
+also reads two "aux windows" on load and threads
 them through every write path: in-place save, streaming save, .s3mod export AND
 import, .xdelta export AND import, Revert all, and the save review (which decodes
 them into a "Potch multiplier ×3 → ×5" row). If a disc can't serve those ranges the
-control degrades to "unavailable" rather than silently doing nothing.
+control degrades to "unavailable" rather than silently doing nothing. Those windows have since
+grown twice, to reach Fortune's EXP multiplier and then both overlay equipped checks; the
+current base and offsets are under "The two overlay switches" below. The set-ownership `andi`
+mask is now `AUX_MASK` and the multiplier pair `AUX_MULT`, at `0x5C` and `0x64` inside a
+`0x70`-byte window based at `0x3F3E6938` / `0x3F3EF138`. The **Prosperity switch** on the Sets
+tab writes the `which_set` call in the same window: force it on and every party member counts
+as a wearer, which compounds — see that section for the ×729.
 
 ---
 
@@ -3206,6 +3247,8 @@ answer the following test accepts.
 guess — but nobody has walked past a weak encounter with it on yet. The tab marks the two
 differently for that reason, in the same confirmed / untested vocabulary the Mounts and Movement
 tabs use, and a marker is only ever moved by a play report, never by a passing test.
+**Fortune `0x1B8` — SUPERSEDED 2026-09-06, it was found. See "Fortune, found in the overlay" below.** The three searches recorded here were all correct and all searched the wrong file; kept because knowing *where it is not* is still what made the answer findable.
+
 **Fortune `0x1B8` is not here at all — WHERE IT IS NOT.** "Doubles experience value gained" is the
 one support rune with no decoded site, and three exhaustive searches came up empty, so
 nobody should repeat them: (a) its id 440 appears as an instruction immediate exactly eight
@@ -3216,8 +3259,9 @@ any of the three helpers passes it, with `$a1` immediate or otherwise (the full 
 support-rune id, so there is no "special runes" table it could be read from. Whatever grants the
 EXP bonus does not ask the question the other 22 ask.
 
-Shipped as the ISO editor's **Passives** tab (`web/iso.js:drawPassives`): two checkboxes above,
-the 49 held-back sites listed below them with what each does and why it has no switch. Both
+Shipped as the ISO editor's **Passives** tab (`web/iso.js:drawPassives`) — as first written,
+two checkboxes above and the 49 held-back sites listed below them. It has since become a
+per-character picker over all 51 sites, and Fortune has its own overlay switch beside it. Both
 words of a written site are registered in the Changes tab under "Passive runes", and all 51 —
 written or not — are audited against their stock values by `chgCodeAudit`.
 
@@ -3316,7 +3360,7 @@ nothing the interval does not already give and it throws away a computed value f
 
 Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness and Fury set a state bit or
 gate a branch — there is no literal at their sites to move. Fire Sealing's fourth site
-(`0x1115C4`) is rune-slot bookkeeping, not damage. Fortune has no site at all (see above).
+(`0x1115C4`) is rune-slot bookkeeping, not damage. Fortune's number is its EXP multiplier, in the overlay (see above).
 
 Two clamps sit *outside* the rune's branch and are therefore not rune power, but they bound it:
 Counter's first site runs into `slti $v1,$s1,0x60` / `addiu $v0,$zero,0x5F` / `movn` at
@@ -3371,10 +3415,23 @@ Two kinds of space were surveyed.
 | `.lit4` gap to `.sdata` | `0x42DC84` | `0x19E6484` | 124 | all zero |
 
 410 bytes in total, but scattered — the largest single run is 124 bytes, which is not enough for
-a helper plus its table. Recorded here so the next person does not re-derive it. (`.bss` is
-`0x2EE64` bytes of memsz with no file backing, so it is not usable for static data: the CRT
-zeroes it.) Zero-word runs *inside* `.text` are not free space — 24,449 of them exist and all but
-one are delay-slot `nop`s; the longest is 44 bytes at VA `0x1917394`.
+a helper plus its table. Recorded here so the next person does not re-derive it. Zero-word runs
+*inside* `.text` are not free space either: 24,449 of them exist, all but one are delay-slot
+`nop`s, and the longest is 44 bytes at VA `0x1917394`.
+
+**Two tails past the loaded image, and only one of them is memory — WHERE IT IS NOT.** These get
+conflated, and the conflation points at 210 KB of nothing:
+
+| | | |
+|---|---|---|
+| `p_filesz` = `0x38D430` | loaded image ends **ISO `0x431C30`** | everything the loader copies |
+| `p_memsz` − `p_filesz` = **`0x2F0B4`** | VA `0x19EA430`..`0x1A194E4` | mapped, **no file backing** — `.sbss` (`0x1AC`) + `.bss` (`0x2EE64`) + alignment. Not usable for static data: the CRT zeroes it, so anything written into the image there is gone before `main`. |
+| ISO `0x431C30`..`0x465DF0` | section headers + symtab | **never copied into RAM.** Code written here would not execute. |
+
+The second tail is memory without a file; the third is a file without memory. The reason
+`ELF_END` is `0x465DF0` at all is arithmetic on the *third* one — `e_shoff` `0x3C1678` + 99 × 40,
+from the ELF base at ISO `0xA3800` — and it is not a hint that anything past `0x431C30` is
+usable. The whole inventory is the dead routine and the five padding gaps above; nothing else.
 
 **The dead routine at VA `0x16BF1E0`**, named in the status-effect section above as the one
 routine that reads per-status levels off a record, is 656 bytes (`0x16BF1E0..0x16BF470`, ending
@@ -3498,13 +3555,196 @@ the whole tab read-only, the same rule the site-level checks follow. v1.106.0's 
 is still *recognised* — a disc patched by it is named as such and offered a one-click return to
 stock — but nothing writes it any more.
 
-**What is proven and what is not.** Sunbeam's field walk-heal *site* is confirmed in play
-(2026-09-06, recorded in the section above): forced to yes, the party healed by walking with
-nobody carrying the rune. That proves the site, the effect, and that answering this one question
-with a yes is all a passive needs — which is the load-bearing assumption for all 51. What it does
-**not** prove is this delivery of the yes: the play report was taken with the previous patch
-shape, where the call was dropped and the answer written into the word it vacated, and this
-version returns the answer from a relocated helper instead. So Sunbeam and Champion's are marked
-*expected* in the tab and everything else *untested*, in the same confirmed / expected / untested
-vocabulary the Mounts tab uses, and a marker is only ever moved by a play report — never by a
-passing test.
+**What is proven and what is not.** Sunbeam's field walk-heal *site* was played on 2026-09-06
+(recorded in the section above): forced to yes, the party healed by walking with nobody carrying
+the rune. That proves the site, the effect, and that answering this one question with a yes is
+all a passive needs — the load-bearing assumption for all 51. It does **not** prove this delivery
+of the yes. The report was taken under the previous patch shape, where the call was dropped and
+the answer written into the word it vacated; this version keeps the call and retargets it, so the
+trampoline's own correctness, its `$ra`/`$v0` handling, the bitmap lookup and whether `0x16BF1E0`
+is as dead in a running game as it is in the image are all untested.
+
+A middle marker tier was tried for exactly this case and **removed**. Reasoning from "the site
+works" to "therefore this mechanism works" is the inference a badge should not make on the
+reader's behalf, and a green-ish badge on an unplayed mechanism is worse than no badge. The tab
+renders **confirmed / untested** and nothing else; all 22 runes read *untested*, Sunbeam
+included, and the play report lives in that rune's note where it can be read for what it is.
+`web/tests/validate.mjs` asserts that nothing claims *confirmed* and that the report text
+survives. A marker moves on a play report and never on a passing test.
+
+---
+
+## Fortune, found in the overlay (2026-09-06)
+
+The section above says Fortune has no decoded site and records three exhaustive searches that
+came up empty. **All three were correct, and all three searched the wrong file.** Fortune asks
+exactly the same question the other 22 support runes ask — it asks it in a **streaming battle
+overlay**, not in the boot ELF, so no scan of `PT_LOAD` could ever have found it.
+
+The way in was to stop looking for the rune and look for the *effect*. The editor already
+patches the **potch** award (`AUX_WINDOWS`, the Prosperity multiplier) at ISO `0x3F3E6994` — a
+reward, in overlay code. EXP is awarded by the same routine, so that is where Fortune had to be.
+
+**The check**, at ISO `0x3F3E6938` (streaming twin at `0x3F3EF138`, +0x8800):
+
+```
+3F3E6928  jal   0x017DC9F0          ; party unit #$s4
+3F3E6938  jal   0x0181B3B0          ; UnitHasItem(unit, itemId) — the same battle-side helper
+3F3E693C  addiu $a1,$zero,0x1b8     ; 0x1B8 = Fortune
+3F3E6940  addu  $s0,$s0,$v0         ; count holders across the party
+3F3E6954  addiu $a0,$zero,1         ; default multiplier
+3F3E6958  slti  $v1,$s0,1           ; count < 1 ?
+3F3E6960  addiu $v0,$zero,2         ; THE DOUBLING
+3F3E6964  movz  $a0,$v0,$v1         ; count nonzero -> multiplier = 2
+3F3E6970  sw    $a0,100($sp)
+```
+
+**The application**, 1064 bytes later in the same function, once per character:
+
+```
+3F3E6D88  lw    $v0,0($s0)          ; this character's EXP award
+3F3E6D94  lw    $a0,100($sp)        ; the multiplier
+3F3E6D98  mult  $v0,$v0,$a0         ; EXP *= multiplier
+3F3E6D9C  sw    $v0,0($s0)
+3F3E6DA0  addiu $s0,$s0,4           ; next character
+```
+
+**`0x00441018` is the R5900 THREE-operand `mult` (`rd=$v0`), not MIPS I's two-operand form.**
+Decoded as two-operand it writes only HI/LO, the `sw $v0` looks like a no-op, and the whole
+trail reads as a dead end — which is exactly how a disassembler that hardcodes `rd=$zero` for
+`mult` will show it. Worth fixing in any tooling used here.
+
+Two gameplay facts that fall out of the code and are not in the rune's text:
+- **One Fortune is as good as six.** The loop counts holders and then tests `count < 1`, so any
+  nonzero count gives the same ×2. A second copy adds nothing.
+- It multiplies the **per-character EXP award** after it is computed, so it stacks
+  multiplicatively with anything that scaled the award earlier.
+
+**Exactly two copies exist on the disc.** A full 4.3 GB scan for the 8-byte check pattern
+(`0C606CEC 240501B8`) returns `0x3F3E6938` and `0x3F3EF138` and nothing else.
+
+### Shipped
+
+`RUNEFX`'s one `aux: true` entry — the multiplier at `0x3F3E6960` / `0x3F3EF160`, stock word
+`24020002`. Because it is overlay code the window pair had to move; it has now moved twice, and
+the current geometry is in the next section. Reads/writes route through `auxR32`/`auxW32`
+instead of the ELF block, and a disc whose overlay windows were never read shows the control as
+**unavailable** rather than writing into nothing — the same degradation the potch multiplier
+already has.
+
+**Untested in play.** Both copies are byte-verified against a pristine SLUS-20387 and the write
+round-trips byte-identically, but no altered multiplier has been watched taking effect in game.
+
+---
+
+## The two overlay switches — Fortune's EXP, Prosperity's potch (2026-09-06)
+
+The section above left the on/off switch undone, and this is it — for Fortune and, on the same
+argument, for the potch bonus in the same function. **Both are now wired.**
+
+**The second check**, `which_set`, 0x54 bytes after Fortune's, in the second of the function's
+two party loops. This is the one the Sets tab's potch controls already sit on top of:
+
+```
+3F3E6978  jal   0x017DC9F0          ; party unit #$s4
+3F3E6980  daddu $s1,$v0,$zero
+3F3E698C  jal   0x0181B370          ; which_set(unit) -> 1..5 | 0   <- the check
+3F3E6990  daddu $a0,$s1,$zero       ; (delay) the argument
+3F3E6994  andi  $v0,$v0,2           ; Prosperity(2) or Destiny(3)?  (the ownership mask)
+3F3E6998  beq   $v0,$zero,0x3F3E69A4
+3F3E699C  sll   $v0,$s6,1           ; (delay) potch x2
+3F3E69A0  addu  $s6,$v0,$s6         ;         ...+ itself = x3, PER WEARER
+```
+
+**Why these two are safe to force and the 49 in-battle checks are not.** Both loops run after
+the fight is over and walk your own party and nobody else; no enemy is ever asked, and nothing
+downstream re-reads *who* said yes — Fortune's answer is counted and then tested for nonzero,
+Prosperity's is consumed inside the same iteration. There is no per-unit resolution to leak,
+which is exactly the property that made the two field party loops switchable.
+
+**The patch is the older two-word shape**, not the relocated helper: the delay-slot instruction
+moves up into the `jal`'s word and the answer goes into the word it vacated. One call disappears
+and nothing else moves — no insertion, no relocation, and the instruction order is stock.
+
+| switch | window-relative | stock `jal` | stock delay slot | forced answer |
+|---|---|---|---|---|
+| Fortune | `+0x00` (`0x3F3E6938`, `0x3F3EF138`) | `0C606CEC` | `240501B8` | `24020001` `addiu $v0,$zero,1` |
+| Prosperity | `+0x54` (`0x3F3E698C`, `0x3F3EF18C`) | `0C606CDC` | `0220202D` | `2402FFFF` `addiu $v0,$zero,-1` |
+
+**Why the two answers differ.** Fortune's is counted (`addu $s0,$s0,$v0`) and then tested with
+`slti $v1,$s0,1`, so a plain 1 per member is both sufficient and correct — any nonzero count
+gives the same ×2. Prosperity's is masked (`andi $v0,$v0,mask`) against the ownership mask the
+Sets tab edits, so the answer has to survive *whatever mask is written*; `-1` does, for every
+mask except `0` ("no set"), which turns the bonus off for everyone anyway. Note this is not the
+shape the two ELF field sites use (`sltu $v0,$zero,$a0`) — their `$a0` is a party-slot handle
+that is 0 for an empty slot, and neither caller here has one.
+
+**Prosperity COMPOUNDS and Fortune does not.** Fortune's loop counts then tests nonzero, so one
+holder is as good as six. Prosperity's multiply happens *inside* the loop body, once per
+qualifying member — so forcing it on multiplies the award by the potch multiplier raised to the
+party size: a full party of six at the stock ×3 pays **3⁶ = ×729**. The editor says so on the
+control rather than leaving it to be discovered.
+
+**Window geometry.** `AUX_WINDOWS` now starts at `0x3F3E6938` / `0x3F3EF138` with
+`AUX_LEN = 0x70`, which is the smallest span covering everything the editor patches in this
+function. Offsets inside it: `AUX_FORT_CHK = 0x00`, `AUX_FORTUNE = 0x28`,
+`AUX_PROSP_CHK = 0x54`, `AUX_MASK = 0x5C`, `AUX_MULT = 0x64`. `web/tests/validate.mjs` pins all
+of them and fails if any drifts.
+
+**Shipped** as `AUXSW` in `web/iso.js`: one renderer (`auxSwField`) feeding two tabs — both
+switches on **Passives**, and Prosperity again on **Sets** beside the potch numbers it
+multiplies. Both streaming copies are written together, unticking restores the stock words
+byte-for-byte, and a disc where the two copies disagree reads as `mixed` and goes read-only so
+it can never be *left* half-patched.
+
+**How the copy count was established.** The 8-byte pattern `0C606CEC 240501B8` occurs exactly
+twice in the whole 4.3 GB image — the two overlay copies. `0C606CDC 0220202D` occurs **four**
+times: those two, plus `0x244F6C` and `0x2452D8` inside the ELF block, which are the
+bonus-counter routine asking the same helper the same way and are not copies of this function.
+
+**Verification.** `web/tests/overlay-switches-real-iso.mjs` runs the *shipped* switch code —
+sliced out of `web/iso.js`, not retyped — against `ISO/Suikoden III (USA).iso`: stock words,
+on/off/mixed/other state handling, both-copies-together writes, byte-exact revert, and the
+whole-image copy scan above. It self-skips when no disc is present. The e2e cannot reach any of
+this: its synthetic fixture is 4.6 MB and these windows are ~1 GB in, so there it can only
+assert that both switches degrade to **unavailable**, which it does.
+
+**Untested in play.** Nobody has watched a forced EXP or potch bonus land in a running game.
+
+---
+
+## Where the passive controls live (2026-09-06, v1.126.0)
+
+Three different questions had grown up on one tab. They are now split by question, because that
+is how someone looks for them:
+
+| Question | Where | Renderer |
+|---|---|---|
+| Does this fire party-wide, without the rune? | **Passives** tab — the four party-wide effects only | `drawPassives` (filtered `where !== "battle"`) + `auxSwCard` |
+| Does this fire for **this unit**? | the character's own card, **Characters** tab | `charPassivesHTML` / `wireCharPassives` |
+| **How much** is it worth? | the rune's own row, **Runes** tab | `runePowerHTML` |
+
+The Passives tab keeps Champion's (`0x1B9`) and Sunbeam (`0x1BD`) as rune rows — their field
+loops walk party slots, so choosing who carries them is a party-level decision — plus Fortune
+(`0x1B8`) and Prosperity (armour set 2) through `auxSwCard`, the two overlay checks. It carries
+**no strength control at all**; `validate.mjs` asserts `wireRf` is called from exactly one place,
+so a strength control cannot quietly regain a second home.
+
+**The transposition is free.** A character card's record index IS the index the bitmaps use:
+`PS_HOOK.pickMin..pickMax` are list1 indices, which is what `psNameOf` already reads. So
+`charPassivesHTML` derives it as `(recBase - TABLES.list1[0]) / TABLES.list1[1]` and reads and
+writes the same bitmaps through the same `psSetChars` — one write path, not a parallel one.
+`validate.mjs` pins that derivation, because if list1's base or stride ever moved relative to the
+pick range the UI would silently tick the wrong character.
+
+**Prosperity's potch multiplier stays on the Sets tab.** It is an armour-set bonus, not a rune
+strength, so it has no Runes-tab row to move to — and it is the one entry here that is not a rune
+at all (set 2: Prosperity Hat, Prosperity Ring, …).
+
+**A note on relocating tests.** Wall's ten-site coverage moved with its control rather than being
+rewritten — the same assertions, driven from Hugo's card. Two other checks had to be *repaired*
+rather than repointed, and both had gone quietly vacuous: one drifted a Wall site and asserted
+Wall was absent from a tab that no longer lists it (true whether the guard worked or not), the
+other asserted 21 runes offered where 2 now are. When a control moves, re-read every assertion
+that mentions it: a check that still passes is not the same as a check that still checks.
+
