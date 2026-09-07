@@ -224,9 +224,11 @@ function charList(curId) {
 // it is a documented limitation rather than a bug with a fix pending.
 const AVATAR_NOTES = {
   54: { ok: false, short: "field pickups freeze",
-        long: "No humanoid animation cycle — he's animal-rigged, and his model has none of the "
-            + "examine/pick-up clips. Picking up a herb or looting a skeleton freezes the game. "
-            + "Walking, running, battles, conversation and cutscenes are all fine." },
+        long: "Picking up a herb or looting a skeleton freezes the game. He's animal-rigged with "
+            + "no humanoid animation cycle, and his model carries none of the examine/pick-up "
+            + "clips that Luc's has — but that link is unproven: the herb routine's only "
+            + "blocking instruction makes no animation calls at all. Walking, running, battles, "
+            + "conversation and cutscenes are all fine." },
   63: { ok: true, short: "confirmed working",
         long: "Played through with no problems, including picking up the same objects Koroku "
             + "freezes on." },
@@ -1532,12 +1534,23 @@ function drawField() {
           <b>${n.ok ? "✓" : "✕"} ${esc(n.short)}</b></span></div>
         <div class="muted" style="font-size:12px;margin:4px 0 0">${esc(n.long)}</div></div>`;
     }).join("")}
-    <div class="muted" style="font-size:12px;margin:8px 0 0" data-sum="Koroku is the one real casualty and it is not fixable from here — his model carries none of the fourteen examine / pick-up clips.">
-      <b>Koroku is the one real casualty, and it isn't fixable from here.</b> The disc's motion
-      table names a clip per animation slot, and his model carries <b>none of the fourteen
-      examine / pick-up clips</b> — Luc's carries them, which is exactly why Luc is fine.
-      Three patches were built and played against it and none worked, so it's recorded as a
-      limitation rather than a fix pending. Play as him and walk past the herbs; switch to a
+    <div style="margin:0 0 8px;padding:8px 10px;border:1px solid var(--line);
+                border-left:3px solid var(--warn);border-radius:8px">
+      <div><b>Every pick except Hugo</b> — <span style="color:var(--warn)"><b>⚠ can't climb ladders</b></span></div>
+      <div class="muted" style="font-size:12px;margin:4px 0 0">Ladder animations
+        (<code>hasi_*</code>) ship with <b>three models on the whole disc</b>: Hugo's two and the
+        Suikoden II hero's. Chris, Geddoe, Thomas, Luc and Koroku all lack them, so this is a
+        limit of the feature rather than of any one character. Measured from the disc, not
+        played — what a ladder does with no clip is untested.</div>
+    </div>
+    <div class="muted" style="font-size:12px;margin:8px 0 0" data-sum="Koroku is the only character-specific casualty; the missing examine / pick-up clips are correlated with it, not proven to cause it.">
+      <b>Koroku is the only character-specific casualty, and it isn't fixable from here.</b> The
+      disc's motion table names a clip per animation slot, and his model carries <b>none of the
+      fourteen examine / pick-up clips</b> while Luc's carries them — which lines up exactly with
+      who works. But it is <b>correlation, not a proven cause</b>: the herb pick-up routine has
+      since been decoded, and its only blocking instruction makes no animation calls whatsoever.
+      Three patches built on the animation theory were played and none worked, so it's recorded
+      as a limitation rather than a fix pending. Play as him and walk past the herbs; switch to a
       protagonist to collect. The write-up is in
       <code>docs/FIELD_CHARACTER_RESEARCH.md</code>.
     </div>`;
