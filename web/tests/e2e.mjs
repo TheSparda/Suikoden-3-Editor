@@ -2747,6 +2747,15 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.waitForTimeout(60);
   check("moving one cast reorders both rows",
     /89 cast sooner, 4 later/.test(await hint(0, "cast")) && /90 cast sooner, 0 later/.test(await hint(1, "cast")));
+  // Power reads like Cast — a place in the order — with a branch of its own for 0. The fixture's
+  // four named spells carry 100 against 89 empty records at 0.
+  check("Power reads as a place in the order and names its equals",
+    /89 lower, 0 higher/.test(await hint(0, "power")) && /the same Power as Dancing Flames/.test(await hint(0, "power")));
+  // 0 power AND no status is the combination a stock disc never has: a record that does nothing.
+  // The empty rows past the fixture's four spells are exactly that, so the line says so.
+  await openRec(page, 'details.char[data-i="6"]');
+  check("no power and no status says the record does nothing",
+    /0 and no status either/.test(await hint(6, "power")));
   // The folds are re-rendered by every edit, so an opened one has to come back open — a fold
   // that shut itself the moment you typed would be worse than no fold at all. The click below is
   // also the case that used to be EATEN: it lands right after the cast edit above, so the blur

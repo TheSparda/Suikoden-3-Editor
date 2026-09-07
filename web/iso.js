@@ -3423,10 +3423,10 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on. A value on its own says nothing, so Cast, Element, Target, Radius and Status chance each carry a line naming the other records that share it (click it for the names \u2014 Cast, which is spread over 41 values, gives its place in the order instead), and each table opens with a legend of the values in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit. Status chance has a coupling of its own worth knowing: on a stock disc every record carrying a chance also inflicts a status and none carries one without, so a chance on a spell that inflicts nothing has nothing to roll for.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on. A value on its own says nothing, so every field on a record carries a line saying what it means beside the rest of the table (click it for the names \u2014 Power and Cast, which are spreads rather than sets, give their place in the order instead), and each table opens with a legend of the values in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit. Status chance has a coupling of its own worth knowing: on a stock disc every record carrying a chance also inflicts a status and none carries one without, so a chance on a spell that inflicts nothing has nothing to roll for.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. Every site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, and clearing a rune puts the stock instruction back exactly, so anything set here comes straight back off.",
-      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on. A value on its own says nothing, so Cast, Element, Target, Radius and Status chance each carry a line naming the other records that share it (click it for the names \u2014 Cast, which is spread over 41 values, gives its place in the order instead), and each table opens with a legend of the values in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit. Status chance has a coupling of its own worth knowing: on a stock disc every record carrying a chance also inflicts a status and none carries one without, so a chance on a spell that inflicts nothing has nothing to roll for.",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on. A value on its own says nothing, so every field on a record carries a line saying what it means beside the rest of the table (click it for the names \u2014 Power and Cast, which are spreads rather than sets, give their place in the order instead), and each table opens with a legend of the values in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit. Status chance has a coupling of its own worth knowing: on a stock disc every record carrying a chance also inflicts a status and none carries one without, so a chance on a spell that inflicts nothing has nothing to roll for.",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
@@ -4610,7 +4610,7 @@
     const add = (kind, T, i, tail) => {
       const off = T.off + i * T.stride, f14 = r32(off + 0x14);
       out.push({ kind, i, off, tail, f14, tb: (f14 >> 8) & 0x7F, sh: radShape(f14), f18: r32(off + 0x18),
-        cast: r32(off + 0x10), el: kind === "spell" && tail ? (r16(off + SPELL.elem) & 0xFF) : null,
+        cast: r32(off + 0x10), pw: r32(off + 0x1C), el: kind === "spell" && tail ? (r16(off + SPELL.elem) & 0xFF) : null,
         rad: tail ? r8(off + T.radius) : 0, ch: tail ? r16(off + T.chance) : 0 });
     };
     // A spell's tail is stored one record ahead, so the last spell has a target but no readable
@@ -4724,8 +4724,42 @@
     return { sum: `<b>${sooner}</b> ${plural(sooner, "casts", "cast")} sooner, <b>${later}</b> later`,
       body: (same.length ? `the same cast as ${nameList(same, kind)}<br>` : "") + scale };
   }
+  // Power is a spread like Cast, so it reads the same way — a place in the order rather than a
+  // list of the 24 records that also happen to be 100. Two things make it worth more than that:
+  //
+  //   * it is not always damage. It is the HP a heal restores (Healing Wind 300 — "Restores
+  //     300HP"), and the two full-restore spells carry 9999, which is a heal of everything and
+  //     not a damage cap. Whatever the description's number is, this is it.
+  //   * <b>0</b> is a real state with a rule behind it: 19 of the 94 spells carry it, and every
+  //     one of them sets a flags18 mask instead — sleep, silence, PDF/MDF, teleport, the
+  //     sword-enhance runes. No stock spell has 0 power AND no status, which is the combination
+  //     an edit can strand: a record that does nothing at all.
+  //
+  // Ranked inside its own table, for the reason Cast is: spells run 0–9999 and unites 30–300.
+  function hintPower(all, kind, idx) {
+    const me = all.find((r) => r.kind === kind && r.i === idx);
+    const mine = all.filter((r) => r.kind === kind), word = kind === "spell" ? "spell" : "unite";
+    const zero = mine.filter((r) => !r.pw);
+    if (!me.pw) {
+      const mute = zero.filter((r) => !r.f18);
+      const others = peersOf(all, kind, idx, (r) => r.kind === kind && !r.pw);
+      const sum = me.f18
+        ? `<b>0</b> — no number of its own; the status below is the whole effect`
+        : `<b>0</b> and no status either — this ${word} does nothing`;
+      return { sum, body: `${zero.length} ${plural(zero.length, word, word + "s")} on this disc carry 0`
+        + (mute.length ? `, and ${mute.length} of those apply no status either` : `, every one of them applying a status instead`)
+        + (others.length ? `: ${nameList(others, kind)}` : ``) };
+    }
+    const lower = mine.filter((r) => r.pw < me.pw).length, higher = mine.filter((r) => r.pw > me.pw).length;
+    const hi = mine.reduce((a, b) => (b.pw > a.pw ? b : a)), lo = mine.reduce((a, b) => (b.pw < a.pw ? b : a));
+    const same = peersOf(all, kind, idx, (r) => r.kind === kind && r.pw === me.pw);
+    const scale = `${word} powers on this disc run <b>${lo.pw}</b> to <b>${hi.pw}</b> (${esc2(recName(hi, kind))})`
+      + ` · Power is whatever this record's description counts — damage for an attack, HP for a heal`;
+    return { sum: `<b>${lower}</b> lower, <b>${higher}</b> higher`,
+      body: (same.length ? `the same Power as ${nameList(same, kind)}<br>` : "") + scale };
+  }
   const HINT_FN = { target: hintTarget, radius: hintRadius, chance: hintChance,
-    elementId: hintElement, cast: hintCast };
+    elementId: hintElement, cast: hintCast, power: hintPower };
 
   // ---- rendering ----------------------------------------------------------------------------
   // One line per field, and the names only when asked for. The open folds are remembered by key
@@ -4796,12 +4830,22 @@
     const cast = `runs <b>${lo.cast}</b> (${esc2(recName(lo, kind))}) to <b>${hi.cast}</b> (${esc2(recName(hi, kind))})`
       + ` across ${Object.keys(tally).length} distinct values · commonest <b>${mode}</b> (${tally[mode]} ${plural(tally[mode], word, word + "s")})`
       + ` · lower goes off sooner`;
+    const pw = {}; mine.forEach((r) => (pw[r.pw] = (pw[r.pw] || 0) + 1));
+    const pwMode = Object.keys(pw).map(Number).sort((a, b) => pw[b] - pw[a] || a - b)[0];
+    const pwHi = mine.reduce((a, b) => (b.pw > a.pw ? b : a)), pwZero = mine.filter((r) => !r.pw);
+    const pwLo = mine.reduce((a, b) => (b.pw < a.pw ? b : a));
+    const power = `runs <b>${pwLo.pw}</b> to <b>${pwHi.pw}</b> (${esc2(recName(pwHi, kind))}) across ${Object.keys(pw).length}`
+      + ` distinct values · commonest <b>${pwMode}</b> (${pw[pwMode]} ${plural(pw[pwMode], word, word + "s")})`
+      + (pwZero.length ? ` · ${pwZero.length} carry <b>0</b>`
+          + (pwZero.every((r) => r.f18) ? `, every one of them applying a status instead` : ``) : ``)
+      + `. It is whatever the description counts: damage for an attack, HP for a heal.`;
     // Element is a spells-only field, so the unite legend simply has no line for it.
     const els = group([...new Set(mine.filter((r) => r.el !== null).map((r) => r.el))].sort((a, b) => a - b),
       (r) => r.el, (v) => `<b>${esc2(elemName(v))}</b>`);
     return foldHTML(`${kind}:legend`,
       `What these values mean next to the rest of the table <span class="dim">— the targets, casts, elements, radius sizes and status chances in use across the ${mine.length} ${word}s on this disc</span>`,
       `<div><b>Target</b> — ${targets}</div>`
+      + `<div style="margin-top:3px"><b>Power</b> — ${power}</div>`
       + `<div style="margin-top:3px"><b>Cast (MOV)</b> — ${cast}.</div>`
       + (els ? `<div style="margin-top:3px"><b>Element</b> — ${els}</div>` : "")
       + `<div style="margin-top:3px"><b>Radius</b> — the size of the template${area ? `, area: ${area}` : ""}${line ? ` · line: ${line}` : ""}.`
@@ -4820,6 +4864,14 @@
     const a = radSizes(all, "area").join(", "), l = radSizes(all, "line").join(", ");
     return `sizes in use — area: ${a || "none"} · line: ${l || "none"}`
       + ` · blank sizes each spell from its own shape (${AREA_RADIUS} / ${LINE_RADIUS})`;
+  }
+  function powerScaleText(all) {
+    const sp = (all || recIndex()).filter((r) => r.kind === "spell");
+    const t = {}; sp.forEach((r) => (t[r.pw] = (t[r.pw] || 0) + 1));
+    const mode = Object.keys(t).map(Number).sort((a, b) => t[b] - t[a] || a - b)[0];
+    const zero = sp.filter((r) => !r.pw).length;
+    return `spell powers run ${Math.min(...sp.map((r) => r.pw))}–${Math.max(...sp.map((r) => r.pw))} · commonest ${mode} (${t[mode]} spells)`
+      + ` · ${zero} carry 0, where the status is the whole effect`;
   }
   function castScaleText(all) {
     const sp = (all || recIndex()).filter((r) => r.kind === "spell").map((r) => r.cast);
@@ -4844,6 +4896,7 @@
     const rs = q(".radscale", host); if (rs) rs.textContent = radiusScaleText(all);
     const cs = q(".chscale", host); if (cs) cs.textContent = chanceScaleText(all);
     const ks = q(".castscale", host); if (ks) ks.textContent = castScaleText(all);
+    const ps = q(".pwscale", host); if (ps) ps.textContent = powerScaleText(all);
     wireHintFolds(host);
   }
   // <details> reports its state on a later task, so a fold that only listened to `toggle` would
@@ -4916,7 +4969,8 @@
         <span class="u">apply the fields you set to every spell a rune grants</span></summary>
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">
         <label class="field"><span>Rune</span><select id="rsRune">${runeOpts}</select></label>
-        <label class="field"><span>Power</span><input type="number" id="rsPower" min="0" placeholder="no change"></label>
+        <label class="field"><span>Power</span><input type="number" id="rsPower" min="0" placeholder="no change">
+          <div class="fhint pwscale">${powerScaleText()}</div></label>
         <label class="field"><span>Cast (MOV)</span><input type="number" id="rsCast" min="0" placeholder="no change">
           <div class="fhint castscale">${castScaleText()}</div></label>
         <label class="field"><span>Element</span><select id="rsElem">${elemOptsBlank}</select></label>
@@ -4966,7 +5020,8 @@
         <div class="char-body">
           ${descField}
           <div class="grid">
-            <label class="field"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
+            <div class="field"><label class="fieldlab"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
+              ${hintBoxHTML("spell", "power", i, radIx)}</div>
             <div class="field"><label class="fieldlab"><span>Cast (MOV)</span><input type="number" class="sp" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
               ${hintBoxHTML("spell", "cast", i, radIx)}</div>
             <div class="field"><label class="fieldlab"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
@@ -5161,7 +5216,8 @@
           <span class="lv un-sum">pw ${r32(off + 0x1C)} · ${decodeTarget(f14)}${radVal ? " r" + radVal : ""}</span></summary>
         <div class="char-body">${whoField}${descField}
           <div class="grid">
-            <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
+            <div class="field"><label class="fieldlab"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
+              ${hintBoxHTML("unite", "power", i, radIx)}</div>
             <div class="field"><label class="fieldlab"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
               ${hintBoxHTML("unite", "cast", i, radIx)}</div>
             <div class="field"><label class="fieldlab"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
