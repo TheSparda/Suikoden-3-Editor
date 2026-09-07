@@ -1488,7 +1488,7 @@
     return `<div class="card" id="auxSwBox" style="margin:0 0 12px">
       <div class="bag-h">Forced on in the battle-results overlay
         <span class="u">two more checks — not in the executable, ~1 GB into the disc</span></div>
-      <div class="muted" style="margin:0 0 10px">The routine that pays out after a battle asks two ownership
+      <div class="muted" style="margin:0 0 10px" data-sum="Two more ownership checks live in the battle-results overlay rather than the executable — and unlike the switches above, these two are safe to force.">The routine that pays out after a battle asks two ownership
         questions of its own, and neither is in the executable, which is why no search of it ever found them:
         they live in the <b>battle-results overlay</b> at <code>0x3F3E6938</code> and <code>0x3F3E698C</code>,
         with streaming twins <code>0x8800</code> later. Both copies are written together and a revert restores
@@ -1501,7 +1501,7 @@
       ${AUXSW.map(auxSwField).join("")}
       ${oob ? `<div class="muted" style="margin:0 0 10px">Both switches are <b>unavailable</b> because this
         disc's overlay windows were not read — the image stops short of the ~1&nbsp;GB mark they live at.</div>` : ""}
-      <div class="warnbox" style="margin:2px 0 0"><b>Experimental — not yet seen working in play.</b> Both
+      <div class="warnbox" style="margin:2px 0 0" data-sum="Experimental — byte-verified and fully revertible, but no forced EXP or potch bonus has been watched landing in a running game. Keep a backup disc."><b>Experimental — not yet seen working in play.</b> Both
         checks are decoded from a pristine USA SLUS-20387 and byte-verified before anything is written, and
         unticking restores the stock words in both copies exactly. What nobody has watched is the
         <i>result</i>: no forced EXP or potch bonus has been seen landing in a running game. A marker moves on
@@ -3196,7 +3196,49 @@
       ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, every packed sub-file on the disc, and where the game decides which music plays. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
       changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
     };
-    q("#isoHint").textContent = (VIEW === "ref" && REF_HINT[REF_KIND]) || hints[VIEW] || "";
+    // One-line versions of the hints above, for the "Show more" collapse (blurb-core.js).
+    // Only the long ones need an entry: a tab with no summary here, or one whose hint runs
+    // short, renders its hint in full as before. Written out rather than derived because the
+    // first sentence of most of these is a field list, not the point of the tab.
+    const hintSums = {
+      growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling.",
+      shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
+      spells: "The spell / rune-effect table: power, cast, element, target, area and status, all editable per spell.",
+      runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
+      passives: "The support runes whose passive can be forced on without the rune equipped, and what each one is worth.",
+      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table.",
+      mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
+      movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
+      story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
+      test: "Experimental patches that are not known to work. Read the warnings on the tab before using any of them.",
+      text: "The UI, battle and menu strings inside the executable. Each is capped to its original byte length.",
+      encounter: "How often random battles trigger, as one percentage of the game's stock rate, plus the per-map rates.",
+      war: "War-battle units: level, HP and the 8 combat stats of every soldier, leader unit and war monster.",
+      ref: "Read-only lookups: items, classes, skills, item sources, packed sub-files, mounts, music and treasure.",
+      changes: "What differs between your disc and a pristine base disc, what you have staged, and a code-patch audit.",
+      gear: "Equipment records: name, DEF, price, description and all five effect slots.",
+      sets: "The five armour sets, the set-bonus constants patched out of the game code, and which set grants which effect.",
+      food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description.",
+      enemies: "Per-area enemy editor: stats, rewards and drops for every enemy in every battle pack, plus each zone's spawns and formations.",
+    };
+    // #isoHint is one element reused by every tab, so its collapse has to be rebuilt each
+    // time rather than left in place: setting textContent wipes whatever structure the last
+    // tab's blurb left behind, and clearing data-blurbed is what re-arms the pass. Done
+    // synchronously so the full hint never flashes before collapsing.
+    {
+      const hint = q("#isoHint");
+      const sub = VIEW === "ref" && REF_HINT[REF_KIND];       // a Reference sub-tab's own hint
+      const txt = sub || hints[VIEW] || "";
+      hint.textContent = txt;
+      hint.className = "muted";                      // drop .blurb / .open from the last tab
+      hint.removeAttribute("data-blurbed");
+      // A summary only belongs to the hint it was written for: on a Reference sub-tab the text
+      // is REF_HINT's, so fall through to the derived summary rather than captioning it with
+      // the parent tab's. (Those are all short today and the length gate leaves them whole.)
+      if (txt) hint.setAttribute("data-sum", (sub ? "" : hintSums[VIEW]) || "");
+      else hint.removeAttribute("data-sum");
+      if (self.BlurbCore && self.BlurbCore.applyBlurbs) self.BlurbCore.applyBlurbs(hint);
+    }
     const host = q("#isoView");
     // remember which records are expanded so a re-render (e.g. a per-field revert) keeps your place
     const detKey = (d) => d.dataset.i ?? d.dataset.rec ?? d.dataset.base;
@@ -3297,7 +3339,7 @@
     return `<div class="bag-h" style="margin-top:12px">Passive runes forced on
         <span class="u" title="Each of these makes the engine answer YES to &quot;does this character have that rune equipped?&quot; for this character only — no rune, no rune slot. The effect's STRENGTH is edited on the Runes tab. Fortune is not here: its check lives in a battle overlay, not the executable.">${nOn
           ? `${nOn} on` : "none"} · without equipping them</span></div>
-      <div class="muted" style="margin:0 0 6px">Ticking one installs a small helper into a dead
+      <div class="muted" style="margin:0 0 6px" data-sum="Ticking one gives that character the rune's effect and nobody else. Experimental: no forced battle passive has been watched working in play.">Ticking one installs a small helper into a dead
         routine in the executable and sets this character's bit in that rune's table, so the
         effect is <b>theirs alone</b> — enemies and everyone else are unaffected. Untick every
         rune on every character and the helper is removed byte-for-byte.
@@ -3770,7 +3812,7 @@
           <select id="shopStage" style="display:block;width:100%">${stageOpts}</select></label>
         <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="shopEmpty"${SHOP_EMPTY ? " checked" : ""}> <span>show empty slots</span></label>
       </div>
-      <div class="muted" style="margin-top:6px">Each counter keeps four inventories and the game
+      <div class="muted" style="margin-top:6px" data-sum="Each counter keeps four inventories and the game swaps between them as the story advances.">Each counter keeps four inventories and the game
         swaps between them as the story advances, so stage 1 is the earliest stock and the last
         stage the richest. The stock list ends at the first empty slot — anything after a gap is
         invisible in-game.</div>
@@ -4105,11 +4147,11 @@
     const unknown = STATUSFX.filter((e) => !fxState(e).known).length;
     return `<details class="card" id="spFxBox"${spFxOpen ? " open" : ""}>
       <summary><b>Status effect strength</b> <span class="u">what an effect is actually worth · ${STATUSFX.length} engine constants</span></summary>
-      <div class="warnbox" style="margin:8px 0">These are <b>code</b> constants, not table entries, so each one is
+      <div class="warnbox" style="margin:8px 0" data-sum="These are code constants, so each one is global: raising the fire figure raises it for every character and every weapon in the game.">These are <b>code</b> constants, not table entries, so each one is
         <b>global</b>: raising the fire figure raises it for every character and every Sword of Rage in the game.
         Percentages are of the value the battle code already computed. ${unknown ? `<b>${unknown}</b> control(s) are
         read-only because this disc's instructions don't match what they patch.` : ""}</div>
-      <div class="muted" style="margin:0 0 8px">The Spells tab picks <b>which</b> effect fires; this picks <b>how much
+      <div class="muted" style="margin:0 0 8px" data-sum="The Spells tab picks which effect fires; this picks how much it is worth. Turn duration stays uneditable.">The Spells tab picks <b>which</b> effect fires; this picks <b>how much
         it is worth</b>. Turn duration is still not editable — the status setter does take a strength argument, but every
         live caller computes it at runtime, and the one routine that reads per-status strengths out of a record is dead
         code with no references anywhere in the executable.</div>
@@ -4182,7 +4224,7 @@
     return `<details class="card fold" id="spSplitBox" style="margin:0 0 12px"${spSplitOpen ? " open" : ""}>
       <summary class="bag-h"><span class="chev">▸</span>Damage + heal
         <span class="u">the one spell that hits foes and heals allies</span></summary>
-      <div class="muted" style="margin:0 0 10px">Shining Wind is the only spell that does two different things to
+      <div class="muted" style="margin:0 0 10px" data-sum="Shining Wind's damage-and-heal behaviour is hardcoded to one spell number, so this moves the trick to another spell rather than copying it.">Shining Wind is the only spell that does two different things to
         the two sides — and the game hardcodes it by spell number, not by any field on the record. Hand that number
         to a different spell and it inherits the whole behaviour: foes take its <b>Power</b> as damage, allies are
         healed the amount below and have their status cleared. There is exactly one such slot in the game, so this
@@ -4762,11 +4804,11 @@
             <input type="number" class="mnt-round" data-off="${d.off}" min="0" max="999" value="${r16(d.off)}"></label>`)).join("");
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
         <div class="bag-h">Battle mounts <span class="u">re-pairing confirmed in-game · patches game code</span></div>
-        <div class="muted" style="margin:0 0 8px">The engine asks one question before seating a rider —
+        <div class="muted" style="margin:0 0 8px" data-sum="The engine gates riders with three hardcoded comparisons, and these dropdowns rewrite them — so any rider below can be put on Fubar, Bright or Ruby.">The engine asks one question before seating a rider —
           <i>is this rider allowed on this mount?</i> — and answers it from three hard-coded comparisons.
           These dropdowns rewrite those three, so <b>any rider below can be put on Fubar, Bright or Ruby</b>.
           There is no fourth slot to add.</div>
-        <div class="muted" style="margin:0 0 8px"><b>Re-pairing works, including across mount types.</b>
+        <div class="muted" style="margin:0 0 8px" data-sum="Re-pairing is confirmed in play, across mount types too (Hugo+Bright, Chris+Bright). What has no precedent yet is a flyer-rigged rider on Ruby."><b>Re-pairing works, including across mount types.</b>
           Two re-pairings have been played through an emulator. <b>Hugo + Bright</b> mounts and fights
           correctly even though Hugo's mounted clips were authored for a griffon and Bright is a dragon.
           <b>Chris + Bright</b> then settled the harder case — a rider whose clips were authored around a
@@ -4787,23 +4829,23 @@
             <li><b>Riders</b> listed by default are the models that carry the <code>301/320/340</code>
               <i>mounted battle</i> clips — Hugo, Chris, Roland, Leo, Percival, Borus, Futch, Franz, and
               Sharon (partial). Those are the ones with an animation to play once they are seated.</li>
-            <li><b>“Rigged for”</b> is the class of mount a rider's mounted clips were built around: Hugo's for
+            <li data-sum="“Rigged for” is the mount class a rider's clips were built around: same class is expected to work, across classes is untested."><b>“Rigged for”</b> is the class of mount a rider's mounted clips were built around: Hugo's for
               a griffon and Futch's for a dragon (<i>flyer</i>), Chris's and the Zexen knights' for a horse,
               Franz's for Ruby (<i>horse</i>). Same class → <span class="mcf exp">• expected</span>;
               across classes → <span class="mcf unt">? untested</span>. Hugo+Bright is the one cross-mount
               case that has actually been played, and it works — which is encouraging for the rest, but
               flyer→flyer is a smaller jump than horse-rig→flyer.</li>
-            <li><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and
+            <li data-sum="Mounts are the party members whose model has a battle animation set: Fubar, Bright and Ruby."><b>Mounts</b> are the party members whose model has a battle animation set: Fubar, Bright and
               Ruby. The field horses the Zexen knights and Hugo ride have no battle animations at all, so they
               aren't offered here — the <b>Assigned horse</b> card below is the route for those.</li>
-            <li><b>Riders with no bank</b> (Geddoe, Thomas, Salome, Juan) are hidden behind the checkbox
+            <li data-sum="Riders with no mounted-battle bank still link to the mount but keep their normal pose — Geddoe's ride set is field-only."><b>Riders with no bank</b> (Geddoe, Thomas, Salome, Juan) are hidden behind the checkbox
               above. The comparison chain accepts them — it's a pure id compare — but they link to the mount
               and then keep their normal battle pose, because the motion call fails on the missing clips.
               Geddoe <i>does</i> have a full <i>field</i> ride set, so the game can show him on horseback out
               of battle; that is what the Assigned horse card gives him.</li>
             <li><b>One rider, two mounts</b> works: set two pairs to the same rider with different mounts
               (e.g. Hugo+Fubar and Hugo+Bright). The comparisons are checked in order and fall through cleanly.</li>
-            <li>Rider seating in battle does <i>not</i> use the field saddle-offset table, so an unusual pair
+            <li data-sum="Battle seating ignores the field saddle-offset table, so nothing mis-seats an unusual pair — and nothing corrects it either.">Rider seating in battle does <i>not</i> use the field saddle-offset table, so an unusual pair
               won't be mis-seated by it — but that also means nothing corrects the seat height either, which
               is exactly why a cross-class pairing is marked untested rather than expected.</li>
           </ul></details>
@@ -4811,17 +4853,17 @@
       <div id="mountCards">${cards}</div>
       <div class="card" style="margin:0 0 12px">
         <div class="bag-h">Assigned horse <span class="u">BETA · one value per character · stages a horse beside them</span></div>
-        <div class="muted" style="margin:0 0 8px">The game's <i>other</i> mount route: each character's own
+        <div class="muted" style="margin:0 0 8px" data-sum="The game's other mount route: a character's own record can name a horse, honoured without that horse being in your party.">The game's <i>other</i> mount route: each character's own
           record can name a horse, and both the field and the battle gate honour it without the horse being in
           your party. Stock, this is what puts the six Zexen Knights on horseback — Chris on her own horse,
           the other five on the knight horse.</div>
-        <div class="muted" style="margin:0 0 8px"><b>It really does stage the horse.</b> When the party is
+        <div class="muted" style="margin:0 0 8px" data-sum="PartyPut reads this value and stages the horse into the party list six positions along, where scene setup builds it as a real actor."><b>It really does stage the horse.</b> When the party is
           formed, <code>PartyPut</code> reads this value and writes the horse into the party list
           <b>six positions along</b> — so party slot 3 gets a horse at position 9 — and scene setup then
           builds it as a real actor standing next to them. A script mounts them by naming the rider with
           bit <code>0x4000</code> set, which the engine resolves to "that actor's own horse". You can see
           the result in the <b>Save Editor's party list</b>, in the Mount column.</div>
-        <div class="warnbox" style="margin:0 0 8px"><b>What it cannot do is write the script.</b> On the
+        <div class="warnbox" style="margin:0 0 8px" data-sum="What it cannot do is write the script: this makes a character eligible everywhere, but mounted only where a scene mounts the player."><b>What it cannot do is write the script.</b> On the
           field a mount only ever happens because a scene <i>asks</i> for one, so this makes a character
           eligible everywhere and mounted only where a scene mounts the player. That is why Chris rides in
           some scenes and not others. Two more things bite: the horse appears only once the party is
@@ -4831,19 +4873,19 @@
         <div class="grid eq">${horseRows}</div>
         <details class="note" data-fold="horses"${mntFolds.horses ? " open" : ""}><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
-            <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
+            <li data-sum="Only ids 308–309 are honoured, and the Test tab can widen that window to 308–563 — which is how Hugo reaches the Karaya horse he was authored for.">The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
               are honoured</b> and any other mount id is read and silently discarded. That window is six
               identical <code>sltiu</code> instructions, and the <b>Test</b> tab can widen it to 308–563 —
               which adds the <b>Karaya horses</b> (325, 353) and the Le Buque pair. 325 is the one worth
               having: Hugo ships with no assigned horse at all, and the Karaya horse is the mount the engine
               was written around for him. The flyers stay out of reach either way — there is no ground saddle
               offset for a griffon or a dragon.</li>
-            <li>The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
+            <li data-sum="The pair table and this card fail in opposite ways: reach beats reliability on one, reliability beats reach on the other.">The <b>pair table</b> above and this card fail in opposite ways. A pair mount is a recruited
               character, so it always has a battle slot and the pairing fires from party membership alone —
               that is why a re-paired Chris+Bright works in any fight with both deployed. An assigned horse
               needs no party slot but has no battle presence of its own, so it appears only where the scene
               already puts a horse. Reach beats reliability on one, reliability beats reach on the other.</li>
-            <li><b>field+battle</b> characters carry both mounted animation banks. <b>field</b>-only ones
+            <li data-sum="Characters with both animation banks ride everywhere; field-only ones ride on the map but keep their normal battle pose."><b>field+battle</b> characters carry both mounted animation banks. <b>field</b>-only ones
               (Geddoe, Thomas, Salome) will ride correctly on the map but keep their normal pose in battle —
               <i>Geddoe rides perfectly well outside combat</i>, which is the one thing the pair table above
               can't give him.</li>
@@ -4953,7 +4995,7 @@
     const fallsThrough = AVATAR.STOCK_SET.filter((id) => !known.has(id));
     host.innerHTML = `<div class="bag">
         <div class="bag-h">Story content <span class="u">confirmed in play · patches game code</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="The fix for empty dialogue boxes when you play as someone the game did not plan for — the leader byte picks your model and your story content at once.">
           <b>The fix for empty dialogue boxes when you play as someone the game didn't plan for.</b>
           The party-leader byte does two jobs: it names your field model, and it selects
           <i>whose</i> events and dialogue a town loads. Change who you walk around as and you
@@ -4973,7 +5015,7 @@
         <div class="row" style="gap:8px;margin:10px 0 0"><button class="chip" id="storyStock">Restore stock</button></div>
 
         <div class="bag-h" style="margin:16px 0 0">Setting it up</div>
-        <div class="muted" style="font-size:12px">
+        <div class="muted" style="font-size:12px" data-sum="Two edits in two different files: set the character to Hugo's story content here, then pick them in the Save Editor's Field character tab.">
           <p style="margin:0 0 6px">Two edits in two different places, and they are edits to two
           different files. Do both, in this order:</p>
           <p style="margin:0 0 4px"><b>1 · Here, on the disc.</b> Set the character you intend
@@ -4990,7 +5032,7 @@
         </div>
 
         <div class="bag-h" style="margin:16px 0 0">How it works</div>
-        <div class="muted" style="font-size:12px">
+        <div class="muted" style="font-size:12px" data-sum="One function turns the leader byte into a team index, and an id it has never heard of falls through to Hugo's index 0 — which is the whole trick.">
           <p style="margin:0 0 4px"><b>One switch turns the id into an index.</b> A single function
           (<code>0x${AVATAR.STORY.switchVa.toString(16).toUpperCase()}</code>) compares the leader
           byte against a short list of ids and returns a <b>team index</b> — 0–7. That index
@@ -5060,7 +5102,7 @@
   const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"]];
   function drawTest(host) {
     host.innerHTML = `
-      <div class="warnbox" style="margin:0 0 12px">
+      <div class="warnbox" style="margin:0 0 12px" data-sum="Experimental — widening the model whitelist rewrites game code and is not confirmed in play, and story scripts reset the leader byte at chapter transitions.">
         <b>Experimental — rewrites game code, and is not confirmed in play.</b>
         <b>Field character</b> widens the model whitelist past the stock eight. Everyone beyond
         it is untested: Yuber and Lucia were both seen to hang a scene, though that was before
@@ -5097,12 +5139,12 @@
     host.innerHTML = `
       <div class="card" style="margin:0 0 12px">
         <div class="bag-h">Assigned horse — wider list <span class="u">patches game code · not played</span></div>
-        <div class="muted" style="margin:0 0 8px">A character's <b>assigned horse</b> lives in one
+        <div class="muted" style="margin:0 0 8px" data-sum="A character's assigned horse is one u16 on the Mounts tab, and the engine honours only a window two ids wide. This widens it.">A character's <b>assigned horse</b> lives in one
           u16 on the <b>Mounts</b> tab. The engine throws away any value outside a window two ids
           wide, so stock you can only pick the two Zexen horses:
           <code>addiu $v0, $a1, -0x134</code> then <code>sltiu $v0, $v0, 2</code>. This raises the
           <code>2</code> to <code>256</code> at all six sites, widening the window to 308–563.</div>
-        <div class="muted" style="margin:0 0 8px">That adds the <b>Karaya horses</b> (325, 353) and
+        <div class="muted" style="margin:0 0 8px" data-sum="Widening the window adds the Karaya horses and the Le Buque pair. 325 is the one worth having: Hugo ships with no assigned horse at all.">That adds the <b>Karaya horses</b> (325, 353) and
           the <b>Le Buque pair</b> (359, 360) to the dropdown. The one that matters is 325:
           <b>Hugo has no assigned horse at all</b>, and the Karaya horse is the mount he was
           authored for — the RideOn handler carries a clip fix-up written for exactly one pair,
@@ -5111,7 +5153,7 @@
         <div class="muted" style="margin:0 0 8px"><b>What it does on its own: nothing.</b> Only six
           characters ship a nonzero value and all are 308 or 309, well inside the widened window.
           Nothing changes until you pick a wider horse on the Mounts tab.</div>
-        <div class="warnbox" style="margin:0 0 8px"><b>Untested in play.</b> The staging chain is
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Untested in play — the staging chain is read off the disassembly, but nobody has yet been given a horse they do not ship with."><b>Untested in play.</b> The staging chain is
           read off the disassembly and confirmed against save data — a real save shows Chris at
           party position 3 with her horse at position 9, which is the <code>pos + 6</code> layout
           this relies on. What has <i>not</i> been played is a character being given a horse they
@@ -5228,14 +5270,14 @@
     host.innerHTML = `
       <div class="bag">
         <div class="bag-h">Field character <span class="u">patches game code · untested beyond the stock eight</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Your field character is the party-leader byte at save 0x12, and one hardcoded list of eight ids decides whether its model may load. Widen it here.">
           The character you run around the map as is the <b>party-leader byte at save 0x12</b>, and
           that byte names a <b>model</b>. One function decides whether that model is ever requested,
           and it is a hardcoded list of eight ids. Widen it here, then pick the character on the
           <b>Save Editor → Field character</b> tab. Nothing about the party, the story
           or the scripts changes: this only stops the loader from refusing the id.
         </div>
-        <div class="warnbox" style="margin:0 0 10px">
+        <div class="warnbox" style="margin:0 0 10px" data-sum="What bites beyond the whitelist is scripts, not loading: a scripted scene can hang whoever you pick, including the eight the game ships.">
           What bites beyond the whitelist is scripts, not loading: a <b>scripted scene can hang</b>
           whoever you pick, including the eight the game ships — Koroku is one of them and hangs.
           Being able to load a model is not the same as the game knowing what to do with it.
@@ -5254,7 +5296,7 @@
           <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
         </div>
         <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup · untested</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Scripts name actors two ways, and the by-character-id one returns nothing when that character is absent — which is exactly where the game stops.">
           Scripts name an actor two ways. <b>"The player"</b> resolves through the leader byte and
           works for anyone — which is why your avatar walks into the scene, and why talking to
           NPCs is fine. <b>"The character whose id is N"</b> scans the scene's actor records for
@@ -5266,7 +5308,7 @@
           <input type="checkbox" id="avActorFb"${actorFbOn ? " checked" : ""}>
           <b>An actor nobody can find falls back to the player</b>
           <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
-        <div class="warnbox" style="margin:0 0 10px">
+        <div class="warnbox" style="margin:0 0 10px" data-sum="Tried in play and it did not fix the hang: town scripts address actors by slot, so this exit is never taken. Kept only as a record.">
           <b>Tried in play, and it did not fix the hang \u2014 and now we know why.</b> The event
           scripts have since been located and disassembled: across <b>12,055 actor references in
           every town script on the disc, the by-character-id namespace this patch fixes is used
@@ -5552,7 +5594,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     host.innerHTML = `
       <div class="bag">
         <div class="bag-h">Field movement speed <span class="u">plain data · no code patched · confirmed in play</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Field walk and run speeds come from a 14-row table keyed on a movement class, not from code. Stock is 2.0 walking for the whole cast.">
           How fast a character walks and runs <b>on the field</b> is a <b>table</b>, not code. Every field
           object gets a walk speed and a run speed from one of 14 rows, and which row it reads is a
           <b>movement class</b> stored on the character. Stock, <b>walking is 2.0 for the whole cast</b>
@@ -5560,19 +5602,19 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           Hugo (6.0) covers a third more ground than as Chris (4.5). Mounts are
           ordinary field objects with their own class, so a mount's row is the mounted speed.
         </div>
-        <div class="note" style="margin:0 0 10px">
+        <div class="note" style="margin:0 0 10px" data-sum="Confirmed in play: Koroku at 12 ran at 2× and at 18 at 3×, so the number is linear — work in multiples of the class's stock.">
           <b>Confirmed in play.</b> Koroku is class 0, which ships at run <b>${MOVESPD.CONFIRMED.stock}.0</b>;
           set to <b>12</b> he ran at <b>2&times;</b> and at <b>18</b> at <b>3&times;</b>. The number is
           <b>linear</b> — double it to go twice as fast — so you can work in multiples of whatever the
           character's class ships with, and the line under the boxes says which multiple you have typed.
         </div>
-        <div class="warnbox" style="margin:0 0 10px">
+        <div class="warnbox" style="margin:0 0 10px" data-sum="Field only — the battle unit spawner overwrites both speeds from the character's loaded battle asset, which is not in the executable.">
           <b>Field only — this does not change battle movement.</b> The table's values reach every
           object, but the battle unit spawner immediately overwrites both speeds from the character's
           <b>loaded battle asset</b>, which lives in the packed archives and not in the executable.
           Nothing overwrites a field object, so on the field these are the values that stay.
         </div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Most of the cast is in this table because a field object is anyone the field walks around, not because you can play as them.">
           Most of the cast here can never be the character you walk around <i>as</i> — that is a
           separate list of eight ids (see the <b>Test</b> tab). They are in the table because a field
           object is anyone the field walks around: the recruits standing about Budehuc Castle, and
@@ -5582,7 +5624,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         </div>
         <div class="bag-h" style="margin:0 0 8px">Give one character its own speed
           <span class="u">picks a spare row for you</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Speed is stored per class, so a character gets its own only when a row is free — the editor shares, retunes or spends a row for you.">
           Speed is stored per <i>class</i>, not per character, so a character can only have its
           own speed if a row is free to hold it. Set a number here and the editor sorts that out:
           it retunes the row in place when nobody else is in it, points you at an existing row
@@ -5625,7 +5667,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         </div>
         <table class="invtbl">${head}<tbody>${used.map(classRow).join("")}</tbody></table>
         <details class="note" style="margin:10px 0 0"><summary>What &ldquo;time scale&rdquo; means, and when to touch it</summary>
-          <p style="margin:8px 0">It is that object's <b>clock multiplier</b> &mdash; not an
+          <p style="margin:8px 0" data-sum="Time scale is that object's clock multiplier: animation and movement both run at that rate, so 2.0 is twice as fast at everything.">It is that object's <b>clock multiplier</b> &mdash; not an
           animation-only setting. Once per frame the engine takes how much real time has passed,
           multiplies it by this number, and hands the result both to the character's animation
           clock <i>and</i> to the step that moves them. So <b>2.0</b> means &ldquo;this character
@@ -5642,12 +5684,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
               also speeds up everything you might not want faster: idle fidgets, turning on the
               spot, and the wind-up and stop at each end of a walk.</li>
           </ul>
-          <p style="margin:8px 0">So a small rise in both usually looks better than a big rise in
+          <p style="margin:8px 0" data-sum="A small rise in both Run and Time scale usually looks better than a big rise in either — which is how the engine itself uses the field.">So a small rise in both usually looks better than a big rise in
           either. The engine agrees, which is the best evidence for what the field is for: a party
           member who has fallen behind is given a temporary <b>1.2</b> or <b>1.3</b> to hurry them
           along, and one movement state computes it as <i>current speed &divide; intended speed</i>
           &mdash; exactly the correction that keeps a stride matching the ground.</p>
-          <p style="margin:8px 0"><b>One caveat.</b> What you set here is the character's
+          <p style="margin:8px 0" data-sum="What you set is the character's starting clock; followers and scripted walks write over it while they last."><b>One caveat.</b> What you set here is the character's
           <i>starting</i> clock. The situations above write over it while they last, so a party
           follower or anyone mid-way through a scripted walk may not keep your value. The engine
           clamps it at 10000, and every class ships at 1.0.</p>
@@ -5922,7 +5964,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         </div>
         <div style="margin:10px 0 0">${auxSwField(auxSwById("prosperity"))}</div>
         <details class="note"><summary>Disassembly-verified behavior — what each set really does</summary>
-          <div style="margin-top:4px">The potch multiplier applies once per party member wearing
+          <div style="margin-top:4px" data-sum="The disassembly says the potch multiplier stacks per wearer and Guardian only halves counter damage — the Suikosource numbers do not match the code.">The potch multiplier applies once per party member wearing
           Prosperity <i>or</i> Destiny and stacks (two wearers at ×3 = ×9). The counter chance only fires for a Destiny wearer <b>without</b>
           the Counter Attack skill (damage = own PWR + support PWR, ÷3). Guardian's real effect is a halving check on counter damage
           (Pale Moon matches it too — likely a dev bug). Mole just squeaks. The Suikosource guide's “Prosperity ×7” and
@@ -5944,7 +5986,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <ul style="margin:4px 0 0 18px">
             <li><b>The potch and halving checks are bit tests</b>, not equality — the game does <code>setNumber &amp; mask</code>. Because the
               sets are numbered 1–5, only 8 groupings are reachable, which is exactly what those two dropdowns list.</li>
-            <li><b>Bonus counter damage is divided by the set number itself</b> (the code reuses that register). Stock Destiny is #3, hence
+            <li data-sum="Bonus counter damage is divided by the set number itself, so moving the effect between sets changes the divisor."><b>Bonus counter damage is divided by the set number itself</b> (the code reuses that register). Stock Destiny is #3, hence
               ÷3; moving it to Mole (#1) means no division at all, while Pale Moon (#5) divides by 5. The hint under the dropdown tracks this.</li>
           </ul></details>
       </div>
@@ -6104,7 +6146,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ? `<div class="muted" style="margin:8px 0 0">Showing the first ${shown.length} of ${hits.length} matches — type in the filter to narrow.</div>` : "";
     host.innerHTML = `<div class="card" style="margin:0 0 12px">
         <div class="bag-h">In-ELF text <span class="u">${all.length} strings · in-place, length-capped</span></div>
-        <div class="warnbox" style="margin:0 0 8px">Each string is written back over its <b>original bytes</b> and can't grow — longer text is
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Each string is written back over its original bytes and cannot grow. Story dialogue is not here — it lives outside the executable.">Each string is written back over its <b>original bytes</b> and can't grow — longer text is
           rejected, shorter is null-padded. These are UI/battle/menu strings and character blurbs; <b>story dialogue is not here</b>
           (it lives in packed event files outside the executable and no editor in this repo can reach it).</div>
         ${rows ? `<div class="grid">${rows}</div>` : `<div class="muted">no matches</div>`}${capped}</div>`;
@@ -6207,7 +6249,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return `<details class="card fold" id="gbBox" style="margin:0 0 12px"${gbOpen ? " open" : ""}>
       <summary class="bag-h"><span class="chev">▸</span>Bulk scaling
         <span class="u">multiply every character's growth rate at once · Tougher / Hard / Brutal</span></summary>
-      <div class="muted" style="margin:0 0 10px">Scales from the disc's <b>original</b> numbers, not the
+      <div class="muted" style="margin:0 0 10px" data-sum="Scales from the disc's original numbers, so presets never stack and 1.00× puts everything back. Growth bytes cap at 15.">Scales from the disc's <b>original</b> numbers, not the
         current ones — so presets don't stack, and 1.00× puts everything back rather than staging
         another edit. Growth bytes cap at <b>15</b>, so multipliers above 1 saturate quickly. This nerfs
         the <i>party</i>; to push the other side up, use the bulk multipliers on the <b>Enemies</b> and
@@ -6375,7 +6417,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       </div>
       <div class="bag" style="margin:0 0 4px">
         <div class="bag-h">Per-movement multipliers <span class="u">what the slider above is made of</span></div>
-        <div class="muted" style="margin:0 0 10px">The roll is <code>area rate &times; multiplier / 100</code>,
+        <div class="muted" style="margin:0 0 10px" data-sum="The roll is area rate × multiplier / 100, and the multiplier comes from how you are moving — 100 walking, 120 running, 150 galloping.">The roll is <code>area rate &times; multiplier / 100</code>,
           and the game picks the multiplier from how you are moving. Stock is
           <b>100</b> walking, <b>120</b> running, <b>150</b> galloping — running is riskier than walking,
           and a mount is riskier still. Set them apart to change that shape rather than just its size:
@@ -6492,7 +6534,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     host.innerHTML = `
       <div class="bag" style="margin:16px 0 0">
         <div class="bag-h">Movement rules <span class="u">what counts as moving · patches game code</span></div>
-        <div class="muted" style="margin:0 0 10px">
+        <div class="muted" style="margin:0 0 10px" data-sum="Before that rate is used at all, the game checks which animation you are playing — walking and running are separate terms.">
           Before the rate above is even used, the game checks which <b>animation</b> your character is
           playing. Walking and running are separate tests, and if neither matches, the roll is skipped
           entirely. That makes two things possible that a rate slider can't do.
@@ -6644,24 +6686,24 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const scaled = rknown && rsc.rate.sure && rsc.rate.r !== 1;
     const parts = [`<h3 class="sec">Per-area base rates</h3>`,
       !rsc.ok ? "" :
-      !rsc.matched ? `<div class="warnbox" style="margin:0 0 10px">These room tables don't line up with the stock
+      !rsc.matched ? `<div class="warnbox" style="margin:0 0 10px" data-sum="These room tables do not line up with the stock USA disc, so the presets scale this file's rates and can compound.">These room tables don't line up with the stock
           USA disc this editor indexes (only ${Math.round(rsc.explained * 100)}% of ${rsc.samples} values match a
           single scale) — a different build, or per-map edits. The presets below scale <b>this file's</b> rates
           instead of the stock ones, so they can compound if you save and come back.</div>`
-      : scaled ? `<div class="warnbox" style="margin:0 0 10px">These rates are <b>already scaled</b>: the disc sits at
+      : scaled ? `<div class="warnbox" style="margin:0 0 10px" data-sum="These rates are already scaled, and the presets work from the stock numbers rather than the ones now in this file.">These rates are <b>already scaled</b>: the disc sits at
           <b>${rpct(rsc.rate.r)}</b> of the stock disc's rates (${Math.round(rsc.explained * 100)}% of ${rsc.samples}
           values match${rsc.explained < 1 ? "; the rest are per-map edits" : ""}). The presets scale the <b>stock</b> numbers, so Half is half of
           stock rather than half again, and <b>Stock</b> puts the disc's own rates back — even though this file
           no longer holds them.</div>`
       : `<div class="muted" style="margin:0 0 10px">Checked against the stock USA disc: these rates are stock
           (${Math.round(rsc.explained * 100)}% of ${rsc.samples} values match exactly).</div>`,
-      `<div class="muted" style="margin:0 0 10px">Each map's own rate, read straight from the packed archives —
+      `<div class="muted" style="margin:0 0 10px" data-sum="Each map's own rate, read straight off the packed archives; the percentage above multiplies these. 0 means no random battles on that map.">Each map's own rate, read straight from the packed archives —
         the percentage above multiplies <b>these</b>. <b>0</b> means no random battles on that map, which is how
         the game marks towns and interiors; the disc's field and dungeon maps sit between <b>2 and 9</b>.
         <b>Grace</b> is how far you must travel after a battle before another can trigger. A rate at or above 100
         makes every roll a battle. Areas carry the disc's own archive tag with its in-game location and, where
         the enemy index knows them, the game's map ids.</div>`,
-      `<div class="warnbox" style="margin:0 0 10px">Lowering a rate is always safe. <b>Raising one from 0 is not</b> —
+      `<div class="warnbox" style="margin:0 0 10px" data-sum="Lowering a rate is always safe. Raising one from 0 is not — the game loads no monster party for a map it never fights on.">Lowering a rate is always safe. <b>Raising one from 0 is not</b> —
         a map the game never fights on has no monster party loaded for it, so forcing an encounter there is not a
         state the game builds. Rows sitting at the disc's 0 are tagged <span class="opt-tag">no battles</span>, and
         an area with no battle zones indexed is flagged in full.</div>`];
@@ -6977,7 +7019,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const known = stockKnown(t), tuned = stockTuned(t);
     const pctS = (x) => `${(x * 100).toFixed(x > 0.999 ? 0 : 1)}%`;
     if (sc && sc.ok && !sc.matched)
-      parts.push(`<div class="warnbox">These ${esc2(t.noun)} records don't line up with the stock USA disc this editor
+      parts.push(`<div class="warnbox" data-sum="These records do not line up with the stock USA disc, so the multipliers work from this file's values and can compound.">These ${esc2(t.noun)} records don't line up with the stock USA disc this editor
         indexes (only ${pctS(sc.explained)} of ${sc.samples.toLocaleString()} values match a single scale) — a different
         build, or edits made outside a whole-pack multiplier. Multipliers below work from <b>this file's</b>
         values instead of the stock ones, and can compound if you save and re-apply.</div>`);
@@ -7007,7 +7049,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <button id="${t.id}Reset">Reset scope to disc originals</button>
         ${known ? `<button id="${t.id}StockRestore">Restore stock values</button>` : ""}
       </div>
-      <div class="muted" style="margin-top:6px">Every value is computed from a fixed base, so running Apply twice
+      <div class="muted" style="margin-top:6px" data-sum="Every value is recomputed from a fixed base, so re-applying never compounds and a new multiplier replaces the old one instead of stacking.">Every value is computed from a fixed base, so running Apply twice
         changes nothing and a new multiplier replaces the old one instead of stacking. Fields left at ×1 are not touched
         (your per-${esc2(unit)} edits to them survive); Reset reverts <b>every</b> ${esc2(t.noun)} field in the scope to what this file
         opened with, including manual edits${known ? `, and Restore writes the stock disc's own numbers back — the way to
@@ -7056,7 +7098,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const parts = [];
     const ZPACKS = EPACKS.filter((p) => !p.war);
     if (ZPACKS.length && rl && al) {
-      parts.push(`<div class="muted" style="margin:0 0 8px">Per-area enemy packs decoded straight from the disc
+      parts.push(`<div class="muted" style="margin:0 0 8px" data-sum="Per-area enemy packs decoded straight off the disc. Each pack exists as several streaming copies, and an edit writes every copy at once.">Per-area enemy packs decoded straight from the disc
         (${ZPACKS.length} pack${ZPACKS.length === 1 ? "" : "s"}${EPACKS_SKIPPED ? `, ${EPACKS_SKIPPED} unavailable on this disc` : ""}).
         Each pack exists as several streaming copies — edits write <b>every copy</b> at once. Stat order is the
         character convention (PWR/SKL/MAG/REP/PDF/MDF/SPD/LUK); drop weights are out of 1000 (128 ≈ 12.8%).
@@ -7135,7 +7177,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const parts = [];
     const wpacks = EPACKS.map((p, pi) => [p, pi]).filter(([p]) => p.war);
     if (wpacks.length && rl && al) {
-      parts.push(`<div class="muted" style="margin:0 0 8px">Every war-battle combatant found on the disc: faction soldiers
+      parts.push(`<div class="muted" style="margin:0 0 8px" data-sum="Every war-battle combatant on the disc, per archive, so the same soldier can be tuned per battle. Your own units use their save-file stats.">Every war-battle combatant found on the disc: faction soldiers
         (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy <b>leader units</b> and the chapter-5 war monsters
         (${wpacks.length} pack${wpacks.length === 1 ? "" : "s"}${WPACKS_SKIPPED ? `, ${WPACKS_SKIPPED} unavailable on this disc` : ""}).
         Each archive feeds the battles staged from that region, so the same soldier can be tuned per battle; edits write every
@@ -7233,7 +7275,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     if ((p.zones || []).length) {
       html.push(`<div class="bag-h" style="margin-top:14px">Zones &amp; spawn formations
         <span class="u">which monsters appear where, and in what groups</span></div>
-      <div class="muted" style="margin:0 0 8px">Each zone is a map area (the game's own name, e.g. <code>mori_101</code>).
+      <div class="muted" style="margin:0 0 8px" data-sum="Spawn slots pick which monster each slot holds; formations are the encounter groups that draw from those slots.">Each zone is a map area (the game's own name, e.g. <code>mori_101</code>).
         Its <b>spawn slots</b> pick which monster (and which stat variant) each slot holds — swap a slot's monster and every
         formation using that slot spawns the new one. <b>Formations</b> are the encounter groups: relative weight, then one
         pick per member from the slots. Member count can shrink but not exceed the group's original size (fixed allocation
@@ -7454,7 +7496,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const total = idx.archives.reduce((a, x) => a + x.files.length, 0);
     const tally = {};
     idx.archives.forEach((a) => a.files.forEach((fl) => { const k = kinds[fl[2]]; tally[k] = (tally[k] || 0) + 1; }));
-    const parts = [refTabs(), `<div class="muted" style="margin:0 0 10px">Every packed sub-file on the disc —
+    const parts = [refTabs(), `<div class="muted" style="margin:0 0 10px" data-sum="Every packed sub-file on the disc, from the directory in DATA/FSECT.BIN. Read-only — Peek reads the first 256 bytes of a blob off your disc.">Every packed sub-file on the disc —
       <b>${total.toLocaleString()}</b> across ${idx.archives.length} archives — from the directory in
       <code>DATA/FSECT.BIN</code>. ${kinds.map((k) => `<b>${tally[k] || 0}</b> ${k}`).join(" · ")}.
       Read-only: the editable pieces inside these files have their own views. <b>Peek</b> reads the first
@@ -7597,7 +7639,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
              <span class="muted">${esc2(r.detail)}</span></div>`).join("")}</td></tr>`;
     });
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Where each item can be found. Rows tagged
+      `<div class="muted" style="margin:0 0 10px" data-sum="Where each item can be found: rows tagged disc are decoded off this disc's enemy tables, rows tagged guide are Suikosource text. Nothing here is editable.">Where each item can be found. Rows tagged
         <span class="srctag disc">disc</span> are decoded from <b>this</b> disc's enemy tables — the enemy,
         which archive's pack, that variant's level and the drop weight out of 1000. Rows tagged
         <span class="srctag guide">guide</span> are text from the Suikosource <i>Rare Armor</i> guide.
@@ -7643,7 +7685,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <td>${c.items.map((i) => `<span class="pkitem">${esc2(itemName(+i.item))}</span>`).join(" ")}</td></tr>`;
       });
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Where the game hides things. The first table is counted off
+      `<div class="muted" style="margin:0 0 10px" data-sum="Where the game hides things — chest and corpse pickups counted off your disc, plus the guide's treasure-boss chests. Nothing here is editable.">Where the game hides things. The first table is counted off
         <b>your disc</b> — the map objects the game itself names <code>takara</code> (宝, a chest),
         <code>emono</code> (獲物, a lootable corpse) and <code>herb_*</code>. An archive ships the same maps
         several times over, one set per chapter, so the count is the most any single variant carries rather
@@ -7797,7 +7839,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${RUNE_GROUPS.map(([k, label, , , note]) => `<button class="chip${RUNE_GROUP === k ? " on" : ""} mini"
         data-rgrp="${k}" title="${esc2(note)}">${esc2(label)} (${tally(k)})</button>`).join("")}</div>`;
     host.innerHTML = chips +
-      `<div class="muted" style="margin:0 0 10px">Every rune in the game: what it does, which spells it
+      `<div class="muted" style="margin:0 0 10px" data-sum="Every rune: what it does, its four spell slots, and who carries it. Reassigning slots is proven on magic and support runes and confirmed not to work by itself on special-attack runes.">Every rune in the game: what it does, which spells it
         grants, and who carries it. Names and descriptions come off <b>this</b> disc's rune table, so an edit
         made here or on the Text tab shows everywhere the editor names that rune.
         <b>Spells granted</b> is the rune's own record, not a lookup: every rune holds
@@ -8110,7 +8152,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         : `<b>This disc's code at <code>0x${hex(PS_HOOK.off, 6)}</code> is neither the dead routine nor this
            editor's helper</b>, so nothing here can be written. Load a disc this editor recognises.`;
     host.innerHTML = `
-      <div class="muted" style="margin:0 0 10px">A support rune does nothing until someone equips it, and then only
+      <div class="muted" style="margin:0 0 10px" data-sum="Pick who gets a support rune's passive for free. The rune itself is untouched, and where the code column and the menu text disagree, the code is what is true of this disc.">A support rune does nothing until someone equips it, and then only
         for them. This tab keeps the “and then only for them” and removes the “until someone equips it”: pick who
         gets a passive for free, and the game answers <b>yes</b> for exactly those characters and its own stock
         answer for everybody else. The rune itself is untouched — still buyable, still equippable, still doing the
@@ -8127,7 +8169,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <th style="width:26%">Who gets it</th><th style="width:80px">State</th></tr></thead>
         <tbody>${body || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody>
       </table></div>
-      <div class="muted" style="margin:8px 0 0">All ${nSites} decoded checks in the executable are reachable, and
+      <div class="muted" style="margin:8px 0 0" data-sum="Every check is reached by a retargeted call into a relocated 288-byte helper plus a per-rune bitmap — which is also what keeps a forced battle passive off enemies.">All ${nSites} decoded checks in the executable are reachable, and
         the way they are reached is a <b>retargeted call</b>: the site's <code>jal</code> keeps being a <code>jal</code> and its
         branch delay slot is never touched, so only one word per site changes and the instruction order is exactly
         the stock order. The new target is a 288-byte helper relocated over a routine at VA
@@ -8137,11 +8179,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         VA <code>0x${hex(PS_HOOK.recBase, 7)}</code>, which is also what keeps a forced battle passive
         <b>off enemies</b>: an enemy's record is heap-allocated and can never land inside that array. Every write
         shows up per site, and per rune, in the <b>Changes</b> tab under “Passive runes”.</div>
-      <div class="muted" style="margin:6px 0 0">Not offered here: the four dogs (Koichi, Connie, Kosanji, Kogoro)
+      <div class="muted" style="margin:6px 0 0" data-sum="Not offered here: the four dogs, whose records sit outside the array this table indexes. Fortune is absent for a different reason and gets its own switch below.">Not offered here: the four dogs (Koichi, Connie, Kosanji, Kogoro)
         — they are list1 records 76–79 but the game keeps their character records in a separate block at VA
         <code>0x196560C</code>, outside the array this table indexes. <b>Fortune</b> is not in the table either,
         but it is not missing: its check is not in the executable at all, so it gets its own switch below.</div>
-      <div class="muted" style="margin:12px 0 4px"><b>What has been played, and what it proves.</b> On 2026-09-06
+      <div class="muted" style="margin:12px 0 4px" data-sum="Sunbeam's field walk-heal was watched working, but under the editor's previous patch shape — so every rune here still reads untested."><b>What has been played, and what it proves.</b> On 2026-09-06
         Sunbeam's field walk-heal was watched working: forced to yes, the party healed by walking with nobody
         carrying the rune. That was under the editor's <i>previous</i> patch shape, which dropped the call and
         wrote the answer into the word it vacated. It is real evidence — it proves 0x14A1B4 is the right site and
@@ -8149,7 +8191,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         this version adds: the trampoline itself, its <code>$ra</code>/<code>$v0</code> handling, the bitmap
         lookup, and whether 0x16BF1E0 is as dead in a running game as it is in the image. So <b>every rune here
         reads untested</b>, that one included. A marker moves on a play report and never on a passing test.</div>
-      <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Every
+      <div class="warnbox" style="margin:12px 0 10px" data-sum="Experimental — every site is byte-checked and revertible, but no passive has been watched running in game through the relocated helper. Keep a backup disc."><b>Experimental — not yet seen working in play.</b> Every
         site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, the helper is
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
         What is untested is the <i>result</i>: no passive has been watched running in game <i>through the
@@ -8277,7 +8319,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${SKILL_TYPES.map(([t, note]) => `<button class="chip${SKILL_TYPE === t ? " on" : ""} mini"
         data-styp="${t}" title="${esc2(note)}">${t === "Utility" ? "Utility (support)" : t} (${tally(t)})</button>`).join("")}</div>`;
     host.innerHTML = refTabs() + chips +
-      `<div class="muted" style="margin:0 0 10px">Every skill, what each rank of it is actually worth, and who
+      `<div class="muted" style="margin:0 0 10px" data-sum="Every skill and what each rank of it is worth. Guide rows carry the per-character caps; the On this disc line is read live and follows your staged edits.">Every skill, what each rank of it is actually worth, and who
         can get there. Effect numbers and the per-character caps are from the Suikosource skills guide
         (<span class="srctag guide">guide</span>); the <b>On this disc</b> line is read live out of the loaded
         ISO (<span class="srctag disc">disc</span>) and follows your staged edits. <b>Utility</b> are the
@@ -8390,12 +8432,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <td><span class="muted">${c.slots.map((x) => `${esc2(skillName(x.id))} ${rankLabel(x.rk)}`).join(", ")}</span></td></tr>`);
     }
     host.innerHTML = refTabs() +
-      `<div class="warnbox" style="margin:0 0 10px"><b>There is no class byte.</b> A character's class is
+      `<div class="warnbox" style="margin:0 0 10px" data-sum="There is no class byte — a class is derived from a character's top two skills every time it is drawn, so change the skills instead."><b>There is no class byte.</b> A character's class is
         worked out from their own skill list every time the game draws it: the skills they actually have are
         sorted by rank, and the top two are looked up in a 43&times;43 table of class words. So the way to
         change someone's class is to change their <b>skills</b> (Characters tab) — there is no field to set,
         and nothing here is editable.</div>
-      <div class="muted" style="margin:0 0 10px">Read live off <b>this</b> disc: the word pool at
+      <div class="muted" style="margin:0 0 10px" data-sum="Read live off this disc: the class word pool and the 43×43 table, with the derivation copied from the game's own display routine.">Read live off <b>this</b> disc: the word pool at
         <code>0x${hex(CLASS_POOL.off, 6)}</code> and the class table at <code>0x${hex(CLASS_TBL.off, 6)}</code>,
         with the derivation copied from the game's own display routine (VA <code>0x169B5F8</code>). The table's
         column index is the skill id, all 43 of them — Shield Protect gives &ldquo;Shield Knight&rdquo;, Fire
@@ -8472,12 +8514,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const tbl = (head, rows) => `<table class="invtbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
       rows.join("") || `<tr><td colspan="${head.length}" class="muted">no matches</td></tr>`}</tbody></table>`;
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Decoded off this disc. Capability is read from <b>clip
+      `<div class="muted" style="margin:0 0 10px" data-sum="Decoded off this disc. Capability comes from clip containment, and only the battle pair table has been confirmed in an emulator.">Decoded off this disc. Capability is read from <b>clip
         containment</b> — a clip belongs to the record whose payload holds it. Bundling is <b>asset
         residency</b>, not proof a scene mounts anyone. Only the battle pair table has been confirmed in an
         emulator (the three stock pairs plus Hugo+Bright and Chris+Bright); everything else on this page is
         static analysis.</div>
-      <div class="muted" style="margin:0 0 10px">The <b>311 / 321-322 family</b> in the rider table is which
+      <div class="muted" style="margin:0 0 10px" data-sum="The 311 / 321-322 split says which mount system authored a rider's clips. It is structural, not flyer-vs-horse, and it did not stop Chris riding Bright.">The <b>311 / 321-322 family</b> in the rider table is which
         mount system authored that rider's mounted-battle clips: <b>311</b> = the three-pair table (Hugo,
         Futch, Franz, Sharon), <b>321/322</b> = the assigned horse (Chris and the Zexen knights). No model
         carries both. It is a structural split, not flyer-vs-horse — Franz is 311 and Ruby is a horse — and
@@ -8626,7 +8668,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         esc2(fmt(v.se))}</td><td>${v.rooms}</td></tr>`);
 
     host.innerHTML = refTabs() +
-      `<div class="muted" style="margin:0 0 10px">Music is <b>not</b> a table in the executable — two
+      `<div class="muted" style="margin:0 0 10px" data-sum="Music is not one table in the executable: two places pick a track — event-script cues and room records — and both are decoded off this disc.">Music is <b>not</b> a table in the executable — two
         places pick a track, and this is both of them, decoded off this disc.
         <b>${idx.script.length.toLocaleString()}</b> script cues (event-script opcode 59/60, an 18-byte
         instruction whose third halfword is the track) and <b>${idx.rooms.length.toLocaleString()}</b> room
@@ -8634,7 +8676,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <code>+0x24</code> — which is why ambience reads 0 indoors and non-zero on field maps.
         <b>${trk.size}</b> distinct track ids in all, and the <b>${(idx.streams || []).length}</b>
         streamed tracks the disc actually carries \u2014 playable below.</div>
-      <div class="muted" style="margin:0 0 10px">The request function is <code>0x17AEA38</code>; kind 1 is
+      <div class="muted" style="margin:0 0 10px" data-sum="How a cue is identified: tag 0x1000 marks BGM, and a raw opcode hit counts only if the words that are zero in every confirmed instruction are zero in it too.">The request function is <code>0x17AEA38</code>; kind 1 is
         BGM because its tag in the table at <code>0x1983020</code> is <code>0x1000</code>, exactly the bit
         masked off before the current-track comparison. A raw scan for the opcode also matches ordinary
         data, so a cue counts only if the operand words that are zero in every disassembler-confirmed
@@ -9194,7 +9236,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const stagedBytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
     const audit = chgCodeAudit(ODV);
 
-    let h = `<div class="muted" style="margin:0 0 10px">Two different questions, kept apart on purpose.
+    let h = `<div class="muted" style="margin:0 0 10px" data-sum="Already on this disc compares your image against a pristine base disc you point at; Staged is what you have changed since opening it and not yet saved.">Two different questions, kept apart on purpose.
       <b>Already on this disc</b> compares the image you have open against a pristine base disc you
       point at — that is the list of everything ever written to it, by this editor or any other, and it
       is the only way to see a change that was applied in an earlier session. <b>Staged</b> is what you
@@ -9303,7 +9345,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     // ---- code audit ----
     h += `<div class="card"><div class="bag-h">Code patches, checked against their stock values
       <span class="u">no base disc needed</span></div>
-      <div class="muted" style="margin:0 0 8px">Every patch this editor makes to the game's CODE replaces
+      <div class="muted" style="margin:0 0 8px" data-sum="Every code patch replaces a word this repo has decoded, so those need no second file. It says nothing about the data tables.">Every patch this editor makes to the game's CODE replaces
       a word this repo has decoded and documented, so those can be checked without a second file. This
       says nothing about the data tables — items, stats, shops, text — which is what the base disc above
       is for.</div>`;
