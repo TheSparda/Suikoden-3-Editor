@@ -321,16 +321,19 @@ async function importFile(page, files) {
 }
 // Open a <details> record idempotently — cross-view open-state preservation can already
 // have opened it, and clicking the summary again would toggle it shut.
+// `> summary`, not `summary`: a record body can now contain its own folds (the Spells and
+// Unites tabs put an "in company" fold under Target, Radius and Status chance), and a
+// descendant match makes the click ambiguous under Playwright's strict mode.
 async function openRec(page, detailsSel) {
   const loc = page.locator(detailsSel).first();
-  if ((await loc.getAttribute("open")) === null) await loc.locator("summary").click();
+  if ((await loc.getAttribute("open")) === null) await loc.locator("> summary").click();
   await page.waitForTimeout(50);
 }
 // Same, for the Spells tab's collapsible tool cards (they ship collapsed).
 async function openFold(page, sel) {
   await page.waitForSelector(sel);
   const loc = page.locator(sel);
-  if ((await loc.getAttribute("open")) === null) await loc.locator("summary").click();
+  if ((await loc.getAttribute("open")) === null) await loc.locator("> summary").click();
   await page.waitForTimeout(50);
 }
 // ---- .xdelta helpers (patch-apply tests) --------------------------------------------------
@@ -2693,10 +2696,10 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // The Radius hints: what the number MEANS, read off this disc's own two tables rather than a
   // bundled list of stock sizes. Right now spell0 is the typed 4 with AOE off — a size on a
   // record with no template — and no other synth record has a template at all.
-  const radHint = (i) => page.textContent(`details.char[data-i="${i}"] .radhint`);
-  check("a stranded size says there is nothing to size", /no area or line to size/.test(await radHint(0)));
+  const hint = (i, f) => page.textContent(`details.char[data-i="${i}"] .vhint[data-f="${f}"]`);
+  check("a stranded size says there is nothing to size", /no area or line to size/.test(await hint(0, "radius")));
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1"); await page.waitForTimeout(60);
-  check("a size nothing else uses says so", /no other area record/.test(await radHint(0)));
+  check("a size nothing else uses says so", /no other area record/.test(await hint(0, "radius")));
   // Give a second row the same shape and size, and the first row's hint has to NAME it — the
   // group is recomputed for the whole tab on every shape/size edit, not just for the row touched.
   await openRec(page, 'details.char[data-i="1"]');
@@ -2704,10 +2707,36 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.fill('details.char[data-i="1"] input[data-k="radius"]', "4");
   await page.dispatchEvent('details.char[data-i="1"] input[data-k="radius"]', "change");
   await page.waitForTimeout(60);
-  check("a shared size names its company", /Dancing Flames/.test(await radHint(0)));
-  check("and the other row names this one back", /Flaming Arrows/.test(await radHint(1)));
+  check("a shared size names its company", /Dancing Flames/.test(await hint(0, "radius")));
+  check("and the other row names this one back", /Flaming Arrows/.test(await hint(1, "radius")));
   check("the tab legend lists the sizes in use",
-    /area:.*\b4\b.*Flaming Arrows/.test(await page.textContent(".radlegend[data-k=\"spell\"]")));
+    /area:.*\b4\b.*Flaming Arrows/.test(await page.textContent(".vlegend[data-k=\"spell\"]")));
+  // Target reads the same way, and across the two tables: spell0 is All foes by now, and the
+  // synth unite is the only other record on the disc that targets it.
+  check("Target names the records sharing it, unites included",
+    /shared with 1 other record/.test(await hint(0, "target")) && /Test Unite \(unite\)/.test(await hint(0, "target")));
+  // Status chance has a coupling of its own: a roll with nothing to inflict does nothing, and no
+  // stock record carries one. spell0 inflicts nothing yet, so the field says so both ways.
+  check("chance 0 with no status says there is nothing to roll for",
+    /nothing is inflicted, so there is nothing to roll for/.test(await hint(0, "chance")));
+  await page.fill('details.char[data-i="0"] input[data-k="chance"]', "50");
+  await page.dispatchEvent('details.char[data-i="0"] input[data-k="chance"]', "change");
+  await page.waitForTimeout(60);
+  check("a roll with nothing to inflict says so", /but nothing is inflicted here/.test(await hint(0, "chance")));
+  // Ticking a status is an edit to a DIFFERENT control that changes what the chance means, so
+  // the hints have to be rebuilt from there too.
+  await page.check('details.char[data-i="0"] input.sp18[data-b="1"]'); await page.waitForTimeout(60);
+  check("ticking a status makes the same roll meaningful",
+    /no other record on this disc rolls this often/.test(await hint(0, "chance")));
+  // The folds are re-rendered by every edit, so an opened one has to come back open — a fold
+  // that shut itself the moment you typed would be worse than no fold at all.
+  const foldOpen = () => page.evaluate(() => document.querySelector('details.char[data-i="0"] .vhint[data-f="target"] details').open);
+  await page.click('details.char[data-i="0"] .vhint[data-f="target"] summary'); await page.waitForTimeout(60);
+  check("a hint fold opens", (await foldOpen()) === true);
+  await page.fill('details.char[data-i="0"] input[data-k="power"]', "123");
+  await page.dispatchEvent('details.char[data-i="0"] input[data-k="power"]', "change");
+  await page.waitForTimeout(80);
+  check("and survives an edit to the row", (await foldOpen()) === true);
   await page.context().close();
 }
 

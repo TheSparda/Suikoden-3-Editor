@@ -95,6 +95,23 @@ input[type=file] { display:none; }
 .fhint .dim { opacity:.6; font-style:italic; }
 .fnote b { color:var(--fg, inherit); font-weight:600; }
 .fnote .dim { opacity:.6; font-style:italic; }
+/* "In company" hints under a Spells/Unites field: one line per field, names on demand.
+   The summary IS the line, so a row stays compact until the fold is opened. */
+.fhint .hintfold summary { cursor:pointer; list-style:none; }
+.fhint .hintfold summary::-webkit-details-marker { display:none; }
+.fhint .hintfold summary { list-style:none; }
+.fhint .hintfold summary::-webkit-details-marker { display:none; }
+.fhint .hintfold summary .chev { display:inline-block; font-size:11px; }
+.fhint .hintfold summary:hover { color:var(--ink); }
+.fhint .hintfold summary:hover .chev { color:var(--acc2); }
+.fhint .hintflat { padding-left:11px; }
+/* A field column is ~160px, so an opened list would be a very tall, very thin stack. Let the
+   open body keep its own width and sit over the neighbouring column like a popover — it is
+   opened deliberately and closes the same way. */
+.fhint .hintfold[open] { position:relative; z-index:3; }
+.fhint .hintbody { margin:3px 0 1px 11px; width:max-content; max-width:min(340px,64vw);
+  background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:5px 8px;
+  box-shadow:var(--shadow); }
 .field.faded { opacity:.4; }
 .field.faded:focus-within, .field.faded:hover { opacity:1; }   /* reveal on interaction */
 input[type=text], input[type=number], select {

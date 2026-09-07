@@ -3423,10 +3423,10 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on. A Radius number on its own says nothing, so each box names the other records that carry that size and each table opens with a legend of the sizes in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on. A value on its own says nothing, so Target, Radius and Status chance each carry a line naming the other records that share it (click it for the names), and each table opens with a legend of the values in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit. Status chance has a coupling of its own worth knowing: on a stock disc every record carrying a chance also inflicts a status and none carries one without, so a chance on a spell that inflicts nothing has nothing to roll for.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. Every site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, and clearing a rune puts the stock instruction back exactly, so anything set here comes straight back off.",
-      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on. A Radius number on its own says nothing, so each box names the other records that carry that size and each table opens with a legend of the sizes in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit.",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on. A value on its own says nothing, so Target, Radius and Status chance each carry a line naming the other records that share it (click it for the names), and each table opens with a legend of the values in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit. Status chance has a coupling of its own worth knowing: on a stock disc every record carrying a chance also inflicts a status and none carries one without, so a chance on a spell that inflicts nothing has nothing to roll for.",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
@@ -3449,10 +3449,10 @@
       chars: "Starting skills, ranks, equipped runes and gear \u2014 plus forcing a support rune\u2019s passive on for this character alone, with no rune and no rune slot spent.",
       growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
-      spells: "The spell / rune-effect table: power, cast, element, target, area and status. Area of effect moves Radius with it, and each Radius box names the records sharing that size.",
+      spells: "The spell / rune-effect table: power, cast, element, target, area and status. Target, Radius and Status chance each name the records that share their value.",
       runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
       passives: "The support runes whose passive can be forced on without the rune equipped, and what each one is worth.",
-      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table. Area of effect moves Radius with it. Every Radius box names the other records that carry that size.",
+      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale. Target, Radius and Status chance each name the records that share their value.",
       mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
       movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
       story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
@@ -3494,6 +3494,10 @@
     // card the user just opened would snap shut under them.
     { const b = q("#rnBox", host); if (b) rnOpen = b.open; }
     const open = new Set(qa("details.char[open]", host).map(detKey));
+    // Same for the per-field "in company" folds, which are re-rendered by every edit.
+    qa("details.hintfold", host).forEach((f) => {
+      if (f.open) HINT_OPEN.add(f.dataset.hk); else HINT_OPEN.delete(f.dataset.hk);
+    });
     const y = window.scrollY;
     if (VIEW === "chars") { drawCharsView(host); }
     else if (VIEW === "growth") drawGrowth(host);
@@ -4582,87 +4586,230 @@
       setStatus("Damage+heal restored to this disc's own wiring.", "ok");
     };
   }
-  // ---- what a Radius number MEANS, in company --------------------------------------------
-  // "Radius 3" tells you nothing unless you have read the table. What does tell you something is
-  // which records already carry that size, so every Radius box names a few of them and each tab
-  // carries a legend of the sizes in use. Read live off THIS disc's two tables rather than a
-  // bundled list of stock values: retarget or reskin a row and it moves between the groups as
-  // you edit, and a disc someone already patched describes itself rather than the disc it was.
+  // ---- what a value MEANS, in company ------------------------------------------------------
+  // "Radius 3", "60%" and even "All foes" tell you nothing unless you have read the table. What
+  // does tell you something is which records already carry that value, so Target, Radius and
+  // Status chance each get a line naming them, and each tab opens with a legend of the values in
+  // use. Read live off THIS disc's two tables rather than a bundled list of stock values: retarget
+  // or reskin a row and it moves between the groups as you edit, and a disc someone already
+  // patched describes itself rather than the disc it shipped as.
   //
   // On a pristine SLUS-20387 that comes out as areas 2 (7 records) 3 (17) 4 (4) and lines 1 (4)
-  // 3 (2) — the numbers AREA_RADIUS/LINE_RADIUS are picked from, now visible instead of implied.
-  // Spells and unites are indexed together because they size the same templates and the graded
-  // families cross the two (every area unite is a 3, same as Blazing Wall).
-  function radiusIndex() {
+  // 3 (2) — the numbers AREA_RADIUS/LINE_RADIUS are picked from, now visible instead of implied —
+  // 34 single-target spells against 19 all-foes and 11 foes+allies, and 13 records of 131 with a
+  // status chance at all (20/30/40/60/80/100).
+  //
+  // Spells and unites are indexed together because they share these fields and the families cross
+  // the two (every area unite is a 3, same as Blazing Wall). Same-table records are named first
+  // and cross-table ones are labelled, so the Spells tab reads as spells.
+  //
+  // Each line is a <details>, so a row stays one line per field until you ask for the names.
+  const HINT_OPEN = new Set();          // which of those folds the user has opened, by data-hk
+  function recIndex() {
     const out = [];
-    for (let i = 0; i + 1 < SPELL.count; i++) {          // last spell's tail is outside the table
-      const off = SPELL.off + i * SPELL.stride, sh = radShape(r32(off + 0x14));
-      if (sh) out.push({ kind: "spell", i, off, sh, rad: r8(off + SPELL.radius) });
-    }
-    for (let i = 0; i < UNITE.count; i++) {
-      const off = UNITE.off + i * UNITE.stride, sh = radShape(r32(off + 0x14));
-      if (sh) out.push({ kind: "unite", i, off, sh, rad: r8(off + UNITE.radius) });
-    }
+    const add = (kind, T, i, tail) => {
+      const off = T.off + i * T.stride, f14 = r32(off + 0x14);
+      out.push({ kind, i, off, tail, f14, tb: (f14 >> 8) & 0x7F, sh: radShape(f14), f18: r32(off + 0x18),
+        rad: tail ? r8(off + T.radius) : 0, ch: tail ? r16(off + T.chance) : 0 });
+    };
+    // A spell's tail is stored one record ahead, so the last spell has a target but no readable
+    // Radius/chance; a unite record is longer and keeps its own tail inside itself.
+    for (let i = 0; i < SPELL.count; i++) add("spell", SPELL, i, i + 1 < SPELL.count);
+    for (let i = 0; i < UNITE.count; i++) add("unite", UNITE, i, true);
     return out;
   }
-  const radName = (r, kind) => (strAt(r32(r.off + 0x08)) || "#" + r.i) + (r.kind === kind ? "" : ` (${r.kind})`);
-  // Same-table records first, so the Spells tab names spells and the Unites tab names unites —
-  // the cross-table ones are still there, and labelled, when a size is thin on this side.
-  const radRank = (kind) => (a, b) => (a.kind === kind ? 0 : 1) - (b.kind === kind ? 0 : 1) || a.i - b.i;
-  const radSizes = (all, sh) => [...new Set(all.filter((r) => r.sh === sh && r.rad).map((r) => r.rad))].sort((a, b) => a - b);
+  const recName = (r, kind) => (strAt(r32(r.off + 0x08)) || "#" + r.i) + (r.kind === kind ? "" : ` (${r.kind})`);
+  const recRank = (kind) => (a, b) => (a.kind === kind ? 0 : 1) - (b.kind === kind ? 0 : 1) || a.i - b.i;
+  const plural = (n, one, many) => (n === 1 ? one : many);
+  // A peer list long enough to be useful and short enough to read: 12 names, then a count.
+  const nameList = (rows, kind, cap = 12) => {
+    const show = rows.slice(0, cap).map((r) => recName(r, kind));
+    return esc2(show.join(", ")) + (rows.length > show.length ? ` <span class="dim">+${rows.length - show.length} more</span>` : "");
+  };
+  // A count that crosses the two tables must say so, or "51 other records target Single target"
+  // reads as 51 spells when 17 of them are unites.
+  const splitNote = (rows) => {
+    const sp = rows.filter((r) => r.kind === "spell").length, un = rows.length - sp;
+    return sp && un ? ` <span class="dim">(${sp} ${plural(sp, "spell", "spells")}, ${un} ${plural(un, "unite", "unites")})</span>` : "";
+  };
+  const peersOf = (all, kind, idx, pred) =>
+    all.filter((r) => !(r.kind === kind && r.i === idx) && pred(r)).sort(recRank(kind));
+  const targetLabel = (tb) => (TARGET_OPTS.find(([v]) => v === tb) || [0, `custom 0x${hex(tb, 2)}`])[1];
+  const radSizes = (all, sh) => [...new Set(all.filter((r) => r.tail && r.sh === sh && r.rad).map((r) => r.rad))].sort((a, b) => a - b);
 
-  // The line under one Radius box: what this row's number means, and what else carries it.
-  function radiusHint(kind, idx, all) {
-    const T = kind === "spell" ? SPELL : UNITE;
-    // A record's tail is stored one record ahead, so the last spell's Radius byte falls outside
-    // the table — the box is disabled, and this says why rather than sitting blank next to it.
-    if (kind === "spell" && idx + 1 >= SPELL.count)
-      return `this is the last record in the table, so its Radius byte falls outside it and can't be set`;
-    const off = T.off + idx * T.stride, sh = radShape(r32(off + 0x14)), rad = r8(off + T.radius);
-    if (!sh) return rad
+  // ---- the three readings of that index -----------------------------------------------------
+  // Each returns { sum } for a one-liner or { sum, body } for a line that opens.
+  function hintTarget(all, kind, idx) {
+    const me = all.find((r) => r.kind === kind && r.i === idx);
+    const label = targetLabel(me.tb), peers = peersOf(all, kind, idx, (r) => r.tb === me.tb);
+    if (!peers.length) return { sum: `no other record on this disc targets <b>${esc2(label)}</b>` };
+    return { sum: `shared with <b>${peers.length}</b> other ${plural(peers.length, "record", "records")}`,
+      body: `<b>${esc2(label)}</b>${splitNote(peers)} — ${nameList(peers, kind)}` };
+  }
+  function hintRadius(all, kind, idx) {
+    const me = all.find((r) => r.kind === kind && r.i === idx);
+    if (!me.tail) return { sum: `this is the last record in the table, so its Radius byte falls outside it and can't be set` };
+    if (!me.sh) return { sum: me.rad
       ? `this record has no area or line to size — stock uses <b>0</b> here`
-      : `<b>0</b> — single-target, so there is no template to size`;
-    all = all || radiusIndex();
-    const scale = radSizes(all, sh).join(", ");
-    const art = sh === "area" ? "an" : "a";
-    if (!rad) return `${art} ${sh} of size <b>0</b> does nothing — sizes in use for ${art} ${sh}: ${scale}`;
-    const peers = all.filter((r) => r.sh === sh && r.rad === rad && !(r.kind === kind && r.i === idx)).sort(radRank(kind));
-    if (!peers.length) return `<b>${rad}</b> — no other ${sh} record on this disc uses it (in use: ${scale})`;
-    const show = peers.slice(0, 3).map((r) => radName(r, kind));
-    const more = peers.length - show.length;
-    return `<b>${rad}</b> = the ${sh} size of ${esc2(show.join(", "))}${more > 0 ? ` +${more} more` : ""}`
-      + ` · ${sh} sizes in use: ${scale}`;
+      : `<b>0</b> — no area or line, so there is no template to size` };
+    const art = me.sh === "area" ? "an" : "a", scale = radSizes(all, me.sh).join(", ");
+    const tail = `${me.sh} sizes in use on this disc: ${scale}`;
+    if (!me.rad) return { sum: `${art} ${me.sh} of size <b>0</b> does nothing — ${tail}` };
+    const peers = peersOf(all, kind, idx, (r) => r.tail && r.sh === me.sh && r.rad === me.rad);
+    if (!peers.length) return { sum: `<b>${me.rad}</b> — no other ${me.sh} record uses this size (${tail})` };
+    return { sum: `shared with <b>${peers.length}</b> other ${me.sh} ${plural(peers.length, "record", "records")}`,
+      body: `${me.sh} size <b>${me.rad}</b>${splitNote(peers)} — ${nameList(peers, kind)}<br>${tail}` };
   }
-  // The legend at the top of a table: every size in use, with an example or two of each.
-  function radiusLegendHTML(kind, all) {
-    all = all || radiusIndex();
-    const part = (sh) => radSizes(all, sh).map((n) => {
-      const g = all.filter((r) => r.sh === sh && r.rad === n).sort(radRank(kind));
-      const show = g.slice(0, 2).map((r) => radName(r, kind)), more = g.length - show.length;
-      return `<b>${n}</b> ${esc2(show.join(", "))}${more > 0 ? ` +${more}` : ""}`;
+  // Status chance is the field with a coupling of its own, and it is worth stating because it is
+  // one-way. On a pristine disc every record carrying a chance also inflicts something (13 of
+  // them), and NO record carries a chance without one — so a chance typed onto a spell with no
+  // status has nothing to roll for. The reverse is not a rule: 25 records set flags18 with chance
+  // 0, most of them the heal/restore masks, which CLEAR statuses rather than roll to apply one.
+  function hintChance(all, kind, idx) {
+    const me = all.find((r) => r.kind === kind && r.i === idx);
+    if (!me.tail) return { sum: `this is the last record in the table, so its Status chance bytes fall outside it and can't be set` };
+    const rolled = all.filter((r) => r.tail && r.ch);
+    const vals = [...new Set(rolled.map((r) => r.ch))].sort((a, b) => a - b).join(", ");
+    const tail = `chances in use on this disc: ${vals || "none"} <span class="dim">(${rolled.length} of ${all.filter((r) => r.tail).length} records carry one at all)</span>`;
+    if (me.ch && !me.f18) {
+      const orphans = peersOf(all, kind, idx, (r) => r.tail && r.ch && !r.f18);
+      return { sum: `<b>${me.ch}%</b> · but nothing is inflicted here, so there is nothing to roll for`,
+        body: orphans.length ? `others in the same state: ${nameList(orphans, kind)}`
+          : `no other record on this disc carries a chance without a status — tick an effect below and this becomes the odds it lands.` };
+    }
+    if (!me.ch) {
+      const withStatus = peersOf(all, kind, idx, (r) => r.tail && r.f18 && !r.ch);
+      if (me.f18) return { sum: `<b>0</b> · a status with no roll, like <b>${withStatus.length}</b> others`,
+        body: `${splitNote(withStatus).replace(/^ /, "") || "on this disc"} — ${nameList(withStatus, kind)}<br>Most of these are heals and buffs — they clear or grant a status rather than roll to inflict one. ${tail}` };
+      const orphans = rolled.filter((r) => !r.f18);
+      return { sum: `<b>0</b> — nothing is inflicted, so there is nothing to roll for`,
+        body: `${tail}<br>${orphans.length
+          ? `${orphans.length} of them roll for nothing: ${nameList(orphans, kind)}`
+          : `Every record on this disc that carries a chance also inflicts something; none carries one without.`}` };
+    }
+    const peers = peersOf(all, kind, idx, (r) => r.tail && r.ch === me.ch);
+    if (!peers.length) return { sum: `<b>${me.ch}%</b> — no other record on this disc rolls this often`, body: tail };
+    return { sum: `the same roll as <b>${peers.length}</b> other ${plural(peers.length, "record", "records")}`,
+      body: `<b>${me.ch}%</b>${splitNote(peers)} — ${nameList(peers, kind)}<br>${tail}` };
+  }
+  const HINT_FN = { target: hintTarget, radius: hintRadius, chance: hintChance };
+
+  // ---- rendering ----------------------------------------------------------------------------
+  // One line per field, and the names only when asked for. The open folds are remembered by key
+  // (see HINT_OPEN) because these rows are re-rendered by every edit — a fold that closed itself
+  // the moment you typed would be worse than no fold.
+  function foldHTML(key, sum, body) {
+    if (!body) return `<div class="hintflat">${sum}</div>`;
+    // The same accent chevron every other fold in the editor uses, so a line that opens looks
+    // like one — a bare ::before triangle at 11px read as a stray bullet.
+    return `<details class="hintfold" data-hk="${key}"${HINT_OPEN.has(key) ? " open" : ""}>`
+      + `<summary><span class="chev">\u25B8</span> ${sum}</summary><div class="hintbody">${body}</div></details>`;
+  }
+  function valueHint(kind, field, idx, all) {
+    const h = HINT_FN[field](all || recIndex(), kind, idx);
+    return foldHTML(`${kind}:${idx}:${field}`, h.sum, h.body);
+  }
+  const hintBoxHTML = (kind, field, idx, all) =>
+    `<div class="fhint vhint" data-k="${kind}" data-f="${field}" data-i="${idx}">${valueHint(kind, field, idx, all)}</div>`;
+
+  // The legend for a whole table: every value in use for the three fields, with an example or
+  // two of each. Scoped to THIS table — it heads "Every spell" or "Every unite" and describes
+  // what is in front of you, where a row's own hints cross both tables because a value means the
+  // same thing in either. Collapsed, because it is reference rather than a line you read twice.
+  function legendHTML(kind, all) {
+    const mine = (all || recIndex()).filter((r) => r.kind === kind);
+    const ex = (rows) => rows.slice(0, 2).map((r) => recName(r, kind)).join(", ")
+      + (rows.length > 2 ? ` +${rows.length - 2}` : "");
+    const group = (vals, pick, fmt) => vals.map((v) => {
+      const g = mine.filter((r) => pick(r) === v);
+      return `${fmt(v)} ${g.length} <span class="dim">(${esc2(ex(g))})</span>`;
     }).join(" · ");
-    const area = part("area"), line = part("line");
-    return `<b>Radius</b> is the size of the template, and only means something next to the sizes already in use`
-      + ` on this disc${area ? ` — area: ${area}` : ""}${line ? ` · line: ${line}` : ""}.`
-      + ` <b>0</b> is every other record: no area, nothing to size.`;
+    const targets = group([...new Set(mine.map((r) => r.tb))].sort((a, b) => a - b),
+      (r) => r.tb, (v) => `<b>${esc2(targetLabel(v))}</b>`);
+    const rad = (sh) => radSizes(mine, sh).map((n) => {
+      const g = mine.filter((r) => r.tail && r.sh === sh && r.rad === n);
+      return `<b>${n}</b> ${esc2(ex(g))}`;
+    }).join(" · ");
+    const rolled = mine.filter((r) => r.tail && r.ch), tail = mine.filter((r) => r.tail);
+    const chances = [...new Set(rolled.map((r) => r.ch))].sort((a, b) => a - b).map((v) => {
+      const g = rolled.filter((r) => r.ch === v);
+      return `<b>${v}%</b> ${esc2(ex(g))}`;
+    }).join(" · ");
+    const orphans = rolled.filter((r) => !r.f18).length;
+    const area = rad("area"), line = rad("line");
+    const word = kind === "spell" ? "spell" : "unite";
+    return foldHTML(`${kind}:legend`,
+      `What these values mean next to the rest of the table <span class="dim">— targets, radius sizes and status chances in use across the ${mine.length} ${word}s on this disc</span>`,
+      `<div><b>Target</b> — ${targets}</div>`
+      + `<div style="margin-top:3px"><b>Radius</b> — the size of the template${area ? `, area: ${area}` : ""}${line ? ` · line: ${line}` : ""}.`
+      + ` <b>0</b> is every other ${word}: no area, nothing to size.</div>`
+      + `<div style="margin-top:3px"><b>Status chance</b> — ${chances || `no ${word} on this disc carries one`}.`
+      + ` ${rolled.length} of ${tail.length} carry a chance`
+      + (orphans ? `, and ${orphans} of those inflict nothing to roll for` : `, and every one of them inflicts a status`)
+      + `; <b>0</b> is the rest, including the heal/restore masks, which clear statuses rather than roll for one.</div>`);
   }
-  // A bulk field sizes rows it cannot name one at a time, so it gets the numbers without the
-  // examples: which sizes this disc uses for each shape, and what leaving it blank will pick.
+  // The bulk cards edit rows they cannot name one at a time, so they get the numbers without the
+  // examples: which values this disc uses, and what leaving a field blank will do.
   function radiusScaleText(all) {
-    all = all || radiusIndex();
+    all = all || recIndex();
     const a = radSizes(all, "area").join(", "), l = radSizes(all, "line").join(", ");
     return `sizes in use — area: ${a || "none"} · line: ${l || "none"}`
       + ` · blank sizes each spell from its own shape (${AREA_RADIUS} / ${LINE_RADIUS})`;
   }
-  // Any Target / Area-of-effect / Radius edit moves a record between these groups, so the whole
-  // tab's hints are rebuilt from one fresh index rather than only the row that was touched.
-  function refreshRadiusHints(host, kind) {
-    const all = radiusIndex();
-    const leg = q(`.radlegend[data-k="${kind}"]`, host);
-    if (leg) leg.innerHTML = radiusLegendHTML(kind, all);
-    qa(`.radhint[data-k="${kind}"]`, host).forEach((el) => { el.innerHTML = radiusHint(kind, +el.dataset.i, all); });
-    const sc = q(".radscale", host); if (sc) sc.textContent = radiusScaleText(all);
+  function chanceScaleText(all) {
+    all = all || recIndex();
+    const rolled = all.filter((r) => r.tail && r.ch);
+    const vals = [...new Set(rolled.map((r) => r.ch))].sort((a, b) => a - b).join(", ");
+    return `chances in use: ${vals || "none"} · only ever set on a record that inflicts a status`;
   }
+  // Target, Area of effect, Radius, Status chance and the status boxes all move a record between
+  // these groups, so the whole tab's hints are rebuilt from one fresh index rather than only the
+  // row that was touched — one row's edit can restate every other row's company.
+  function refreshHints(host, kind) {
+    const all = recIndex();
+    qa(`.vhint[data-k="${kind}"]`, host).forEach((el) => {
+      el.innerHTML = valueHint(kind, el.dataset.f, +el.dataset.i, all);
+    });
+    const leg = q(`.vlegend[data-k="${kind}"]`, host);
+    if (leg) leg.innerHTML = legendHTML(kind, all);
+    const rs = q(".radscale", host); if (rs) rs.textContent = radiusScaleText(all);
+    const cs = q(".chscale", host); if (cs) cs.textContent = chanceScaleText(all);
+    wireHintFolds(host);
+  }
+  // <details> reports its state on a later task, so a fold that only listened to `toggle` would
+  // still be reporting the PREVIOUS state when an edit re-rendered the row underneath it. The
+  // handler keeps HINT_OPEN current, and drawView re-reads the DOM before every redraw.
+  function wireHintFolds(host) {
+    qa("details.hintfold", host).forEach((d) => {
+      d.ontoggle = () => {
+        if (d.open) HINT_OPEN.add(d.dataset.hk); else HINT_OPEN.delete(d.dataset.hk);
+        fitHintBody(d);
+      };
+      if (d.open) fitHintBody(d);          // re-rendered rows keep their folds open
+    });
+  }
+  // The open body keeps its own width rather than the ~160px of a field column, so in the
+  // right-hand columns it can run past the edge of the card — and on a phone it was clipped
+  // mid-word. Measure it where it landed and pull it back inside the row, never further left
+  // than the row's own edge, then cap the width to the row.
+  function fitHintBody(d) {
+    const body = d.querySelector(".hintbody"); if (!body) return;
+    body.style.marginLeft = ""; body.style.maxWidth = "";
+    const row = d.closest(".char-body"); if (!d.open || !row) return;
+    const lim = row.getBoundingClientRect();
+    body.style.maxWidth = `${Math.max(140, lim.width - 12)}px`;
+    const r = body.getBoundingClientRect(), over = r.right - lim.right;
+    if (over > 0) body.style.marginLeft = `${11 - Math.min(over, r.left - lim.left)}px`;
+  }
+  // That measurement is only true for the width it was taken at: rotating a phone left a body
+  // sized for the old viewport, pulled hundreds of pixels off the card. Nothing re-renders on a
+  // resize, so re-fit whatever is open.
+  let fitPending = false;
+  window.addEventListener("resize", () => {
+    if (fitPending) return;
+    fitPending = true;
+    requestAnimationFrame(() => { fitPending = false; qa("details.hintfold[open]").forEach(fitHintBody); });
+  });
 
   let SPELL_JUMP = null;    // a spell index the Runes tab asked to land on, consumed on draw
   function drawSpells(host) {
@@ -4690,7 +4837,8 @@
         <label class="field"><span>Status</span><select id="rsStatus">${statOptsBlank}</select></label>
         <label class="field"><span>Radius</span><input type="number" id="rsRadius" min="0" max="255" placeholder="no change">
           <div class="fhint radscale">${radiusScaleText()}</div></label>
-        <label class="field"><span>Status chance %</span><input type="number" id="rsChance" min="0" max="100" placeholder="no change"></label>
+        <label class="field"><span>Status chance %</span><input type="number" id="rsChance" min="0" max="100" placeholder="no change">
+          <div class="fhint chscale">${chanceScaleText()}</div></label>
       </div>
       <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:4px">
         <span class="muted">Presets:</span>
@@ -4712,7 +4860,7 @@
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, off, name });
     }
-    const radIx = radiusIndex();          // one scan of both tables for all 94 rows' Radius hints
+    const radIx = recIndex();             // one scan of both tables for all 94 rows' hints
     const body = rows.map(({ i, off, name }) => {
       const canTail = i + 1 < SPELL.count, elVal = canTail ? (r16(off + SPELL.elem) & 0xFF) : 0;
       const radVal = canTail ? r8(off + SPELL.radius) : 0, chVal = canTail ? r16(off + SPELL.chance) : 0;
@@ -4733,11 +4881,13 @@
             <label class="field"><span>Power</span><input type="number" class="sp" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="sp" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
             <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
-            <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
+            <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select>
+              ${hintBoxHTML("spell", "target", i, radIx)}</label>
             <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
             <label class="field"><span>Radius <span class="muted">(follows AOE/Target)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}>
-              <div class="fhint radhint" data-k="spell" data-i="${i}">${radiusHint("spell", i, radIx)}</div></label>
-            <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
+              ${hintBoxHTML("spell", "radius", i, radIx)}</label>
+            <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}>
+              ${hintBoxHTML("spell", "chance", i, radIx)}</label>
             ${f18CtlHTML(i, f18)}
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`;
@@ -4749,7 +4899,7 @@
       + sec("Bulk edit \u00b7 a whole rune") + reskin
       + sec("Bulk edit \u00b7 every spell") + powerBulkHTML("spell", spBulkPow, spBulkOpen)
       + sec("Every spell") + updBox
-      + `<div class="fhint radlegend" data-k="spell" style="margin:0 0 10px">${radiusLegendHTML("spell", radIx)}</div>`
+      + `<div class="fhint vlegend" data-k="spell" style="margin:0 0 10px">${legendHTML("spell", radIx)}</div>`
       + body;
 
     wireFx(host);
@@ -4785,7 +4935,7 @@
       updateSpellSummary(host, i);
       // Shape and size decide which group every row is in, so one row's edit can restate the
       // legend and other rows' company — rebuild them all rather than only the one touched.
-      if (k === "radius" || k === "target" || k === "aoe") refreshRadiusHints(host, "spell");
+      if (k !== "power" && k !== "cast" && k !== "elementId") refreshHints(host, "spell");
       if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn");
       else if (notes.length) setStatus(notes[0].msg, notes[0].level);
     }));
@@ -4800,6 +4950,7 @@
       const i = +el.dataset.i, d = q(`details.char[data-i="${i}"]`, host);
       applySpell(i, { statusMask: f18FromBoxes(d) }, false);
       updateSpellSummary(host, i);
+      refreshHints(host, "spell");        // whether anything is inflicted changes what a chance means
     }));
     qa("input.sp18hex", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, raw = el.value.trim().replace(/^0x/i, "");
@@ -4819,6 +4970,7 @@
       updateSpellSummary(host, i);
     }));
     qa("details.char", host).forEach((d) => updateSpellSummary(host, +d.dataset.i));   // init ↺/highlight
+    wireHintFolds(host);
   }
   function updateSpellSummary(host, i) {
     const d = q(`details.char[data-i="${i}"]`, host); if (!d) return;
@@ -4893,10 +5045,10 @@
     const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes <span class="u">· applies to the bulk edit above too</span></label>`
       + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
     const sec = (t) => `<div class="secdiv"><span>${t}</span></div>`;
-    const radIx = radiusIndex();          // one scan of both tables for all 38 rows' Radius hints
+    const radIx = recIndex();             // one scan of both tables for all 38 rows' hints
     host.innerHTML = sec("Bulk edit · every unite") + powerBulkHTML("unite", unBulkPow, unBulkOpen)
       + sec("Every unite") + updBox
-      + `<div class="fhint radlegend" data-k="unite" style="margin:0 0 10px">${radiusLegendHTML("unite", radIx)}</div>`
+      + `<div class="fhint vlegend" data-k="unite" style="margin:0 0 10px">${legendHTML("unite", radIx)}</div>`
       + (rows.map(({ i, off, name, who }) => {
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
       const radVal = r8(off + UNITE.radius), chVal = r16(off + UNITE.chance);
@@ -4921,11 +5073,13 @@
           <div class="grid">
             <label class="field"><span>Power</span><input type="number" class="un" data-i="${i}" data-k="power" min="0" value="${r32(off + 0x1C)}"></label>
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
-            <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
+            <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select>
+              ${hintBoxHTML("unite", "target", i, radIx)}</label>
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
             <label class="field"><span>Radius <span class="muted">(follows AOE/Target)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}">
-              <div class="fhint radhint" data-k="unite" data-i="${i}">${radiusHint("unite", i, radIx)}</div></label>
-            <label class="field"><span>Status chance %</span><input type="number" class="un" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}"></label>
+              ${hintBoxHTML("unite", "radius", i, radIx)}</label>
+            <label class="field"><span>Status chance %</span><input type="number" class="un" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}">
+              ${hintBoxHTML("unite", "chance", i, radIx)}</label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`);
     const UMAP = { power: [0x1C, 4, "num"], cast: [0x10, 4, "num"], target: [0x14, 4, "flags14"], aoe: [0x14, 4, "flags14"],
@@ -4965,7 +5119,7 @@
       else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); radiusTyped.unite.add(i); }
       else if (k === "chance") { writeW(off + UNITE.chance, 2, clampInt(el.value, 0, 100)); reg(off + UNITE.chance, 2, "num", name, "Status chance %"); }
       markUnite(i);
-      if (k === "radius" || k === "target" || k === "aoe") refreshRadiusHints(host, "unite");
+      if (k !== "power" && k !== "cast") refreshHints(host, "unite");
     }));
     qa(".undesc", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
@@ -4974,6 +5128,7 @@
       markUnite(i);
     }));
     qa("details.char", host).forEach((d) => markUnite(+d.dataset.i));   // init ↺/highlight
+    wireHintFolds(host);
   }
 
   // ---- food ------------------------------------------------------------------
