@@ -3891,6 +3891,14 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.waitForSelector("#pgClose:visible", { timeout: 5000 });
   check("progress modal reaches completion", /Done/i.test(await page.textContent("#pgTitle")));
   check("completion readout shows time taken", /⏱\s*[\d.]+\s*s/.test(await page.textContent("#pgMeta")));
+  // A finished ISO write floods the backdrop with the accent colour instead of staying dimmed
+  // (a streaming save runs minutes; the old black overlay was missed). Assert the class AND the
+  // computed colour, so deleting the .pg-ok rule fails too — the class alone proves nothing.
+  const okBg = await page.evaluate(() => {
+    const ov = document.querySelector(".modal-ov.pg-ok");
+    return ov ? getComputedStyle(ov).backgroundColor : null;
+  });
+  check("finished write floods the backdrop with the accent colour", !!okBg && !/^rgba?\(0, 0, 0/.test(okBg), okBg || "no .pg-ok overlay");
   await page.click("#pgClose");
   check("status ok after save", await statusHas(page, /Saved/));
   check("badge cleared after save", await nothingStaged(page));
