@@ -173,42 +173,6 @@ Examples: Flaming Arrows `0x0A0A` (single) vs Explosion `0x830A` (area:foes+alli
 vs Thunder Runner `0x120A` (line:foes). To make a single-target spell AOE, set
 bit 15: `0x0A0A → 0x8A0A` (or match a real area spell's `0x830A`).
 
-### flags14 bit16 (`0x00010000`) = NO AIMING STEP — the target byte is only half the write
-
-**The target byte does not stand alone.** A spell that hits a whole side has nothing to point at,
-and the engine has to be told separately: bit 16 is set on exactly the records whose target byte is
-a whole side (`0x01`/`0x02`/`0x03`) with the AREA bit CLEAR, and clear on every other record.
-**132/132 across the 94 spells and 38 unites of a pristine SLUS-20387, no exceptions in either
-direction** (`web/tests/spell-target-real-iso.mjs` asserts it against the disc).
-
-| target byte | area | bit16 | stock example |
-|---|---|---|---|
-| `0x02` all foes | off | **1** | Kite `0x0081020A`, Eternal Wind `0x0001020A` |
-| `0x02` all foes | on  | 0 | Double Tusk `0x0080820A`, Spreading Flame `0x0000820A` |
-| `0x03` both sides | off | **1** | Empty World `0x0001030A` |
-| `0x03` both sides | on  | 0 | Explosion `0x0000830A` |
-| `0x01` all allies | off | **1** | Great Blessing `0x00110186` |
-| `0x0A` single / `0x05` chanter / `0x09` one ally / `0x12` line / `0x41` pair | — | 0 | Phoenix `0x00800A0A` |
-
-**This cost a soft lock** (played 2026-09-06). The web editor's Target dropdown wrote bits 8–15 and
-preserved everything else (`v & 0xFFFF80FF`), so setting Phoenix to "All foes" produced
-`0x0080020A` — the target byte saying *the whole foe side* while bit 16 still said *make the player
-aim first*. With the aim bit (`0x08`) gone from the target byte the cursor had no foe to land on: it
-came up on the caster and its pair, and confirming did nothing. The value it needed was
-`0x0081020A`, byte-for-byte what Kite, Boronda Hawk and Gadget already carry.
-
-The AOE toggle had the same hole in reverse — it only ever touched bit 15, so making a whole-side
-spell area-of-effect left bit 16 set. Both writes now go through `syncNoAim()` in `web/iso.js`,
-which recomputes bit 16 from the final target byte and area bit. **Any tool that writes this field
-must do the same**; `s3patch.py set-spell --field flags14` takes a whole word and is unaffected,
-but it will not fix the bit for you either.
-
-The high half carries more than this one bit — the observed values are `0x0000 0x0001 0x0005 0x0010
-0x0011 0x0012 0x0020 0x0021 0x0031 0x0080 0x0081 0x0088 0x00A0 0x0200 0x0280`, where `0x0080`
-tracks the attack runes, `0x0010` the heal/buff family, `0x0004` the "land-based foes only"
-restriction (Earthquake, Land of Eternity) and `0x0020` a status rider. Only bit 16 is pinned; the
-rest are left alone by every editor write, which is why they never needed to be.
-
 ### flags14 low byte (bits 0–7) = damage/effect kind
 Validated against descriptions: `0x0A`=direct damage (44 of 63 say "DMG"),
 `0x87`=pure heal (5/5 restore HP), `0x42`=status/utility (sleep, silence),
