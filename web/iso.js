@@ -825,18 +825,6 @@
   // HI/LO are dead across all 51 calls (checked), no site's delay slot is a branch target, and
   // the helper clobbers only caller-saved registers.
   //
-  // PLAYED 2026-09-06 --- the delivery works, and that is a separate claim from any one rune.
-  // Balance (0x1C2) and Fury (0x1CC) were both forced on for Chris (list1 record 2) from her own
-  // card, and both effects showed up in combat. What that proves is this machinery: the relocated
-  // helper runs in a running game (0x16BF1E0 really is as dead at runtime as it is in the image),
-  // its register handling survives a real caller, the bitmap answers per character, and two runes
-  // can be on at once. It proves two of the three entries, not all three --- Balance's only two
-  // sites are psRec ones, and Fury's berserk state is written at its two psUnit sites, so both of
-  // those have fired; psId (the three sites that resolve a character id first: Champion's field
-  // ask, Sunbeam's walk-heal, one of Wall's ten) has still never been played. Every rune keeps
-  // its OWN marker, because what was watched is the delivery and two runes' effects, not the
-  // other 20.
-  //
   // Fortune ("Doubles experience value gained") is NOT here, and the searches that came up empty
   // are worth recording: its item id 440 (0x1B8) appears eight times as an instruction immediate
   // anywhere in the ELF and every one is a struct offset or a stack displacement, never an
@@ -893,38 +881,27 @@
   // `where` is where in the game the ask happens, because that is what a "yes" means: a field ask
   // runs once per party slot, a battle ask runs for whichever unit is acting.
   const PASSIVES = [
-    { id: 0x1B9, where: "field", proof: "untested",
+    { id: 0x1B9, where: "field",
       what: "The field encounter roll (VA 0x1702740) walks party slots 1–6 asking this, and turns on "
         + "the weak-foe skip if any of them says yes — so one chosen character covers the whole party.",
-      note: "Nobody has walked past a weak encounter with this on. The relocated helper itself is no "
-        + "longer the open question — Balance and Fury were played through it on 2026-09-06 — but "
-        + "both of those enter by psRec/psUnit, and this site is one of the three that resolve a "
-        + "character id first (psId), which nobody has played. The effect is unwatched either way.",
       sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
-    { id: 0x1BA, where: "battle", proof: "untested",
+    { id: 0x1BA, where: "battle",
       what: "Multiplies the high-damage-hit chance by 150/100, at both sites that roll it.",
       sites: [{ off: 0x10407C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" },
               { off: 0x10413C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" }] },
-    { id: 0x1BB, where: "battle", proof: "untested",
+    { id: 0x1BB, where: "battle",
       what: "Multiplies the counter-attack chance by 150/100 at all three sites that roll it.",
       sites: [{ off: 0x1038E0, jal: 0x0C5B2CE0, ds: 0x240501BB, k: "rec" },
               { off: 0x103B54, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" },
               { off: 0x103D28, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" }] },
-    { id: 0x1BC, where: "battle", proof: "untested", what: "Multiplies SPD by 150/100.",
+    { id: 0x1BC, where: "battle", what: "Multiplies SPD by 150/100.",
       sites: [{ off: 0x10FD28, jal: 0x0C5B2CE0, ds: 0x240501BC, k: "rec" }] },
-    { id: 0x1BD, where: "both", proof: "untested",
+    { id: 0x1BD, where: "both",
       what: "Both halves of the rune: the field walk-heal (VA 0x17029A0, once per party slot) and "
         + "the +15 HP a combat turn adds (the literal `addiu $v0,$v0,0xF` right after the check).",
-      note: "The walk-heal site WAS played on 2026-09-06, under the editor's previous patch shape: "
-        + "forced to yes by dropping the call, the party healed by walking with nobody carrying the "
-        + "rune. That proves 0x14A1B4 is the right site and that the code around it accepts a "
-        + "synthesised $v0. The trampoline this version uses was played later the same day — Balance "
-        + "and Fury, both forced on for Chris — but by its psRec and psUnit entries, and this field "
-        + "site is a psId one, so the two reports still do not meet: nothing has come through psId "
-        + "in a running game. The in-battle half has never been watched at all.",
       sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" },
               { off: 0x261184, jal: 0x0C5B2CE0, ds: 0x240501BD, k: "rec" }] },
-    { id: 0x1BE, where: "battle", proof: "untested",
+    { id: 0x1BE, where: "battle",
       what: "Doubles PDF at the damage site — and turns on the other half of the rune at eight "
         + "battle-action sites, which is what stops the character doing anything else.",
       sites: [{ off: 0x104368, jal: 0x0C5B2CE0, ds: 0x02129821, k: "rec" },
@@ -937,72 +914,66 @@
               { off: 0x25CC54, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
               { off: 0x25CC9C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
               { off: 0x25CD5C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" }] },
-    { id: 0x1BF, where: "battle", proof: "untested",
+    { id: 0x1BF, where: "battle",
       what: "Opens the dodge roll — the code right after is `rand(100) < 30`, so the 30% is the "
         + "rune's real number.",
       sites: [{ off: 0x1037F4, jal: 0x0C5B2CE0, ds: 0x240501BF, k: "rec" }] },
-    { id: 0x1C0, where: "battle", proof: "untested", what: "The critical-hit self-heal.",
+    { id: 0x1C0, where: "battle", what: "The critical-hit self-heal.",
       sites: [{ off: 0x245D6C, jal: 0x0C606CEC, ds: 0x240501C0, k: "unit" }] },
-    { id: 0x1C1, where: "battle", proof: "untested", what: "The magic-reflect roll.",
+    { id: 0x1C1, where: "battle", what: "The magic-reflect roll.",
       sites: [{ off: 0x105200, jal: 0x0C5B2CE0, ds: 0x0200202D, k: "rec" }] },
-    { id: 0x1C2, where: "battle", proof: "confirmed",
+    { id: 0x1C2, where: "battle",
       what: "Clears the unbalance status bit (0x10) in both places the state is rebuilt.",
-      note: "PLAYED 2026-09-06: forced on for Chris alongside Fury, from her own card, and both "
-        + "effects showed up in combat. Both of this rune's sites are psRec ones, so this is the "
-        + "relocated helper's record entry watched working in a running game.",
       sites: [{ off: 0x1100AC, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" },
               { off: 0x1100E0, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" }] },
-    { id: 0x1C3, where: "battle", proof: "untested",
+    { id: 0x1C3, where: "battle",
       what: "Zeroes incoming damage of one element and doubles another, at all four sites that "
         + "scale elemental damage.",
       sites: [{ off: 0x104858, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x104FC0, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x10544C, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x1115C4, jal: 0x0C5B2CE0, ds: 0xAFA40000, k: "rec" }] },
-    { id: 0x1C4, where: "battle", proof: "untested",
+    { id: 0x1C4, where: "battle",
       what: "Three sites in the target picker: the one that decides a single-target attack may "
         + "not land here.",
       sites: [{ off: 0x22E694, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
               { off: 0x22EB04, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
               { off: 0x230B44, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" }] },
-    { id: 0x1C5, where: "battle", proof: "untested", what: "The other side of the same picker — preferred target.",
+    { id: 0x1C5, where: "battle", what: "The other side of the same picker — preferred target.",
       sites: [{ off: 0x230B64, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" },
               { off: 0x23AC20, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" }] },
-    { id: 0x1C6, where: "battle", proof: "untested",
+    { id: 0x1C6, where: "battle",
       what: "The auto-item action, in the turn planner and again where the action is issued.",
       sites: [{ off: 0x23B9CC, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" },
               { off: 0x259C48, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" }] },
-    { id: 0x1C7, where: "battle", proof: "untested",
+    { id: 0x1C7, where: "battle",
       what: "Doubles damage dealt AND damage taken — the two sites are the attacker's copy and "
         + "the defender's, and the shifts are literal `sll ...,1`.",
       sites: [{ off: 0x1047BC, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" },
               { off: 0x1047D0, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" }] },
-    { id: 0x1C8, where: "battle", proof: "untested",
+    { id: 0x1C8, where: "battle",
       what: "Moves half of the SKL-derived figure into MGC. Two sites: one adds the half, one "
         + "halves what is left.",
       sites: [{ off: 0x10FD64, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" },
               { off: 0x10FD9C, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" }] },
-    { id: 0x1C9, where: "battle", proof: "untested", what: "The same pair of sites for REP into PWR.",
+    { id: 0x1C9, where: "battle", what: "The same pair of sites for REP into PWR.",
       sites: [{ off: 0x10FDBC, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" },
               { off: 0x10FDF4, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" }] },
-    { id: 0x1CA, where: "battle", proof: "untested",
+    { id: 0x1CA, where: "battle",
       what: "Sets the asleep state at battle start and the berserk state on waking — the two "
         + "status writes right after each check.",
       sites: [{ off: 0x244B1C, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" },
               { off: 0x25DFC8, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" }] },
-    { id: 0x1CB, where: "battle", proof: "untested", what: "The turn-4 wake-up.",
+    { id: 0x1CB, where: "battle", what: "The turn-4 wake-up.",
       sites: [{ off: 0x2611C8, jal: 0x0C606CEC, ds: 0x240501CB, k: "unit" }] },
-    { id: 0x1CC, where: "battle", proof: "confirmed",
+    { id: 0x1CC, where: "battle",
       what: "Always berserk: one site in the stat module and two that set the state in battle.",
-      note: "PLAYED 2026-09-06: forced on for Chris alongside Balance, from her own card, and she "
-        + "fought berserk. The berserk state is written at the two acting-unit sites, so this is the "
-        + "helper's psUnit entry — the one that resolves the acting unit — watched working.",
       sites: [{ off: 0x105634, jal: 0x0C5B2CE0, ds: 0x240501CC, k: "rec" },
               { off: 0x25DFE8, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" },
               { off: 0x2610D0, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" }] },
-    { id: 0x1CD, where: "battle", proof: "untested", what: "The berserk-on-heavy-damage trigger.",
+    { id: 0x1CD, where: "battle", what: "The berserk-on-heavy-damage trigger.",
       sites: [{ off: 0x244B3C, jal: 0x0C606CEC, ds: 0x240501CD, k: "unit" }] },
-    { id: 0x1CE, where: "battle", proof: "untested",
+    { id: 0x1CE, where: "battle",
       what: "Clamps the damage dealt (the site writes a literal 5 over it) and turns on the "
         + "item-drop side.",
       sites: [{ off: 0x1035E0, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
@@ -1696,11 +1667,9 @@
       ${AUXSW.map(auxSwField).join("")}
       ${oob ? `<div class="muted" style="margin:0 0 10px">Both switches are <b>unavailable</b> because this
         disc's overlay windows were not read — the image stops short of the ~1&nbsp;GB mark they live at.</div>` : ""}
-      <div class="warnbox" style="margin:2px 0 0" data-sum="Experimental — byte-verified and fully revertible, but no forced EXP or potch bonus has been watched landing in a running game. Keep a backup disc."><b>Experimental — not yet seen working in play.</b> Both
-        checks are decoded from a pristine USA SLUS-20387 and byte-verified before anything is written, and
-        unticking restores the stock words in both copies exactly. What nobody has watched is the
-        <i>result</i>: no forced EXP or potch bonus has been seen landing in a running game. A marker moves on
-        a play report and never on a passing test. Keep a backup disc.</div></div>`;
+      <div class="muted" style="margin:2px 0 0" data-sum="Both checks are decoded from a pristine USA SLUS-20387 and byte-verified before anything is written, and unticking restores the stock words in both copies exactly.">Both checks are decoded from a pristine USA SLUS-20387 and
+        byte-verified before anything is written, and unticking restores the stock words in both streaming
+        copies exactly.</div></div>`;
   }
   // Multi-offset field helpers for enemy edits: one logical field lives at the same
   // relative spot in every pack copy; write all, dirty/revert consider all.
@@ -3445,14 +3414,14 @@
   function drawView() {
     qa("#isoTabs [data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === VIEW));
     const hints = {
-      chars: "Character starting stats (list 1): starting skills, ranks, equipped runes and gear \u2014 plus, on each character\u2019s own card, PASSIVE RUNES FORCED ON: the 22 support runes whose passive the engine can be made to grant this character alone, with no rune and no rune slot spent. That half is confirmed in play (2026-09-06: Balance and Fury both forced on for Chris, both effects in combat), but only the mechanism and those two runes \u2014 each tile carries its own marker. A rune\u2019s STRENGTH is on the Runes tab, and the four party-wide effects are on the Passives tab.",
+      chars: "Character starting stats (list 1): starting skills, ranks, equipped runes and gear \u2014 plus, on each character\u2019s own card, PASSIVE RUNES FORCED ON: the 22 support runes whose passive the engine can be made to grant this character alone, with no rune and no rune slot spent. Ticking one sets that character\u2019s bit in the rune\u2019s table and nobody else\u2019s; unticking every rune on every character removes the helper byte-for-byte. A rune\u2019s STRENGTH is on the Runes tab, and the four party-wide effects are on the Passives tab.",
       growth: "Per-character stat-growth rates, fixed skills, skill caps and starting level (list 2) — plus two bulk cards at the top of the tab: multiply every character's growth rate at once, with the Tougher / Hard / Brutal difficulty presets, and set the whole roster's 43 skill maximums (everyone to S, or just unlock the skills a character can't get). This is where the old Balance tab went; the spell and unite halves of those presets are now on the Spells and Unites tabs.",
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
       spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
-      passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. THE MECHANISM ITSELF WAS WATCHED WORKING ON 2026-09-06: Balance and Fury were both forced on for Chris from her own card and both effects showed up in combat, which proves the relocated helper, its register handling and the per-character bitmap. That was through the helper\u2019s record and acting-unit entries \u2014 and both runes on THIS tab enter through the third one, which resolves a character id first, so neither has been watched and every row here still reads untested. So do the two overlay switches, which are a different patch shape again. Sunbeam\u2019s field walk-heal was played the same day, but under the editor\u2019s previous patch shape, which dropped the call instead of retargeting it. Keep a backup disc.",
+      passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. Every site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, and clearing a rune puts the stock instruction back exactly, so anything set here comes straight back off.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on.",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
@@ -3473,7 +3442,7 @@
     // short, renders its hint in full as before. Written out rather than derived because the
     // first sentence of most of these is a field list, not the point of the tab.
     const hintSums = {
-      chars: "Starting skills, ranks, equipped runes and gear \u2014 plus forcing a support rune\u2019s passive on for this character alone, which is confirmed in play for the mechanism and two runes.",
+      chars: "Starting skills, ranks, equipped runes and gear \u2014 plus forcing a support rune\u2019s passive on for this character alone, with no rune and no rune slot spent.",
       growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
       spells: "The spell / rune-effect table: power, cast, element, target, area and status. Area of effect now moves Radius with it, and retargeting is confirmed in play from v1.141.0 on \u2014 older builds soft-locked.",
@@ -3618,7 +3587,7 @@
         <input type="checkbox" class="cpOn" data-id="${p.id}" data-c="${idx}"${on ? " checked" : ""}${
           locked ? " disabled" : ""}>
         <span class="cpr-n">${esc2(nm)}</span>
-        <span class="cpr-w">${esc2(tag)} · ${psProofHTML(p)}</span>
+        <span class="cpr-w">${esc2(tag)}</span>
         ${info.text ? `<span class="cpr-d">${esc2(info.text)}</span>` : ""}</label>`;
     }).join("");
     const nOn = PASSIVES.filter((p) => psHas(p, idx)).length;
@@ -3626,15 +3595,10 @@
         <span class="u" title="Each of these makes the engine answer YES to &quot;does this character have that rune equipped?&quot; for this character only — no rune, no rune slot. The effect's STRENGTH is edited on the Runes tab. Fortune is not here: its check lives in a battle overlay, not the executable.">${nOn
           ? `${nOn} on` : "none"} · without equipping them</span>${nOn
           ? `<button type="button" class="cpAllOff" data-c="${idx}">turn all ${nOn} off</button>` : ""}</div>
-      <div class="muted" style="margin:0 0 8px" data-sum="Ticking one gives that character the rune's effect and nobody else. Watched working in play on 2026-09-06 — Balance and Fury together on Chris — and each tile carries its own marker.">Ticking one installs a small helper into a dead
+      <div class="muted" style="margin:0 0 8px" data-sum="Ticking one gives that character the rune's effect and nobody else — no rune, no rune slot. Unticking every rune on every character removes the helper byte-for-byte.">Ticking one installs a small helper into a dead
         routine in the executable and sets this character's bit in that rune's table, so the
         effect is <b>theirs alone</b> — enemies and everyone else are unaffected. Untick every
-        rune on every character and the helper is removed byte-for-byte.
-        <b>Watched working in play on 2026-09-06:</b> Balance and Fury were both forced on for
-        Chris from this block, and both effects showed up in combat — which is the helper, the
-        per-character bitmap and two runes at once, not just one rune. Each tile still carries its
-        own marker, because that report is about those two runes' sites; the other 20 runes' own
-        effects have not been watched.</div>
+        rune on every character and the helper is removed byte-for-byte.</div>
       <div class="cprunes">${rows}</div>`;
   }
   function wireCharPassives(scope) {
@@ -8764,8 +8728,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   const PS_WHERE = { field: "asked on the field", battle: "asked in battle", both: "asked on the field and in battle" };
   // Same three states, short enough to sit in a badge on a character card's rune tile.
   const PS_WHERE_SHORT = { field: "field", battle: "battle", both: "field + battle" };
-  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what,
-    p.proof || "", p.note || ""].join(" ").toLowerCase();
+  const psHaystack = (p, info) => [info.name, REF.items[p.id] || "", hex(p.id, 3), info.text, p.what]
+    .join(" ").toLowerCase();
   const psSiteCount = (p) => `${p.sites.length} site${p.sites.length > 1 ? "s" : ""}`;
   const psPickable = () => Array.from({ length: PS_HOOK.pickMax - PS_HOOK.pickMin + 1 }, (_, i) => i + PS_HOOK.pickMin);
   const psNameOf = (i) => ((REF.names && REF.names.list1) || {})[String(i)] || `record ${i}`;
@@ -8776,22 +8740,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     return names.length > 5 ? `${names.slice(0, 5).join(", ")} +${names.length - 5} more` : names.join(", ");
   }
   let PS_OPEN = 0;                     // which rune's character picker is expanded, if any
-  // The badge beside each rune, rendered here and on the character card's tiles. Same vocabulary
-  // the Mounts tab uses, so "confirmed" means the same thing on both tabs: somebody played it, not
-  // that a test passed. There are deliberately only two tiers, and the reason survives the
-  // 2026-09-06 report that moved Balance and Fury: now that the mechanism IS played, the pull
-  // towards a middle tier for the other 20 runes ("same helper, same shape, so expected") is
-  // stronger than it was, and it is the same inference a badge should not make on the reader's
-  // behalf. What the delivery has been watched doing is answering yes; what each rune's own site
-  // does with that yes is 49 separate claims. The evidence stays in the rune's note.
-  const PS_PROOF = {
-    confirmed: ["confirmed", "var(--ok)", "watched working in game, through this mechanism"],
-    untested: ["untested", "var(--warn)", "decoded and byte-verified, but not yet watched working in game"],
-  };
-  function psProofHTML(p) {
-    const m = PS_PROOF[p.proof] || PS_PROOF.untested;
-    return `<span class="u" style="color:${m[1]}" title="${esc2(p.note || m[2])}">${m[0]}</span>`;
-  }
 
   // The old Rune power CARD is gone: every strength control now lives on the rune's own row on
   // the Runes tab (runePowerHTML), and the Passives tab carries no strength at all — it is the
@@ -8873,10 +8821,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                    chosen.includes(i) ? " checked" : ""}> ${esc2(psNameOf(i))}</label>`).join("")}</div>`
             : `<button class="btn psPick" data-id="${p.id}">${esc2(psWhoText(chosen))}</button>`;
       return `<tr>
-        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · ${PS_WHERE[p.where]} · id ${hex(p.id, 3)}
-          · ${psProofHTML(p)}</div></td>
+        <td><b>${esc2(info.name)}</b><div class="muted" style="font-size:11px">${psSiteCount(p)} · ${PS_WHERE[p.where]} · id ${hex(p.id, 3)}</div></td>
         <td>${esc2(info.text || "—")}</td>
-        <td class="muted">${esc2(p.what)}${p.note ? `<div style="margin-top:4px">${esc2(p.note)}</div>` : ""}</td>
+        <td class="muted">${esc2(p.what)}</td>
         <td>${who}</td>
         <td><span class="u" title="${esc2(why)}">${pill}</span></td>
       </tr>`;
@@ -8920,25 +8867,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         — they are list1 records 76–79 but the game keeps their character records in a separate block at VA
         <code>0x196560C</code>, outside the array this table indexes. <b>Fortune</b> is not in the table either,
         but it is not missing: its check is not in the executable at all, so it gets its own switch below.</div>
-      <div class="muted" style="margin:12px 0 4px" data-sum="Watched working on 2026-09-06 — Balance and Fury, both on Chris — but through the helper's record and acting-unit entries, and both runes on this tab use the third one, so both read untested."><b>What has been played, and what it proves.</b> On 2026-09-06
-        Balance and Fury were both forced on for Chris, from her own card, and both effects showed up in combat.
-        That is this version's machinery watched working: the relocated helper runs in a running game, its
-        register handling survives a real caller, the bitmap answers per character, and two runes can be on at
-        once. It is not evidence about <b>these two rows</b>. The helper has three entries and those two runes
-        came in through the record and acting-unit ones; both runes on this tab are <b>psId</b> sites — the entry
-        that resolves a character id before it looks anything up — and nothing has ever come through it in a
-        running game. Sunbeam's field walk-heal was watched working earlier the same day, the party healed by
-        walking with nobody carrying the rune, but under the editor's <i>previous</i> patch shape, which dropped
-        the call and wrote the answer into the word it vacated: that proves 0x14A1B4 is the right site and that
-        the code around it accepts a synthesised <code>$v0</code>, and nothing about this delivery. So
-        <b>every rune here
-        reads untested</b>. A marker moves on a play report and never on a passing test.</div>
-      <div class="warnbox" style="margin:12px 0 10px" data-sum="Experimental — the helper itself has been played, but none of these four effects has: keep a backup disc."><b>Experimental — these four are not yet seen working in play.</b> Every
-        site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, the helper is
-        assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
-        The <i>helper</i> is no longer the open question — it was played on 2026-09-06, from a character's card —
-        but neither field rune here has been watched firing through it, and neither overlay switch has been
-        watched at all. Keep a backup disc.</div>
+      <div class="muted" style="margin:12px 0 10px" data-sum="Every site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, and clearing a rune restores the stock instruction exactly.">Every site is decoded from a pristine USA SLUS-20387 and
+        byte-checked before it is written, the helper is assembled and disassembled in the offsets doc, and
+        clearing a rune restores the stock instruction exactly — so anything set here can be taken straight
+        back off.</div>
       ${auxSwCard()}`;
     wireAuxSw(host);
     const find = (b) => PASSIVES.find((x) => x.id === +b.dataset.id);
@@ -9911,7 +9843,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     // Both words of all 51 support-rune checks. The delay slot is the one this editor never
     // writes, which is exactly why it is worth auditing: a disc with it changed was patched
     // somewhere else, and the audit naming the site is how anyone would find out.
-    const psRisk = "rewritten engine code that runs once per party slot; the editor's own notes mark this patch shape untested in play";
+    const psRisk = "rewritten engine code: the call at this site is retargeted into the relocated helper, and the delay slot beside it is the one word this editor never writes";
     PASSIVES.forEach((p) => p.sites.forEach((st, i) => {
       const nm = (REF && REF.items[p.id]) || `rune ${hex(p.id, 3)}`;
       const tag = p.sites.length > 1 ? ` (site ${i + 1} of ${p.sites.length})` : "";
