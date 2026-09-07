@@ -2355,7 +2355,7 @@
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
     // The base disc itself is not: it is the pristine reference and outlives any one image.
-    CHG_REGIONS = null; CHG_AUX = null; CHG_ROWS = [];
+    CHG_REGIONS = null; CHG_AUX = null; CHG_ROWS = []; CHG_AUDIT = [];
     VIEW = "chars"; SEARCH = "";
     autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -3194,7 +3194,7 @@
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded straight from each area's battle packs \u2014 81 packs, 715 enemies, 1,961 stat variants \u2014 and written back to EVERY STREAMING COPY at once. There is no global monster table, so the same Blade Bunny is a different record in every region it appears in and is tuned per area. Bulk multipliers scale HP, all 8 stats, level, EXP, SP, potch or drop weights across every pack or just the ones the filter is showing, and they normally measure from the STOCK disc's numbers, so re-applying \u00d71.2 stays \u00d71.2 instead of stacking to \u00d71.44 and \u201crestore stock values\u201d can undo a scale already saved into a file; on a disc the index doesn't describe the tab says so and falls back to this file's own values rather than writing someone else's numbers over yours. Each zone's SPAWNS AND FORMATIONS are editable as well: which monster each spawn slot holds and which stat variant of it, and the encounter groups themselves \u2014 a relative weight and one member pick per slot, so raising a weight makes that group show up more often. The slot picker only offers the pack's own roster, because a monster from another pack would spawn with no model loaded and CRASH THE GAME, and a formation can shrink but never grow past its original size (fixed allocation on disc). A pack whose offsets don't verify against a pristine disc ships read-only rather than wrong. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, every packed sub-file on the disc, and where the game decides which music plays. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
-      changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
+      changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word \u2014 which that half can also put BACK, one site or all of them, with no base disc and no pristine copy needed. Findings that can hang the game rather than just change a number are listed first and say why. This is where to look when a patched disc and the game disagree.",
     };
     // One-line versions of the hints above, for the "Show more" collapse (blurb-core.js).
     // Only the long ones need an entry: a tab with no summary here, or one whose hint runs
@@ -3215,7 +3215,7 @@
       encounter: "How often random battles trigger, as one percentage of the game's stock rate, plus the per-map rates.",
       war: "War-battle units: level, HP and the 8 combat stats of every soldier, leader unit and war monster.",
       ref: "Read-only lookups: items, classes, skills, item sources, packed sub-files, mounts, music and treasure.",
-      changes: "What differs between your disc and a pristine base disc, what you have staged, and a code-patch audit.",
+      changes: "What differs between your disc and a pristine base disc, what you have staged, and a code-patch audit that can also restore those patches to stock.",
       gear: "Equipment records: name, DEF, price, description and all five effect slots.",
       sets: "The five armour sets, the set-bonus constants patched out of the game code, and which set grants which effect.",
       food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description.",
@@ -8858,6 +8858,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   let CHG_HEX = false;          // filter: also show the unmapped hex rows
   let CHG_AUX = null;           // {rows:[{tag,bytes,windows}], err} — out-of-block comparison
   let CHG_ROWS = [];            // last rendered rows, so a revert button can find its own
+  let CHG_AUDIT = [];           // ...and the same for the code-audit rows
 
   // null-terminated slot length inside an ARBITRARY block copy (origSlotLen reads ORIG)
   function slotLenIn(arr, dptr) {
@@ -9124,44 +9125,79 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // Every code patch this editor makes replaces a documented stock word, so a disc can be
   // checked against those without a second file. It says nothing about the data tables —
   // that is what the base disc is for — but it names the code patches for free.
+  //
+  // Each finding carries what a RESTORE needs as well as what a report needs: the `w` bytes
+  // at `off` go back to `stock` (or, for the one finding that covers a whole region, to
+  // `block`). web/tests/stock-restore.mjs reads every constant below off a pristine USA disc
+  // and fails if one disagrees — which is what makes "restore to stock" mean "restore to
+  // pristine" rather than "restore to what this repo believes stock was".
+  //
+  // `risk` marks the findings that can hang the game rather than merely change a number.
+  // They are the ones worth reading first on a disc that started misbehaving, so the tab
+  // sorts them to the top and says why.
   function chgCodeAudit(dv) {
     const out = [];
-    const word = (off, stock, label) => {
+    const word = (off, stock, group, label, risk) => {
       if (!inBlk(off, 4)) return;
       const got = chgRead(dv, off, 4) >>> 0;
-      if (got !== (stock >>> 0)) out.push({ off, label, stock, got });
+      if (got !== (stock >>> 0)) out.push({ off, w: 4, group, label, stock, got, risk });
     };
-    word(SPLIT.route, SPLIT.stockRoute, "Damage+heal split · which spell");
-    word(SPLIT.amtSel, SPLIT.stockAmtSel, "Damage+heal split · which spell (heal selector)");
-    word(SPLIT.amt, SPLIT.stockAmt, "Damage+heal split · heal amount");
-    ENC.sites.forEach((o, i) => word(o, ENC.stock[i], `Encounter rate · ${ENC.labels[i]}`));
-    STATUSFX.forEach((f) => f.sites.forEach(([o, w], k) =>
-      word(o, w, `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
-    RUNEFX.forEach((f) => f.sites.forEach(([o, w], k) =>
-      word(o, w, `Rune power · ${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
-    AVATAR.ACTORFB.sites.forEach((s, k) => word(s.off, s.stock, `Scene actor fallback · word ${k + 1}`));
     // 16-bit immediates: only the low half-word is the value, so compare that alone.
-    const imm = (off, stock, label) => {
+    const imm = (off, stock, group, label, risk) => {
       if (!inBlk(off, 2)) return;
       const got = chgRead(dv, off, 2);
-      if (got !== stock) out.push({ off, label, stock, got, imm: true });
+      if (got !== stock) out.push({ off, w: 2, group, label, stock, got, imm: true, risk });
     };
-    ENCMOVE.walk.concat(ENCMOVE.run).forEach((s) => imm(s.off, s.stock, `Movement rules · ${s.what}`));
-    AVATAR.gates.forEach((g) => imm(g.off, g.stock, `Field character · ${g.label}`));
-    AVATAR.slots.forEach((s) => imm(s.off, s.stock, `Field character · ${s.label}`));
-    AVATAR.STORY.cases.forEach((c) => imm(c.off, c.id, `Story content · case for id ${hex(c.id, 2)}`));
+
+    word(SPLIT.route, SPLIT.stockRoute, "Spells", "Damage+heal split · which spell");
+    word(SPLIT.amtSel, SPLIT.stockAmtSel, "Spells", "Damage+heal split · which spell (heal selector)");
+    word(SPLIT.amt, SPLIT.stockAmt, "Spells", "Damage+heal split · heal amount");
+    ENC.sites.forEach((o, i) => word(o, ENC.stock[i], "Encounter rate", ENC.labels[i]));
+    STATUSFX.forEach((f) => f.sites.forEach(([o, w], k) =>
+      word(o, w, "Status effects", `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    RUNEFX.forEach((f) => f.sites.forEach(([o, w], k) =>
+      word(o, w, "Rune power", `${f.label}${f.sites.length > 1 ? ` (site ${k + 1} of ${f.sites.length})` : ""}`)));
+    AVATAR.ACTORFB.sites.forEach((s, k) => word(s.off, s.stock, "Scene actor fallback",
+      `word ${k + 1} of 2`, "an opt-in experiment that makes an actor nobody can find resolve to the player — it recurses forever, and hangs, on a scene whose actor table has no record for your party leader"));
+    ENCMOVE.walk.concat(ENCMOVE.run).forEach((s) => imm(s.off, s.stock, "Movement rules", s.what));
+    imm(ENCMOVE.runAlt.base.off, (-ENCMOVE.runAlt.modes[0].base) & 0xFFFF, "Movement rules",
+      "the run test's second range · base");
+    imm(ENCMOVE.runAlt.len.off, ENCMOVE.runAlt.modes[0].len, "Movement rules",
+      "the run test's second range · length");
+    AVATAR.gates.forEach((g) => imm(g.off, g.stock, "Field character", g.label,
+      "widens which models the game will load you as; a leader the scene scripts were not written for can freeze a cutscene"));
+    AVATAR.slots.forEach((s) => imm(s.off, s.stock, "Field character", s.label,
+      "widens which models the game will load you as; a leader the scene scripts were not written for can freeze a cutscene"));
+    AVATAR.STORY.cases.forEach((c) => imm(c.off, c.id, "Story content", `case for id ${hex(c.id, 2)}`));
     MOUNTS.pairs.forEach((p, i) => {
-      imm(p.riderSites[0], MOUNTS.STOCK[i][0], `Mount pair ${i + 1} · rider`);
-      imm(p.mountSite, MOUNTS.STOCK[i][1], `Mount pair ${i + 1} · mount`);
+      imm(p.riderSites[0], MOUNTS.STOCK[i][0], "Mounts", `battle pair ${i + 1} · rider`);
+      imm(p.mountSite, MOUNTS.STOCK[i][1], "Mounts", `battle pair ${i + 1} · mount`);
     });
+    // The assigned-horse clamp and the per-character horse it gates. Both are inert alone and
+    // dangerous together: the widened clamp lets a character be given a horse whose model the
+    // area you are standing in may not have, and the horse is staged when the party is BUILT.
+    const horseRisk = "the assigned horse is staged when the party is built, and the mount's model still has to be loadable where you are standing — a horse the area can't load is staged into the party at a scene transition";
+    MOUNTS.horseClamp.sites.forEach((s, i) => word(s.off, s.stock, "Mounts",
+      `assigned-horse clamp · site ${i + 1} of ${MOUNTS.horseClamp.sites.length}`, horseRisk));
+    { const [l2b, l2s] = TABLES.list2;
+      for (let id = 0; id < LIST_COUNT.list2; id++) {
+        const off = l2b + id * l2s + MOUNTS.horse.off;
+        const nm = (REF.names && REF.names.list2 && REF.names.list2[String(id)]) || `roster ${id}`;
+        imm(off, MOUNTS.horse.STOCK[id] || 0, "Mounts", `assigned horse · ${nm}`, horseRisk);
+      } }
+    word(MOUNTS.mech.pool.off, MOUNTS.mech.pool.stock, "Mounts", MOUNTS.mech.pool.label);
+    word(MOUNTS.mech.adren.off, MOUNTS.mech.adren.stock, "Mounts", MOUNTS.mech.adren.label);
+    word(MOUNTS.mech.roundRider.off, MOUNTS.mech.roundRider.word, "Mounts", MOUNTS.mech.roundRider.label);
+    word(MOUNTS.mech.roundMount.off, MOUNTS.mech.roundMount.word, "Mounts", MOUNTS.mech.roundMount.label);
     // Both words of all 51 support-rune checks. The delay slot is the one this editor never
     // writes, which is exactly why it is worth auditing: a disc with it changed was patched
     // somewhere else, and the audit naming the site is how anyone would find out.
+    const psRisk = "rewritten engine code that runs once per party slot; the editor's own notes mark this patch shape untested in play";
     PASSIVES.forEach((p) => p.sites.forEach((st, i) => {
       const nm = (REF && REF.items[p.id]) || `rune ${hex(p.id, 3)}`;
       const tag = p.sites.length > 1 ? ` (site ${i + 1} of ${p.sites.length})` : "";
-      word(st.off, st.jal, `Passive rune · ${nm}${tag} — the check`);
-      word(st.off + 4, st.ds, `Passive rune · ${nm}${tag} — the delay slot`);
+      word(st.off, st.jal, "Passive runes", `${nm}${tag} — the check`, psRisk);
+      word(st.off + 4, st.ds, "Passive runes", `${nm}${tag} — the delay slot`, psRisk);
     }));
     // ...and the block the helper is relocated into, which is code no patch of ours leaves
     // half-written: either it is the dead routine it always was, or it is the helper.
@@ -9169,11 +9205,36 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const st = psStock();
       let diff = 0;
       for (let i = 0; i < st.length; i++) if (chgRead(dv, PS_HOOK.off + i, 1) !== st[i]) diff++;
-      if (diff) out.push({ off: PS_HOOK.off, imm: true,
-        label: `Passive rune · the relocated helper block (VA 0x${hex(PS_HOOK.va, 7)}, dead code on a stock disc)`,
-        stock: "the dead routine", got: `${diff} of ${st.length} bytes differ` });
+      if (diff) out.push({ off: PS_HOOK.off, imm: true, w: st.length, block: st, group: "Passive runes",
+        label: `the relocated helper block (VA 0x${hex(PS_HOOK.va, 7)}, dead code on a stock disc)`,
+        stock: "the dead routine", got: `${diff} of ${st.length} bytes differ`, risk: psRisk });
     }
     return out;
+  }
+
+  // ---- putting a code patch back ---------------------------------------------
+  // Staged like any other edit, so it is reviewable, undoable and not written until Save —
+  // the same path the base-disc revert takes. Returns false for the one finding that has an
+  // ordering rule rather than silently doing something unsafe.
+  function chgStockRevertRow(a) {
+    if (!inBlk(a.off, a.w)) return false;
+    if (a.block) {
+      // Putting the dead routine back while a `jal` still points into it is a hang, so this
+      // one waits until every passive-rune site reads stock again (chgStockRevertAll does
+      // the sites first, which is what makes the all-at-once path safe).
+      if (!PASSIVES.every((p) => p.sites.every((s) => psSiteState(s) === "stock"))) return false;
+      writeBytes(a.off, a.block);
+    } else writeW(a.off, a.w, a.stock);
+    FIELD_REG[a.off] = { group: "Restored to stock", label: `${a.group} · ${a.label}`,
+      off: a.off, width: a.w, kind: a.block ? "bytes" : a.w === 4 ? "word" : "num" };
+    return true;
+  }
+  // Call sites first, relocated block last — see chgStockRevertRow.
+  function chgStockRevertAll(audit) {
+    let done = 0, held = 0;
+    for (const a of audit) if (!a.block) { if (chgStockRevertRow(a)) done++; else held++; }
+    for (const a of audit) if (a.block) { if (chgStockRevertRow(a)) done++; else held++; }
+    return { done, held };
   }
 
   // ---- base disc: pick, remember, load ---------------------------------------
@@ -9268,7 +9329,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   function drawChanges(host) {
     const staged = buildReview();
     const stagedBytes = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
-    const audit = chgCodeAudit(ODV);
+    const audit = chgCodeAudit(DV);          // the EFFECTIVE disc: opened bytes + staged edits
 
     let h = `<div class="muted" style="margin:0 0 10px" data-sum="Already on this disc compares your image against a pristine base disc you point at; Staged is what you have changed since opening it and not yet saved.">Two different questions, kept apart on purpose.
       <b>Already on this disc</b> compares the image you have open against a pristine base disc you
@@ -9377,19 +9438,51 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     h += `</div>`;
 
     // ---- code audit ----
+    // Risky findings first: on a disc that started hanging, the question is never "what is
+    // different" (the table above answers that) but "which of these can hang a game", and
+    // that is a property of the site, not of the value.
+    audit.sort((x, y) => (y.risk ? 1 : 0) - (x.risk ? 1 : 0));
+    audit.forEach((a, i) => (a.i = i));
+    CHG_AUDIT = audit;
+    const risky = audit.filter((a) => a.risk).length;
     h += `<div class="card"><div class="bag-h">Code patches, checked against their stock values
       <span class="u">no base disc needed</span></div>
-      <div class="muted" style="margin:0 0 8px" data-sum="Every code patch replaces a word this repo has decoded, so those need no second file. It says nothing about the data tables.">Every patch this editor makes to the game's CODE replaces
-      a word this repo has decoded and documented, so those can be checked without a second file. This
-      says nothing about the data tables — items, stats, shops, text — which is what the base disc above
-      is for.</div>`;
-    h += audit.length
-      ? `<table class="invtbl"><thead><tr><th style="width:12%">Offset</th><th>What</th>
-          <th style="width:32%">Stock → this disc</th></tr></thead><tbody>${audit.map((a) =>
-          `<tr><td class="sl">0x${hex(a.off, 6)}</td><td>${esc2(a.label)}</td>
-            <td><span class="muted">${a.imm ? a.stock : "0x" + hex(a.stock, 8)}</span> →
-            <b>${a.imm ? a.got : "0x" + hex(a.got, 8)}</b></td></tr>`).join("")}</tbody></table>`
-      : `<div class="muted">All known code patch sites hold their stock values — no code patch has been applied to this disc.</div>`;
+      <div class="muted" style="margin:0 0 8px" data-sum="Every code patch replaces a word this repo has decoded, so those need no second file and each can be put back to stock from here. Reads the disc with your staged edits on top.">Every patch this editor makes to the game's CODE replaces
+      a word this repo has decoded and documented, so those can be checked — and put <b>back</b> —
+      without a second file. Unlike the two lists above this one reads the disc <b>with your staged
+      edits applied on top</b>, so it covers both what was already written and what you are about to
+      write, and a row leaves the table the moment you stage its restore. It says nothing about the
+      data tables — items, stats, shops, text — which is what the base disc above is for.</div>`;
+    if (audit.length) {
+      h += `<div class="row" style="gap:8px;margin:0 0 10px">
+        <button class="chip mini" id="chgStockAll">Restore all ${audit.length} to stock</button></div>`;
+      if (risky) {
+        h += `<div class="warnbox" style="margin:0 0 10px" data-sum="Some of these patches can hang the game rather than just change a number; they are listed first and each says why."><b>${risky} of these can hang the game
+          rather than just change a number.</b> They are listed first, and each one says what it does
+          when it goes wrong. If a scene froze or a party failed to appear, start here: restore them,
+          save, and try that scene again.</div>`;
+      }
+      h += `<table class="invtbl"><thead><tr><th style="width:12%">Offset</th><th>What</th>
+          <th style="width:26%">Stock → this disc</th><th style="width:8%"></th></tr></thead><tbody>`;
+      let group = null;
+      for (const a of audit) {
+        if (a.group !== group) {
+          group = a.group;
+          const nInG = audit.filter((x) => x.group === group).length;
+          h += `<tr><td colspan="4" class="grouphead"><b>${esc2(group)}</b> <span class="u">${nInG} change(s)</span></td></tr>`;
+        }
+        h += `<tr><td class="sl">0x${hex(a.off, 6)}</td>
+          <td>${esc2(a.label)}${a.risk ? `<div class="muted" style="font-size:11px;margin-top:2px">⚠ ${esc2(a.risk)}</div>` : ""}</td>
+          <td><span class="muted">${a.imm ? esc2(String(a.stock)) : "0x" + hex(a.stock, 8)}</span> →
+            <b>${a.imm ? esc2(String(a.got)) : "0x" + hex(a.got, 8)}</b></td>
+          <td><button class="chip mini" data-srev="${a.i}"
+            title="Stage a rewrite of these bytes back to their stock values">↺</button></td></tr>`;
+      }
+      h += `</tbody></table>`;
+    } else {
+      h += `<div class="muted">All known code patch sites hold their stock values — with your staged
+        edits applied, this disc carries no code patch at all.</div>`;
+    }
     h += `</div>`;
 
     host.innerHTML = h;
@@ -9406,6 +9499,23 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       setStatus(`Staged a revert of ${n} byte(s) back to ${BASE.name}. Nothing is written until you save.`, "ok");
       drawView();
     });
+    on("chgStockAll", () => {
+      const { done, held } = chgStockRevertAll(CHG_AUDIT);
+      setStatus(`Staged a restore of ${done} code patch site(s) to their stock values.` +
+        (held ? ` ${held} left alone — the relocated helper block only goes back once every ` +
+                `passive-rune site reads stock, and some are outside the editable region.` : "") +
+        ` Nothing is written until you save.`, held ? "warn" : "ok");
+      drawView();
+    });
+    qa("[data-srev]", host).forEach((b) => (b.onclick = () => {
+      const a = CHG_AUDIT[+b.dataset.srev];
+      if (!a) return;
+      if (chgStockRevertRow(a)) setStatus("Staged — those bytes go back to stock when you save.", "ok");
+      else setStatus("Left alone: the relocated helper block can only go back to the dead routine " +
+        "once every passive-rune call site reads stock again, or a live jump would land in it. " +
+        "Use \u201cRestore all\u201d, which does the call sites first.", "warn");
+      drawView();
+    }));
     const hexBox = q("#chgHex", host);
     if (hexBox) hexBox.onchange = () => { CHG_HEX = hexBox.checked; drawView(); };
     qa("[data-rev]", host).forEach((b) => (b.onclick = () => {
