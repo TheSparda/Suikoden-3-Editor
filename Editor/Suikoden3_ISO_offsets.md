@@ -3482,13 +3482,19 @@ the whole tab read-only, the same rule the site-level checks follow. v1.106.0's 
 is still *recognised* — a disc patched by it is named as such and offered a one-click return to
 stock — but nothing writes it any more.
 
-**What is proven and what is not.** Sunbeam's field walk-heal *site* is confirmed in play
-(2026-09-06, recorded in the section above): forced to yes, the party healed by walking with
-nobody carrying the rune. That proves the site, the effect, and that answering this one question
-with a yes is all a passive needs — which is the load-bearing assumption for all 51. What it does
-**not** prove is this delivery of the yes: the play report was taken with the previous patch
-shape, where the call was dropped and the answer written into the word it vacated, and this
-version returns the answer from a relocated helper instead. So Sunbeam and Champion's are marked
-*expected* in the tab and everything else *untested*, in the same confirmed / expected / untested
-vocabulary the Mounts tab uses, and a marker is only ever moved by a play report — never by a
-passing test.
+**What is proven and what is not.** Sunbeam's field walk-heal *site* was played on 2026-09-06
+(recorded in the section above): forced to yes, the party healed by walking with nobody carrying
+the rune. That proves the site, the effect, and that answering this one question with a yes is
+all a passive needs — the load-bearing assumption for all 51. It does **not** prove this delivery
+of the yes. The report was taken under the previous patch shape, where the call was dropped and
+the answer written into the word it vacated; this version keeps the call and retargets it, so the
+trampoline's own correctness, its `$ra`/`$v0` handling, the bitmap lookup and whether `0x16BF1E0`
+is as dead in a running game as it is in the image are all untested.
+
+A middle marker tier was tried for exactly this case and **removed**. Reasoning from "the site
+works" to "therefore this mechanism works" is the inference a badge should not make on the
+reader's behalf, and a green-ish badge on an unplayed mechanism is worse than no badge. The tab
+renders **confirmed / untested** and nothing else; all 22 runes read *untested*, Sunbeam
+included, and the play report lives in that rune's note where it can be read for what it is.
+`web/tests/validate.mjs` asserts that nothing claims *confirmed* and that the report text
+survives. A marker moves on a play report and never on a passing test.
