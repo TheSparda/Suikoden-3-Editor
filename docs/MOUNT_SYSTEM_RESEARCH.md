@@ -1163,10 +1163,12 @@ chapter-partitioned, consistent with it being the area you ride *into*.
   The specific thing to watch on a first test is whether a mounted player breaks the
   scene's own choreography, since the `op 157` moves target `PLAYER.mount` and will now
   find one.
-- **The `rides` census undercounts.** `RideOn(h, 0)` is a second self-mount spelling: the
-  handler at `0x179ED10` defaults a zero mount operand to `rider + 0x180`. `cmd_rides` only
-  matches `h | 0x4000`, so 136 is a floor. The zero form was not scanned because `op 22`
-  followed by a zero word is indistinguishable from filler without chain validation.
+- **The `rides` census undercounts, and the missing form is now confirmed in the wild.**
+  `RideOn(h, 0)` is a second self-mount spelling: the handler at `0x179ED10` defaults a zero
+  mount operand to `rider + 0x180`. `cmd_rides` only matches `h | 0x4000`, so 136 is a floor.
+  Chain-validating the zero form finds four `RideOn(PLAYER, 0x0000)` in SOGE (§14i); a bare
+  pattern scan cannot, because `op 22` followed by a zero word is indistinguishable from
+  filler. `RideOff` needs no self-mount form at all — it reads the partner off the rider.
 - **§6's archive census measures naming, not loadability.** Chris rides despite `s2um`
   appearing in no area archive as a complete set, so a scene can evidently load a model the
   `cha_` scan does not attribute to it. Every residency argument in this document is
@@ -1243,6 +1245,56 @@ opposite directions and neither settles it:
 
 Until that is settled, every residency claim in this document is a statement about what an
 archive *names*, not a proof of what a scene can *load* — see the warning in §14f.
+
+
+### 14i. What the herb pickup shows — the remount is generic, and it is guarded
+
+Reported from play 2026-09-06: while Chris is mounted, picking up a herb makes her **dismount,
+take the herb, and remount**. Follow-up test, same source: doing it **on foot does not mount
+her**. Both halves matter.
+
+**The remount is generic, and that is the useful half.** A herb pickup is reusable script; it
+cannot know which scene object is her horse. Neither opcode needs to be told:
+
+- `EdsCRideOffSetS` @ `0x179F534` resolves only the **rider**, then reads the mount straight
+  off it — `lw $s5, 0x3c($s6)` then `lw $s1, 0x250($s5)`. Its second operand is a flag, not a
+  mount. That is why §14c's self-mount census found no `RideOff` self-mounts: the form is
+  unnecessary.
+- `RideOn` accepts a **zero** mount operand and defaults to `rider + 0x180` (`beqz $s1` at
+  `0x179ED10`). Confirmed in the wild by this hunt: **four `RideOn(PLAYER, 0x0000)` in SOGE**,
+  chain-validated. This is the second self-mount spelling §14f recorded as an undercount.
+
+So the whole dismount/remount cycle runs off `rider + 0x180` — the actor six slots along,
+exactly what `+0x66` stages (§14b). The herb cycle is therefore the first **behavioural**
+confirmation that the assigned-horse path works in ordinary play; everything before it was
+static analysis plus save bytes.
+
+**The remount is guarded, and that closes a shortcut.** The obvious hope was that the pickup
+remounts unconditionally, which would have made any herb a free mount trigger for anyone with
+`+0x66`. It does not: on foot, a pickup leaves you on foot. The script is
+`if RIDE(player) { RideOff; …; RideOn }`, and the guard is the EDS conditional at
+`0x177BDD0`, subcommand `0x28`:
+
+```
+0177BE60  lw   $v1, 0x3c($s1)      ; rider EOBJ
+0177BE64  lw   $v0, 0x250($v1)     ; its ride partner
+0177BE6C  sltu $v0, $zero, $v0     ; RIDE  = (partner != 0)      ISO 0x1C366C, 2b100200
+```
+(subcommand `0x29` is `NORIDE`, the negation.)
+
+**Do not reach for that instruction yet.** Forcing `RIDE` true — `addiu $v0, $zero, 1` at
+`0x1C366C` — would make the pickup's guard pass, but it lies to *every* script that asks
+whether the player is mounted, and the dismount half would then run against no mount:
+`0x179F58C` loads a null partner and hands it straight to `0x17B5E20`. That is a plausible
+crash in exactly the case the patch exists to create, and the clean route (`+0x66` plus a
+scene that already mounts the player, §14c) is still untested. Recorded so the option is
+known, not because it is advisable.
+
+**The herb routine itself was not located.** There is no `RideOff(PLAYER, …)` in any town
+script, so it almost certainly addresses the player as **slot 0** — and `op 24` followed by a
+zero word is indistinguishable from zero-fill, the same false-positive class that defeated
+§9's raw opcode search. Pattern matching cannot find it. Narrowing needs the area and chapter
+the pickup was seen in, which reduces the haystack to one town sub-file.
 
 
 ## Not established
