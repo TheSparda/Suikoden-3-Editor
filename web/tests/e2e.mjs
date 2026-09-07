@@ -9,7 +9,6 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { chromiumPath, chromiumNote } from "./chromium-path.mjs";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP,
@@ -140,8 +139,7 @@ const port = srv.address().port;
 const base = `http://localhost:${port}/web/index.html`;
 
 let browser;
-console.log(chromiumNote());
-try { browser = await chromium.launch({ executablePath: chromiumPath() }); }
+try { browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined }); }
 catch (e) { console.log("SKIP e2e: no Chromium (" + e.message.split("\n")[0] + ")."); srv.close(); process.exit(0); }
 
 // ---- abort guard -------------------------------------------------------------------------
@@ -674,6 +672,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
     /Hugo/.test(await page.textContent(".pschips")) && /Emily/.test(await page.textContent(".pschips")));
 
   await page.click('input.psCh[data-id="441"][data-c="1"]');       // Hugo
+  await page.waitForTimeout(80);
   check("choosing someone stages something", await somethingStaged(page));
   { const txt = await page.textContent("#isoView");
     check("the row now names who has it", /Hugo/.test(txt) && /ON/.test(txt)); }
@@ -681,6 +680,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // Unchoosing must restore the stock disc byte-for-byte — a tab that can only be applied in one
   // direction is a trap, and here that means the helper block goes back to the dead routine too.
   await page.click('input.psCh[data-id="441"][data-c="1"]');
+  await page.waitForTimeout(80);
   check("unchoosing them clears every staged byte", await nothingStaged(page));
 
   // "everyone" is just all 75 bits, and it has to come back off again — checked here, BEFORE
@@ -690,6 +690,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.waitForTimeout(80);
   check("everyone sets the whole row", /everyone/.test(await page.textContent("#isoView")));
   await page.click('button.psNone[data-id="441"]');
+  await page.waitForTimeout(80);
   check("nobody puts the disc back exactly as it was, helper block included", await nothingStaged(page));
 
   // Wall's byte-level coverage moved with the control: it is an in-battle rune, so it is no
@@ -866,6 +867,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.fill('input.rf[data-k="killer"]', "400");
   await page.dispatchEvent('input.rf[data-k="killer"]', "change"); await page.waitForTimeout(60);
   await page.selectOption('select.rf[data-k="wizard"]', "0");
+  await page.waitForTimeout(60);
   check("editing stages something", await somethingStaged(page));
   // The rate<->interval flip rounds, so "set it back to what it said" has to snap to the exact
   // stock float rather than land on 1/3.33 = 0.3003 and leave the disc quietly modified.
@@ -880,6 +882,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.fill('input.rf[data-k="killer"]', "150");
   await page.dispatchEvent('input.rf[data-k="killer"]', "change"); await page.waitForTimeout(60);
   await page.selectOption('select.rf[data-k="wizard"]', "1");
+  await page.waitForTimeout(80);
   check("setting them back to stock clears every staged byte", await nothingStaged(page));
 
   { const patched = Uint8Array.from(bytes);
@@ -972,8 +975,10 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // eight acting-unit sites — so one tick exercises all three. These are the assertions that
   // used to run off the Passives tab picker, unchanged apart from what drives them.
   await page.click('input.cpOn[data-id="446"][data-c="1"]');      // Hugo
+  await page.waitForTimeout(100);
   check("ticking Wall for Hugo stages something", await somethingStaged(page));
   await page.click('input.cpOn[data-id="446"][data-c="1"]');
+  await page.waitForTimeout(100);
   check("unticking it clears every staged byte, helper block included", await nothingStaged(page));
   await page.click('input.cpOn[data-id="446"][data-c="1"]');
   await page.waitForTimeout(100);
@@ -1074,6 +1079,7 @@ if (ON) { const page = await newPage({ width: 390, height: 844 }); await loadIso
   check("a 'turn all off' button appears once something is on",
     (await page.$$("details.char button.cpAllOff")).length === 1);
   await page.click("details.char button.cpAllOff");
+  await page.waitForTimeout(100);
   check("...and it clears every staged byte, helper block included", await nothingStaged(page));
   check("...and takes itself away again", (await page.$$("details.char button.cpAllOff")).length === 0);
   check("...leaving no tile ticked", (await page.$$("input.cpOn:checked")).length === 0);
@@ -2373,7 +2379,7 @@ if (ON) { // The state a re-opened tuned ISO is in: the bytes on the disc are sc
   check("says the disc is already tuned", /already tuned/.test(note) && /HP ×1\.2/.test(note));
   check("prefilling stages nothing on its own", await nothingStaged(page));
   // Re-applying what the disc already carries must be a no-op, not ×1.44.
-  await page.click("#ebApply");
+  await page.click("#ebApply"); await page.waitForTimeout(120);
   check("re-applying the detected ×1.2 changes nothing", await nothingStaged(page));
   // A NEW multiplier is measured from the stock numbers, not from the tuned disc.
   await page.fill("#ebHp", "1.5"); await page.dispatchEvent("#ebHp", "change");
@@ -2595,7 +2601,7 @@ if (ON) { // Same recovery the Enemies view does, over the war index's stock bas
   const note = await page.textContent("#isoView");
   check("says the disc is already tuned", /already tuned/.test(note) && /HP ×1\.2/.test(note));
   check("prefilling stages nothing on its own", await nothingStaged(page));
-  await page.click("#wbApply");
+  await page.click("#wbApply"); await page.waitForTimeout(120);
   check("re-applying the detected ×1.2 changes nothing", await nothingStaged(page));
   // A new multiplier measures from the STOCK numbers, not from the tuned disc (1.5×230 = 345,
   // not 1.5×276 = 414).
@@ -2857,7 +2863,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // edit two, then Revert all
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "111"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   await page.fill('input.fd[data-kind="proc"] >> nth=0', "22"); await page.dispatchEvent('input.fd[data-kind="proc"] >> nth=0', "change");
-  await page.click("#isoResetBtn");
+  await page.click("#isoResetBtn"); await page.waitForTimeout(80);
   check("Revert all clears dirty badge", await nothingStaged(page));
   check("Revert all restores values", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "100");
   await page.context().close();
@@ -2894,7 +2900,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   check("hard again: HP 6 -> 4", r.u8(rec + 0) === 4);
   // reset to 1.00x -> nothing staged
   await openFold(page, "#gbBox");
-  await page.click('[data-gpreset="reset"]'); await page.click("#gb-apply");
+  await page.click('[data-gpreset="reset"]'); await page.click("#gb-apply"); await page.waitForTimeout(150);
   check("reset preset stages nothing", await nothingStaged(page));
   await page.context().close();
 }
@@ -2955,15 +2961,15 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await openFold(page, "#scBox");
 
   // Restore on a pristine disc is a no-op — it writes the bytes that are already there.
-  await page.click("#sc-disc");
+  await page.click("#sc-disc"); await page.waitForTimeout(120);
   check("restore stages nothing on an unedited disc", await nothingStaged(page));
 
   // Unlock-only is the whole point of the second button: it must NOT flatten the grades the
   // disc already gives a character, only lift the bytes reading "Can't get".
-  await page.click("#sc-lock");
+  await page.click("#sc-lock"); await page.waitForTimeout(150);
   check("unlock stages something", await somethingStaged(page));
   await openFold(page, "#scBox");
-  await page.click("#sc-disc");
+  await page.click("#sc-disc"); await page.waitForTimeout(150);
   check("restore puts a bulk unlock back", await nothingStaged(page));
   await openFold(page, "#scBox");
   await page.click("#sc-lock"); await page.waitForTimeout(150);
@@ -3035,7 +3041,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
     /Power/.test(review) && /Flaming Arrows/.test(review), review.replace(/\s+/g, " ").slice(0, 140));
   check("bulk spell power scales from the original", r.u32(spPow) === Math.round(pow0 * 0.75), String(r.u32(spPow)));
   await openFold(page, "#pbBox");
-  await page.click('[data-pbpreset="reset"]'); await page.click("#pb-apply");
+  await page.click('[data-pbpreset="reset"]'); await page.click("#pb-apply"); await page.waitForTimeout(200);
   check("reset stages nothing on the Spells tab", await nothingStaged(page));
 
   // ...and with the rewrite toggle off, Power moves alone
@@ -3193,7 +3199,7 @@ if (ON) { const page = await newPage();
   await preset(100);
   check("Stock is a byte-exact restore — nothing left staged", await nothingStaged(page));
   await preset(0);
-  await page.click("[data-rrev]");
+  await page.click("[data-rrev]"); await page.waitForTimeout(120);
   check("Restore area clears it too", await nothingStaged(page));
   await page.context().close();
 }
@@ -3286,7 +3292,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.fill("#isoSearch", "troll dragon"); await page.waitForTimeout(150);
   const filtered = await page.textContent("#isoView");
   check("filtering matches source text", /Pale Moon Casque/.test(filtered), filtered.slice(0, 120));
-  await page.fill("#isoSearch", "");
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
   check("the view stages nothing", await nothingStaged(page));
   check("no inputs in the sources browser", (await page.locator("#isoView input").count()) === 0);
   await page.context().close();
@@ -3309,7 +3315,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   check("filter matches a map id", /MORI/.test(await page.textContent("#isoView")));
   await page.fill("#isoSearch", "horned helm"); await page.waitForTimeout(150);
   check("filter matches a chest's contents", /Mt\. Senai/.test(await page.textContent("#isoView")));
-  await page.fill("#isoSearch", "");
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
   check("the view stages nothing", await nothingStaged(page));
   check("no inputs in the pickups browser", (await page.locator("#isoView input").count()) === 0);
   await page.context().close();
@@ -3419,7 +3425,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // filtering reaches the description, not just the name
   await page.fill("#isoSearch", "counter attack"); await page.waitForTimeout(200);
   check("filtering opens the matching card", /Parry\/Shield Counter/.test(await page.textContent("#isoView")));
-  await page.fill("#isoSearch", "");
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(150);
   check("the view stages nothing", await nothingStaged(page));
   check("no inputs in the skill browser", (await page.locator("#isoView input").count()) === 0);
   await page.context().close();
@@ -3598,10 +3604,10 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // "Restore all to stock" must put every immediate back, and stage nothing net
   await page.click('#isoTabs [data-v="spells"]'); await openFold(page, "#spFxBox");
   await page.fill('input.fx[data-k="res3"]', "0");
-  await page.dispatchEvent('input.fx[data-k="res3"]', "change");
+  await page.dispatchEvent('input.fx[data-k="res3"]', "change"); await page.waitForTimeout(60);
   check("an edit is staged", await somethingStaged(page));
   await openFold(page, "#spFxBox");
-  await page.click("#fxReset");
+  await page.click("#fxReset"); await page.waitForTimeout(80);
   check("restore-to-stock clears the change", await nothingStaged(page));
   await page.context().close();
 }
@@ -4103,7 +4109,7 @@ if (ON) { const page = await newPage();
   // landing on Party Items with the Screw filed under Key / Valuables reads as a failed add.
   await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
   await until(page, () => document.querySelectorAll('.starstbl [data-needitem="611"]').length >= 1);
-  await page.click('.starstbl [data-needitem="611"]');
+  await page.click('.starstbl [data-needitem="611"]'); await page.waitForTimeout(80);
   await page.click('[data-sub="items"]'); await page.waitForSelector(".bag");
   check("a staged key item opens Inventory on the list that holds it",
     (await page.textContent("[data-invcat].on")).startsWith("Key / Valuables"));
@@ -5357,14 +5363,7 @@ if (ON) { const page = await newPage();
   await page.context().close();
 }
 
-// 320px ONLY, deliberately. This loop used to run 360px too, which cost 2.3s to prove a
-// strict subset of what 320px proves: style.css breaks at max-width 430px, max-width 480px
-// and min-width 600px, so 320 and 360 land in the SAME CSS regime — identical rules, and
-// 320 has fewer pixels to fit them in. Anything that overflows at 360 overflows at 320.
-// PUT A WIDTH BACK IF A BREAKPOINT EVER LANDS BETWEEN 320 AND 430: then the two widths stop
-// being the same layout and 320 stops covering its neighbours. It is a loop so that stays a
-// one-entry change.
-for (const [w, h] of [[320, 480]]) {
+for (const [w, h] of [[360, 640], [320, 480]]) {
   if (!head(`Mobile ${w}px — no horizontal overflow`)) continue;
   const page = await newPage({ width: w, height: h });
   await loadIso(page);
