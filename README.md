@@ -688,6 +688,23 @@ remembered for next time. Two halves work without one: the **staged** list (this
 unsaved edits) and a check of every **code patch site** against the stock word this repo has
 decoded for it, which names any code patch on the disc with no second file at all.
 
+**Putting a code patch back — no pristine copy needed.** That last half can also *undo* what
+it finds. Every code patch this editor makes replaces a documented word, so the audit knows
+what stock looked like: **Restore all to stock** stages every site at once, and each row has
+its own **↺**. It writes into the staging buffer like any other edit — reviewable, undoable,
+nothing on the disc until you save — and unlike the base-disc revert above it needs no second
+file, which is the point: the disc that needs undoing is usually the one you no longer have a
+clean copy of. `web/tests/stock-restore.mjs` reads all 270 of those constants off a pristine
+USA disc and fails if one disagrees, which is what makes "restore to stock" mean *restore to
+pristine* rather than *restore to what this repo believes stock was*.
+
+Findings that can **hang the game** rather than just change a number are sorted to the top and
+say what they do when they go wrong — the scene-actor fallback, the field-character whitelist,
+the assigned-horse clamp, the relocated passive-rune helper. Start there when a scene froze or
+a party failed to appear. The one ordering rule the button enforces for you: the passive-rune
+helper block only goes back to the dead routine once every call site into it reads stock again,
+because a live jump into restored code would be its own hang.
+
 Use it when a patched disc and the game disagree. That is exactly how the duplicated rune
 descriptions (issue #11) stayed invisible for a release: the edit was on the disc, just on the
 copy the rune menu doesn't read.
