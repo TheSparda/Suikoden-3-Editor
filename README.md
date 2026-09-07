@@ -45,7 +45,7 @@ data**; supply your own legally-obtained ISO and/or saves.
 | **Growth** | growth rates, fixed skills, 43 skill caps, bulk scaling with difficulty presets |
 | **Support** · **Weapons** · **Shops** | support-character skill sets; ATK across all 16 sharpen levels; every shop counter's stock and rare finds |
 | **Runes** | rename, rewrite menu text, and choose which of the 94 spells each rune grants |
-| **Passives** | hand a support rune's effect to chosen characters without equipping it — plus **Rune power**, the 16 constants behind what a passive is worth |
+| **Passives** | hand a support rune's effect to chosen characters without equipping it; force Fortune and Prosperity on outright — plus **Rune power**, the 16 constants behind what a passive is worth |
 | **Spells** · **Unites** | power/cast/element/target/AOE/status, rune reskin, bulk power scaling |
 | **Mounts** | both mount systems: the per-character assigned horse, and the three-pair battle table |
 | **Movement** | field walk/run speed and time scale, per character |
@@ -265,9 +265,10 @@ spell it grants each hold their own — so one edit keeps the rune menu, the bat
 the item list agreeing. A rename shows up immediately in every picker, tooltip and list for
 that ISO, and the rune stays findable under its original name.
 
-**Passives** — the 22 **support runes** the engine actually asks about (*Wall*, *Fury*,
-*Hunter*, *Champion's*, *Sunbeam's* and the rest) handed to **the characters you choose**,
-without equipping the rune and without spending a rune slot.
+**Passives** — the **support runes** the engine actually asks about (*Wall*, *Fury*, *Hunter*,
+*Champion's*, *Sunbeam's* and the rest). 22 of them can be handed to **the characters you
+choose**, without equipping the rune and without spending a rune slot; the 23rd, *Fortune*, is
+a global switch instead, for the reason below.
 
 A support rune grants no spells and has no battle command: each is one question the engine asks
 at the moment it matters — *"does this character have item N equipped?"* — always through the
@@ -291,12 +292,34 @@ rune puts the borrowed routine back byte-for-byte.
 > nothing about the trampoline, its register handling, the bitmap lookup, or whether the
 > borrowed routine is as dead in a running game as it is in the image. Keep a backup.
 
-**Not offered:** *Fortune*, whose check turned out to live in a **streaming battle overlay**
-~1 GB into the disc rather than in the executable — it asks exactly the same question as the
-other 22, which is why three exhaustive searches of the executable found nothing. Its **EXP
-multiplier is editable** under Rune power; only the on/off switch is missing, because the
-switch machinery reaches the executable and that site isn't in it. Also not offered: Koroku's
-four dogs, whose character records live outside the array the table indexes.
+**Fortune — the 23rd, and a different shape.** Its check isn't in the executable at all; it
+lives in a **streaming battle overlay** ~1 GB into the disc, which is why three exhaustive
+searches of the executable found nothing. It asks exactly the same question as the other 22,
+but the per-character machinery above reaches the ELF block only — so Fortune gets a plain
+**on/off tickbox** instead: the battle-results loop is answered *yes* for every party member,
+without a helper call. That is not a downgrade in effect, because the loop only tests whether
+the count is nonzero — **one Fortune is as good as six**, so forcing it is exactly as strong as
+handing one character the rune. What it multiplies by is the **EXP multiplier** under Rune
+power, which is editable on a stock disc.
+
+**Prosperity, on the same switch.** The same overlay loop, 0x54 bytes later, asks each member
+*which armour set they are wearing* and multiplies the potch award once per member whose set is
+in the ownership mask. It gets the same tickbox, shown here and again on the **Sets** tab beside
+the numbers it multiplies. Unlike Fortune this one **compounds** — the multiplier applies per
+member, so a full party of six at the stock ×3 pays 3⁶ = **×729**, and the control says so
+rather than leaving it to be found out. Setting the mask to *no set (off)* on the Sets tab turns
+the bonus off for everyone, forced or not.
+
+Both are patched in the older two-word shape rather than the relocated helper — the delay-slot
+instruction moves up into the `jal`'s word and the answer goes in the word it vacated, so
+nothing is inserted and the instruction order stays stock. Both streaming copies of the overlay
+always move together; a disc where they disagree reads as *mixed* and goes read-only, so it can
+never be left half-patched. Only these two of the overlay's checks are offered: both run after
+the fight is over, walk your own party and nobody else, and neither answer has a per-unit
+consequence — no enemy is ever asked, and nothing downstream re-reads who said yes.
+
+**Not offered:** Koroku's four dogs, whose character records live outside the array the
+per-character table indexes.
 
 **Rune power**, on the same tab — not *whether* a passive fires but **how much it is worth**:
 16 constants across 13 runes, read out of the instruction each rune runs right after it has
@@ -635,7 +658,9 @@ prefilled from what the file already carries, and undoable with Restore stock va
 skill). **Sets** — which items complete each of the 5 armor sets, the set-bonus constants
 patched straight out of the game code (potch multiplier, Destiny counter chance, Pale Moon heal
 share), and **which set grants which effect**, since each bonus is a hard-coded check on the set
-number that can be pointed at a different set. **Food** — rename a dish, rewrite its
+number that can be pointed at a different set. The **Prosperity** switch from the Passives tab
+appears here too, beside the potch numbers it multiplies — including the ×729 a full party
+compounds to. **Food** — rename a dish, rewrite its
 description, set its heal amount and proc chance. **Text** — in-ELF UI strings: battle messages, menu
 labels, prize/error prompts and character blurbs, each capped to its original byte length.
 
