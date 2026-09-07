@@ -3189,6 +3189,12 @@ to it, which is a different job from flipping a word in place. Everything needed
 the table above and in `web/iso.js:PS_BATTLE`, which carries all 49 with their stock words so
 the Changes-tab audit can still report a disc that has them patched some other way.
 
+> **Superseded on the same day** — see *"Passive support runes, part 2"* at the end of this file.
+> The one-word limit above is real only if the call is *dropped*; retargeting it instead costs one
+> word and keeps the delay slot, and all 51 sites are now per-character. `PS_BATTLE` no longer
+> exists; its entries live in `PASSIVES`. What this section says about where the asks are and what
+> each does is unchanged and still the reference.
+
 **CONFIRMED IN PLAY (2026-09-06) — Sunbeam.** Switched on, the party heals by walking with
 **nobody carrying the rune**. That settles more than the one rune: it is the first evidence that
 the *approach* works — dropping the `jal`, keeping the delay-slot instruction, and answering the
@@ -3311,3 +3317,178 @@ word by `chgCodeAudit`, so a disc patched some other way still gets named.
 
 **Untested in play**, like the switches above it: all 23 are decoded, byte-verified and
 round-trip clean, but no altered number has been watched taking effect in game.
+
+---
+## Passive support runes, part 2 — all 51 sites, per character (2026-09-06)
+
+The section above ends by saying the other 49 sites are out of reach because "a call site frees
+one instruction word for the answer", and that reaching them "means relocating code into free
+space in the ELF and calling out to it, which is a different job". That job is done. This
+supersedes the "only the two field sites are shipped" half of that section; everything it says
+about **where** the 51 asks are, and what each one does, still stands.
+
+**The mistake in the old framing.** A site is `jal <helper>` + delay slot, and v1.106.0 answered
+by *dropping the call* — moving the delay-slot instruction up into the jal's word and writing a
+one-word answer into the word that freed. That is why one word was all there was. But the call
+does not have to be dropped. **Retarget it instead**: leave the `jal` a `jal`, leave the delay
+slot exactly where it is, and change only the 26-bit target. One word per site, the instruction
+order is stock order, and the five sites whose delay slot is not the argument setup
+(`0x103B54`, `0x103D28`, `0x104368` carry arithmetic the next instruction consumes; `0x105200`
+is `move $a0,$s0`; `0x1115C4` is `sw $a0,($sp)`) need no special case at all — the delay slot is
+never written. The three sites whose `jal` word is itself a branch target (`0x1100AC`,
+`0x23AC20`, `0x2610D0`) are likewise fine: the word stays a `jal` at the same address.
+
+### Free space in the boot ELF
+
+`PT_LOAD` is ISO `0xA4800..0x431C30` (p_filesz `0x38D430`, vaddr `0x165D000`); the ELF *file*
+runs on to `0x465DF0`, but everything past `0x431C30` is section headers and is not loaded.
+Two kinds of space were surveyed.
+
+**Inter-section padding**, all of it zero on a pristine disc and all of it inside `PT_LOAD`:
+
+| gap | ISO | vaddr | bytes | |
+|---|---|---|---|---|
+| `.text` tail padding | `0x366ED0` | `0x191F6D0` | 48 | all zero |
+| `.text-nop` + its gap to `.data` | `0x398320` | `0x1950B20` | 96 | all zero |
+| `.vudata` gap to `.rodata` | `0x3FC750` | `0x19B4F50` | 48 | all zero |
+| `.rodata` gap to `.lit4` | `0x42BD22` | `0x19E4522` | 94 | all zero |
+| `.lit4` gap to `.sdata` | `0x42DC84` | `0x19E6484` | 124 | all zero |
+
+410 bytes in total, but scattered — the largest single run is 124 bytes, which is not enough for
+a helper plus its table. Recorded here so the next person does not re-derive it. (`.bss` is
+`0x2EE64` bytes of memsz with no file backing, so it is not usable for static data: the CRT
+zeroes it.) Zero-word runs *inside* `.text` are not free space — 24,449 of them exist and all but
+one are delay-slot `nop`s; the longest is 44 bytes at VA `0x1917394`.
+
+**The dead routine at VA `0x16BF1E0`**, named in the status-effect section above as the one
+routine that reads per-status levels off a record, is 656 bytes (`0x16BF1E0..0x16BF470`, ending
+`jr $ra` / `addiu $sp,$sp,0x90` at `0x16BF464` followed by one alignment `nop`). Its
+unreferencedness was re-checked over the **whole range**, not just its entry:
+
+* no `j`/`jal` anywhere in `PT_LOAD` targets any word of it — 0 hits;
+* no PC-relative branch from outside the range lands inside it — 0 hits;
+* no `lui`+`addiu`/`ori` pair anywhere materialises an address inside it — 0 hits;
+* no 4-byte-aligned word anywhere in the **ELF file** holds an address inside it — 0 hits;
+* a byte-granular scan of the **entire 4 GB disc** for a little-endian u32 in the range found 105
+  coincidences, every one of them unaligned and inside media data, none in the ELF.
+
+640 of its 656 bytes are used: 288 for the helper, 352 for the table. The last 16 are left alone.
+
+### The helper
+
+Three entry points, one shared core, and a table. The whole thing is in `web/iso.js:PS_HOOK` as
+288 bytes of hex, so it can be byte-compared and restored; `web/tests/validate.mjs` pulls that
+hex apart and re-derives every constant baked into it (`PS_HOOK.first`, `.rows`, `.stride`,
+`.recBase`, `.recStride`, `.recCount`, and the table's own address) from the JS beside it.
+
+```
+core:   $a0 = character record, $a1 = rune item id  ->  $v0 = 1 if forced, else 0.  Leaf.
+016BF1E0  addiu $v1,$a1,-0x1B9      row = item - first rune
+016BF1E4  sltiu $at,$v1,0x16        ...bounded by 22 rows
+016BF1E8  beqz  $at,0x16BF240
+016BF1EC  lui   $at,0x197           (delay slot, used)
+016BF1F0  addiu $at,$at,-0x1900     $at = 0x196E700, the character-record array
+016BF1F4  subu  $v0,$a0,$at
+016BF1F8  sltiu $at,$v0,0x3D40      ...bounded by 112 * 0x8C
+016BF1FC  beqz  $at,0x16BF240
+016BF200  addiu $at,$zero,0x8C      (delay slot, used)
+016BF204  divu  $zero,$v0,$at
+016BF208  mfhi  $t0
+016BF20C  bnez  $t0,0x16BF240       not on a record boundary -> not a character record
+016BF210  mflo  $t0                 (delay slot, used) $t0 = record index 0..111
+016BF214  sll   $v1,$v1,4           row * 16
+016BF218  srl   $at,$t0,3
+016BF21C  addu  $v1,$v1,$at
+016BF220  lui   $at,0x16C
+016BF224  addiu $at,$at,-0xD00      $at = 0x16BF300, the table
+016BF228  addu  $v1,$v1,$at
+016BF22C  lbu   $v1,($v1)
+016BF230  andi  $t0,$t0,7
+016BF234  srlv  $v0,$v1,$t0
+016BF238  jr    $ra
+016BF23C  andi  $v0,$v0,1
+016BF240  jr    $ra
+016BF244  move  $v0,$zero
+
+psRec:  016BF248 — the 25 `0x16CB380` sites. $a0 is already the record. Forced -> 1;
+                   otherwise `j 0x16CB380` with $a0/$a1 untouched.
+psId:   016BF274 — the 3 `0x16CB438` sites. Resolves $a0 through `0x16C6D08` exactly as
+                   0x16CB438 does, then falls into psRec.
+psUnit: 016BF2A4 — the 23 `0x181B3B0` sites. `0x181B738` resolves the acting unit to a record;
+                   a null record answers 0 (stock); not forced -> `j 0x16CB270`, which is what
+                   0x181B3B0 itself calls.
+
+table:  016BF300 — 22 rows of 16 bytes, one row per rune 0x1B9..0x1CE, one bit per record index.
+```
+
+The three `jal` words the sites are rewritten to are `0x0C5AFC92` (psRec), `0x0C5AFC9D` (psId)
+and `0x0C5AFCA9` (psUnit).
+
+**Why a record pointer is a character id.** `0x16C6D08(charId)` is the id→record accessor and it
+is two table lookups: `lbu` a compact index out of a 0xD8-entry byte table at VA `0x19697A8`
+(ISO `0x3B0FA8`), then `index * 0x8C + 0x196E700`. `0x16D33B8` memsets that array with a length
+of `0x3D40` = **112 records**. So the inverse is arithmetic: `(rec - 0x196E700) / 0x8C`, with a
+non-zero remainder or an out-of-range quotient meaning "not one of these records at all".
+
+The index it yields **is the list1 record number** the Characters tab already uses — verified
+against `AVATAR.PARTY_IDS` for all 75 battle characters (`table[PARTY_IDS[i]] == i+1`, 75/75), so
+record 1 is Hugo and record 75 is Emily. Five party ids alias onto an existing record
+(`0xCA` Masked Luc → 57 Luc, `0xCB` Grasslands Chris → 2 Chris, `0xCE` → 55, `0xD1` → 37,
+`0xD7` Masked Kidd → 11 Aila), which is correct: they *are* the same character record. Koroku's
+four dogs (list1 76–79, party ids `0xD2`–`0xD5`) take `0x16C6D08`'s other branch and live at
+`0x196560C + id*0x8C` — a separate block below the array — so they cannot be indexed here and are
+not offered.
+
+**Why this keeps forced battle passives off enemies.** The task this started from asked whether
+`0x17BBB20` returns 0 for an enemy unit, because a plain null test would then be enough.
+**It does not.** `0x17BBB20(unitIdx)` reads a battle mode from `0x17BB538` and then:
+
+| mode | unitIdx | result |
+|---|---|---|
+| 0 or 2 | `< nParty` (`byte[0x196AF4D]`) | the party path: `0x16FFCA8(slot)` → `0x16C6D08(id)` → the **static array** |
+| 0 or 2 | `nParty <= i < nChars` (`byte[0x196AF4C]`) | `word[0x196AF54] + (i - nParty) * 0x8C` — a **heap** array |
+| 0 or 2 | out of range | 0, after a debug printf |
+| 1 | any | `word[word[0x196B1DC] + i*4]` |
+
+`word[0x196AF54]` is filled by `0x17BB770`, which calls an allocator (`alloc(0x8C, 8)` through
+the function pointer at `0x19B04F4`) — so a non-party unit's record is heap memory, above the
+ELF's bss end at `0x1A194E4`, and can never land inside the static array at `0x196E700`. The
+range-and-alignment test in `core` is therefore exactly the enemy filter, without needing to know
+the battle mode or the unit index. It is also strictly stronger than a null test would have been.
+
+**What else was checked before shipping it.**
+
+* All 51 stock word pairs still match a pristine SLUS-20387 byte-for-byte, and every `jal`
+  decodes to the helper its entry names.
+* **HI/LO are dead across every one of the 51 calls** — this matters because `core` uses `divu`.
+  Eight sites have an `mflo` within 11 words of the call; in all eight the `div`/`mult` that
+  produced it is issued *after* the call returns. (Counter at `0x103B54` is the near miss: its
+  `div`/`mflo` pair sits immediately *before* the `jal`, so LO is already consumed.)
+* The helper clobbers only `$at`, `$v0`, `$v1`, `$t0`, `$a0`, `$a1`, `$ra` and HI/LO — all
+  caller-saved, and all already clobbered by the stock helpers. `$s0` is saved and restored in
+  the two entries that use it, exactly as `0x16CB438` and `0x181B3B0` do.
+* Every "no" answer tail-jumps to the stock helper, so an unchosen character behaves exactly as
+  the disc always did: the rune still works when equipped and the passive is still off when not.
+
+### Shipped
+
+`web/iso.js`: `PS_HOOK` (block descriptor + the 288 code bytes + the 640 stock bytes it replaces)
+and one merged `PASSIVES` table of 22 runes / 51 sites — `PS_BATTLE` is gone, its entries moved
+into `PASSIVES` as the task asked. The tab's control per rune is a **character picker**, not a
+checkbox, because "who has it" is the honest shape of the edit. The block is installed by the
+first character chosen anywhere and removed when the last one is cleared, and it is only ever
+written over bytes that compare equal to the dead routine; a block holding anything else makes
+the whole tab read-only, the same rule the site-level checks follow. v1.106.0's two-word encoding
+is still *recognised* — a disc patched by it is named as such and offered a one-click return to
+stock — but nothing writes it any more.
+
+**What is proven and what is not.** Sunbeam's field walk-heal *site* is confirmed in play
+(2026-09-06, recorded in the section above): forced to yes, the party healed by walking with
+nobody carrying the rune. That proves the site, the effect, and that answering this one question
+with a yes is all a passive needs — which is the load-bearing assumption for all 51. What it does
+**not** prove is this delivery of the yes: the play report was taken with the previous patch
+shape, where the call was dropped and the answer written into the word it vacated, and this
+version returns the answer from a relocated helper instead. So Sunbeam and Champion's are marked
+*expected* in the tab and everything else *untested*, in the same confirmed / expected / untested
+vocabulary the Mounts tab uses, and a marker is only ever moved by a play report — never by a
+passing test.
