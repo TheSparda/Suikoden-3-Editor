@@ -1172,31 +1172,29 @@ head("Field character — chips; Story content in its own view");
     check("every other story case is untouched",
       STORY_CASES.filter(([o]) => o !== 0x1C7724).every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
 
-  // The scene-softlock experiment stayed behind Test, so go back there for it.
+  // The scene-softlock actor fallback was RETIRED in v1.135.0: it cannot help (the namespace
+  // it patches is used zero times in any town script) and it is confirmed in play to cause
+  // the hang it was meant to fix. The control is gone; the write path with it.
+  //
+  // "The checkbox is absent" is a check that passes forever once the id is gone, so it is
+  // never asserted alone — it is paired with the section still being there and still saying
+  // why, which is what actually has to survive. The repair path for a disc that already
+  // carries the patch is covered by the Changes-tab restore section further down.
   await page.click('#isoTabs [data-v="test"]');
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
-  // Both words of the miss-exit must move together, or the jump lands with a stray delay
-  // slot / the toggle silently does nothing.
-  await page.check("#avActorFb");
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
+  await page.waitForSelector("#avStock", { timeout: 3000 });
   { const txt = await page.textContent("#isoView");
-    check("the fallback names its recursion risk", /recurses forever/i.test(txt));
-    // It was tried in play and did not help. Saying so is the point of keeping it: a toggle
-    // that reads as promising would send the next person down the same dead end.
-    check("...and says it was tried and did not work", /did not fix the hang/i.test(txt));
-    // Now demonstrated rather than suspected: the namespace it patches is used zero times
-    // in any town script, so the tab should state that, not hedge.
-    check("...and gives the measured reason", /exactly zero times/i.test(txt)); }
-  { const r = await save(page);
-    check("the exit became a jump to the player lookup", r.u32(ACTORFB_SITES[0][0]) === ACTORFB_SITES[0][2]);
-    check("...with a nop in the delay slot", r.u32(ACTORFB_SITES[1][0]) === 0);
-    check("...and the jump decodes back to 0x17B5CC8",
-      ((r.u32(ACTORFB_SITES[0][0]) & 0x03FFFFFF) << 2) === 0x17B5CC8); }
-  await page.uncheck("#avActorFb");
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
-  { const r = await save(page);
-    check("unticking restores both words exactly",
-      ACTORFB_SITES.every(([o, stock]) => r.u32(o) === stock)); }
+    check("the section is still there to explain the softlock", /Scene softlocks/.test(txt));
+    check("...and says the toggle was removed", /has been removed/i.test(txt));
+    check("...and names its recursion risk", /recurses forever/i.test(txt));
+    check("...and gives the measured reason it could never help", /exactly zero times/i.test(txt));
+    check("...and reports the play confirmation", /Confirmed in play/i.test(txt));
+    check("...and points an affected disc at the repair", /Changes/.test(txt) && /Code patches/.test(txt));
+    check("no control can turn the fallback on any more",
+      (await page.$("#avActorFb")) === null); }
+  // Nothing was saved between the story save above and here, so an empty dirty badge is a
+  // real statement: opening this tab stages nothing at the fallback's words or anywhere else.
+  check("and opening the tab stages nothing",
+    (await page.evaluate(() => document.querySelector("#isoDirty")?.hidden)) === true);
 
   // The story view's own Restore stock covers the cases it owns — back to that tab for it.
   await page.click('#isoTabs [data-v="story"]');
