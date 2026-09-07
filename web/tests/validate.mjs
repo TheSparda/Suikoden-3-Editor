@@ -1238,5 +1238,48 @@ console.log("In-ELF text heuristic:");
   (foodHint && /IN PLACE/.test(foodHint[1]) ? ok : bad)("the Food hint keeps the written-in-place length cap");
 }
 
+// ---- e2e section gates -------------------------------------------------------------------
+// Every e2e section is `head("name")` followed by a block gated on `if (ON)`. An UNGATED
+// col-0 block is the one mistake this structure invites, and it fails silently in the worst
+// way: the block runs in every shard while being counted in one, so it is tested four times
+// over, its checks print under the previous section's header, and a pageerror inside it is
+// blamed on that other section. Nothing turns red — the run just quietly means less than it
+// says. This is checked here, in the browser-free suite, so it costs nothing to catch.
+//
+// Found for real: a peer added two sections while this was in flight, and both landed
+// ungated through a clean rebase. `if (ON)` is a plain flag precisely so that adding a
+// section needs no numbering, which also means there is no error to trip over if you forget.
+{
+  const e2e = fs.readFileSync(new URL("./e2e.mjs", import.meta.url), "utf8").split("\n");
+  const ungated = [];
+  e2e.forEach((l, i) => { if (/^\{/.test(l)) ungated.push(i + 1); });
+  (ungated.length === 0 ? ok : bad)("every top-level block in e2e.mjs is gated on the section flag"
+    + (ungated.length ? ` — ungated at line ${ungated.join(", ")}; prefix each with "if (ON) "` : ""));
+  // ...and the gates have to outnumber the sections, or a section lost its block entirely.
+  const heads = e2e.filter((l) => /^head\(/.test(l)).length;
+  const gates = e2e.filter((l) => /^(if \(ON\)|else if \(ON\)) \{/.test(l)).length;
+  (gates >= heads ? ok : bad)(`e2e.mjs has at least one gated block per section (${heads} head(), ${gates} gates)`);
+  // tiers.json names have to resolve to real sections. A name that matches nothing does not
+  // error at run time — it just silently shrinks the fast tier, which is the same false-green
+  // in miniature.
+  // A section name is usually a plain string, but the mobile-viewport sections are named by a
+  // template literal (`Mobile ${w}px — ...`), so matching only double-quoted head() calls
+  // would report a legitimate tier entry as bogus. Turn each template into a pattern and
+  // match against that; ${...} becomes .+ since its value is not knowable statically.
+  const lit = new Set(), pats = [];
+  for (const l of e2e) {
+    const q = /^head\("((?:[^"\\]|\\.)*)"/.exec(l);
+    if (q) { lit.add(q[1]); continue; }
+    const t = /\bhead\(`([^`]*)`/.exec(l);      // e.g. `if (!head(`Mobile ${w}px ...`)) continue;`
+    if (t) pats.push(new RegExp("^" + t[1].split(/\$\{[^}]*\}/).map((x) =>
+      x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".+") + "$"));
+  }
+  const known = (n) => lit.has(n) || pats.some((r) => r.test(n));
+  const tiers = JSON.parse(fs.readFileSync(new URL("./tiers.json", import.meta.url), "utf8"));
+  const unknown = tiers.fast.filter((n) => !known(n));
+  (unknown.length === 0 ? ok : bad)("every tiers.json fast-tier name is a real e2e section"
+    + (unknown.length ? ` — no such section: ${unknown.map((u) => JSON.stringify(u)).join(", ")}` : ""));
+}
+
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
 process.exit(failures ? 1 : 0);
