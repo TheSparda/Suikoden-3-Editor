@@ -677,7 +677,35 @@ function showSub() {
       `<b>one per slot</b> — click <b>+ Add item</b> once per copy.`;
     drawItems();
   }
+  collapseSubhint();
   refreshHealthBadge();     // pending edits move the count; refresh whenever the view changes
+}
+
+// One-line versions of the sub-view hints above, for the "Show more" collapse
+// (blurb-core.js). Only the long ones need an entry; a view with none renders its hint whole.
+//
+// `chars` is deliberately absent. Its hint carries the live "recruited only" checkbox, and
+// collapsing the block would put that control behind the button — the prose would be tidier
+// and the tab would lose a filter.
+const SUBHINT_SUM = {
+  recruit: "Bulk-recruit units into a protagonist's pre-merge team in one action, with the canonical presets.",
+  stars: "Recruitment completion across the 108 Stars of Destiny, in the order you can actually get them in.",
+  field: "Who you run around the map as — picking someone also stages the party changes that stop cutscenes freezing.",
+  health: "A read-through of this save, pending edits included, for the states the game never writes itself.",
+};
+
+// #subhint is one element every sub-view writes over, so its collapse is rebuilt on each
+// switch rather than left standing: the innerHTML above has already wiped the last view's
+// structure, and clearing data-blurbed is what re-arms the pass. Run synchronously so the
+// full hint never flashes before it collapses.
+function collapseSubhint() {
+  const hint = $("#subhint");
+  if (!hint) return;
+  hint.className = "muted";                 // drop .blurb / .open from the previous view
+  hint.removeAttribute("data-blurbed");
+  const sum = SUBHINT_SUM[SUB];
+  if (sum) hint.setAttribute("data-sum", sum); else hint.removeAttribute("data-sum");
+  if (sum && self.BlurbCore && self.BlurbCore.applyBlurbs) self.BlurbCore.applyBlurbs(hint);
 }
 
 // ---- guide reference overlays ----------------------------------------------
@@ -925,7 +953,7 @@ function drawRecruit() {
 
   $("#subview").innerHTML = `
     <div class="warnbox" style="margin:0 0 10px">Best used for <b>optional</b> recruits. <span class="story-tag">⚠ story</span> characters (faded) auto-join via the story — recruiting or un-recruiting them manually is unneeded and can soft-lock an early save. Keep a backup.</div>
-    <div class="muted" style="margin:0 0 8px">Tick a character's <b>team(s)</b> — a unit can be on <b>several</b> protagonists' teams at once (H/C/G/T, or <b>All</b>), so e.g. a Hugo recruit can also show up while you play Chris. This is a real game mechanic: after the parties merge, the game itself puts shared characters on Hugo + Chris + Geddoe at once. Keep a backup.</div>
+    <div class="muted" style="margin:0 0 8px" data-sum="Tick a character's teams — a unit can be on several protagonists' teams at once, which is a real game mechanic once the parties merge.">Tick a character's <b>team(s)</b> — a unit can be on <b>several</b> protagonists' teams at once (H/C/G/T, or <b>All</b>), so e.g. a Hugo recruit can also show up while you play Chris. This is a real game mechanic: after the parties merge, the game itself puts shared characters on Hugo + Chris + Geddoe at once. Keep a backup.</div>
     <div class="row" style="gap:10px;margin-bottom:8px">
       <label class="field" style="max-width:240px"><span>Default team for new recruits</span><select id="rteam">${teamSel}</select></label>
       <span class="muted">Recruited ${total} · Hugo ${counts.Hugo} · Chris ${counts.Chris} · Geddoe ${counts.Geddoe} · Thomas ${counts.Thomas} · shared ${counts[""]}</span>
@@ -1323,7 +1351,7 @@ function drawField() {
       — because those are the only ids whose field model the engine will load.
       <div id="leaderparty" style="margin:4px 0 0;color:var(--acc2)"></div></div>
     <h3 class="sec">How it works</h3>
-    <div class="muted" style="font-size:12px">
+    <div class="muted" style="font-size:12px" data-sum="You can play as a stand-in, but the character they are standing in for has to leave the party. Everything below is disassembly confirmed in play.">
       <p style="margin:0 0 8px">Everything below was worked out by disassembling the boot ELF and
       then confirming it in play, each way round. The short version: <b>you can play as a
       stand-in, but the character they are standing in for has to leave the party.</b></p>
@@ -1378,7 +1406,7 @@ function drawField() {
       ${esc(charLabel(lead))}. Scenes drive slot 1 and the camera follows the field character —
       while those disagree, a scene will freeze. Re-pick above to put them in step, or fix it
       on the <b>Party</b> tab.</div>` : ""}
-    <div class="warnbox" style="margin:8px 0 0">
+    <div class="warnbox" style="margin:8px 0 0" data-sum="Hugo, Chris, Geddoe and Thomas are the story-safe picks; the rest work in scenes but are stand-ins. Keep a backup save.">
       <b>Hugo, Chris, Geddoe and Thomas are the story-safe picks.</b> The rest work <i>in
       scenes</i> — Koroku has been played through scene after scene, speaking the protagonist's
       lines — but they are stand-ins, so a scene written around something only the real
@@ -1398,7 +1426,7 @@ function drawField() {
           <b>${n.ok ? "✓" : "✕"} ${esc(n.short)}</b></span></div>
         <div class="muted" style="font-size:12px;margin:4px 0 0">${esc(n.long)}</div></div>`;
     }).join("")}
-    <div class="muted" style="font-size:12px;margin:8px 0 0">
+    <div class="muted" style="font-size:12px;margin:8px 0 0" data-sum="Koroku is the one real casualty and it is not fixable from here — his model carries none of the fourteen examine / pick-up clips.">
       <b>Koroku is the one real casualty, and it isn't fixable from here.</b> The disc's motion
       table names a clip per animation slot, and his model carries <b>none of the fourteen
       examine / pick-up clips</b> — Luc's carries them, which is exactly why Luc is fine.
@@ -1548,11 +1576,11 @@ function drawParty() {
   const mismatch = anyFilled && lead && eff0 !== lead;
   $("#subview").innerHTML =
     (anyFilled ? "" : `<div class="warnbox">This save's active-party table is empty — common in early chapters where story events set the field party. Assignments here may be overwritten by the next event on a very early save.</div>`) +
-    (mismatch ? `<div class="warnbox">Slot 1 holds ${esc(REF.charById[eff0] || "id " + eff0)} but the
+    (mismatch ? `<div class="warnbox" data-sum="Party slot 1 and the field character disagree, which freezes scripted scenes. Set them to the same character.">Slot 1 holds ${esc(REF.charById[eff0] || "id " + eff0)} but the
        <b>field character</b> is ${esc(REF.charById[lead] || "id " + lead)}. Scripted scenes drive the
        protagonist as party slot 1 while the camera follows the field character — when those disagree
        a scene animates one and waits on the other, and freezes. Set them to the same character.</div>` : "") +
-    `<div class="muted" style="margin:0 0 8px;font-size:12px">This is the <b>party list</b>
+    `<div class="muted" style="margin:0 0 8px;font-size:12px" data-sum="This is the party list, not the battle formation — that table is re-derived from this list every time you Apply.">This is the <b>party list</b>
        (save <code>0x3216</code>) — who is in your party, in order. It is not the <b>battle
        formation</b> (<code>0x3240</code>), which is where they stand in a fight; that table is
        re-derived from this list every time you Apply, so it can never disagree with it.</div>` +
@@ -1562,7 +1590,7 @@ function drawParty() {
     `<table class="invtbl"><thead><tr><th>Party</th><th>Character</th><th>Battle pos.</th><th>Mount</th></tr></thead><tbody>${rows}</tbody></table>` +
     (anyFilled ? `<div class="card" style="margin:12px 0 0">
       <div class="bag-h">Battle formation <span class="u">save 0x3240 · six positions</span></div>
-      <div class="muted" style="margin:0 0 8px">A <b>separate table</b> from the party list, and the
+      <div class="muted" style="margin:0 0 8px" data-sum="A separate table from the party list, and the one the game actually reads to build the party.">A <b>separate table</b> from the party list, and the
         one the game actually reads to build the party. Each position holds the <i>index</i> of a
         party member, so gaps and reordering are normal — the game writes both. It is also what a
         story join looks at for free space, not the party list.</div>
@@ -1579,7 +1607,7 @@ function drawParty() {
       <div class="muted" style="margin:8px 0 0;font-size:12px">${
         form.filter((v) => !v).length} of 6 free — a character who joins by story event needs one
         of these empty, or the join is silently dropped.</div></div>` : "") +
-    (anyFilled ? `<div class="muted" style="margin:8px 0 0;font-size:12px">A <b>mount</b> is staged
+    (anyFilled ? `<div class="muted" style="margin:8px 0 0;font-size:12px" data-sum="A mount is staged six positions along in the same table, and the game rewrites that slot from the ISO's assigned-horse field on every party change.">A <b>mount</b> is staged
        in the same table, six positions along (save <code>0x3222</code>). Removing a member takes
        their mount with them.
        <br><b>Two halves decide whether a horse appears.</b> This dropdown picks <i>which</i> model
@@ -1900,7 +1928,7 @@ function openCarryoverBonus() {
   ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Suikoden II bonus">
       <div class="modal-h"><b>Suikoden II bonus</b><button class="modal-x" aria-label="close">✕</button></div>
       <div class="cf-list">
-        <div class="muted" style="padding:0 0 8px">Enter what each character was in your Suikoden II
+        <div class="muted" style="padding:0 0 8px" data-sum="Enter what each character was in your Suikoden II save. The carryover can only ever level them up, and only seven runes can arrive this way.">Enter what each character was in your Suikoden II
           save. The level applied is the game's own: <code>cur + cur×max(0, S2level−50)/100</code>,
           capped at 99, +5 more if they were level 99 — so it can only ever level them up.
           Weapon level gains <code>max(0, S2weaponLv−10)/2</code>. Leave a value at 0 to skip it.

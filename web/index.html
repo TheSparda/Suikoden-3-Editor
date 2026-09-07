@@ -26,7 +26,7 @@
   </nav>
 
   <section id="mode-save" class="mode">
-    <p class="sub">Full save editor — characters, stats, runes/equipment, skills, inventory,
+    <p class="sub" data-sum="Full save editor — characters, stats, runes, equipment, skills, inventory, party and recruitment, all running on your own device.">Full save editor — characters, stats, runes/equipment, skills, inventory,
       party and recruitment. Everything runs in your browser via Python (Pyodide); your save
       never leaves the device. Works on desktop and Android. A backup is always wise.</p>
 
@@ -73,7 +73,7 @@
   </section>
 
   <section id="mode-iso" class="mode hidden">
-    <p class="sub">Edit the game disc directly — character growth, skills, runes, shops, spells,
+    <p class="sub" data-sum="Edit the game disc directly — growth, skills, runes, shops, spells, unites and gear. Nothing is uploaded; back up first.">Edit the game disc directly — character growth, skills, runes, shops, spells,
       unite attacks, equipment and consumables; nothing is uploaded. On <b>desktop Chromium</b> edits are
       written <b>in place</b>; on <b>Android/Firefox/Safari</b> saving streams a patched copy to your
       downloads. Either way, back up first (or export a recipe).</p>
@@ -85,7 +85,7 @@
     <button class="tb" data-theme="parchment">Parchment</button>
     <span class="credit">Made by <b>Sparda</b> ·
       <a href="https://github.com/TheSparda/Suikoden-3-Editor" target="_blank" rel="noopener noreferrer">GitHub</a>
-      · v1.129.0 ·
+      · v1.130.0 ·
       <button type="button" id="forceRefreshBtn" class="linklike" title="Clear this site's cached files + service worker and reload the latest version">↻ Force refresh</button></span>
     <span class="note">Save editor: client-side Pyodide port of <code>s3save.py</code> (full parity, works everywhere).
       ISO editor: client-side, in-place edits on Chromium desktop.</span>
@@ -94,6 +94,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<script src="blurb-core.js"></script>
 <script src="recruit-core.js"></script>
 <script src="rename-core.js"></script>
 <script src="guide-core.js"></script>
