@@ -518,3 +518,8 @@ details.fold[open] > summary { margin:0 0 10px; }
 .mcfrow { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
 .mcfrow > .mcf { flex:0 0 auto; }
 .mcfrow > .muted { flex:1 1 200px; min-width:0; }
+/* Rune type + element family sit under the four slots: same record, but they change what the
+   game DOES with those slots rather than what is in them, so they are separated rather than
+   mixed into the numbered list. */
+.runemeta { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.runemeta .field { flex:1 1 130px; }
