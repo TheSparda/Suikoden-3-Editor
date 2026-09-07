@@ -393,15 +393,27 @@
     // tail-jump to the player lookup instead of returning null: "an actor nobody can find
     // is you". That is as close as this gets to Koroku delivering Hugo's lines.
     //
-    // The risk is stated in the UI rather than hidden: 0x17B5CC8 calls back into this same
-    // function with the leader byte, so if a scene's actor table has no record for YOUR
-    // leader, the fallback recurses forever. Two instructions is not enough room for a
-    // guard — the exit can hold `j; nop` or `jr $ra; move`, but not a conditional with both
-    // paths — so this ships as an opt-in experiment, not a fix.
+    // RETIRED as an option (v1.135.0). Both halves of the case against it are settled:
+    //
+    //   * it cannot help. The event scripts were disassembled: of 12,055 actor references
+    //     across every town script on the disc, the `0x400|N` namespace this patches is used
+    //     ZERO times. Scenes address actors by slot, so the miss-exit is never taken.
+    //   * it causes the hang it was meant to fix. 0x17B5CC8 calls back into this same
+    //     function with the leader byte, so a scene whose actor table has no record for YOUR
+    //     leader recurses forever. CONFIRMED IN PLAY 2026-09-06: a disc carrying it froze the
+    //     Brass Castle -> plains transition with only Chris's horse staged, and restoring
+    //     these two words fixed that scene on the same save. Two instructions is not enough
+    //     room for a guard — the exit can hold `j; nop` or `jr $ra; move`, but not a
+    //     conditional with both paths — so there was nowhere to put the check.
+    //
+    // The constants stay because DETECTING and REPAIRING a disc that already carries it is
+    // the reason they are still worth having: chgCodeAudit names both words and its restore
+    // puts them back. Nothing writes `alt` any more — keep it as the recognition pattern, so
+    // an affected disc is reported as this patch rather than as an unlabelled byte run.
     ACTORFB: {
       sites: [
-        { off: 0x1FD238, stock: 0x03E00008, alt: 0x085ED732 },   // jr $ra   -> j 0x17B5CC8
-        { off: 0x1FD23C, stock: 0x0000102D, alt: 0x00000000 },   // move v0,0 -> nop
+        { off: 0x1FD238, stock: 0x03E00008, alt: 0x085ED732 },   // jr $ra   -> j 0x17B5CC8 (never written now)
+        { off: 0x1FD23C, stock: 0x0000102D, alt: 0x00000000 },   // move v0,0 -> nop      (never written now)
       ],
       target: 0x17B5CC8,
     },
@@ -5370,9 +5382,6 @@
     }
 
     const allowed = avatarAllowedIds();
-    const fbSites = AVATAR.ACTORFB.sites;
-    const fbBad = fbSites.some((f) => !inBlk(f.off, 4) || (r32(f.off) !== f.stock && r32(f.off) !== f.alt));
-    const actorFbOn = !fbBad && fbSites.every((f) => r32(f.off) === f.alt);
     const stock = new Set(AVATAR.STOCK_SET);
     const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
     // Chips used to carry per-area model coverage as well. Play testing retired it: the
@@ -5433,8 +5442,8 @@
           <span class="muted">· ${allowed.length} id${allowed.length === 1 ? "" : "s"}, read back from the patched bytes</span>
           <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
         </div>
-        <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup · untested</span></div>
-        <div class="muted" style="margin:0 0 10px" data-sum="Scripts name actors two ways, and the by-character-id one returns nothing when that character is absent — which is exactly where the game stops.">
+        <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup \u00b7 retired</span></div>
+        <div class="muted" style="margin:0 0 10px" data-sum="Scripts name actors two ways, and the by-character-id one returns nothing when that character is absent \u2014 which is exactly where the game stops.">
           Scripts name an actor two ways. <b>"The player"</b> resolves through the leader byte and
           works for anyone — which is why your avatar walks into the scene, and why talking to
           NPCs is fine. <b>"The character whose id is N"</b> scans the scene's actor records for
@@ -5442,21 +5451,29 @@
           Hugo gets nothing the moment you are somebody else, and the beat that would have made
           him speak has no actor — which is exactly where the game stops.
         </div>
-        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 6px">
-          <input type="checkbox" id="avActorFb"${actorFbOn ? " checked" : ""}>
-          <b>An actor nobody can find falls back to the player</b>
-          <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
-        <div class="warnbox" style="margin:0 0 10px" data-sum="Tried in play and it did not fix the hang: town scripts address actors by slot, so this exit is never taken. Kept only as a record.">
-          <b>Tried in play, and it did not fix the hang \u2014 and now we know why.</b> The event
-          scripts have since been located and disassembled: across <b>12,055 actor references in
-          every town script on the disc, the by-character-id namespace this patch fixes is used
-          exactly zero times</b>. Scenes address actors by <i>slot</i>. This exit is never taken,
-          so the toggle cannot help. Kept only as a record. It can also hang the game harder than it already does —
-          the fallback
-          re-enters the same lookup with your leader's id, so in a scene whose actor table has no
-          record for <i>your</i> character it recurses forever. The exit is two instructions —
-          enough for a jump, not for a guard — so there is nowhere to put the check. Try it on a
-          save you can throw away.
+        <div class="warnbox" style="margin:0 0 10px" data-sum="The toggle that patched that exit was removed: it cannot help (the namespace it fixes is used zero times in any town script) and it is confirmed in play to hang a scene transition."><b>The toggle that patched that exit has been removed.</b>
+          It made the miss-exit fall back to the player lookup — "an actor nobody can find is
+          you". Two findings retired it, and both are settled rather than suspected:
+          <ul style="margin:6px 0 0 18px;padding:0">
+            <li><b>It cannot help.</b> The event scripts were disassembled: across
+              <b>12,055 actor references in every town script on the disc, the by-character-id
+              namespace this patched is used exactly zero times</b>. Scenes address actors by
+              <i>slot</i>, so the exit is never taken.</li>
+            <li><b>It causes the hang it was meant to fix.</b> The fallback re-enters the same
+              lookup with your leader's id, so a scene whose actor table has no record for
+              <i>your</i> character recurses forever. <b>Confirmed in play (2026-09-06):</b> a disc
+              carrying it froze the Brass Castle → plains transition with only the horse staged,
+              and turning it back off fixed that scene on the same save. The exit is two
+              instructions — enough for a jump, not for a guard — so there was nowhere to put a
+              check.</li>
+          </ul>
+        </div>
+        <div class="muted" style="margin:0 0 10px" data-sum="A disc that already carries this patch is still detected and repaired: the Changes tab lists it first and its restore button puts both words back."><b>Already have a disc with it on?</b> It is still
+          detected and still repairable — nothing was removed but the way to turn it <i>on</i>.
+          <b>Changes → Code patches</b> lists both words at
+          <code>0x${AVATAR.ACTORFB.sites.map((f) => hex(f.off, 6)).join("</code> and <code>0x")}</code>
+          at the top of the table, and the <b>\u21ba</b> beside them puts the stock exit back.
+          <b>Restore stock</b> on this tab covers them too.
         </div>
         <details class="note" style="margin:10px 0 0"><summary>The chain, and where each byte lives</summary>
           <pre style="white-space:pre-wrap;font-size:12px">FieldAvatarModelRequest(id)          ; vaddr 0x17B7560
@@ -5497,16 +5514,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       AVATAR.gates.forEach((g) => { writeW(g.off, 2, AVATAR.WIDE); reg(g.off, 2, "num", "Field character", g.label); });
       drawView();
     };
-    { const cb = q("#avActorFb", host);
-      if (cb) {
-        if (fbBad) { cb.disabled = true; cb.title = "these instructions aren't stock — not offered"; }
-        cb.onchange = () => {
-          fbSites.forEach((f) => { writeW(f.off, 4, cb.checked ? f.alt : f.stock);
-            reg(f.off, 4, "num", "Scene softlocks", "actor fallback"); });
-          drawView();
-        };
-        cb.classList.toggle("dirty", fbSites.some((f) => isDirty(f.off, 4)));
-      } }
     // Story content moved to its own view once it was confirmed working, so this button
     // restores only what this tab still owns — touching the story cases from here would
     // silently undo a setting the user made somewhere else.
