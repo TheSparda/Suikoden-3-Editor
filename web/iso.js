@@ -854,14 +854,12 @@
               { off: 0x104838, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
               { off: 0x2463CC, jal: 0x0C606CEC, ds: 0x240501CE, k: "unit" }] },
   ];
-  // Fortune is the one support rune with no site in the EXECUTABLE. That is not the same as no
-  // site at all, and the earlier claim that it had none was wrong: its check is
-  // `jal 0x181B3B0` / `addiu $a1,$zero,0x1B8` in the battle-results OVERLAY at 0x3F3E6938 (and
-  // its streaming twin 0x3F3EF138), which no amount of searching PT_LOAD could ever have found.
-  // Its EXP multiplier IS editable — see the RUNEFX "fortune" entry. It stays listed here
-  // because this table is about the equipped-check SWITCHES, and the switch machinery only
-  // reaches the ELF block; the overlay check is decoded but not switchable yet.
-  const PS_UNMAPPED = [0x1B8];
+  // Fortune has no site in the EXECUTABLE, which was never the same as no site at all: its
+  // check is `jal 0x181B3B0` / `addiu $a1,$zero,0x1B8` in the battle-results OVERLAY at
+  // 0x3F3E6938 (and its streaming twin 0x3F3EF138), where no amount of searching PT_LOAD could
+  // have found it. It is not in this table because this table is the relocated-helper machinery
+  // and that reaches the ELF block only — Fortune is switched by AUXSW instead, which writes
+  // through the overlay windows. So there is no longer any decoded check without a switch.
   // The encoding v1.106.0 through v1.113.0 wrote (the versions in between changed markers, prose
   // and tests, never bytes), kept only so a disc patched by one of them is READ correctly rather
   // than mistaken for a stranger's patch. Nothing writes it any more. It is TWO words and both are
@@ -1291,15 +1289,22 @@
   // Read once on ISO load, then ride along every save/export path. No undo integration:
   // the Sets view gives each aux field its own restore control instead.
   // The battle-results overlay pair. Two streaming copies of one function, 0x8800 apart, and
-  // the window now starts 0x34 EARLIER than it used to: Fortune's EXP multiplier lives in the
-  // same function, ahead of the potch code, and this is the only window that reaches it.
-  //   +0x00  addiu $v0,$zero,2   Fortune: the EXP multiplier (was the window base before)
-  //   +0x34  andi  $v0,$v0,mask  which armour set owns the potch bonus
-  //   +0x3C  sll / +0x40 addu    the potch multiplier itself
-  const AUX_WINDOWS = [0x3F3E6960, 0x3F3EF160];
-  const AUX_LEN = 0x48;
-  const AUX_FORTUNE = 0;                   // offsets within a battle-results window
-  const AUX_MASK = 0x34, AUX_MULT = 0x3C;
+  // byte-identical across the whole window. The base has moved back twice: first 0x34, to reach
+  // Fortune's EXP multiplier, and now another 0x28, to reach the two EQUIPPED CHECKS that decide
+  // whether either bonus applies at all. Everything this editor patches in the overlay is inside
+  // one 0x70 span, so one window per copy still covers it.
+  //
+  //   +0x00  jal 0x181B3B0 / +0x04 addiu $a1,$zero,0x1B8   does this party member hold Fortune?
+  //   +0x28  addiu $v0,$zero,2                             Fortune: the EXP multiplier
+  //   +0x54  jal 0x181B370 / +0x58 daddu $a0,$s1,$zero      which armour set is this member wearing?
+  //   +0x5C  andi  $v0,$v0,mask                            which armour set owns the potch bonus
+  //   +0x64  sll / +0x68 addu                              the potch multiplier itself
+  const AUX_WINDOWS = [0x3F3E6938, 0x3F3EF138];
+  const AUX_LEN = 0x70;
+  const AUX_FORT_CHK = 0x00;               // offsets within a battle-results window
+  const AUX_FORTUNE = 0x28;
+  const AUX_PROSP_CHK = 0x54;
+  const AUX_MASK = 0x5C, AUX_MULT = 0x64;
   // AUX holds three kinds of window, told apart by `tag`:
   //   "potch" — the two fixed 16-byte overlay windows (Sets view). Read when the disc opens.
   //   "enemy" — coalesced spans covering enemy and war stat records, reward blocks and spawn
@@ -1348,6 +1353,160 @@
   // Saving makes the written bytes the new "original", which is also the baseline the stock
   // comparison measures against — so drop its cached verdict and let it re-measure.
   const auxMarkSaved = () => { AUX.forEach((w) => { w.orig = w.buf.slice(); }); resetBulkScales(); RSCALE = null; };
+
+  // ---- the two overlay switches: force an equipped/worn check to yes ----------
+  // The battle-results function asks two ownership questions before it pays out, and both are
+  // the same shape as the equipped checks on the Passives tab: a `jal` to a query helper whose
+  // answer lands in $v0, with the argument set up in the branch delay slot. Forcing one on is
+  // the two-word patch the Passives tab used before it grew a relocated helper — move the delay
+  // slot instruction UP into the jal's word, then write the answer into the word it vacated.
+  // Nothing is inserted, nothing moves, and the instruction order stays exactly the stock order.
+  //
+  // These two are safe to force in a way the 49 in-battle checks are not. Both loops run AFTER
+  // the battle, over your own party only, and neither answer has any per-unit consequence: no
+  // enemy is ever asked, and nothing downstream re-reads who said yes. That is the same reason
+  // the two field party loops were always switchable — there is no per-unit resolution to leak.
+  //
+  // The answers differ because the two callers use them differently:
+  //   Fortune     `addu $s0,$s0,$v0` counts the answer, then `slti $v1,$s0,1` tests nonzero, so
+  //               a plain 1 per party member is enough — and correct, since ANY nonzero count
+  //               gives the same x2. (The field sites write `sltu $v0,$zero,$a0` because their
+  //               $a0 is a party-slot handle that is 0 for an empty slot; there is no such
+  //               handle here.)
+  //   Prosperity  `andi $v0,$v0,mask` tests the answer against the ownership mask the Sets tab
+  //               edits, so the answer has to satisfy whatever mask is written: -1 does, for
+  //               every mask except 0 ("no set"), which turns the bonus off for everyone anyway.
+  const AUXSW = [
+    { key: "fortune", rel: AUX_FORT_CHK, jal: 0x0C606CEC, ds: 0x240501B8, yes: 0x24020001,
+      name: "Fortune", need: "carry the rune", group: "Passive runes", id: 0x1B8,
+      label: "Fortune — double EXP with nobody carrying the rune",
+      review: "Fortune — the equipped check",
+      help: "The battle-results loop asks each party member whether they hold a Fortune Rune and "
+        + "counts the yeses; any nonzero count doubles EXP for the whole party. Ticking this "
+        + "answers yes for every member without calling the helper, so the bonus is always on. "
+        + "One is as good as six, so this is exactly as strong as handing one character the rune "
+        + "— no more. What it multiplies by is the EXP multiplier under Rune power." },
+    { key: "prosperity", rel: AUX_PROSP_CHK, jal: 0x0C606CDC, ds: 0x0220202D, yes: 0x2402FFFF,
+      name: "Prosperity", need: "wear the set", group: "Armor sets",
+      label: "Prosperity — the potch bonus with nobody wearing the set",
+      review: "Prosperity — the worn-set check",
+      help: "The same loop asks each party member which armour set they are wearing and multiplies "
+        + "the potch award once per member whose set is in the ownership mask (stock: Prosperity "
+        + "or Destiny). Ticking this answers yes for every member. Unlike Fortune this one "
+        + "COMPOUNDS — the multiplier applies per member, so a full party of six at the stock "
+        + "×3 pays 3⁶ = ×729. Both numbers are on the Sets tab: the multiplier itself and, "
+        + "under Effect ownership, the mask. Setting that mask to “no set (off)” turns the bonus "
+        + "off for everyone, forced or not." },
+  ];
+  const auxSwById = (k) => AUXSW.find((x) => x.key === k);
+  // A switch is one of exactly three things per copy, and both copies must agree: stock, ours,
+  // or a stranger's. Anything else goes read-only, the rule every other code control follows.
+  function auxSwState(sw) {
+    const wins = AUX.filter((w) => w.tag === "potch");
+    if (wins.length !== AUX_WINDOWS.length) return "oob";
+    const st = wins.map((w) => {
+      const a = auxR32(w.off + sw.rel) >>> 0, b = auxR32(w.off + sw.rel + 4) >>> 0;
+      if (a === (sw.jal >>> 0) && b === (sw.ds >>> 0)) return "off";
+      if (a === (sw.ds >>> 0) && b === (sw.yes >>> 0)) return "on";
+      return "other";
+    });
+    if (st.some((x) => x === "other")) return "other";
+    return st.every((x) => x === "on") ? "on" : st.every((x) => x === "off") ? "off" : "mixed";
+  }
+  const auxSwEditable = (sw) => { const x = auxSwState(sw); return x === "on" || x === "off"; };
+  // Both streaming copies always move together — a disc with one patched and one not is the
+  // "mixed" state above, and it is read-only precisely so this can never produce one.
+  function auxSwSet(sw, on) {
+    if (!auxSwEditable(sw)) return false;
+    for (const w of AUX) {
+      if (w.tag !== "potch") continue;
+      auxW32(w.off + sw.rel, (on ? sw.ds : sw.jal) >>> 0);
+      auxW32(w.off + sw.rel + 4, (on ? sw.yes : sw.ds) >>> 0);
+    }
+    return true;
+  }
+  const auxSwDirty = (sw) => auxDirtyAt(sw.rel, 8);
+  const auxSwRevert = (sw) => auxRevertAt(sw.rel, 8);
+  // ONE renderer for both switches, used by the Passives tab (both of them, beside the 22
+  // in-executable ones) and by the Sets tab (Prosperity alone, beside the potch numbers it
+  // multiplies). Same class and data-k either way, so wireAuxSw drives it without knowing which
+  // tab it is on — the arrangement rfField already uses across Passives and Runes.
+  const AUXSW_WHY = {
+    oob: "unavailable — this check lives in the disc's battle-results overlay, and those windows "
+      + "have not been read (a short or partial disc image)",
+    other: "read-only — this disc's code at the check is neither the stock call nor this editor's "
+      + "patch, so it is somebody else's edit and will not be written over",
+    mixed: "read-only — the two streaming copies of this check disagree, so one was patched "
+      + "without the other",
+  };
+  function auxSwField(sw) {
+    const st = auxSwState(sw), on = st === "on", why = AUXSW_WHY[st];
+    // `id` is set only for the switch that belongs to an actual rune, and it earns the same
+    // "what the game says" the Passives table shows: the item's own menu text, so the code
+    // column beside it can be compared against what the game claims.
+    const said = sw.id ? runeInfo(sw.id).text || "" : "";
+    return `<label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 2px">
+        <input type="checkbox" class="auxsw" data-k="${sw.key}"${on ? " checked" : ""}${
+          why ? ` disabled title="${esc2(why)}"` : ""}>
+        <b>${esc2(sw.label)}</b>${said ? ` <span class="u" title="${esc2(said)}">what the game says</span>` : ""}${
+          why ? ` <span class="muted" style="font-size:12px">${
+            esc2(st === "oob" ? "unavailable on this disc image" : "read-only on this disc")}</span>` : ""}</label>
+      <div class="muted" style="font-size:12px;margin:0 0 10px 26px">${esc2(sw.help)}</div>`;
+  }
+  function wireAuxSw(host) {
+    qa(".auxsw", host).forEach((el) => {
+      const sw = auxSwById(el.dataset.k); if (!sw) return;
+      // Same dirty mark and same ↺ as every other overlay control, driven off the window's own
+      // before-image. auxSwRevert spans BOTH streaming copies, which is what keeps a revert
+      // from leaving one of them patched.
+      const dirty = auxSwDirty(sw);
+      el.classList.toggle("dirty", dirty);
+      if (dirty && !el._revBtn) {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+        btn.title = "Restore the check this disc came with (both streaming copies)";
+        btn.setAttribute("aria-label", "Restore the original check in both streaming copies");
+        btn.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); auxSwRevert(sw); drawView(); };
+        el.insertAdjacentElement("afterend", btn);
+        el._revBtn = btn; btn.classList.add("show");
+      }
+      if (el.disabled) return;
+      el.onchange = () => {
+        const on = el.checked, written = auxSwSet(sw, on);
+        drawView();
+        setStatus(!written
+          ? `${sw.name} — nothing written; this disc's code at the check isn't what the editor decoded.`
+          : on ? `${sw.name} — forced on for the whole party; nobody has to ${sw.need}.`
+            : `${sw.name} — back to stock (somebody has to ${sw.need} again).`, written ? "ok" : "warn");
+      };
+    });
+  }
+  // Rendered as a plain card, never a <details>: a card that tracks its own open state snaps
+  // shut on the first edit, because `toggle` fires on a later task than the re-render.
+  function auxSwCard() {
+    const oob = AUXSW.some((sw) => auxSwState(sw) === "oob");
+    return `<div class="card" id="auxSwBox" style="margin:0 0 12px">
+      <div class="bag-h">Forced on in the battle-results overlay
+        <span class="u">two more checks — not in the executable, ~1 GB into the disc</span></div>
+      <div class="muted" style="margin:0 0 10px">The routine that pays out after a battle asks two ownership
+        questions of its own, and neither is in the executable, which is why no search of it ever found them:
+        they live in the <b>battle-results overlay</b> at <code>0x3F3E6938</code> and <code>0x3F3E698C</code>,
+        with streaming twins <code>0x8800</code> later. Both copies are written together and a revert restores
+        both. <b>These two are safe to force in a way the checks above are not</b>: each loop runs after the
+        fight is over, walks your own party and nobody else, and its answer has no per-unit consequence — no
+        enemy is ever asked, and nothing downstream re-reads who said yes. The patch is the older two-word
+        shape rather than the relocated helper: the delay-slot instruction moves up into the
+        <code>jal</code>'s word and the answer goes in the word it vacated, so one call disappears and
+        nothing else moves.</div>
+      ${AUXSW.map(auxSwField).join("")}
+      ${oob ? `<div class="muted" style="margin:0 0 10px">Both switches are <b>unavailable</b> because this
+        disc's overlay windows were not read — the image stops short of the ~1&nbsp;GB mark they live at.</div>` : ""}
+      <div class="warnbox" style="margin:2px 0 0"><b>Experimental — not yet seen working in play.</b> Both
+        checks are decoded from a pristine USA SLUS-20387 and byte-verified before anything is written, and
+        unticking restores the stock words in both copies exactly. What nobody has watched is the
+        <i>result</i>: no forced EXP or potch bonus has been seen landing in a running game. A marker moves on
+        a play report and never on a passing test. Keep a backup disc.</div></div>`;
+  }
   // Multi-offset field helpers for enemy edits: one logical field lives at the same
   // relative spot in every pack copy; write all, dirty/revert consider all.
   function eRead(offs, w) { return w === 1 ? auxR8(offs[0]) : w === 2 ? auxR16(offs[0]) : auxR32(offs[0]); }
@@ -2148,8 +2307,9 @@
       return setStatus(`Not a USA (SLUS-20387) Suikoden III ISO — version word 0x${hex(ver, 8)} ≠ 0x${hex(VERSION_VAL, 8)}. ` +
         `Only the USA release is supported.`, "err");
     }
-    // The only windows read on open are the potch overlay pair — two 16-byte reads that keep
-    // the Sets view synchronous. Everything else the disc needs (enemy, war and room tables,
+    // The only windows read on open are the battle-results overlay pair — two 0x70-byte reads
+    // that keep the Sets and Passives views synchronous (the potch multiplier and its owner
+    // mask, Fortune's EXP multiplier, and both overlay switches all live inside them). Everything else the disc needs (enemy, war and room tables,
     // ~45 ranged reads scattered over 3.6 GB) is deferred to loadDiscTables(); see the note
     // there. Optional the same way it always was: an unreadable window just makes that one
     // control read-only, never blocks the load.
@@ -2471,6 +2631,14 @@
       const oldF = auxO32(w0 + AUX_FORTUNE) & 0xFFFF, newF = auxR32(w0 + AUX_FORTUNE) & 0xFFFF;
       if (oldF !== newF)
         rows.push({ g: "Rune power", t: `Fortune — EXP multiplier: ×${oldF} → ×${newF} (both overlay copies)` });
+      // ...and the same for the two overlay switches, which are two words each rather than one.
+      for (const sw of AUXSW) {
+        if (!auxSwDirty(sw)) continue;
+        const st = auxSwState(sw);
+        rows.push({ g: sw.group, t: `${sw.review}: ${st === "on"
+          ? "forced to yes for the whole party"
+          : st === "off" ? "back to the game's own call" : "changed"} (both overlay copies)` });
+      }
     }
     // Enemy and room fields (registered on edit; dirty state re-checked live so reverts
     // drop out of the list). Room rows are counted apart so the per-area bulk summary
@@ -5664,6 +5832,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
             <select id="setHeal">${[0, 1, 2, 3, 4].map((k) =>
               `<option value="${k}"${k === curHeal ? " selected" : ""}>${healLabel[k]}</option>`).join("")}</select></label>
         </div>
+        <div style="margin:10px 0 0">${auxSwField(auxSwById("prosperity"))}</div>
         <details class="note"><summary>Disassembly-verified behavior — what each set really does</summary>
           <div style="margin-top:4px">The potch multiplier applies once per party member wearing
           Prosperity <i>or</i> Destiny and stacks (two wearers at ×3 = ×9). The counter chance only fires for a Destiny wearer <b>without</b>
@@ -5807,6 +5976,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       syncTitle(ownPotchEl);
       markPair(ownPotchEl, maskDirty(), maskRevert, maskSetNames(origMask));
     }
+    // The same switch also renders on the Passives tab, off the same renderer — the potch
+    // numbers are here, so the control that decides whether they apply at all belongs here too.
+    wireAuxSw(host);
   }
 
   // ---- Text (in-ELF UI strings) ----------------------------------------------
@@ -7845,19 +8017,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <td><span class="u" title="${esc2(why)}">${pill}</span></td>
       </tr>`;
     }).join("");
-    const gap = PS_UNMAPPED.filter((id) => !q2 || (REF.items[id] || "").toLowerCase().includes(q2))
-      .map((id) => `<tr class="muted">
-        <td><b>${esc2(REF.items[id] || hex(id, 3))}</b><div style="font-size:11px">not in the executable · id ${hex(id, 3)}</div></td>
-        <td>${esc2(runeTblDesc(id) || (REF.runeFood && REF.runeFood[String(id)]) || "—")}</td>
-        <td colspan="3">Not switchable here, but <b>no longer a mystery</b>. This rune asks the same question
-          the other 22 ask — it just asks it somewhere no search of the executable could reach: the
-          <b>battle-results overlay</b>, about 1&nbsp;GB into the disc, at <code>0x3F3E6938</code> and its
-          streaming twin <code>0x3F3EF138</code>. The loop there counts how many party members hold this rune
-          and doubles everyone's EXP if the count is nonzero, so <b>one is as good as six</b>. The multiplier
-          itself is editable — see <b>EXP multiplier</b> under Rune power, and on this rune's own row on the
-          Runes tab. Only the on/off switch is missing, because the switch machinery reaches the executable
-          and this site is not in it.</td>
-      </tr>`).join("");
     const blkLine = blk === "hook"
       ? `The helper is installed at <code>0x${hex(PS_HOOK.off, 6)}</code> (VA <code>0x${hex(PS_HOOK.va, 7)}</code>).
          Clearing every rune removes it and puts the dead routine back byte-for-byte.`
@@ -7883,8 +8042,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           <th style="width:26%">Who gets it</th><th style="width:80px">State</th></tr></thead>
         <tbody>${body || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody>
       </table></div>
-      <div class="muted" style="margin:8px 0 0">All ${nSites} decoded checks are reachable, and the way they are
-        reached is a <b>retargeted call</b>: the site's <code>jal</code> keeps being a <code>jal</code> and its
+      <div class="muted" style="margin:8px 0 0">All ${nSites} decoded checks in the executable are reachable, and
+        the way they are reached is a <b>retargeted call</b>: the site's <code>jal</code> keeps being a <code>jal</code> and its
         branch delay slot is never touched, so only one word per site changes and the instruction order is exactly
         the stock order. The new target is a 288-byte helper relocated over a routine at VA
         <code>0x${hex(PS_HOOK.va, 7)}</code> that nothing in the image references, plus a
@@ -7893,10 +8052,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         VA <code>0x${hex(PS_HOOK.recBase, 7)}</code>, which is also what keeps a forced battle passive
         <b>off enemies</b>: an enemy's record is heap-allocated and can never land inside that array. Every write
         shows up per site, and per rune, in the <b>Changes</b> tab under “Passive runes”.</div>
-      <div class="muted" style="margin:6px 0 0">Not offered: <b>Fortune</b>, which has no decoded site at all
-        (below), and the four dogs (Koichi, Connie, Kosanji, Kogoro) — they are list1 records 76–79 but the game
-        keeps their character records in a separate block at VA <code>0x196560C</code>, outside the array this
-        table indexes.</div>
+      <div class="muted" style="margin:6px 0 0">Not offered here: the four dogs (Koichi, Connie, Kosanji, Kogoro)
+        — they are list1 records 76–79 but the game keeps their character records in a separate block at VA
+        <code>0x196560C</code>, outside the array this table indexes. <b>Fortune</b> is not in the table either,
+        but it is not missing: its check is not in the executable at all, so it gets its own switch below.</div>
       <div class="muted" style="margin:12px 0 4px"><b>What has been played, and what it proves.</b> On 2026-09-06
         Sunbeam's field walk-heal was watched working: forced to yes, the party healed by walking with nobody
         carrying the rune. That was under the editor's <i>previous</i> patch shape, which dropped the call and
@@ -7910,16 +8069,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
         What is untested is the <i>result</i>: no passive has been watched running in game <i>through the
         relocated helper</i>, and the in-battle ones have never been watched at all. Keep a backup disc.</div>
-      ${rfCard()}
-      <details class="card"><summary><b>Fortune, and why it is not here</b>
-        <span class="u">the one support rune with no decoded site</span></summary>
-        <div style="overflow-x:auto"><table class="invtbl">
-          <thead><tr><th style="width:14%">Rune</th><th style="width:20%">What the game says</th>
-            <th>Why there is nothing to switch</th></tr></thead>
-          <tbody>${gap || `<tr><td colspan="3" class="muted">no matches</td></tr>`}</tbody>
-        </table></div>
-      </details>`;
+      ${auxSwCard()}
+      ${rfCard()}`;
     wireRf(host);
+    wireAuxSw(host);
     const find = (b) => PASSIVES.find((x) => x.id === +b.dataset.id);
     const after = (p, n) => {
       const nm = runeInfo(p.id).name, chosen = psChars(p);
@@ -8927,7 +9080,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     CHG_AUX = { rows: Object.values(byTag), err: "" };
     drawView();
   }
-  const CHG_AUX_LABEL = { potch: "Armor sets (potch overlay)", enemy: "Enemies", room: "Encounter rates (per area)", war: "War units" };
+  const CHG_AUX_LABEL = { potch: "Battle-results overlay (EXP + potch)", enemy: "Enemies", room: "Encounter rates (per area)", war: "War units" };
 
   // ---- export the applied diff ------------------------------------------------
   // Same .s3mod the staged-edit export writes, so a patch lifted off one disc can be
