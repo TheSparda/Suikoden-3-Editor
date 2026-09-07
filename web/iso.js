@@ -1731,6 +1731,25 @@
     7: "Enhance (Sword/Amulet)", 8: "Song (Jongleur)", 9: "Blessing (Shield)", 10: "Blinking" };
   const elemName = (v) => ELEMENTS[v] || `Family ${v}`;
   const AREA_BIT = 0x8000;                  // flags14 bit15 = area-of-effect
+  // flags14 bit16 = NO AIMING STEP. A spell that hits a whole side has nothing to point at, and
+  // the engine needs telling: the target byte alone is not enough. The bit is set on exactly the
+  // records whose target byte is a whole side (0x01/0x02/0x03) with AREA_BIT clear, and clear on
+  // every other record — 132/132 across the 94 spells and the 38 unites of a pristine
+  // SLUS-20387, no exceptions in either direction.
+  //
+  // This cost a soft lock. The Target dropdown used to write bits 8..15 and leave bit16 alone, so
+  // "All foes" on Phoenix produced flags14 0x0080020A — a combination no stock record has. The
+  // target byte said "the whole foe side" while bit16 still said "make the player aim first", and
+  // with the aim bit (0x08) gone from the target byte the cursor had no foe to land on: it sat on
+  // the caster and its pair and confirming did nothing. The value it needed was 0x0081020A, which
+  // is byte-for-byte what Kite, Boronda Hawk and Gadget carry. Same trap in reverse for the AOE
+  // toggle, which also only ever touched bit15 — both writes now go through syncNoAim.
+  const NO_AIM_BIT = 0x00010000;
+  const syncNoAim = (v) => {
+    const tb = (v >> 8) & 0x7F;
+    const wholeSide = (tb === 0x01 || tb === 0x02 || tb === 0x03) && !(v & AREA_BIT);
+    return (wholeSide ? (v | NO_AIM_BIT) : (v & ~NO_AIM_BIT)) >>> 0;
+  };
   const F18_BITS = { 1: "poison", 3: "instant-death", 4: "unbalance", 9: "teleport/chant",
     10: "sleep", 13: "silence/berserk", 14: "mgc-boost", 15: "mgc-shield", 19: "mgc-immune-once",
     21: "buff-pdf/mdf", 22: "sword-fire", 23: "sword-lightning", 24: "sword-wind",
@@ -1757,7 +1776,9 @@
   const RANK_OPTS = [[0, "— (not learned)"], [1, "E"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [7, "A+"], [8, "S"]];
   const MAX_OPTS = [[0, "Can't get"], [2, "D"], [3, "C"], [4, "B"], [5, "B+"], [6, "A"], [1, "A+"], [7, "S"]];
   const MAX_BY_GRADE = {}; MAX_OPTS.forEach(([v, l]) => (MAX_BY_GRADE[l] = v));   // "B+"->5, "A+"->1, "S"->7
-  // spell/unite target byte (flags14 bits 8..15). AOE is a separate bit (0x8000).
+  // spell/unite target byte (flags14 bits 8..15). AOE is a separate bit (0x8000), and the byte
+  // is NOT the whole of a targeting change: a whole-side value here also has to move
+  // NO_AIM_BIT. Both writers go through syncNoAim (see it for why, and for the soft lock).
   // The byte is a bit set, not an enum: 0x01 = ally side, 0x02 = foe side (0x03 = both),
   // 0x04 = centred on the CASTER (no aiming step), 0x08 = aim at one unit, 0x10 = line/front,
   // 0x40 = pick ONE ally pair instead of the whole side. So 0x0A = one foe, 0x09 = one ally
@@ -3367,7 +3388,7 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. NOTHING HERE HAS BEEN WATCHED WORKING IN PLAY and every row says so. Sunbeam\u2019s field walk-heal was played on 2026-09-06, but under the editor\u2019s previous patch shape, which dropped the call instead of retargeting it: that report proves the site and the effect, and says nothing about the trampoline, its register handling or the bitmap lookup. Keep a backup disc.",
       unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
@@ -3392,7 +3413,7 @@
     const hintSums = {
       growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
-      spells: "The spell / rune-effect table: power, cast, element, target, area and status, all editable per spell.",
+      spells: "The spell / rune-effect table: power, cast, element, target, area and status, per spell. Retargeting is confirmed in play from v1.141.0 on \u2014 an older build's Target write soft-locked the battle.",
       runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
       passives: "The support runes whose passive can be forced on without the rune equipped, and what each one is worth.",
       unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table.",
@@ -4162,8 +4183,8 @@
     if (f.elementId != null && idx + 1 < SPELL.count) {
       const eo = off + SPELL.elem; writeW(eo, 2, (r16(eo) & 0xFF00) | (f.elementId & 0xFF)); reg(eo, 2, "elem", name, "Element");
     }
-    if (f.target != null) { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((f.target & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
-    if (f.aoe != null) { let v = r32(off + 0x14); v = f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
+    if (f.target != null) { let v = r32(off + 0x14); v = syncNoAim((v & 0xFFFF80FF) | ((f.target & 0x7F) << 8)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
+    if (f.aoe != null) { let v = r32(off + 0x14); v = syncNoAim(f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
     // statusMask writes flags18 whole, so a composite record (e.g. the 0x1DE7 restore-all
     // spells) survives an edit instead of being flattened to a single bit. f.status is the older
     // one-of form, still used by the rune-reskin card's dropdown.
@@ -4748,8 +4769,8 @@
           if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn"); }
       }
       else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
-      else if (k === "target") { let v = r32(off + 0x14); v = (v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
-      else if (k === "aoe") { let v = r32(off + 0x14); v = el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
+      else if (k === "target") { let v = r32(off + 0x14); v = syncNoAim((v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
+      else if (k === "aoe") { let v = r32(off + 0x14); v = syncNoAim(el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
       else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); }
       else if (k === "chance") { writeW(off + UNITE.chance, 2, clampInt(el.value, 0, 100)); reg(off + UNITE.chance, 2, "num", name, "Status chance %"); }
       markUnite(i);
