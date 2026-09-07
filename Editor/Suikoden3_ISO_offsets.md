@@ -3711,3 +3711,40 @@ assert that both switches degrade to **unavailable**, which it does.
 
 **Untested in play.** Nobody has watched a forced EXP or potch bonus land in a running game.
 
+---
+
+## Where the passive controls live (2026-09-06, v1.126.0)
+
+Three different questions had grown up on one tab. They are now split by question, because that
+is how someone looks for them:
+
+| Question | Where | Renderer |
+|---|---|---|
+| Does this fire party-wide, without the rune? | **Passives** tab — the four party-wide effects only | `drawPassives` (filtered `where !== "battle"`) + `auxSwCard` |
+| Does this fire for **this unit**? | the character's own card, **Characters** tab | `charPassivesHTML` / `wireCharPassives` |
+| **How much** is it worth? | the rune's own row, **Runes** tab | `runePowerHTML` |
+
+The Passives tab keeps Champion's (`0x1B9`) and Sunbeam (`0x1BD`) as rune rows — their field
+loops walk party slots, so choosing who carries them is a party-level decision — plus Fortune
+(`0x1B8`) and Prosperity (armour set 2) through `auxSwCard`, the two overlay checks. It carries
+**no strength control at all**; `validate.mjs` asserts `wireRf` is called from exactly one place,
+so a strength control cannot quietly regain a second home.
+
+**The transposition is free.** A character card's record index IS the index the bitmaps use:
+`PS_HOOK.pickMin..pickMax` are list1 indices, which is what `psNameOf` already reads. So
+`charPassivesHTML` derives it as `(recBase - TABLES.list1[0]) / TABLES.list1[1]` and reads and
+writes the same bitmaps through the same `psSetChars` — one write path, not a parallel one.
+`validate.mjs` pins that derivation, because if list1's base or stride ever moved relative to the
+pick range the UI would silently tick the wrong character.
+
+**Prosperity's potch multiplier stays on the Sets tab.** It is an armour-set bonus, not a rune
+strength, so it has no Runes-tab row to move to — and it is the one entry here that is not a rune
+at all (set 2: Prosperity Hat, Prosperity Ring, …).
+
+**A note on relocating tests.** Wall's ten-site coverage moved with its control rather than being
+rewritten — the same assertions, driven from Hugo's card. Two other checks had to be *repaired*
+rather than repointed, and both had gone quietly vacuous: one drifted a Wall site and asserted
+Wall was absent from a tab that no longer lists it (true whether the guard worked or not), the
+other asserted 21 runes offered where 2 now are. When a control moves, re-read every assertion
+that mentions it: a check that still passes is not the same as a check that still checks.
+
