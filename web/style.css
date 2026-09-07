@@ -99,6 +99,10 @@ input[type=file] { display:none; }
    The summary IS the line, so a row stays compact until the fold is opened. */
 .fhint .hintfold summary { cursor:pointer; list-style:none; }
 .fhint .hintfold summary::-webkit-details-marker { display:none; }
+/* A hinted field is a .field wrapper around the <label> plus the hint, not a <label> around
+   everything: a click inside a label is forwarded to the control it labels, which swallowed the
+   fold's own toggle. */
+.field > label.fieldlab { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .fhint .hintfold summary { list-style:none; }
 .fhint .hintfold summary::-webkit-details-marker { display:none; }
 .fhint .hintfold summary .chev { display:inline-block; font-size:11px; }
