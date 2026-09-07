@@ -2690,6 +2690,24 @@ if (ON) { const page = await newPage(); await loadIso(page);
     (await page.inputValue('details.char[data-i="0"] input[data-k="radius"]')) === "4");
   check("and the editor says it left it alone",
     /set Radius by hand/.test(await page.textContent("#isoStatus")));
+  // The Radius hints: what the number MEANS, read off this disc's own two tables rather than a
+  // bundled list of stock sizes. Right now spell0 is the typed 4 with AOE off — a size on a
+  // record with no template — and no other synth record has a template at all.
+  const radHint = (i) => page.textContent(`details.char[data-i="${i}"] .radhint`);
+  check("a stranded size says there is nothing to size", /no area or line to size/.test(await radHint(0)));
+  await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1"); await page.waitForTimeout(60);
+  check("a size nothing else uses says so", /no other area record/.test(await radHint(0)));
+  // Give a second row the same shape and size, and the first row's hint has to NAME it — the
+  // group is recomputed for the whole tab on every shape/size edit, not just for the row touched.
+  await openRec(page, 'details.char[data-i="1"]');
+  await page.selectOption('details.char[data-i="1"] select[data-k="aoe"]', "1");
+  await page.fill('details.char[data-i="1"] input[data-k="radius"]', "4");
+  await page.dispatchEvent('details.char[data-i="1"] input[data-k="radius"]', "change");
+  await page.waitForTimeout(60);
+  check("a shared size names its company", /Dancing Flames/.test(await radHint(0)));
+  check("and the other row names this one back", /Flaming Arrows/.test(await radHint(1)));
+  check("the tab legend lists the sizes in use",
+    /area:.*\b4\b.*Flaming Arrows/.test(await page.textContent(".radlegend[data-k=\"spell\"]")));
   await page.context().close();
 }
 
