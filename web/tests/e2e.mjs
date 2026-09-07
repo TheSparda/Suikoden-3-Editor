@@ -607,8 +607,10 @@ head("Passives view — rune power: what a passive is worth once it fires");
       === "dblStrike,fireSeal,wall,warrior,wizard");
   check("Sunbeam's turn heal starts at the stock 15",
     (await page.inputValue('input.rf[data-k="sunTurn"]')) === "15");
-  check("...and its walk-heal interval at the stock 0.3",
-    (await page.inputValue('input.rf[data-k="sunWalk"]')) === "0.3");
+  // The walk-heal box is a RATE (HP a second), not the interval the disc stores. Stock 0.3s
+  // interval = 3.33 HP/s, and the write below has to come back out as an interval again.
+  check("...and its walk-heal shows the stock rate, not the raw interval",
+    (await page.inputValue('input.rf[data-k="sunWalk"]')) === "3.33");
   check("Wall's multiplier starts at x2",
     (await page.locator('select.rf[data-k="wall"] option:checked').textContent()) === "×2");
 
@@ -620,7 +622,7 @@ head("Passives view — rune power: what a passive is worth once it fires");
   await page.selectOption('select.rf[data-k="dblStrike"]', "3");
   await page.waitForTimeout(60);
   // ...and the interval is a float in the data pool, not an instruction at all.
-  await page.fill('input.rf[data-k="sunWalk"]', "0.05");
+  await page.fill('input.rf[data-k="sunWalk"]', "20");     // 20 HP/s -> a 0.05 s interval
   await page.dispatchEvent('input.rf[data-k="sunWalk"]', "change"); await page.waitForTimeout(60);
   { const { r, review } = await saveAndReview(page);
     check("Sunbeam now heals 200 HP a combat turn", r.u32(0x261198) === 0x244200C8,
@@ -633,8 +635,8 @@ head("Passives view — rune power: what a passive is worth once it fires");
       ((r.u32(0x1047C8) & ~0x7C0) >>> 0) === ((0x00108040 & ~0x7C0) >>> 0));
     { const dv = new DataView(new ArrayBuffer(4));
       dv.setUint32(0, r.u32(RUNEFX_FLOAT.off), true);
-      check("the walk-heal interval is a float, written as one",
-        Math.abs(dv.getFloat32(0, true) - 0.05) < 1e-6, String(dv.getFloat32(0, true))); }
+      check("the walk-heal rate is stored as its reciprocal, a float interval",
+        Math.abs(dv.getFloat32(0, true) - 0.05) < 1e-5, String(dv.getFloat32(0, true))); }
     check("nothing else in the rune power table moved",
       RUNEFX_SITES.filter((f) => !["sunTurn", "dblStrike"].includes(f.key))
         .every((f) => r.u32(f.off) === (f.word >>> 0)));
@@ -656,6 +658,14 @@ head("Passives view — rune power reverts and refuses a drifted disc");
   await page.selectOption('select.rf[data-k="wizard"]', "0");
   await page.waitForTimeout(60);
   check("editing stages something", await somethingStaged(page));
+  // The rate<->interval flip rounds, so "set it back to what it said" has to snap to the exact
+  // stock float rather than land on 1/3.33 = 0.3003 and leave the disc quietly modified.
+  await page.fill('input.rf[data-k="sunWalk"]', "5");
+  await page.dispatchEvent('input.rf[data-k="sunWalk"]', "change"); await page.waitForTimeout(60);
+  await page.fill('input.rf[data-k="sunWalk"]', "3.33");
+  await page.dispatchEvent('input.rf[data-k="sunWalk"]', "change"); await page.waitForTimeout(60);
+  check("typing the stock rate back snaps to the exact stock interval",
+    (await page.inputValue('input.rf[data-k="sunWalk"]')) === "3.33");
   // "Restore all to stock" has to put back the exact bytes, not merely a value that reads the
   // same — otherwise a round-trip leaves the disc quietly modified.
   await page.click("#rfReset"); await page.waitForTimeout(80);
@@ -675,6 +685,44 @@ head("Passives view — rune power reverts and refuses a drifted disc");
       /1<\/b> control\(s\) are read-only/.test(await p2.innerHTML("#rfBox")));
     await p2.context().close();
     setServed(bytes); }
+  await page.context().close();
+}
+
+head("Runes view — a passive rune's strength on its own row");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.waitForSelector(".invtbl", { timeout: 3000 });
+  // Only the runes that HAVE a number get a Strength block. Sunbeam has two, and they are the
+  // two the user asks for by name: per combat turn and per second of walking.
+  await page.fill("#isoSearch", "Sunbeam"); await page.waitForTimeout(120);
+  const keys = await page.$$eval(".rf", (n) => n.map((x) => x.dataset.k));
+  check("Sunbeam's row carries both of its numbers", keys.sort().join(",") === "sunTurn,sunWalk", keys.join(","));
+  { const txt = await page.textContent(".invtbl");
+    check("they are labelled per turn and per second", /HP \/ combat turn/.test(txt) && /HP \/ sec walking/.test(txt));
+    check("the block is headed Strength", /Strength/.test(txt)); }
+  check("the turn heal shows stock 15 here too",
+    (await page.inputValue('input.rf[data-k="sunTurn"]')) === "15");
+
+  // Editing from the Runes tab must move the same bytes the Passives card does.
+  await page.fill('input.rf[data-k="sunTurn"]', "99");
+  await page.dispatchEvent('input.rf[data-k="sunTurn"]', "change"); await page.waitForTimeout(80);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("#rfBox", { timeout: 3000 });
+  await page.click("#rfBox > summary");
+  check("the Passives card sees the edit made on the Runes tab",
+    (await page.inputValue('input.rf[data-k="sunTurn"]')) === "99");
+  { const r = await save(page);
+    check("...and it is the same instruction that moved", r.u32(0x261198) === 0x24420063,
+      r.u32(0x261198).toString(16)); }
+
+  // A rune with no number must not grow an empty Strength box.
+  const p2 = await newPage(); await loadIso(p2);
+  await p2.click('#isoTabs [data-v="runes"]');
+  await p2.waitForSelector(".invtbl", { timeout: 3000 });
+  await p2.fill("#isoSearch", "Fortune"); await p2.waitForTimeout(120);
+  check("Fortune has no Strength block — it has no number to move",
+    (await p2.locator(".rf").count()) === 0);
+  await p2.context().close();
   await page.context().close();
 }
 
@@ -2673,12 +2721,18 @@ head("Runes — families, granted spells, who has it");
   // belongs to the spell record, and a second set of THOSE fields here is exactly the
   // duplication the granted-spell links replaced. Which spells a rune grants is not one of
   // them — that lives in the rune's record, so this tab is where it belongs.
+  // `rf` — a passive rune's Strength — is admitted deliberately and is NOT the duplication this
+  // guard exists to stop. Those constants belong to the RUNE, not to a spell: they live in the
+  // engine code behind the rune's own passive, there is no second copy of them anywhere else on
+  // this tab, and the Passives card edits the identical bytes rather than a parallel field. A
+  // spell's power/cast/element still has exactly one home, the spell record, reached from the
+  // granted-spell links.
   const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable text fields are the name and the menu text",
-    kinds.every((k) => /^(rname|rdesc)$/.test(k)), kinds.join(" | "));
+  check("the only editable text fields are the name, the menu text and passive strength",
+    kinds.every((k) => /^(rname|rdesc|rf)$/.test(k)), kinds.join(" | "));
   const sels = await page.$$eval("#isoView select", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable dropdowns are the spell slots",
-    sels.length > 0 && sels.every((k) => /^rspell$/.test(k)), sels.join(" | "));
+  check("the only editable dropdowns are the spell slots and passive strength",
+    sels.length > 0 && sels.every((k) => /^(rspell|rf)$/.test(k)), sels.join(" | "));
   check("no spell fields are duplicated onto this tab",
     (await page.locator("#isoView details.runefx, #isoView input.rfx, #isoView [data-fxpreset]").count()) === 0);
   // A rune is only editable when its table row still names it — the same check runeTblDesc()
