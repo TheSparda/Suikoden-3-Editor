@@ -71,6 +71,16 @@ Editable per save:
 - **Field character** — who you run around the map as, with the whole mechanism written out
   on the tab: what the leader byte does, why the pick has to sit in party slot 1, and why the
   character being stood in for has to leave the party. Picking someone stages both.
+- **Trinity Sight** — the chapter-select screen: which of the six **points of view** are
+  offered (Hugo, Chris, Geddoe, Thomas, Koroku, Luc) and which **chapter** each one is up to,
+  plus a row for the merged chapters 4-5. These are the three things the game's own menu
+  builder reads — the flame mask at `0x34` and the progress counters at `0x3B0` — so the
+  panel edits them directly and shows each row's byte. Each character gets only their real
+  chapters (three for Hugo/Chris/Geddoe, two for Thomas, one each for Koroku and Luc), and a
+  save sitting mid-chapter keeps its own stage as a selectable value so opening the panel
+  can't rewind anyone. **Not play-tested** — lighting Luc's flame before the game is cleared
+  may not lead anywhere the game is ready for, so keep a backup.
+  ([`TRINITY_SIGHT_RESEARCH.md`](docs/TRINITY_SIGHT_RESEARCH.md))
 - **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
   (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
   characters that auto-join are faded and tagged ⚠**, since recruiting/un-recruiting them
@@ -753,6 +763,7 @@ is the primary record. Longer investigations get their own doc:
 | [`MOVEMENT_SPEED_RESEARCH.md`](docs/MOVEMENT_SPEED_RESEARCH.md) | the walk/run speed table and the per-character movement class |
 | [`FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md) | the field-avatar whitelist, per-map coverage, the story-content switch |
 | [`ENEMIES_IN_PLAYER_PARTY_RESEARCH.md`](docs/ENEMIES_IN_PLAYER_PARTY_RESEARCH.md) | why enemies can't join the party; the three disjoint id spaces |
+| [`TRINITY_SIGHT_RESEARCH.md`](docs/TRINITY_SIGHT_RESEARCH.md) | the chapter-select screen: the flame mask, the per-POV progress counters |
 | [`ETC_BIN_MODEL_RESEARCH.md`](docs/ETC_BIN_MODEL_RESEARCH.md) | character model swapping — decoded, and why it stays infeasible |
 | [`RECRUITMENT_RANDOMIZER_RESEARCH.md`](docs/RECRUITMENT_RANDOMIZER_RESEARCH.md) | recruitment-randomizer groundwork |
 | [`PCSX2_AUTOMATION.md`](docs/PCSX2_AUTOMATION.md) | driving the emulator for verification and RAM research |

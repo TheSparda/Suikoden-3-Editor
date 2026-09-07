@@ -3919,6 +3919,115 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
   await page.click("#cfCancel");
   await page.context().close();
 }
+head("Trinity Sight — points of view & chapters (save editor, Pyodide stubbed)");
+{ const page = await newPage();
+  // The flame mask and the per-POV progress counters are whole-save state, so the stub
+  // carries a decoded `trinity` block shaped like s3save.decode_trinity() plus the
+  // REF.trinity reference. Where those numbers COME from is save_roundtrip.py's job; what
+  // this proves is the wiring — that a flame tick and a chapter pick reach the write
+  // payload, and that a fold closed over them still admits they are there.
+  await page.addInitScript(`
+    const POVS = [
+      ['hugo','Hugo',0,1,1,true,3,1], ['chris','Chris',1,2,2,true,0,0],
+      ['geddoe','Geddoe',2,3,3,true,0,0], ['thomas','Thomas',3,4,4,false,0,0],
+      ['koroku','Koroku',5,6,5,false,0,0], ['luc','Luc',4,5,6,false,0,0],
+    ].map((x) => ({ key: x[0], name: x[1], bit: x[2], slot: x[3], flame: x[4],
+                    lit: x[5], second: false, stage: x[6], chapter: x[7], chapterMax: 3 }));
+    const CH = { hugo: [[1,1],[2,4],[3,8]], chris: [[1,1],[2,5],[3,7]], geddoe: [[1,3],[2,4],[3,8]],
+                 thomas: [[1,3],[2,7]], koroku: [[1,9]], luc: [[1,1]] };
+    const TRREF = { flagOffset: 0x34, flagIndex: 4, flag2Offset: 0x35, flag2Index: 5,
+      stageOffset: 0x3B0, stageSlots: 8,
+      povs: POVS.map((p) => ({ key: p.key, name: p.name, bit: p.bit, slot: p.slot, flame: p.flame,
+        stageOffset: 0x3B0 + p.slot * 2,
+        chapters: CH[p.key].map((c) => ({ chapter: c[0], value: c[1], seen: [c[1]] })) })),
+      main: { key: 'main', name: 'Main story (merged)', slot: 7, stageOffset: 0x3B0 + 14,
+        chapters: [{ chapter: 4, value: 9, seen: [9] }, { chapter: 5, value: 11, seen: [11] },
+                   { chapter: 6, value: 12, seen: [12] }],
+        labels: { 4: 'Chapter 4', 5: 'Chapter 5', 6: 'Cleared' } } };
+    const TRIN_DEC = { povs: POVS, main: { key: 'main', name: 'Main story (merged)', slot: 7, stage: 0, chapter: 0 },
+      flagByte: 0x07, flagOffset: 0x34, stageOffset: 0x3B0, stages: [0,3,0,0,0,0,0,0] };
+    const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
+      global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
+      carryover: {}, trinity: TRIN_DEC, names: [], characters: [], party: [0,0,0,0,0,0], inventory: [] }];
+    window.__payloads = [];
+    window.loadPyodide = async () => ({
+      FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
+      runPython(code) {
+        if (code.includes('load_reference()')) return JSON.stringify({
+          items: [], skills: [], charById: { 1: 'Hugo' }, charRoster: { 1: 0 }, charChoices: [1],
+          carryover: { flags: {}, chars: [], runes: [], runeSlots: [] }, trinity: TRREF });
+        if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
+        if (code.startsWith('apply_edits(')) {
+          window.__payloads.push(code.slice(code.indexOf('(') + 1, code.lastIndexOf(')')));
+          return JSON.stringify({ changed: 2 });
+        }
+        return undefined;
+      },
+    });
+  `);
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
+  await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
+  await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
+  await page.waitForSelector("#trfold", { timeout: 5000 });
+
+  const sum0 = await page.textContent("#trfoldsum");
+  check("the panel ships collapsed but reports how many flames are lit",
+    !(await page.locator("#trfold").evaluate((e) => e.open)) && /3\/6 flames lit/.test(sum0), sum0);
+  check("...and names them, so the closed header answers the question on its own",
+    /Hugo, Chris, Geddoe/.test(sum0), sum0);
+  await openFold(page, "#trfold");
+  check("all six points of view render, in flame order",
+    (await page.locator("#trinity input[data-tflame]").count()) === 6);
+  const trText = (await page.textContent("#trinity")).replace(/\s+/g, " ");
+  check("each row is labelled by flame number and names its bit and counter address",
+    /Flame 4 · Thomas/.test(trText) && /Flame 6 · Luc/.test(trText) && /0x3BA · flag 0x34 bit 4/.test(trText),
+    trText.slice(0, 240));
+  check("a lit flame reads as ticked and a dark one does not",
+    (await page.isChecked('input[data-tflame="hugo"]')) && !(await page.isChecked('input[data-tflame="luc"]')));
+  check("the chapter dropdown offers only that character's own chapters",
+    (await page.locator('select[data-tstage="thomas"] option').count()) === 3 &&
+    (await page.locator('select[data-tstage="luc"] option').count()) === 2,
+    "thomas=" + (await page.locator('select[data-tstage="thomas"] option').count()));
+  check("the merged story gets its own row, with its own labels",
+    /Main story \(merged\)/.test(trText) &&
+    (await page.locator('select[data-tstage="main"] option').count()) === 4);
+  check("a POV's current stage is preselected as its chapter",
+    (await page.inputValue('select[data-tstage="hugo"]')) === "3");
+
+  // Light Luc's flame and put Chris at her chapter 2: two staged edits, one payload.
+  await page.check('input[data-tflame="luc"]'); await page.waitForTimeout(40);
+  await page.selectOption('select[data-tstage="chris"]', "5"); await page.waitForTimeout(40);
+  check("both controls mark themselves dirty",
+    (await page.locator('input[data-tflame="luc"]').evaluate((e) => e.classList.contains("dirty"))) &&
+    (await page.locator('select[data-tstage="chris"]').evaluate((e) => e.classList.contains("dirty"))));
+  check("the header counts them, so closing the fold cannot hide them",
+    /2 edit\(s\)/.test(await page.textContent("#trfoldsum")), await page.textContent("#trfoldsum"));
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const review = (await page.textContent(".cf-list")).replace(/\s+/g, " ");
+  check("the review list spells out the flame in words, not a bit number",
+    /Luc's flame: dark → lit/.test(review), review.slice(0, 200));
+  check("...and the chapter move with both the chapter and the raw stage",
+    /Chris: not started \(stage 0\) → chapter 2 \(stage 5\)/.test(review), review.slice(0, 260));
+  await page.click("#cfOk");
+  await until(page, () => (window.__payloads || []).length > 0);
+  const sent = JSON.parse(JSON.parse(await page.evaluate(() => window.__payloads[0].split(", ").slice(2).join(", "))));
+  check("the write payload carries the flame and the counter",
+    sent.trinity && sent.trinity.lit.luc === true && sent.trinity.stage.chris === 5,
+    JSON.stringify(sent.trinity));
+  check("...and nothing the user did not touch",
+    Object.keys(sent.trinity.lit).length === 1 && Object.keys(sent.trinity.stage).length === 1,
+    JSON.stringify(sent.trinity));
+
+  // Putting a control back where the save had it is a no-op, not a second staged change.
+  await page.uncheck('input[data-tflame="luc"]'); await page.waitForTimeout(40);
+  await page.selectOption('select[data-tstage="chris"]', "0"); await page.waitForTimeout(40);
+  check("returning both to their saved values clears the staging",
+    await page.evaluate(() => !("luc" in TRIN.lit) && !("chris" in TRIN.stage)));
+  check("the header drops the count with them", !/edit\(s\)/.test(await page.textContent("#trfoldsum")));
+  await page.context().close();
+}
+
 head("Undo/redo + skill-cap & rune presets");
 { const page = await newPage(); await loadIso(page);
   const [l4b] = TABLES.list4;
