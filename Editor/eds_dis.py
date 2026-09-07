@@ -51,7 +51,14 @@ N_OPS = 359
 # unnamed opcode is still fully identified by its number.
 NAMES = {
     22: "RideOnSetS", 24: "RideOffSetS", 26: "ActorList", 27: "ActorList",
-    40: "ResolveActor(0=player)", 55: "CameraTarget", 56: "CameraTarget",
+    40: "ResolveActor(0=player)",
+    # 55/56 share handler 0x17AE4A8, which is a CONDITIONAL, not a camera op. It reads a
+    # subcommand from param0 and a 32-bit value from params 1+2 (`$a1 + ($v1 << 16)`), then
+    # dispatches on the subcommand via 0x17AE1E0. Subcommand 0x28 is RIDE and 0x29 NORIDE,
+    # evaluated at 0x177BDD0 — which has no jal callers, so it is reached through a table of
+    # condition evaluators. Seen in the wild as `op 55 [0x0028, 0x1400, ...]` = "if the player
+    # is mounted", guarding the herb-pickup dismount in MORI (MOUNT_SYSTEM_RESEARCH.md S14j).
+    55: "Cond(subcmd)", 56: "Cond(subcmd)",
     63: "TeamDispatch", 64: "TeamDispatch", 82: "TeamDispatch", 83: "TeamDispatch",
     88: "LeaderToActorRecord", 108: "HorseDashSetS", 109: "HorseInanakiE",
     310: "LeaderCharQuery", 324: "PlayerObjCompare", 345: "AvatarModelReq",
