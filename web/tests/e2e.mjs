@@ -915,8 +915,62 @@ head("Characters view — a rune it cannot write stays read-only on the card");
     await page.isDisabled('input.cpOn[data-id="447"][data-c="1"]'));
   check("...and the runes around it are still live",
     !(await page.isDisabled('input.cpOn[data-id="446"][data-c="1"]')));
+  // A disabled checkbox alone explains nothing on a phone, where there is no tooltip to hover:
+  // the tile has to SAY it is read-only in text you can read.
+  const lockedTxt = await page.textContent('.cprune:has(input.cpOn[data-id="447"]) .cpr-w');
+  check("...and the locked tile says why in visible text, not only in a tooltip",
+    /read-only/.test(lockedTxt), lockedTxt);
   await page.context().close();
   setServed(bytes); }
+
+// The card's rune list is the control this tab is used for on a phone, so its touch shape is
+// part of the feature, not styling trivia: one column, a target you can hit with a thumb, and
+// the whole tile — not just the 13px box — toggling the rune.
+head("Characters view — the forced-passive tiles are thumb-sized on a phone");
+{ const page = await newPage({ width: 390, height: 844 }); await loadIso(page);
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.waitForSelector("details.char", { timeout: 3000 });
+  await page.fill("#isoSearch", "Hugo"); await page.waitForTimeout(150);
+  await page.click("details.char summary");
+  await page.waitForSelector("label.cprune", { timeout: 3000 });
+  const tiles = await page.$$eval("label.cprune", (n) => n.map((el) => {
+    const r = el.getBoundingClientRect(), b = el.querySelector("input.cpOn").getBoundingClientRect();
+    return { h: Math.round(r.height), w: Math.round(r.width), x: Math.round(r.x),
+             box: Math.round(Math.min(b.width, b.height)),
+             name: (el.querySelector(".cpr-n") || {}).textContent || "",
+             where: (el.querySelector(".cpr-w") || {}).textContent || "" };
+  }));
+  check("every rune is a tile, not a chip", tiles.length === 22, String(tiles.length));
+  check("...each at least 44px tall", tiles.every((t) => t.h >= 44),
+    String(Math.min(...tiles.map((t) => t.h))));
+  check("...stacked one per row, so none is a sliver",
+    new Set(tiles.map((t) => t.x)).size === 1 && tiles.every((t) => t.w >= 240),
+    `${new Set(tiles.map((t) => t.x)).size} column(s), narrowest ${Math.min(...tiles.map((t) => t.w))}px`);
+  check("...with a checkbox big enough to hit on its own — and at the phone size, so the "
+    + "@media rules are really winning", tiles.every((t) => t.box >= 24),
+    String(Math.min(...tiles.map((t) => t.box))));
+  check("...and each tile names its rune and says where it is asked",
+    tiles.every((t) => t.name.trim()) && tiles.every((t) => /field|battle/.test(t.where)),
+    tiles[0].name + " / " + tiles[0].where);
+  // Tapping the rune's NAME must toggle it: the tile is a <label>, so the whole 44px block is
+  // the target and nobody has to find the box.
+  const wall = 'label.cprune:has(input.cpOn[data-id="446"][data-c="1"])';
+  await page.click(`${wall} .cpr-n`);
+  await page.waitForTimeout(100);
+  check("tapping the tile's name ticks the rune", await page.isChecked(`${wall} input.cpOn`));
+  check("...and stages the patch", await somethingStaged(page));
+  check("...and the tile reads as on without inspecting the box",
+    await page.evaluate((sel) => document.querySelector(sel).classList.contains("on"), wall));
+  check("...and the header counts it", /1 on/.test(await page.textContent("details.char .bag-h")));
+  // Undoing a few taps one tile at a time is the tedious half on a phone, hence one button.
+  check("a 'turn all off' button appears once something is on",
+    (await page.$$("details.char button.cpAllOff")).length === 1);
+  await page.click("details.char button.cpAllOff");
+  await page.waitForTimeout(100);
+  check("...and it clears every staged byte, helper block included", await nothingStaged(page));
+  check("...and takes itself away again", (await page.$$("details.char button.cpAllOff")).length === 0);
+  check("...leaving no tile ticked", (await page.$$("input.cpOn:checked")).length === 0);
+  await page.context().close(); }
 
 head("Mounts view — rewrite the battle rider/mount pairs");
 { const page = await newPage(); await loadIso(page);
