@@ -100,7 +100,15 @@ const RUNEFX_FLOAT = [0x42C3B0, 0x3E99999A];   // Sunbeam walk-heal interval, 0.
 // battle-results overlay, in both streaming copies. Bounds are the inverse of every other entry
 // — these must be out of the block and inside the aux window pair, not in it.
 const RUNEFX_AUX = [[0x3F3E6960, 0x24020002], [0x3F3EF160, 0x24020002]];
-const AUX_PAIR = [0x3F3E6960, 0x3F3EF160], AUX_WIN_LEN = 0x48;
+const AUX_PAIR = [0x3F3E6938, 0x3F3EF138], AUX_WIN_LEN = 0x70;
+// The two overlay SWITCHES, which share those windows: the equipped/worn check each bonus asks
+// before it pays out. Each is a word pair — the `jal` and the delay slot the patch swaps — and
+// like the multiplier above them the bounds are inverted: out of the ELF block, inside a window.
+// [window-relative offset, stock jal, stock delay slot, the answer written when forced on]
+const AUXSW_SITES = [
+  ["fortune",    0x00, 0x0C606CEC, 0x240501B8, 0x24020001],
+  ["prosperity", 0x54, 0x0C606CDC, 0x0220202D, 0x2402FFFF],
+];
 // IsValidRidePair's eight rider/mount immediates (Mounts tab) — individual code sites,
 // not a strided table, so bound-check them one by one.
 const MOUNT_SITES = [0x130384, 0x13038C, 0x130390, 0x130398, 0x1303A0, 0x1303A4, 0x1303AC, 0x1303B4];
@@ -172,10 +180,73 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
     (listed ? ok : bad)(listed
       ? "iso.js lists both Fortune sites with their stock word"
       : "iso.js RUNEFX is missing/drifted for a Fortune site");
-    (/const AUX_WINDOWS = \[0x3F3E6960, 0x3F3EF160\]/.test(isoTxt) ? ok : bad)(
-      "AUX_WINDOWS starts early enough to reach Fortune's multiplier");
-    (/const AUX_LEN = 0x48/.test(isoTxt) && /AUX_MASK = 0x34, AUX_MULT = 0x3C/.test(isoTxt) ? ok : bad)(
-      "the potch offsets were shifted to match the moved window base (mask 0x34, mult 0x3C)");
+    (/const AUX_WINDOWS = \[0x3F3E6938, 0x3F3EF138\]/.test(isoTxt) ? ok : bad)(
+      "AUX_WINDOWS starts early enough to reach both overlay equipped checks");
+    (/const AUX_LEN = 0x70/.test(isoTxt) && /const AUX_FORTUNE = 0x28;/.test(isoTxt)
+      && /const AUX_MASK = 0x5C, AUX_MULT = 0x64;/.test(isoTxt) ? ok : bad)(
+      "the offsets inside the window were shifted to match the moved base "
+      + "(fortune 0x28, mask 0x5C, mult 0x64)");
+    // The switches: every derived offset must land inside the window, the two copies must stay
+    // 0x8800 apart, and no switch's word pair may collide with a value control in the same
+    // window — the multiplier and the mask are edited independently and a shared word would
+    // mean one control silently eating the other's write.
+    const relOf = (name) => (isoTxt.match(new RegExp(`\\b${name} = (0x[0-9A-Fa-f]+)`)) || [])[1];
+    const relFort = relOf("AUX_FORTUNE"), relMask = relOf("AUX_MASK"), relMult = relOf("AUX_MULT");
+    (relFort && relMask && relMult ? ok : bad)(relFort && relMask && relMult
+      ? "the window's value offsets can still be read out of iso.js"
+      : "AUX_FORTUNE / AUX_MASK / AUX_MULT could not be parsed out of iso.js — the collision check below is checking nothing");
+    const valSpans = [[parseInt(relFort, 16), 4], [parseInt(relMask, 16), 4], [parseInt(relMult, 16), 8]];
+    const REL_CONST = { fortune: "AUX_FORT_CHK", prosperity: "AUX_PROSP_CHK" };
+    for (const [key, rel, jal, ds, yes] of AUXSW_SITES) {
+      // The offset iso.js actually uses, not the one this file wishes it used.
+      const relSrc = parseInt(relOf(REL_CONST[key]) || "NaN", 16);
+      (relSrc === rel ? ok : bad)(relSrc === rel
+        ? `${REL_CONST[key]} is still 0x${rel.toString(16).toUpperCase()} (${key}'s check inside the window)`
+        : `${REL_CONST[key]} reads 0x${Number.isNaN(relSrc) ? "??" : relSrc.toString(16)} in iso.js, not the decoded 0x${rel.toString(16)}`);
+      const fits = rel >= 0 && rel + 8 <= AUX_WIN_LEN;
+      (fits ? ok : bad)(fits
+        ? `the ${key} switch's word pair fits inside the ${AUX_WIN_LEN}-byte window`
+        : `the ${key} switch's word pair runs past the end of the window — it would read as unavailable forever`);
+      const oob = AUX_PAIR.map((w) => w + rel).filter((o) => o >= ELF_BASE && o < ELF_END);
+      (oob.length ? bad : ok)(oob.length
+        ? `the ${key} switch must be overlay code, not in the ELF block`
+        : `the ${key} switch's two copies are outside the ELF block, as overlay code must be`);
+      const clash = valSpans.some(([o, n]) => rel < o + n && o < rel + 8);
+      (clash ? bad : ok)(clash
+        ? `the ${key} switch's word pair overlaps a value control in the same window`
+        : `the ${key} switch does not overlap the multiplier, the mask or Fortune's EXP value`);
+      // The stock words and the forced answer are the whole patch; drift here writes a
+      // different instruction than the one the disassembly was checked against.
+      const hx = (w) => "0x" + w.toString(16).toUpperCase().padStart(8, "0");
+      const listed = new RegExp(`key: "${key}", rel: AUX_\\w+, jal: ${hx(jal)}, ds: ${hx(ds)}, yes: ${hx(yes)},`)
+        .test(isoTxt);
+      (listed ? ok : bad)(listed
+        ? `iso.js's ${key} switch still carries its stock jal, delay slot and forced answer`
+        : `iso.js's ${key} switch has drifted from the decoded words (${hx(jal)} / ${hx(ds)} / ${hx(yes)})`);
+    }
+    // Both copies always move together, and the read side refuses a disc where they disagree.
+    (/for \(const w of AUX\) \{\s*\n\s*if \(w\.tag !== "potch"\) continue;\s*\n\s*auxW32\(w\.off \+ sw\.rel,/.test(isoTxt) ? ok : bad)(
+      "auxSwSet writes every loaded overlay copy, not just the first");
+    (/return st\.every\(\(x\) => x === "on"\) \? "on" : st\.every\(\(x\) => x === "off"\) \? "off" : "mixed";/.test(isoTxt) ? ok : bad)(
+      "a disc whose two copies disagree reads as mixed, and mixed is not editable");
+    (/const auxSwEditable = \(sw\) => \{ const x = auxSwState\(sw\); return x === "on" \|\| x === "off"; \};/.test(isoTxt) ? ok : bad)(
+      "only the stock and the forced states are writable — a stranger's patch is read-only");
+    (/const auxSwRevert = \(sw\) => auxRevertAt\(sw\.rel, 8\);/.test(isoTxt) ? ok : bad)(
+      "the switch's revert restores both words across both streaming copies");
+    // Same two-call coupling the Rune power card has: rendered and wired from the tab, and the
+    // Prosperity one also renders on the Sets tab next to the numbers it multiplies.
+    (/\$\{auxSwCard\(\)\}/.test(isoTxt) ? ok : bad)(
+      "drawPassives still renders the overlay switch card (${auxSwCard()})");
+    (/\$\{auxSwField\(auxSwById\("prosperity"\)\)\}/.test(isoTxt) ? ok : bad)(
+      "drawSets still renders the Prosperity switch beside the potch numbers");
+    ((isoTxt.match(/\n\s*wireAuxSw\(host\);/g) || []).length === 2 ? ok : bad)(
+      `wireAuxSw is called from both tabs (found ${(isoTxt.match(/\n\s*wireAuxSw\(host\);/g) || []).length}, expected 2 — Passives and Sets)`);
+    // Nothing is decoded-but-unswitchable any more, so the old gap list must be gone rather
+    // than left rendering an empty table under a heading that says Fortune has no site.
+    (/PS_UNMAPPED/.test(isoTxt) ? bad : ok)(
+      /PS_UNMAPPED/.test(isoTxt)
+        ? "iso.js still carries PS_UNMAPPED — Fortune is switchable now, so the gap list is stale"
+        : "the decoded-but-unswitchable gap list is gone (Fortune has a switch)");
   }
   const oob = all.filter(([o]) => o < ELF_BASE || o + 4 > ELF_END);
   if (oob.length) bad(`rune power sites out of block: ${oob.map(([o]) => "0x" + o.toString(16)).join(", ")}`);
@@ -287,18 +358,21 @@ console.log("Passive rune sites:");
   const FIELD = [0x149F90, 0x14A1B4];                        // the two field party loops
   const grab = (name) => (iso.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\n  \\];`)) || [])[1];
   const sw = grab("PASSIVES");
-  const unmapped = (iso.match(/const PS_UNMAPPED = \[([^\]]*)\]/) || [])[1];
+  // Fortune is not in PASSIVES: its check is overlay code, so it is switched by AUXSW instead.
+  // Coverage of the support-rune band therefore has to count both tables, and this reads the
+  // rune ids out of AUXSW rather than trusting a constant here.
+  const auxsw = (iso.match(/const AUXSW = \[([\s\S]*?)\n  \];/) || [])[1];
   // PS_HOOK's keys (off, len, rows, stride) are common words, so read them out of the object
   // literal itself rather than out of the whole file — `off: 0x3EC2A0` belongs to a spell table.
   const hook = (iso.match(/const PS_HOOK = \{([\s\S]*?)\n  \};/) || [])[1] || "";
   const num = (k) => { const m = hook.match(new RegExp(`\\b${k}:\\s*(0x[0-9A-Fa-f]+|\\d+)`)); return m ? Number(m[1]) : undefined; };
   const hexStr = (k) => (hook.match(new RegExp(`\\n    ${k}:\\n([\\s\\S]*?),(?:\\n|$)`)) || [])[1];
-  if (!sw || unmapped === undefined) bad("could not read PASSIVES / PS_UNMAPPED out of iso.js");
+  if (!sw || auxsw === undefined) bad("could not read PASSIVES / AUXSW out of iso.js");
   else {
     const ids = [...sw.matchAll(/\{ id: (0x[0-9A-Fa-f]+),/g)].map((m) => parseInt(m[1], 16));
     const sites = [...sw.matchAll(/\{ off: (0x[0-9A-Fa-f]+), jal: (0x[0-9A-Fa-f]+), ds: (0x[0-9A-Fa-f]+), k: "(\w+)" \}/g)]
       .map((m) => ({ off: parseInt(m[1], 16), jal: parseInt(m[2], 16) >>> 0, ds: parseInt(m[3], 16) >>> 0, k: m[4] }));
-    const gaps = unmapped.split(",").map((x) => parseInt(x.trim(), 16)).filter((n) => !isNaN(n));
+    const gaps = [...auxsw.matchAll(/\bid: (0x[0-9A-Fa-f]+)/g)].map((m) => parseInt(m[1], 16));
     (sites.length === 51 ? ok : bad)(`${sites.length} call sites parsed (expected 51)`);
     (ids.length === 22 ? ok : bad)(`${ids.length} runes carry sites (expected 22)`);
 
@@ -324,7 +398,7 @@ console.log("Passive rune sites:");
       missing.length || stray.length || dupes.length
         ? `the support-rune band 0x1B8..0x1CE is not covered exactly once: missing ${missing.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, `
           + `stray ${stray.map((i) => "0x" + i.toString(16)).join(", ") || "none"}, repeated ${dupes.map((i) => "0x" + i.toString(16)).join(", ") || "none"}`
-        : `every support rune 0x1B8..0x1CE appears exactly once (${uniq.size} ids, Fortune the one named gap)`);
+        : `every support rune 0x1B8..0x1CE appears exactly once (${uniq.size} ids, Fortune the one switched through the overlay)`);
 
     const oobP = sites.filter((s) => s.off < ELF_BASE || s.off + 8 > ELF_END);
     (oobP.length ? bad : ok)(oobP.length

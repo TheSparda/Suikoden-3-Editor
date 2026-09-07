@@ -1253,13 +1253,18 @@ everyone not wearing one.
   reverts it when the owner moves back (round-trip leaves zero bytes changed).
 
 **Web editor note — AUX WINDOWS.** The web ISO editor only holds the ~3.75 MB ELF
-block, but the two potch instruction pairs live ~1 GB into the disc. iso.js now
-also reads two 16-byte "aux windows" (0x3F3E6994, 0x3F3EF194 — each covering the
-set-ownership `andi` mask at +0 and the multiplier sll/addu pair at +8) on load and threads
+block, but the two potch instruction pairs live ~1 GB into the disc. iso.js
+also reads two "aux windows" on load and threads
 them through every write path: in-place save, streaming save, .s3mod export AND
 import, .xdelta export AND import, Revert all, and the save review (which decodes
 them into a "Potch multiplier ×3 → ×5" row). If a disc can't serve those ranges the
-control degrades to "unavailable" rather than silently doing nothing.
+control degrades to "unavailable" rather than silently doing nothing. Those windows have since
+grown twice, to reach Fortune's EXP multiplier and then both overlay equipped checks; the
+current base and offsets are under "The two overlay switches" below. The set-ownership `andi`
+mask is now `AUX_MASK` and the multiplier pair `AUX_MULT`, at `0x5C` and `0x64` inside a
+`0x70`-byte window based at `0x3F3E6938` / `0x3F3EF138`. The **Prosperity switch** on the Sets
+tab writes the `which_set` call in the same window: force it on and every party member counts
+as a wearer, which compounds — see that section for the ×729.
 
 ---
 
@@ -3218,8 +3223,9 @@ any of the three helpers passes it, with `$a1` immediate or otherwise (the full 
 support-rune id, so there is no "special runes" table it could be read from. Whatever grants the
 EXP bonus does not ask the question the other 22 ask.
 
-Shipped as the ISO editor's **Passives** tab (`web/iso.js:drawPassives`): two checkboxes above,
-the 49 held-back sites listed below them with what each does and why it has no switch. Both
+Shipped as the ISO editor's **Passives** tab (`web/iso.js:drawPassives`) — as first written,
+two checkboxes above and the 49 held-back sites listed below them. It has since become a
+per-character picker over all 51 sites, and Fortune has its own overlay switch beside it. Both
 words of a written site are registered in the Changes tab under "Passive runes", and all 51 —
 written or not — are audited against their stock values by `chgCodeAudit`.
 
@@ -3318,7 +3324,7 @@ nothing the interval does not already give and it throws away a computed value f
 
 Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness and Fury set a state bit or
 gate a branch — there is no literal at their sites to move. Fire Sealing's fourth site
-(`0x1115C4`) is rune-slot bookkeeping, not damage. Fortune has no site at all (see above).
+(`0x1115C4`) is rune-slot bookkeeping, not damage. Fortune's number is its EXP multiplier, in the overlay (see above).
 
 Two clamps sit *outside* the rune's branch and are therefore not rune power, but they bound it:
 Counter's first site runs into `slti $v1,$s1,0x60` / `addiu $v0,$zero,0x5F` / `movn` at
@@ -3584,18 +3590,88 @@ Two gameplay facts that fall out of the code and are not in the rune's text:
 ### Shipped
 
 `RUNEFX`'s one `aux: true` entry — the multiplier at `0x3F3E6960` / `0x3F3EF160`, stock word
-`24020002`. Because it is overlay code the window pair had to move: `AUX_WINDOWS` now starts at
-`0x3F3E6960` with `AUX_LEN = 0x48`, and the potch offsets inside it shifted to
-`AUX_MASK = 0x34`, `AUX_MULT = 0x3C`. Reads/writes route through `auxR32`/`auxW32` instead of the
-ELF block, and a disc whose overlay windows were never read shows the control as **unavailable**
-rather than writing into nothing — the same degradation the potch multiplier already has.
-
-**What is still not done:** the on/off switch. The check is decoded and the loop is party-wide
-(any yes doubles EXP for everyone), so forcing it would be *safe* in the way the two field sites
-are safe — unlike the battle sites, there is no per-unit leak. It is not wired because the
-switch machinery (`PASSIVES` / `PS_HOOK`) only reaches the ELF block. This would be a **52nd
-site** for anyone extending that work.
+`24020002`. Because it is overlay code the window pair had to move; it has now moved twice, and
+the current geometry is in the next section. Reads/writes route through `auxR32`/`auxW32`
+instead of the ELF block, and a disc whose overlay windows were never read shows the control as
+**unavailable** rather than writing into nothing — the same degradation the potch multiplier
+already has.
 
 **Untested in play.** Both copies are byte-verified against a pristine SLUS-20387 and the write
 round-trips byte-identically, but no altered multiplier has been watched taking effect in game.
+
+---
+
+## The two overlay switches — Fortune's EXP, Prosperity's potch (2026-09-06)
+
+The section above left the on/off switch undone, and this is it — for Fortune and, on the same
+argument, for the potch bonus in the same function. **Both are now wired.**
+
+**The second check**, `which_set`, 0x54 bytes after Fortune's, in the second of the function's
+two party loops. This is the one the Sets tab's potch controls already sit on top of:
+
+```
+3F3E6978  jal   0x017DC9F0          ; party unit #$s4
+3F3E6980  daddu $s1,$v0,$zero
+3F3E698C  jal   0x0181B370          ; which_set(unit) -> 1..5 | 0   <- the check
+3F3E6990  daddu $a0,$s1,$zero       ; (delay) the argument
+3F3E6994  andi  $v0,$v0,2           ; Prosperity(2) or Destiny(3)?  (the ownership mask)
+3F3E6998  beq   $v0,$zero,0x3F3E69A4
+3F3E699C  sll   $v0,$s6,1           ; (delay) potch x2
+3F3E69A0  addu  $s6,$v0,$s6         ;         ...+ itself = x3, PER WEARER
+```
+
+**Why these two are safe to force and the 49 in-battle checks are not.** Both loops run after
+the fight is over and walk your own party and nobody else; no enemy is ever asked, and nothing
+downstream re-reads *who* said yes — Fortune's answer is counted and then tested for nonzero,
+Prosperity's is consumed inside the same iteration. There is no per-unit resolution to leak,
+which is exactly the property that made the two field party loops switchable.
+
+**The patch is the older two-word shape**, not the relocated helper: the delay-slot instruction
+moves up into the `jal`'s word and the answer goes into the word it vacated. One call disappears
+and nothing else moves — no insertion, no relocation, and the instruction order is stock.
+
+| switch | window-relative | stock `jal` | stock delay slot | forced answer |
+|---|---|---|---|---|
+| Fortune | `+0x00` (`0x3F3E6938`, `0x3F3EF138`) | `0C606CEC` | `240501B8` | `24020001` `addiu $v0,$zero,1` |
+| Prosperity | `+0x54` (`0x3F3E698C`, `0x3F3EF18C`) | `0C606CDC` | `0220202D` | `2402FFFF` `addiu $v0,$zero,-1` |
+
+**Why the two answers differ.** Fortune's is counted (`addu $s0,$s0,$v0`) and then tested with
+`slti $v1,$s0,1`, so a plain 1 per member is both sufficient and correct — any nonzero count
+gives the same ×2. Prosperity's is masked (`andi $v0,$v0,mask`) against the ownership mask the
+Sets tab edits, so the answer has to survive *whatever mask is written*; `-1` does, for every
+mask except `0` ("no set"), which turns the bonus off for everyone anyway. Note this is not the
+shape the two ELF field sites use (`sltu $v0,$zero,$a0`) — their `$a0` is a party-slot handle
+that is 0 for an empty slot, and neither caller here has one.
+
+**Prosperity COMPOUNDS and Fortune does not.** Fortune's loop counts then tests nonzero, so one
+holder is as good as six. Prosperity's multiply happens *inside* the loop body, once per
+qualifying member — so forcing it on multiplies the award by the potch multiplier raised to the
+party size: a full party of six at the stock ×3 pays **3⁶ = ×729**. The editor says so on the
+control rather than leaving it to be discovered.
+
+**Window geometry.** `AUX_WINDOWS` now starts at `0x3F3E6938` / `0x3F3EF138` with
+`AUX_LEN = 0x70`, which is the smallest span covering everything the editor patches in this
+function. Offsets inside it: `AUX_FORT_CHK = 0x00`, `AUX_FORTUNE = 0x28`,
+`AUX_PROSP_CHK = 0x54`, `AUX_MASK = 0x5C`, `AUX_MULT = 0x64`. `web/tests/validate.mjs` pins all
+of them and fails if any drifts.
+
+**Shipped** as `AUXSW` in `web/iso.js`: one renderer (`auxSwField`) feeding two tabs — both
+switches on **Passives**, and Prosperity again on **Sets** beside the potch numbers it
+multiplies. Both streaming copies are written together, unticking restores the stock words
+byte-for-byte, and a disc where the two copies disagree reads as `mixed` and goes read-only so
+it can never be *left* half-patched.
+
+**How the copy count was established.** The 8-byte pattern `0C606CEC 240501B8` occurs exactly
+twice in the whole 4.3 GB image — the two overlay copies. `0C606CDC 0220202D` occurs **four**
+times: those two, plus `0x244F6C` and `0x2452D8` inside the ELF block, which are the
+bonus-counter routine asking the same helper the same way and are not copies of this function.
+
+**Verification.** `web/tests/overlay-switches-real-iso.mjs` runs the *shipped* switch code —
+sliced out of `web/iso.js`, not retyped — against `ISO/Suikoden III (USA).iso`: stock words,
+on/off/mixed/other state handling, both-copies-together writes, byte-exact revert, and the
+whole-image copy scan above. It self-skips when no disc is present. The e2e cannot reach any of
+this: its synthetic fixture is 4.6 MB and these windows are ~1 GB in, so there it can only
+assert that both switches degrade to **unavailable**, which it does.
+
+**Untested in play.** Nobody has watched a forced EXP or potch bonus land in a running game.
 
