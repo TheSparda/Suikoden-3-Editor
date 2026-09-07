@@ -267,7 +267,7 @@ confirmed in play; battle movement lives in packed asset data and isn't covered;
 boxes when you play as someone the game didn't plan for, with the setup written out step by
 step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
-whitelist and the scene-actor fallback; see below),
+whitelist, plus the retired scene-actor fallback kept as a written-up dead end; see below),
 **Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
@@ -660,16 +660,21 @@ disc holds, says what each one does and how it bites, and puts any of them back 
   party reach states the engine never produces for itself.
 
 The card **leads with the one entry that has been watched doing this**, and it is not the
-horse. The **Scene actor fallback** — an opt-in experiment on the Test tab — was reported on
-**2026-09-06** to stop the game adding party members correctly, and restoring its two words
-is what fixed it. It is labelled **confirmed harmful** in both places now, because the
-research had gone the other way: a census of 12,055 script actor references found the
-by-character-id namespace used *zero* times and concluded the patch "could never have
-fired". The census was right about scripts; the conclusion generalised past them.
-`FindActorByCharId` is the engine's general "which actor is this character" lookup and the
-party code calls it directly — and there **null is the answer**, meaning "no actor for that
-character is staged". The patch removes that answer and substitutes the party leader, so
-every caller asking "is this character here?" is told yes. See the correction in
+horse. The **Scene actor fallback** — a former opt-in experiment on the Test tab — was
+reported on **2026-09-06** to stop the game adding party members correctly, and separately
+the same day to freeze a scene transition. Restoring its two words fixed both. Its toggle
+has since been **retired**, so this card is how a disc that already carries it gets found
+and put back.
+
+That finding also corrected the research, which had gone the other way: a census of 12,055
+script actor references found the by-character-id namespace used *zero* times, and the doc
+concluded the patch "could never have fired". The census was right about scripts; the
+conclusion generalised past them. `FindActorByCharId` is the engine's general "which actor
+is this character" lookup and the party and mount code calls it **directly** — and there
+**null is the answer**, meaning "no actor for that character is staged". The patch removes
+that answer and substitutes the party leader, so every caller asking "is this character
+here?" is told yes and handed the leader. Party formation is built out of that question,
+which is why it is the subsystem that shows the damage. See the correction in
 [`docs/FIELD_CHARACTER_RESEARCH.md`](docs/FIELD_CHARACTER_RESEARCH.md). The other five
 entries are mechanisms with no play report attached, and each one says so.
 
@@ -715,7 +720,13 @@ pristine* rather than *restore to what this repo believes stock was*.
 Findings that can **hang the game** rather than just change a number are sorted to the top and
 say what they do when they go wrong — the scene-actor fallback, the field-character whitelist,
 the assigned-horse clamp, the relocated passive-rune helper. Start there when a scene froze or
-a party failed to appear. The one ordering rule the button enforces for you: the passive-rune
+a party failed to appear. That is not hypothetical: it is how the **scene-actor fallback** was
+caught (2026-09-06). A disc carrying it froze the Brass Castle → plains transition with only
+Chris's horse staged; the audit named the two words with no pristine copy involved, restoring
+them fixed the scene on the same save, and the toggle that wrote them has since been removed
+from the Test tab — it could never have helped (the actor namespace it patched is used **zero
+times in 12,055 references** across every town script) and it caused the hang it was meant to
+fix. The audit still detects and repairs it, which is the point of keeping the constants. The one ordering rule the button enforces for you: the passive-rune
 helper block only goes back to the dead routine once every call site into it reads stock again,
 because a live jump into restored code would be its own hang.
 

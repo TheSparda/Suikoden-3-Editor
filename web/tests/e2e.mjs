@@ -1172,44 +1172,41 @@ head("Field character — chips; Story content in its own view");
     check("every other story case is untouched",
       STORY_CASES.filter(([o]) => o !== 0x1C7724).every(([o, imm]) => r.u32(o) === avatarWord(imm, "eq"))); }
 
-  // The scene-softlock experiment stayed behind Test, so go back there for it.
+  // The scene-softlock actor fallback was RETIRED in v1.135.0: it cannot help (the namespace
+  // it patches is used zero times in any town script) and it is confirmed in play to cause
+  // the hang it was meant to fix. The control is gone; the write path with it.
+  //
+  // "The checkbox is absent" is a check that passes forever once the id is gone, so it is
+  // never asserted alone — it is paired with the section still being there and still saying
+  // why, which is what actually has to survive. The repair path for a disc that already
+  // carries the patch is covered by the Changes-tab restore section further down.
   await page.click('#isoTabs [data-v="test"]');
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
-  // Both words of the miss-exit must move together, or the jump lands with a stray delay
-  // slot / the toggle silently does nothing.
-  await page.check("#avActorFb");
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
-  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
-    check("the fallback names its recursion risk", /recurses forever/i.test(txt));
-    // It was tried in play and did not help. Saying so is the point of keeping it: a toggle
-    // that reads as promising would send the next person down the same dead end.
-    check("...and says it never did the job it was added for",
-      /never did the job it was added for/i.test(txt));
-    // Demonstrated rather than suspected: the namespace it patches is used zero times in any
-    // town script, so the tab should state that, not hedge.
-    check("...and gives the measured reason", /exactly zero times/i.test(txt));
-    // Upgraded 2026-09-06 from "tried, didn't help" to a confirmed breakage: with this on,
-    // the game stops adding party members correctly, and restoring the two words fixes it.
-    // This is the tab where the patch is APPLIED, so the verdict has to be here and not only
-    // on the Changes tab that repairs it.
-    check("...and now carries the confirmed-harmful verdict", /CONFIRMED HARMFUL/.test(txt));
-    check("...naming the symptom, dated",
-      /stops adding party members correctly/.test(txt) && /2026-09-06/.test(txt));
-    check("...and points at the repair", /Party formation/.test(txt));
-    // The old copy concluded "this exit is never taken" from a census of SCRIPT references.
-    // The report falsified it; the tab has to stop claiming the patch is inert.
-    check("...and retracts the claim that the exit is never taken",
-      !/This exit is never taken/.test(txt) && /generalised from scripts/.test(txt)); }
-  { const r = await save(page);
-    check("the exit became a jump to the player lookup", r.u32(ACTORFB_SITES[0][0]) === ACTORFB_SITES[0][2]);
-    check("...with a nop in the delay slot", r.u32(ACTORFB_SITES[1][0]) === 0);
-    check("...and the jump decodes back to 0x17B5CC8",
-      ((r.u32(ACTORFB_SITES[0][0]) & 0x03FFFFFF) << 2) === 0x17B5CC8); }
-  await page.uncheck("#avActorFb");
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
-  { const r = await save(page);
-    check("unticking restores both words exactly",
-      ACTORFB_SITES.every(([o, stock]) => r.u32(o) === stock)); }
+  await page.waitForSelector("#avStock", { timeout: 3000 });
+  { const txt = await page.textContent("#isoView");
+    check("the section is still there to explain the softlock", /Scene softlocks/.test(txt));
+    check("...and says the toggle was removed", /has been removed/i.test(txt));
+    check("...and names its recursion risk", /recurses forever/i.test(txt));
+    check("...and gives the measured reason it could never help", /exactly zero times/i.test(txt));
+    check("...and reports the play confirmation", /Confirmed in play/i.test(txt));
+    check("...and points an affected disc at the repair", /Changes/.test(txt) && /Code patches/.test(txt));
+    // The retirement rests on TWO independent play reports the same day, not one: the scene
+    // freeze origin/main recorded, and a disc that stopped adding party members correctly.
+    // The second is the one the Party formation card was built around, so the section has to
+    // carry it too — a reader who arrives with a broken party must not have to infer that
+    // this is their patch.
+    { const flat = txt.replace(/\s+/g, " ");
+      check("...and reports the party-formation symptom as well",
+        /stopped adding party members correctly/i.test(flat));
+      check("...and corrects the script census it used to over-read",
+        /never from a script/i.test(flat));
+      check("...and points at the Party formation card that leads with it",
+        /Party formation/.test(flat)); }
+    check("no control can turn the fallback on any more",
+      (await page.$("#avActorFb")) === null); }
+  // Nothing was saved between the story save above and here, so an empty dirty badge is a
+  // real statement: opening this tab stages nothing at the fallback's words or anywhere else.
+  check("and opening the tab stages nothing",
+    (await page.evaluate(() => document.querySelector("#isoDirty")?.hidden)) === true);
 
   // The story view's own Restore stock covers the cases it owns — back to that tab for it.
   await page.click('#isoTabs [data-v="story"]');
@@ -1760,14 +1757,19 @@ head("Party formation — the no-base-disc check, and restoring a staged edit");
       (await page.$$('.tag.acc2')).length >= 1
       && /confirmed to break party addition/.test(txt));
     check("...while the other five say they are mechanisms with no report",
-      /mechanisms with no report attached/.test(txt)); }
-  // The Test tab, where the patch is turned on, must carry the same verdict — a warning that
-  // lives only on the repair screen is a warning nobody reads before applying it.
+      /mechanisms with no play report attached/.test(txt)); }
+  // The Test tab keeps the record of the retired patch, and must name the party symptom there
+  // too — a reader who arrives with a broken party should recognise it where the patch used to
+  // live, not only on the screen that repairs it. Wait on #avStock: #avActorFb is gone.
   await page.click('#isoTabs [data-v="test"]');
-  await page.waitForSelector("#avActorFb", { timeout: 3000 });
+  await page.waitForSelector("#avStock", { timeout: 3000 });
   { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
-    check("the Test tab calls the actor fallback confirmed harmful", /CONFIRMED HARMFUL/.test(txt));
-    check("...names the symptom", /stops adding party members correctly/.test(txt)); }
+    // The toggle is retired (v1.135.0), so the Test tab's job here is to keep the record: say
+    // the control is gone, and name BOTH play reports so a reader who arrives with a broken
+    // party recognises their own symptom rather than only the scene freeze.
+    check("the Test tab says the fallback's toggle was removed", /has been removed/i.test(txt));
+    check("...and names the party-formation symptom",
+      /stopped adding party members correctly/i.test(txt)); }
   // Hand Hugo a horse he doesn't ship with. That is the edit most likely to be behind
   // "adding party members stopped working": PartyPut stages the horse at pos+6, so it takes a
   // party-list position of its own.
