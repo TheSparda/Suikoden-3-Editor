@@ -1124,6 +1124,48 @@ including the three in Budehuc Castle.
 The clamp patch is inert on its own: only six characters have a nonzero `+0x66` today, all
 308/309, every one of which stays inside the widened window.
 
+**MEASURED, not inferred (2026-09-06).** That last sentence used to be a reading of the
+`STOCK` map rather than of the disc, and the editor's *Party formation* restore rests on it:
+zeroing the other 74 records is only safe if they really are zero. All 80 `list2` records were
+walked on a pristine `SLUS-20387` and **exactly six carry a nonzero `+0x66`** —
+
+| rec | ISO | value | who |
+|---|---|---|---|
+| 2 | `0x3E14A6` | 309 | Chris, her own horse (`s2um`) |
+| 12 | `0x3E19CE` | 308 | Roland |
+| 17 | `0x3E1C62` | 308 | Leo |
+| 19 | `0x3E1D6A` | 308 | Percival |
+| 20 | `0x3E1DEE` | 308 | Borus |
+| 39 | `0x3E27BA` | 308 | Salome |
+
+— i.e. the six Zexen Knights and nobody else, matching `MOUNTS.horse.STOCK` value for value.
+`web/tests/party-fix.mjs` re-runs that walk against the disc in `ISO/` on every test run, so
+the claim cannot rot into prose again.
+
+### 14f. Why this is the first thing to check when the party stops forming
+
+`HorseActorPos` and `PartyPut` above are the whole reason: a character with an assigned horse
+does not merely *become mountable*, they **consume a party-list position** — theirs, plus
+`pos + 6` for the horse. Party actors are 0–5 and their mounts 6–11, so handing horses out
+changes how many of positions 7–12 are already occupied before anything is added, and the
+game then has to stage and load each one in every area.
+
+Three consequences worth stating, because each one shows up as a different complaint:
+
+1. **It is disc state read at party-build time**, so a save that forms a party correctly on a
+   pristine disc need not on a patched one — which is exactly the shape of the report this
+   section was extended for.
+2. **It is also save state.** The party list is written when the party is *built*, so a list
+   formed on a patched disc keeps its staged horses after the disc is put back. Re-form the
+   party in game.
+3. **The clamp is not separable from it.** Three of the six clamp sites are party helpers and
+   the fourth is `PartyPut`'s own 7–12 guard, so the two have to be checked and restored
+   together — which is why the editor's card treats them as one repair.
+
+The editor exposes all of this on the **Changes** tab's *Party formation* card: every site
+checked against the stock value pinned above, with no base disc needed, and a one-click
+restore. See `README.md`.
+
 **The 308 shortcut, and why not to take it.** Hugo could be given 308 with no code patch at
 all, since it is already inside the clamp. Predicted failure: the `0x179ED2C` fix-up fires
 only for mount 325/353, so on `zkum` it would not strip his Fubar-rigged duplicates and the
