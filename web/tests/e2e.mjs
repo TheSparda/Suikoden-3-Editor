@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
@@ -4662,6 +4662,77 @@ head("Changes tab — already on this disc, vs a base disc");
     return c ? c.textContent.replace(/\s+/g, " ").slice(0, 200) : "";
   });
   check("the stock-word audit renders without a base disc", auditCard.length > 0, auditCard.slice(0, 80));
+  await page.context().close();
+  setServed(bytes);                                  // leave the fixture as we found it
+}
+
+// ---- Changes tab: putting a code patch back --------------------------------------------------
+// The other half of the audit. Reporting a patch is only useful if you can undo it, and the
+// disc that needs undoing is usually one you no longer have a clean copy of — so this path
+// takes no base disc at all, and writes the decoded stock values back from the constants
+// web/tests/stock-restore.mjs checks against a pristine disc.
+head("Changes tab — restore code patches to stock, with no base disc");
+{
+  const patched = Uint8Array.from(bytes);
+  const dv = new DataView(patched.buffer);
+  // Four patches from three groups, all of them ones the tab marks as able to hang a game.
+  ACTORFB_SITES.forEach(([off, , alt]) => dv.setUint32(off, alt >>> 0, true));
+  HORSE_CLAMP.forEach((c) => dv.setUint32(c.off, c.alt >>> 0, true));
+  dv.setUint16(AVATAR_SITES[1][0], 0x53, true);          // the avatar whitelist, widened
+  dv.setUint16(horseAddr(2), 325, true);                 // Chris given a horse the clamp normally refuses
+  setServed(patched);
+
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="changes"]');
+  await page.waitForSelector("#chgStockAll", { timeout: 15000 });
+  const card = () => page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /checked against their stock values/.test(x.textContent));
+    return c ? c.textContent.replace(/\s+/g, " ") : "";
+  });
+  const before = await card();
+  check("the audit finds the patches with no base disc chosen",
+    /Scene actor fallback/.test(before) && /Field character/.test(before) && /Mounts/.test(before),
+    before.slice(0, 100));
+  check("it says how many can hang the game", /can hang the game/.test(before));
+  check("the risky findings are listed first", await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#isoView .grouphead")].map((r) => r.textContent);
+    return rows.length > 0 && /Scene actor fallback|Mounts|Field character/.test(rows[0]);
+  }));
+  check("every finding offers its own ↺", await page.evaluate(() =>
+    document.querySelectorAll("#isoView [data-srev]").length > 0));
+
+  await page.click("#chgStockAll");
+  await page.waitForTimeout(150);
+  const after = await card();
+  check("after Restore all, the audit is empty", /no code patch at all/.test(after), after.slice(0, 120));
+  const staged = await page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /Staged, not yet saved/.test(x.textContent));
+    return c ? c.textContent.replace(/\s+/g, " ") : "";
+  });
+  check("the restore is staged, not written", /Restored to stock/.test(staged), staged.slice(0, 120));
+  check("restoring wrote nothing to the disc", (await page.evaluate(() => window.__writes.length)) === 0);
+  // Undo has to reach it too — a restore is one user action, so it is one undo step.
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(150);
+  check("undo puts the patches back (the restore is one undo step)",
+    /Scene actor fallback/.test(await card()));
+  await page.keyboard.press("Control+Shift+z");
+  await page.waitForTimeout(150);
+  check("redo takes them away again", /no code patch at all/.test(await card()));
+
+  // ...and the bytes that reach the disc. `wrote` is asserted alongside each value because
+  // the reader falls back to the PRISTINE fixture for anything unwritten — which is the same
+  // number a correct restore produces, so the value alone would pass on a no-op.
+  const r = await save(page);
+  const fb = ACTORFB_SITES[0][0], av = AVATAR_SITES[1][0], hz = horseAddr(2), hc = HORSE_CLAMP[0].off;
+  check("the scene-fallback word was written back as `jr $ra`",
+    r.wrote(fb, 4) && r.u32(fb) === (ACTORFB_SITES[0][1] >>> 0), "0x" + r.u32(fb).toString(16));
+  check("the avatar gate was written back to its stock immediate",
+    r.wrote(av, 2) && r.u16(av) === AVATAR_SITES[1][1], String(r.u16(av)));
+  check("the assigned-horse clamp was written back to `sltiu 2`",
+    r.wrote(hc, 4) && r.u32(hc) === (HORSE_CLAMP[0].stock >>> 0), "0x" + r.u32(hc).toString(16));
+  check("Chris's assigned horse is hers again", r.wrote(hz, 2) && r.u16(hz) === HORSE_STOCK[2], String(r.u16(hz)));
   await page.context().close();
   setServed(bytes);                                  // leave the fixture as we found it
 }
