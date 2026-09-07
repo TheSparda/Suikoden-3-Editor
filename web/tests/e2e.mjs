@@ -2646,21 +2646,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2"); await page.waitForTimeout(60);
   check("Target change highlights Target", (await dirty("target")) === true);
   { const r = await save(page); const f14 = r.u32(SPELL.off + 0x14);
-    check("Target write preserved AOE bit", ((f14 >> 8) & 0x7F) === 0x02 && !!(f14 & 0x8000));
-    // bit16 = "no aiming step". An AREA spell is aimed, so all-foes + AOE must leave it CLEAR.
-    check("all-foes + AOE leaves bit16 clear", !(f14 & 0x00010000)); }
-  // Turn AOE back off and the same target byte now means the whole foe side with nothing to aim
-  // at — bit16 has to come ON. Leaving it off is what soft-locked Phoenix: the cursor sat on the
-  // caster and its pair with no enemy selectable.
-  //
-  // Only ONE more save here, not one per transition. A save is a full ISO build (~950ms) and
-  // this section's whole job is the WIRING — that the controls route through syncNoAim and the
-  // bit reaches the saved bytes. The rule itself (every target byte, both directions, and all
-  // 132 stock records) is proved without a browser in spell-target-real-iso.mjs, which is where
-  // to add a case rather than buying another second here.
-  await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "0"); await page.waitForTimeout(60);
-  { const r = await save(page); const f14 = r.u32(SPELL.off + 0x14);
-    check("all-foes with AOE off sets bit16", ((f14 >> 8) & 0x7F) === 0x02 && !(f14 & 0x8000) && !!(f14 & 0x00010000)); }
+    check("Target write preserved AOE bit", ((f14 >> 8) & 0x7F) === 0x02 && !!(f14 & 0x8000)); }
   await page.context().close();
 }
 

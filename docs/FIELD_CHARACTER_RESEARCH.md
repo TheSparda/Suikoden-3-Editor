@@ -1205,17 +1205,107 @@ that prompted this section. There is nothing waiting on the animation.
 1. **`op 181` @ `0x17ABAD8`** — the routine's only blocker. 1912 bytes, 48 distinct call
    targets, state machine on `ctx+0x02`, in PT_LOAD so it is readable. Whatever he fails, the
    stall surfaces here.
-2. **`op 55 Cond(...)`** — the routine's first instruction, a general conditional on PLAYER
-   (`0x17AE4A8` → the evaluator at `0x17AE1E0`). One code is known from the mount work
-   (`0x28` RIDE / `0x29` NORIDE) and flipping it demonstrably changes behaviour, which proves
-   the routine branches on player-object properties. Enumerating the rest of the codes is the
-   obvious next step.
+2. ~~**`op 55 Cond(...)`**~~ — **enumerated, and eliminated.** See below.
 3. **`op 109`'s branch on an actor kind being 7** (`0x17A22B4`) — kind is a property of the
    model, and Koroku is animal-rigged. Noted earlier and still unexplored.
 
 None is proven. Three theories have already been falsified here by evidence, so the bar for the
 next one should be a condition observed to differ between Koroku and Luc, not a mechanism that
 merely could.
+
+### `op 55`'s condition codes, enumerated — and what they rule out
+
+`op 55` does not decide anything itself: it reads a **condition code** from the instruction and
+indexes a **table of evaluator functions** at vaddr `0x19821A8`, one entry per code. The mount
+research reached `0x177BDD0` (RIDE/NORIDE) and noted it has no `jal` callers, which is the
+signature of exactly this arrangement.
+
+The table is **109 entries, 68 distinct evaluators** — codes `0x00`–`0x6C`. Where consecutive
+codes share an evaluator they are its variants: `0x28`/`0x29` are RIDE/NORIDE, both landing on
+`0x177BDD0`, which reads the code itself as its first halfword and uses it to pick the polarity
+after decoding the actor handle through `0x17B5A40`. One group is much larger than the rest —
+`0x50`–`0x5F`, sixteen codes on a single 13-call evaluator at `0x177C810`.
+
+**The point of enumerating it was to find a condition Koroku could fail. None of them tests
+what he differs by:** not one of the 68 evaluators calls the actor-kind getter `0x16C7338` —
+the function `op 109` compares against 7, and the only model-dependent predicate identified so
+far. And in the herb routine, `op 55` is used with exactly one code, `0x28` RIDE, whose only job
+is to gate the dismount/remount sandwich; failing it is what leaves you on foot, which is the
+normal on-foot path that works for Hugo and Luc.
+
+**So candidate 2 is out.** That leaves `op 181` — the routine's only blocking instruction — and
+`op 109`'s kind branch.
+
+| condition code(s) | evaluator | variants |
+|---|---|---|
+| `0x00` | `0x0177A450` | 1 |
+| `0x01` | `0x0177A468` | 1 |
+| `0x02` | `0x0177A6D0` | 1 |
+| `0x03` | `0x0177A438` | 1 |
+| `0x04` | `0x0177ABE8` | 1 |
+| `0x05` | `0x0177ACC0` | 1 |
+| `0x06` | `0x0177AF10` | 1 |
+| `0x07–0x08` | `0x0177A918` | 2 |
+| `0x09` | `0x0177CD00` | 1 |
+| `0x0A` | `0x0177CD48` | 1 |
+| `0x0B` | `0x0177AFC0` | 1 |
+| `0x0C–0x0D` | `0x0177AFD8` | 2 |
+| `0x0E–0x0F` | `0x0177B090` | 2 |
+| `0x10–0x12` | `0x0177B138` | 3 |
+| `0x13–0x15` | `0x0177B280` | 3 |
+| `0x16–0x18` | `0x0177B3C8` | 3 |
+| `0x19–0x1A` | `0x0177B510` | 2 |
+| `0x1B–0x1C` | `0x0177B628` | 2 |
+| `0x1D` | `0x0177B6D0` | 1 |
+| `0x1E` | `0x0177B770` | 1 |
+| `0x1F` | `0x0177B810` | 1 |
+| `0x20–0x21` | `0x0177B8B0` | 2 |
+| `0x22–0x23` | `0x0177B9D0` | 2 |
+| `0x24` | `0x0177BAC8` | 1 |
+| `0x25–0x26` | `0x0177BB60` | 2 |
+| `0x27` | `0x0177D1E0` | 1 |
+| `0x28–0x29` | `0x0177BDD0` | 2 |
+| `0x2A` | `0x0177BBD0` | 1 |
+| `0x2B` | `0x0177BC08` | 1 |
+| `0x2C` | `0x0177CFE0` | 1 |
+| `0x2D` | `0x0177D018` | 1 |
+| `0x2E` | `0x0177BC40` | 1 |
+| `0x2F` | `0x0177BC70` | 1 |
+| `0x30` | `0x0177BCA8` | 1 |
+| `0x31` | `0x0177BCF0` | 1 |
+| `0x32–0x33` | `0x0177BD38` | 2 |
+| `0x34` | `0x0177BEB0` | 1 |
+| `0x35` | `0x0177BF88` | 1 |
+| `0x36` | `0x0177BFA0` | 1 |
+| `0x37–0x38` | `0x0177CB20` | 2 |
+| `0x39` | `0x0177BFB8` | 1 |
+| `0x3A` | `0x0177C000` | 1 |
+| `0x3B` | `0x0177C048` | 1 |
+| `0x3C` | `0x0177C0B0` | 1 |
+| `0x3D` | `0x0177C110` | 1 |
+| `0x3E–0x3F` | `0x0177C140` | 2 |
+| `0x40` | `0x0177C1E0` | 1 |
+| `0x41–0x42` | `0x0177C258` | 2 |
+| `0x43` | `0x0177C340` | 1 |
+| `0x44` | `0x0177C3D8` | 1 |
+| `0x45` | `0x0177C5A0` | 1 |
+| `0x46–0x47` | `0x0177C7B0` | 2 |
+| `0x48–0x49` | `0x0177CC90` | 2 |
+| `0x4A` | `0x0177CCD0` | 1 |
+| `0x4B` | `0x0177CDA0` | 1 |
+| `0x4C` | `0x0177CDD8` | 1 |
+| `0x4D` | `0x0177CE30` | 1 |
+| `0x4E` | `0x0177CE68` | 1 |
+| `0x4F` | `0x0177CEC0` | 1 |
+| `0x50–0x5F` | `0x0177C810` | 16 |
+| `0x60–0x61` | `0x0177CA08` | 2 |
+| `0x62` | `0x0177D050` | 1 |
+| `0x63` | `0x0177D0B0` | 1 |
+| `0x64–0x65` | `0x0177D148` | 2 |
+| `0x66` | `0x0177D1B8` | 1 |
+| `0x67–0x68` | `0x0177D218` | 2 |
+| `0x69` | `0x0177C660` | 1 |
+| `0x6A–0x6C` | `0x0177C690` | 3 |
 
 ### Ladders are a Hugo-only animation set
 
