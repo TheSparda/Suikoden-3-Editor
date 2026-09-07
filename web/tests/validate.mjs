@@ -469,6 +469,14 @@ console.log("Passive rune sites:");
         `code + table (${H.maskOff} + ${H.rows}x${H.stride}) is exactly PS_HOOK.len and fits the ${H.span}-byte routine`);
       (codeHex.length === H.maskOff * 2 ? ok : bad)(`PS_HOOK.code is ${codeHex.length / 2} bytes, filling the block up to the table`);
       (stockHex.length === H.len * 2 ? ok : bad)(`PS_HOOK.stock is ${stockHex.length / 2} bytes — every byte this editor writes`);
+      // The e2e fixture keeps its own copy of both blobs so it can plant them without parsing
+      // iso.js. A drift there would not fail loudly — the fixture would just be a disc this
+      // editor never produced, and every e2e conclusion drawn from it would be about nothing.
+      { const fx = fs.readFileSync(path.join(HERE, "synth-iso.mjs"), "utf8");
+        const fxHex = (name) => { const m = fx.match(new RegExp(`export const ${name} =\\s*([\\s\\S]*?);`));
+          return m ? m[1].replace(/[^0-9A-Fa-f]/g, "") : ""; };
+        (fxHex("PS_HOOK_STOCK") === stockHex ? ok : bad)("synth-iso's PS_HOOK_STOCK is iso.js's, byte for byte");
+        (fxHex("PS_HOOK_CODE") === codeHex ? ok : bad)("synth-iso's PS_HOOK_CODE is iso.js's, byte for byte"); }
       // No call site may live inside the block, or the two patches would fight.
       const inside = sites.filter((s) => s.off + 8 > H.off && s.off < H.off + H.span);
       (inside.length ? bad : ok)(inside.length ? `a call site sits inside the helper block: 0x${inside[0].off.toString(16)}` : "no call site lives inside the helper block");

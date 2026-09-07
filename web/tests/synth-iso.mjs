@@ -197,6 +197,25 @@ export const PS_HOOK_STOCK =
   + "8000BFDF7000B7DF6000B6DF5000B5DF4000B4DF3000B3DF2000B2DF1000B1DF";
 export const PS_HOOK_JAL = { rec: 0x0C5AFC92, id: 0x0C5AFC9D, unit: 0x0C5AFCA9 };
 
+// ...and the 288 bytes of helper this editor installs over it, so a fixture can be put in the
+// state a half-migrated disc is really in: helper present, call sites still legacy. Kept
+// identical to iso.js PS_HOOK.code by validate.mjs, which parses both.
+export const PS_HOOK_CODE =
+    "47FEA3241600612C150020109701013C00E7212423108100403D412C10002010"
+    + "8C0001241B004100104000000C0000151240000000190300C208080021186100"
+    + "6C01013C00F32124211861000000639007000831061003010800E00301004230"
+    + "0800E0032D100000F0FFBD270000BFFF78FC5A0C000000000000BFDF03004014"
+    + "1000BD27E02C5B08000000000800E00301000224E0FFBD271000BFFF0000B0FF"
+    + "421B5B0C2D80A0002D2800022D2040000000B0DF1000BFDF2000BD2792FC5A08"
+    + "00000000E0FFBD271000BFFF0000B0FFCE6D600CFFFFB0300A0040102D204000"
+    + "78FC5A0C2D28000206004014000000000000B0DF1000BFDF2000BD279C2C5B08"
+    + "000000000000B0DF1000BFDF0800E0032000BD27000000000000000000000000";
+// The two-word "answer inline" shape v1.106.0 used to write: the delay-slot instruction moves
+// up into the jal's word and this lands behind it. It is the shape a disc patched before the
+// trampoline existed still carries, and the reason "put the helper block back" cannot key off
+// "every site is stock" — a legacy site never reaches the block. iso.js: PS_LEGACY_YES.
+export const PS_LEGACY_YES = 0x0004102B;   // sltu $v0,$zero,$a0
+
 export const ACTORFB_SITES = [[0x1FD238, 0x03E00008, 0x085ED732], [0x1FD23C, 0x0000102D, 0x00000000]];
 // The four "the model has no such clip -> give up" branches. Retiring all of them is the
 // field-pickup fix; the last two are the ones whose success path marks the motion finished,
