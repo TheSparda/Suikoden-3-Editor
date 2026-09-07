@@ -267,7 +267,7 @@ confirmed in play; battle movement lives in packed asset data and isn't covered;
 boxes when you play as someone the game didn't plan for, with the setup written out step by
 step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
-whitelist and the scene-actor fallback; see below),
+whitelist, plus the retired scene-actor fallback kept as a written-up dead end; see below),
 **Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
@@ -673,7 +673,13 @@ pristine* rather than *restore to what this repo believes stock was*.
 Findings that can **hang the game** rather than just change a number are sorted to the top and
 say what they do when they go wrong — the scene-actor fallback, the field-character whitelist,
 the assigned-horse clamp, the relocated passive-rune helper. Start there when a scene froze or
-a party failed to appear. The one ordering rule the button enforces for you: the passive-rune
+a party failed to appear. That is not hypothetical: it is how the **scene-actor fallback** was
+caught (2026-09-06). A disc carrying it froze the Brass Castle → plains transition with only
+Chris's horse staged; the audit named the two words with no pristine copy involved, restoring
+them fixed the scene on the same save, and the toggle that wrote them has since been removed
+from the Test tab — it could never have helped (the actor namespace it patched is used **zero
+times in 12,055 references** across every town script) and it caused the hang it was meant to
+fix. The audit still detects and repairs it, which is the point of keeping the constants. The one ordering rule the button enforces for you: the passive-rune
 helper block only goes back to the dead routine once every call site into it reads stock again,
 because a live jump into restored code would be its own hang.
 
