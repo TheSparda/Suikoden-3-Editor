@@ -4503,6 +4503,79 @@ head("Changes tab — already on this disc, vs a base disc");
   setServed(bytes);                                  // leave the fixture as we found it
 }
 
+head("Long descriptions collapse, and stay how you left them");
+{ const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="runes"]'); await page.waitForTimeout(200);
+
+  // The Runes tab carries the two longest descriptions in the editor: the tab hint and the
+  // block above the table. Both should open as one line with a button.
+  const shape = await page.evaluate(() => [...document.querySelectorAll("#isoRoot .blurb")].map((b) => ({
+    sum: (b.querySelector(":scope > .blurb-sum")?.textContent || "").length,
+    full: (b.querySelector(":scope > .blurb-full")?.textContent || "").length,
+    togs: b.querySelectorAll(":scope > .blurb-tog").length,
+    fullShown: b.querySelector(":scope > .blurb-full")?.offsetHeight > 0,
+  })));
+  check("the Runes tab collapses its long descriptions", shape.length >= 2, `${shape.length} blocks`);
+  check("each shows a summary shorter than the block it hides",
+    shape.every((x) => x.sum > 0 && x.sum < x.full));
+  check("...with exactly one toggle button", shape.every((x) => x.togs === 1));
+  check("...and the full text hidden to start", shape.every((x) => !x.fullShown));
+  // Hidden, not removed: `textContent` and the browser's find-in-page still reach it, which is
+  // what keeps every other assertion in this file (and Ctrl-F) working.
+  check("the hidden text is still in the DOM",
+    (await page.textContent("#isoRoot")).includes("padded with empty ones"));
+
+  const openState = () => page.evaluate(() =>
+    [...document.querySelectorAll("#isoRoot .blurb")].map((b) => b.classList.contains("open")));
+  await page.evaluate(() => document.querySelectorAll("#isoRoot .blurb-tog").forEach((t) => t.click()));
+  await page.waitForTimeout(60);
+  check("clicking Show more expands every one of them", (await openState()).every(Boolean));
+  check("...and the button flips to Show less",
+    (await page.textContent("#isoRoot .blurb.open > .blurb-tog")).includes("Show less"));
+  check("...and reports it to a screen reader",
+    (await page.getAttribute("#isoRoot .blurb.open > .blurb-tog", "aria-expanded")) === "true");
+
+  // This is the one that has bitten this repo before: a card tracking its open state only in
+  // the DOM snaps shut the moment something re-renders the tab. Both editors re-render on a
+  // filter keystroke, on a staged edit, and on every tab switch, so all three are driven here.
+  await page.fill("#isoSearch", "fire"); await page.waitForTimeout(250);
+  check("a filter keystroke does not snap them shut", (await openState()).every(Boolean));
+  await page.evaluate(() => { const i = document.querySelector("#isoRoot input.rname");
+    i.value = "Zap"; i.dispatchEvent(new Event("input", { bubbles: true }));
+    i.dispatchEvent(new Event("change", { bubbles: true })); });
+  await page.waitForTimeout(250);
+  check("staging an edit does not snap them shut", (await openState()).every(Boolean));
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForTimeout(150);
+  await page.click('#isoTabs [data-v="runes"]'); await page.waitForTimeout(250);
+  check("leaving the tab and coming back keeps them open", (await openState()).every(Boolean));
+
+  // And the other direction: collapsing has to stick too, or the state is just "always open".
+  await page.evaluate(() => document.querySelectorAll("#isoRoot .blurb.open > .blurb-tog").forEach((t) => t.click()));
+  await page.click('#isoTabs [data-v="spells"]'); await page.waitForTimeout(150);
+  await page.click('#isoTabs [data-v="runes"]'); await page.waitForTimeout(250);
+  check("collapsing sticks across a re-render too", (await openState()).every((x) => x === false));
+  check("no block ended up wrapped twice",
+    (await page.evaluate(() => document.querySelectorAll(".blurb-full .blurb-sum").length)) === 0);
+
+  // #isoHint is one element every tab writes over, so its summary has to change with the tab
+  // rather than keep the last one's.
+  const hintFor = async (v) => { await page.click(`#isoTabs [data-v="${v}"]`); await page.waitForTimeout(200);
+    return page.evaluate(() => { const h = document.querySelector("#isoHint");
+      return { collapsed: h.classList.contains("blurb"),
+        sum: (h.querySelector(":scope > .blurb-sum") || h).textContent }; }); };
+  const runesHint = await hintFor("runes"), movementHint = await hintFor("movement");
+  check("the shared tab hint re-collapses per tab, with that tab's own summary",
+    runesHint.collapsed && movementHint.collapsed && runesHint.sum !== movementHint.sum,
+    movementHint.sum.slice(0, 60));
+  // A short hint has nothing to hide, so it is left whole rather than given a pointless button.
+  // Support's is one line and has stayed one line; several other tabs' hints have grown past
+  // the gate over time, which is exactly why this reads the shortest one rather than any one.
+  const shortHint = await hintFor("support");
+  check("a short tab hint is left alone", !shortHint.collapsed, shortHint.sum);
+  await page.context().close();
+}
+
 for (const [w, h] of [[360, 640], [320, 480]]) {
   head(`Mobile ${w}px — no horizontal overflow`);
   const page = await newPage({ width: w, height: h });
