@@ -102,6 +102,16 @@ check("every entry carries the prose the card renders",
 // blanket "restore everything" would silently take a working setting away.
 check("story routing is the only setting held back from the one-button restore",
   PARTYFIX.filter((g) => g.holdBack).map((g) => g.key).join() === "story");
+// The list is ordered by EVIDENCE, and the scene actor fallback is the only entry with a
+// play report behind it (2026-09-06: it stopped party members being added, and restoring
+// its two words fixed that). A reshuffle that buried it would bury the answer.
+check("the scene actor fallback leads the list", PARTYFIX[0].key === "actorfb", PARTYFIX[0].key);
+check("...and is the only entry marked confirmed",
+  PARTYFIX.filter((g) => g.confirmed).map((g) => g.key).join() === "actorfb");
+check("...with the report in its own prose, not just a flag",
+  /CONFIRMED IN PLAY/.test(PARTYFIX[0].breaks) && /2026-09-06/.test(PARTYFIX[0].breaks));
+check("every other entry says it has no report",
+  PARTYFIX.slice(1).every((g) => !g.confirmed));
 check("every setting resolves at least one site",
   KEYS.every((k) => sites(k).length), KEYS.map((k) => `${k}:${sites(k).length}`).join(" "));
 

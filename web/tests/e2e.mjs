@@ -1179,14 +1179,27 @@ head("Field character — chips; Story content in its own view");
   // slot / the toggle silently does nothing.
   await page.check("#avActorFb");
   await page.waitForSelector("#avActorFb", { timeout: 3000 });
-  { const txt = await page.textContent("#isoView");
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
     check("the fallback names its recursion risk", /recurses forever/i.test(txt));
     // It was tried in play and did not help. Saying so is the point of keeping it: a toggle
     // that reads as promising would send the next person down the same dead end.
-    check("...and says it was tried and did not work", /did not fix the hang/i.test(txt));
-    // Now demonstrated rather than suspected: the namespace it patches is used zero times
-    // in any town script, so the tab should state that, not hedge.
-    check("...and gives the measured reason", /exactly zero times/i.test(txt)); }
+    check("...and says it never did the job it was added for",
+      /never did the job it was added for/i.test(txt));
+    // Demonstrated rather than suspected: the namespace it patches is used zero times in any
+    // town script, so the tab should state that, not hedge.
+    check("...and gives the measured reason", /exactly zero times/i.test(txt));
+    // Upgraded 2026-09-06 from "tried, didn't help" to a confirmed breakage: with this on,
+    // the game stops adding party members correctly, and restoring the two words fixes it.
+    // This is the tab where the patch is APPLIED, so the verdict has to be here and not only
+    // on the Changes tab that repairs it.
+    check("...and now carries the confirmed-harmful verdict", /CONFIRMED HARMFUL/.test(txt));
+    check("...naming the symptom, dated",
+      /stops adding party members correctly/.test(txt) && /2026-09-06/.test(txt));
+    check("...and points at the repair", /Party formation/.test(txt));
+    // The old copy concluded "this exit is never taken" from a census of SCRIPT references.
+    // The report falsified it; the tab has to stop claiming the patch is inert.
+    check("...and retracts the claim that the exit is never taken",
+      !/This exit is never taken/.test(txt) && /generalised from scripts/.test(txt)); }
   { const r = await save(page);
     check("the exit became a jump to the player lookup", r.u32(ACTORFB_SITES[0][0]) === ACTORFB_SITES[0][2]);
     check("...with a nop in the delay slot", r.u32(ACTORFB_SITES[1][0]) === 0);
@@ -1736,7 +1749,25 @@ head("Party formation — the no-base-disc check, and restoring a staged edit");
     check("...and says nothing changes party formation", /Nothing on this disc changes party formation/.test(txt));
     check("...with no base disc chosen", /Choose a base disc/.test(txt));
     check("the one-button restore isn't offered when there is nothing to restore",
-      (await page.$("#pfAll")) === null); }
+      (await page.$("#pfAll")) === null);
+    // The one entry with a play report has to be readable without opening anything, and
+    // has to say WHICH setting it is — that is the answer to the question the card exists
+    // for (reported 2026-09-06: the scene actor fallback stopped party members being added).
+    check("the confirmed finding is stated up front, on a stock disc too",
+      /one has actually been watched doing this/.test(txt) && /Scene actor fallback/.test(txt));
+    check("...dated, so the claim can be traced to its report", /2026-09-06/.test(txt));
+    check("...and it carries a confirmed badge the other five don't",
+      (await page.$$('.tag.acc2')).length >= 1
+      && /confirmed to break party addition/.test(txt));
+    check("...while the other five say they are mechanisms with no report",
+      /mechanisms with no report attached/.test(txt)); }
+  // The Test tab, where the patch is turned on, must carry the same verdict — a warning that
+  // lives only on the repair screen is a warning nobody reads before applying it.
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector("#avActorFb", { timeout: 3000 });
+  { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
+    check("the Test tab calls the actor fallback confirmed harmful", /CONFIRMED HARMFUL/.test(txt));
+    check("...names the symptom", /stops adding party members correctly/.test(txt)); }
   // Hand Hugo a horse he doesn't ship with. That is the edit most likely to be behind
   // "adding party members stopped working": PartyPut stages the horse at pos+6, so it takes a
   // party-list position of its own.
