@@ -511,13 +511,14 @@ head("Passives view — choose who gets a support rune for free");
     check("...and where the helper goes", /0x16BF1E0/.test(txt));
     check("it says how enemies are kept out", /off enemies/i.test(txt));
     check("the block starts out untouched", /the first character you choose installs it/i.test(txt));
-    // Fortune WAS "no site found" until its check turned up in the battle-results overlay. The
-    // tab must now say where it is, not that it is nowhere — a stale "no site" would send the
-    // next person hunting for something already found.
-    check("Fortune is listed as decoded-but-not-switchable, not as missing",
-      /not in the executable/.test(txt) && !/no site found/.test(txt));
+    // Fortune WAS "no site found", then "decoded but not switchable". It is neither now: it has
+    // its own switch in the overlay card. A stale "not switchable" would send the next person
+    // looking for work already done, and a stale "no site" for something already found.
+    check("Fortune is not described as missing or as unswitchable",
+      /not in the executable/.test(txt) && !/no site found/.test(txt)
+      && !/Not switchable here/.test(txt) && !/no decoded site/.test(txt));
     check("...and it names the overlay it is actually in", /battle-results overlay/.test(txt));
-    check("...and says one is as good as six", /one is as good as six/.test(txt));
+    check("...and says one is as good as six", /one is as good as six/i.test(txt));
     check("the four dogs are named as not offered", /Koichi, Connie, Kosanji, Kogoro/.test(txt));
     // The confidence markers are the contract. One field site HAS a play report — but it was
     // earned under the dropped-call patch shape, not this one, so the tab must carry the report
@@ -641,6 +642,51 @@ head("Passives view — what it refuses to write");
   setServed(bytes);
 }
 
+
+head("Passives view — the two overlay switches (Fortune EXP, Prosperity potch)");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="passives"]');
+  await page.waitForSelector("#auxSwBox", { timeout: 3000 });
+  const keys = await page.$$eval(".auxsw", (n) => n.map((x) => x.dataset.k));
+  check("both overlay switches render", keys.join(",") === "fortune,prosperity", keys.join(","));
+  // The synthetic disc is 4.6 MB and these checks are ~1 GB in, so the windows are never read.
+  // Degradation is the only half of this the e2e can reach: it must go read-only and SAY so,
+  // not silently write into a window that is not there. The positive path is verified against
+  // the pristine ISO by tools/verify_overlay_switches.mjs instead.
+  const dis = await page.$$eval(".auxsw:disabled", (n) => n.map((x) => x.dataset.k));
+  check("both are read-only here — their overlay is past the end of a synth disc",
+    dis.join(",") === "fortune,prosperity", dis.join(",") || "(none)");
+  check("...and neither reads as already forced on",
+    (await page.$$eval(".auxsw", (n) => n.map((x) => x.checked))).every((v) => v === false));
+  check("...and each says why, rather than looking broken",
+    /unavailable/.test(await page.getAttribute('input.auxsw[data-k="fortune"]', "title"))
+    && /unavailable/.test(await page.getAttribute('input.auxsw[data-k="prosperity"]', "title")));
+  check("clicking a disabled switch stages nothing", !(await somethingStaged(page)));
+  { const txt = await page.textContent("#auxSwBox");
+    check("the card names both overlay addresses", /0x3F3E6938/.test(txt) && /0x3F3E698C/.test(txt));
+    check("...and says both streaming copies move together", /streaming twins/.test(txt));
+    // Why these two are offered when 49 in-battle checks are not is the whole argument for the
+    // card existing. If that reasoning stops being stated, the next person cannot tell whether
+    // the held-back ones were held back for a reason or by accident.
+    check("it says why these two are safe when the ones above are not",
+      /safe to force in a way the checks above are not/.test(txt));
+    { const flat = txt.replace(/\s+/g, " ");
+      check("...and names the reason: after the fight, own party, no per-unit consequence",
+        /after the fight is over/.test(flat) && /walks your own party and nobody else/.test(flat)
+        && /no enemy is ever asked/.test(flat)); }
+    check("it describes the two-word patch shape", /delay-slot instruction moves up/.test(txt));
+    check("Prosperity's compounding is stated, not buried", /COMPOUNDS/.test(txt) && /×729/.test(txt));
+    check("...and both are marked untested in play", /not yet seen working in play/.test(txt)); }
+  // The Prosperity switch also belongs beside the potch numbers it multiplies.
+  await page.click('#isoTabs [data-v="sets"]');
+  await page.waitForSelector("#setCards details.char", { timeout: 3000 });
+  const setKeys = await page.$$eval(".auxsw", (n) => n.map((x) => x.dataset.k));
+  check("the Sets tab carries the Prosperity switch and only that one",
+    setKeys.join(",") === "prosperity", setKeys.join(",") || "(none)");
+  check("...read-only there too, for the same reason",
+    (await page.$$eval(".auxsw:disabled", (n) => n.length)) === 1);
+  await page.context().close();
+}
 
 head("Passives view — rune power: what a passive is worth once it fires");
 { const page = await newPage(); await loadIso(page);
