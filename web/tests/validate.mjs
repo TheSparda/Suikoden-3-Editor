@@ -546,22 +546,39 @@ console.log("Passive rune sites:");
     (badProof.length ? bad : ok)(badProof.length
       ? `unknown proof marker(s): ${[...new Set(badProof)].join(", ")} — the tab only renders confirmed/untested`
       : `proof markers are all confirmed/untested (${[...new Set(proofs)].join(", ")})`);
-    // Sunbeam's walk-heal was played on 2026-09-06 — but under the DROPPED-CALL patch shape, not
-    // this one. The report is kept in the rune's note as evidence about the site; it may not set
-    // the marker, because the trampoline it now goes through has never been played. Nothing here
-    // may read "confirmed" until somebody plays THIS build, and a passing test is not that.
+    // 2026-09-06: Balance (0x1C2) and Fury (0x1CC) were both forced on for Chris and both effects
+    // showed up in combat, so the relocated helper IS played — through its psRec entry (Balance's
+    // two sites are both record sites) and its psUnit entry (Fury's berserk state is written at
+    // its two acting-unit sites). Those two runes are the only ones that may read confirmed: the
+    // marker is per rune, and "same helper, same shape" is the inference this vocabulary exists to
+    // refuse. Pin the set exactly, in both directions — a marker that spreads is the failure here,
+    // and so is one that quietly gets reverted.
+    const confirmedIds = [...sw.matchAll(/id: (0x[0-9A-Fa-f]+),[^}]*?proof: "confirmed"/g)].map((m) => m[1].toUpperCase());
+    (confirmedIds.join(",") === "0X1C2,0X1CC" ? ok : bad)(
+      confirmedIds.join(",") === "0X1C2,0X1CC"
+        ? "exactly Balance and Fury read confirmed — the two runes watched working on 2026-09-06"
+        : `confirmed markers are on ${confirmedIds.join(", ") || "nothing"}, not exactly Balance (0x1C2) and Fury (0x1CC)`);
+    // The two runes on the Passives tab are both psId sites — the one trampoline entry nobody has
+    // played — so neither may read confirmed off the back of the psRec/psUnit report.
     (/id: 0x1BD, where: "both", proof: "untested"/.test(sw) ? ok : bad)(
-      "Sunbeam reads untested — its play report was earned under the previous patch shape");
+      "Sunbeam reads untested — its own report was earned under the previous patch shape, and its site is a psId one");
     (/id: 0x1B9, where: "field", proof: "untested"/.test(sw) ? ok : bad)("Champion's reads untested");
-    (proofs.includes("confirmed") ? bad : ok)(proofs.includes("confirmed")
-      ? "a rune is marked confirmed, but nothing has been watched working through the relocated helper"
-      : "nothing claims to be confirmed in play through the relocated helper");
     (/watched working in game, through this mechanism/.test(iso) ? ok : bad)(
-      "the confirmed badge's tooltip says which mechanism it would be confirming");
-    // The play report itself must survive as recorded history — losing it would cost the one
-    // piece of real evidence this feature has.
+      "the confirmed badge's tooltip says which mechanism it is confirming");
+    // Both play reports must survive as recorded history, each with the patch shape and the
+    // trampoline entry it was earned through — that pairing is the whole reason one moved a marker
+    // and the other did not.
     (/played on 2026-09-06/.test(sw) && /previous patch shape/.test(sw) ? ok : bad)(
       "Sunbeam's play report is kept, with the patch shape it was earned under");
+    (/PLAYED 2026-09-06: forced on for Chris alongside Fury/.test(sw)
+      && /PLAYED 2026-09-06: forced on for Chris alongside Balance/.test(sw) ? ok : bad)(
+      "Balance's and Fury's play report is kept on both runes, as one report");
+    (/psRec/.test(sw) && /psUnit/.test(sw) && /psId/.test(sw) ? ok : bad)(
+      "the notes name which trampoline entry each report goes through (psRec / psUnit / psId)");
+    // The character card is where the confirmed runes are ticked, and the only place their marker
+    // renders: drawPassives filters to `where !== "battle"` and both of them are battle runes.
+    (/<span class="cpr-w">\$\{esc2\(tag\)\} · \$\{psProofHTML\(p\)\}<\/span>/.test(iso) ? ok : bad)(
+      "a character card's rune tile carries the rune's own confidence marker");
 
     // The delay slot is the one word this editor must never touch: every entry in the table
     // carries it, the audit compares it, and the write path only ever rewrites `s.off`.
@@ -1222,7 +1239,19 @@ console.log("In-ELF text heuristic:");
   (encHint && /RAISING ONE FROM 0 IS NOT/.test(encHint[1]) ? ok : bad)("the Encounter hint keeps the raising-from-0 caveat");
   const psHint = /\n\s*passives: "([^"]*)"/.exec(iso);
   (psHint && !/cannot be forced/.test(psHint[1]) ? ok : bad)("the Passives hint no longer says Fortune cannot be forced");
-  (psHint && !/CONFIRMED IN PLAY/.test(psHint[1]) ? ok : bad)("the Passives hint claims no play confirmation under this patch shape");
+  // This hint carries the one distinction the whole feature turns on, so pin both halves of it:
+  // the MECHANISM was watched working on 2026-09-06 (Balance and Fury, on Chris, from her card),
+  // and the two runes on THIS tab still have not been — they are psId sites, the trampoline entry
+  // that report did not touch. A rewrite that keeps only the good news is the failure to catch.
+  (psHint && /WATCHED WORKING ON 2026-09-06/.test(psHint[1]) ? ok : bad)(
+    "the Passives hint reports the play confirmation the mechanism earned");
+  (psHint && /every row here still reads untested/.test(psHint[1]) ? ok : bad)(
+    "...and says the two runes on this tab are not what was confirmed");
+  const charHint = /\n\s*chars: "([^"]*)"/.exec(iso);
+  (charHint && /PASSIVE RUNES FORCED ON/.test(charHint[1]) ? ok : bad)(
+    "the Characters hint names the forced-passive block that lives on its cards");
+  (charHint && /confirmed in play/.test(charHint[1]) && /own marker/.test(charHint[1]) ? ok : bad)(
+    "...with the play confirmation scoped to the mechanism and the two runes it covered");
   (psHint && /THE CHARACTERS YOU\s+CHOOSE/.test(psHint[1]) ? ok : bad)("the Passives hint says a passive goes to chosen characters");
   (psHint && /OFF ENEMIES/.test(psHint[1]) ? ok : bad)("the Passives hint keeps the off-enemies guarantee");
   const enHint = /\n\s*enemies: "([^"]*)"/.exec(iso);

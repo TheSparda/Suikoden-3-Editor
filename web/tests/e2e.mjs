@@ -647,22 +647,34 @@ if (ON) { const page = await newPage(); await loadIso(page);
     check("...and it names the overlay it is actually in", /battle-results overlay/.test(txt));
     check("...and says one is as good as six", /one is as good as six/i.test(txt));
     check("the four dogs are named as not offered", /Koichi, Connie, Kosanji, Kogoro/.test(txt));
-    // The confidence markers are the contract. One field site HAS a play report — but it was
-    // earned under the dropped-call patch shape, not this one, so the tab must carry the report
-    // and refuse to let it set a badge. Blurring those two is the failure this guards.
+    // The confidence markers are the contract, and this tab now has to hold TWO play reports
+    // apart. The mechanism was played on 2026-09-06 (Balance and Fury, both on Chris, through the
+    // helper's record and acting-unit entries) — but both runes on THIS tab are psId sites, the
+    // third entry, which nobody has played; and Sunbeam's own report was earned earlier the same
+    // day under the dropped-call shape. So the tab must carry both and let neither set a badge
+    // here. Blurring any of that is the failure this guards.
+    const flat = txt.replace(/\s+/g, " ");
+    check("the mechanism's play report is carried, with what was observed",
+      /Balance and Fury were both forced on for Chris/i.test(flat)
+      && /both effects showed up in combat/i.test(flat));
+    check("...and it is not read as evidence about this tab's two rows",
+      /not evidence about these two rows/i.test(flat));
+    check("...naming the trampoline entry those two came in through, and the one these use",
+      /record and acting-unit ones/i.test(flat) && /psId/.test(flat));
     check("Sunbeam's play report is carried, with what was observed",
-      /watched working: forced to yes, the party healed by walking with nobody\s+carrying the rune/i.test(txt.replace(/\s+/g, " "))
-      || /party healed by walking with nobody carrying the rune/i.test(txt.replace(/\s+/g, " ")));
+      /party healed by walking with nobody carrying the rune/i.test(flat));
     check("...and named as belonging to the previous patch shape",
-      /previous<\/i>? patch shape/i.test(txt.replace(/\s+/g, " ")) || /previous patch shape/i.test(txt.replace(/\s+/g, " ")));
-    check("...and it says what that leaves untested here", /the trampoline itself/i.test(txt.replace(/\s+/g, " ")));
+      /previous<\/i>? patch shape/i.test(flat) || /previous patch shape/i.test(flat));
     check("...and a passing test is explicitly not enough to move a marker",
-      /a marker moves on a play report and never on a passing test/i.test(txt.replace(/\s+/g, " ")));
-    check("every rune here reads untested", /every rune here\s+reads untested/i.test(txt.replace(/\s+/g, " "))); }
+      /a marker moves on a play report and never on a passing test/i.test(flat));
+    check("every rune here reads untested", /every rune here\s+reads untested/i.test(flat)); }
   const rows = await page.$$eval("#isoView table.invtbl tbody tr", (r) => r.map((x) => x.textContent));
   check("every rune row carries a confidence marker",
     rows.filter((t) => /untested|confirmed/.test(t)).length >= 2, String(rows.length));
-  check("...and none of them claims confirmed", rows.filter((t) => /confirmed/.test(t)).length === 0);
+  // Neither row here may read confirmed: Champion's and Sunbeam are the two psId sites, and the
+  // 2026-09-06 report came in through psRec and psUnit. The runes it DID cover are battle runes,
+  // ticked on a character's card, and their badge is checked there.
+  check("...and neither of them claims confirmed", rows.filter((t) => /confirmed/.test(t)).length === 0);
 
   // The picker UI itself, on Champion's (0x1B9) — one of the two runes this tab keeps. Wall's
   // ten-site byte coverage lives on the character card now, where in-battle runes are enabled.
@@ -966,7 +978,22 @@ if (ON) { const page = await newPage(); await loadIso(page);
   { const txt = await page.textContent("details.char .cpBox");
     check("the block says the effect is theirs alone", /theirs alone/.test(txt));
     check("...that no rune slot is spent", /without equipping them/.test(txt));
-    check("...and that it is untested in play", /watched working in play/.test(txt)); }
+    // This block is where the mechanism was played from, so it reports that — and immediately
+    // scopes it, because 20 of the 22 runes' own effects are still unwatched. A tile carries its
+    // rune's own marker, which is the only place a confirmed battle rune's badge renders at all
+    // (drawPassives filters battle runes off the Passives tab).
+    check("...and that the mechanism was watched working in play",
+      /Watched working in play on 2026-09-06/.test(txt)
+      && /Balance and Fury were both forced on for\s+Chris/.test(txt));
+    check("...with the report scoped to those two runes' sites",
+      /the other 20 runes' own\s+effects have not been watched/.test(txt)); }
+  { const marks = await page.$$eval("label.cprune", (n) => n.map((el) => ({
+      id: el.querySelector("input.cpOn").dataset.id,
+      w: (el.querySelector(".cpr-w") || {}).textContent || "" })));
+    check("every tile carries its rune's confidence marker",
+      marks.every((m) => /confirmed|untested/.test(m.w)), marks[0] && marks[0].w);
+    const conf = marks.filter((m) => /confirmed/.test(m.w)).map((m) => m.id).sort().join(",");
+    check("...and exactly Balance (450) and Fury (460) read confirmed", conf === "450,460", conf); }
 
   // Wall (0x1BE): ten sites, one of each trampoline kind — a record site, a charId site and
   // eight acting-unit sites — so one tick exercises all three. These are the assertions that

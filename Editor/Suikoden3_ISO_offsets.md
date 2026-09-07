@@ -3555,22 +3555,54 @@ the whole tab read-only, the same rule the site-level checks follow. v1.106.0's 
 is still *recognised* — a disc patched by it is named as such and offered a one-click return to
 stock — but nothing writes it any more.
 
+### PLAYED 2026-09-06 — the relocated helper works (Balance + Fury, on Chris)
+
+**Balance (`0x1C2`) and Fury (`0x1CC`) were both forced on for Chris from her own card, and both
+effects showed up in combat.** This is the report the feature was waiting for, and what it settles
+is the *delivery*, not one rune:
+
+* the relocated helper **runs in a running game** — `0x16BF1E0` is as dead at runtime as it is in
+  the image, which no amount of static searching could have established;
+* its register handling survives a real caller (`$ra` save/restore around the tail call, `$v0`
+  as the answer, caller-saved clobbers only);
+* the **bitmap lookup answers per character** — the record-pointer → index arithmetic
+  (`(rec - 0x196E700) / 0x8C`) picks out the character the game means;
+* **two runes can be on at once**, so the 22 bitmaps are independent in practice as well as on
+  paper.
+
+**It proves two of the three trampoline entries, not all three.** Balance's only two sites
+(`0x1100AC`, `0x1100E0`) are `0x16CB380` record sites, so **`psRec`** fired. Fury's visible
+berserk state is written at its two acting-unit sites (`0x25DFE8`, `0x2610D0`), so **`psUnit`**
+fired — including `0x181B738`'s resolve of the acting unit, which is the part that made those 23
+sites reachable at all. **`psId` has still never been played**: its three sites are Champion's
+field ask (`0x149F90`), Sunbeam's walk-heal (`0x14A1B4`) and one of Wall's ten (`0x110F74`).
+
+**Which is why the Passives tab still reads untested end to end.** That tab keeps exactly the two
+runes whose sites are `psId` ones, so the report above does not reach either row. Sunbeam's own
+report — the party healing by walking with nobody carrying the rune, earlier the same day — was
+earned under the *previous* patch shape, which dropped the call. Two reports, neither of them
+about that tab's delivery.
+
 **What is proven and what is not.** Sunbeam's field walk-heal *site* was played on 2026-09-06
 (recorded in the section above): forced to yes, the party healed by walking with nobody carrying
 the rune. That proves the site, the effect, and that answering this one question with a yes is
 all a passive needs — the load-bearing assumption for all 51. It does **not** prove this delivery
-of the yes. The report was taken under the previous patch shape, where the call was dropped and
-the answer written into the word it vacated; this version keeps the call and retargets it, so the
-trampoline's own correctness, its `$ra`/`$v0` handling, the bitmap lookup and whether `0x16BF1E0`
-is as dead in a running game as it is in the image are all untested.
+of the yes, and the Balance/Fury report does not prove Sunbeam's site under it either.
 
-A middle marker tier was tried for exactly this case and **removed**. Reasoning from "the site
-works" to "therefore this mechanism works" is the inference a badge should not make on the
-reader's behalf, and a green-ish badge on an unplayed mechanism is worse than no badge. The tab
-renders **confirmed / untested** and nothing else; all 22 runes read *untested*, Sunbeam
-included, and the play report lives in that rune's note where it can be read for what it is.
-`web/tests/validate.mjs` asserts that nothing claims *confirmed* and that the report text
-survives. A marker moves on a play report and never on a passing test.
+A middle marker tier was tried and **removed**, and the 2026-09-06 report makes the case for it
+*stronger* rather than settling it: with the mechanism played, "same helper, same shape, so the
+other 20 are expected" is exactly the inference a badge must not make for the reader. What has
+been watched is the delivery answering yes and two runes' effects; what each of the remaining 49
+sites does with a yes is 49 separate claims. So the vocabulary is still **confirmed / untested**
+and nothing else: Balance and Fury read *confirmed*, the other 20 read *untested*, and each
+rune's own note carries its evidence. `web/tests/validate.mjs` pins the confirmed set to exactly
+those two ids in both directions, and pins both play reports' text. A marker moves on a play
+report and never on a passing test.
+
+**Where the marker renders.** `drawPassives` filters to `where !== "battle"`, so a battle rune's
+badge cannot appear there — Balance and Fury are ticked on the character card, and the card's
+tile carries the marker (`charPassivesHTML`, beside the field/battle tag). Without that the
+report would have been data-only, visible in the source and nowhere a player looks.
 
 ---
 
