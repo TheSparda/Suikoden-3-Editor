@@ -428,6 +428,44 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .pschip:hover { background:var(--line); }
 .pschip input { margin:0; }
 
+/* Characters tab: "Passive runes forced on", the same bitmaps asked per unit. Unlike the picker
+   above it, this list is a control people reach for on a phone, so it is tiles rather than
+   chips: one column at phone width, more as the card widens, each tile a ~48px target whose
+   whole area toggles (it is a <label>). The state has to survive being read at arm's length,
+   so an on tile is a gold border + tint + gold name, not just a ticked box; and the checkbox
+   itself is scaled up to 22px so it is hittable on its own. No inner scroller — 22 tiles in a
+   nested scroll box steal the page's vertical drag. */
+.cprunes { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:8px; }
+.cprune { display:grid; grid-template-columns:auto 1fr auto; align-items:center;
+  column-gap:9px; row-gap:2px; min-height:48px; padding:9px 11px; cursor:pointer;
+  border:1px solid var(--line); border-radius:10px; background:var(--input-bg);
+  transition:border-color .12s,background .12s; -webkit-tap-highlight-color:transparent; }
+.cprune input { grid-row:1/span 2; width:22px; height:22px; margin:0; flex:none;
+  accent-color:var(--acc); }
+.cprune .cpr-n { font-size:14px; font-weight:600; color:var(--ink); }
+.cprune .cpr-w { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut);
+  border:1px solid var(--line); border-radius:5px; padding:1px 5px; white-space:nowrap; }
+.cprune .cpr-d { grid-column:2/span 2; font-size:11.5px; line-height:1.35; color:var(--mut); }
+.cprune:hover:not(.locked) { border-color:var(--acc); }
+.cprune.on { border-color:var(--acc); background:color-mix(in srgb,var(--acc) 12%,var(--input-bg)); }
+.cprune.on .cpr-n { color:var(--acc2); }
+.cprune.on .cpr-w { border-color:var(--acc); color:var(--acc2); }
+/* A rune this disc's code doesn't let us write. On touch there is no tooltip to explain that,
+   so the badge says "read-only" (or "on for everyone" for the old whole-party patch) and the
+   tile is faded and un-tappable rather than a box that silently refuses. */
+.cprune.locked { opacity:.5; cursor:default; }
+.cprune.locked .cpr-w { border-style:dashed; }
+.bag-h button.cpAllOff { font:inherit; font-size:12px; padding:4px 10px; min-height:32px;
+  color:var(--mut); background:transparent; }
+.bag-h button.cpAllOff:hover { color:var(--ink); border-color:var(--acc); }
+@media (max-width:480px) {
+  .cprunes { grid-template-columns:1fr; gap:7px; }
+  .cprune { min-height:52px; padding:10px 12px; }
+  .cprune input { width:24px; height:24px; }
+  .cprune .cpr-n { font-size:15px; }
+  .bag-h button.cpAllOff { min-height:38px; font-size:13px; }
+}
+
 /* rune + skill lookups (Reference view) */
 .grants { margin-top:4px; display:flex; gap:4px; flex-wrap:wrap; }
 .spellchip { font-size:11px; color:var(--acc2); border:1px solid var(--line); border-radius:999px;

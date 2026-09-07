@@ -628,6 +628,72 @@ def main():
     check("an unclamped model (Ruby, 42) can be written — the party list has no 308/309 gate",
           s3save.decode_party_mounts(out5)[0] == 42)
 
+    print("Trinity Sight (chapter select):")
+    # The panel is only as good as the three pieces of state the game's menu builder reads,
+    # so pin each one: the flame bit, the counter slot, and the chapter a stage decodes to.
+    ref = s3save.trinity_reference()
+    check("six points of view, one per flame",
+          len(ref["povs"]) == 6 and sorted(p["flame"] for p in ref["povs"]) == [1, 2, 3, 4, 5, 6])
+    check("every POV owns a distinct flag bit and counter slot",
+          len({p["bit"] for p in ref["povs"]}) == 6 and len({p["slot"] for p in ref["povs"]}) == 6)
+    check("the merged story has a slot but no flame",
+          ref["main"]["slot"] == 7 and "bit" not in ref["main"])
+    check("flame mask is flag byte 0x34, counters start at 0x3B0",
+          ref["flagOffset"] == 0x34 and ref["stageOffset"] == 0x3B0)
+    check("counter slots stay inside the eight-slot bank",
+          all(0 <= p["slot"] < s3save.STAGE_SLOTS for p in ref["povs"]))
+    check("chapter counts match the game (H/C/G three, Thomas two, Koroku/Luc one)",
+          {p["key"]: len(p["chapters"]) for p in ref["povs"]} ==
+          {"hugo": 3, "chris": 3, "geddoe": 3, "thomas": 2, "koroku": 1, "luc": 1})
+    check("each POV's stage values ascend with its chapters",
+          all([c["value"] for c in p["chapters"]] == sorted(c["value"] for c in p["chapters"])
+              and [c["chapter"] for c in p["chapters"]] == sorted(c["chapter"] for c in p["chapters"])
+              for p in ref["povs"]))
+    check("the offered value is one a real save was seen holding",
+          all(c["value"] in c["seen"] for p in ref["povs"] + [ref["main"]] for c in p["chapters"]))
+
+    fresh = s3save.decode_trinity(base)
+    check("a synthetic save with no flags reads as no flames lit, nothing started",
+          not any(p["lit"] for p in fresh["povs"]) and
+          not any(p["stage"] for p in fresh["povs"]) and fresh["main"]["stage"] == 0)
+
+    lit, _ = s3save.apply_edits_to_gamedata(base, {}, trinity={"lit": {"luc": True, "thomas": True}})
+    t = s3save.decode_trinity(lit)
+    by = {p["key"]: p for p in t["povs"]}
+    check("lighting Luc's and Thomas's flames sets bits 4 and 3 of 0x34",
+          t["flagByte"] == (1 << 4) | (1 << 3), "0x%02X" % t["flagByte"])
+    check("...and both read back as lit", by["luc"]["lit"] and by["thomas"]["lit"])
+    check("...without lighting anyone else's",
+          not any(by[k]["lit"] for k in ("hugo", "chris", "geddoe", "koroku")))
+
+    stage, _ = s3save.apply_edits_to_gamedata(base, {}, trinity={"stage": {"chris": 5, "main": 11}})
+    t2 = s3save.decode_trinity(stage)
+    by2 = {p["key"]: p for p in t2["povs"]}
+    check("Chris's counter goes to her chapter-2 stage and decodes as chapter 2",
+          by2["chris"]["stage"] == 5 and by2["chris"]["chapter"] == 2)
+    check("the merged-story counter decodes as chapter 5",
+          t2["main"]["stage"] == 11 and t2["main"]["chapter"] == 5)
+    check("one POV's counter does not disturb its neighbours",
+          all(by2[k]["stage"] == 0 for k in ("hugo", "geddoe", "thomas", "koroku", "luc")))
+    check("the counters live where the reference says they do",
+          struct.unpack_from("<H", stage, 0x3B0 + 2 * 2)[0] == 5 and
+          struct.unpack_from("<H", stage, 0x3B0 + 7 * 2)[0] == 11)
+
+    # Same "no-op is not an edit" rule the carryover flags follow: a request that matches
+    # the save must not make an otherwise-empty Apply write the file.
+    _, n_noop = s3save.apply_edits_to_gamedata(stage, {}, trinity={"stage": {"chris": 5}})
+    check("re-writing the value a save already holds is not counted as a change", n_noop == 0)
+    _, n_dark = s3save.apply_edits_to_gamedata(base, {}, trinity={"lit": {"hugo": False}})
+    check("clearing an already-dark flame is not counted as a change", n_dark == 0)
+    _, n_bad = s3save.apply_edits_to_gamedata(base, {}, trinity={"lit": {"nobody": True},
+                                                                 "stage": {"nobody": 4}})
+    check("an unknown point of view is ignored, not misapplied", n_bad == 0)
+    off, _ = s3save.apply_edits_to_gamedata(base, {}, trinity={"lit": {"hugo": True}})
+    dark, _ = s3save.apply_edits_to_gamedata(off, {}, trinity={"lit": {"hugo": False}})
+    check("a lit flame can be put back out",
+          not s3save.decode_trinity(dark)["povs"][0]["lit"])
+    check("the checksum invariant survives a Trinity edit", sum_words(stage) == 0)
+
     print("Memory-card ECC helper:")
     zero = s3save.ecc_page(bytes(512))
     check("ecc_page returns 16 bytes", len(zero) == 16)

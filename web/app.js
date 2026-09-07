@@ -136,7 +136,8 @@ def load_reference():
     return json.dumps({"items": items, "skills": skills, "charById": charById,
                        "charRoster": charRoster, "charChoices": ref["choices"],
                        "fieldAvatars": ref["fieldAvatars"],
-                       "carryover": s3save.carryover_reference()})
+                       "carryover": s3save.carryover_reference(),
+                       "trinity": s3save.trinity_reference()})
 
 def load_saves(path):
     charById = s3save.party_reference()["names"]
@@ -161,7 +162,8 @@ def apply_edits(path, folder, payload_json):
         inv_edits=inv or None, name_edits=(p.get("nameEdits") or None),
         party_edits=party or None, recruit_edits=rec or None, gold=p.get("gold"),
         party_mount_edits=pmount or None,
-        leader=p.get("leader"), carryover=(p.get("carryover") or None))
+        leader=p.get("leader"), carryover=(p.get("carryover") or None),
+        trinity=(p.get("trinity") or None))
     return json.dumps(res)
 
 def carryover_bonus(payload_json):
@@ -441,6 +443,12 @@ let DISPLACED = 0;
 // Pending carryover-flag edits: {s1?: bool, s2?: bool}. Separate from EDITS because the
 // flags are whole-save state, not a character field.
 let CARRY;
+// Pending Trinity Sight edits: {lit: {povKey: bool}, stage: {povKey|"main": value}}. Same
+// reason as CARRY — the flame mask and the progress counters are whole-save state.
+let TRIN;
+// Trinity Sight fold state, kept across slot switches like the carryover one.
+let TRFOLD = false;
+let refreshTrFold = () => {};
 // Carryover + names fold: whole-save state you set once and never touch again, so it starts
 // closed and stays as the user last left it across slot switches and Reset.
 let COFOLD = false;
@@ -463,6 +471,7 @@ function renderEditor() {
 function drawSlot() {
   const s = saves[curSlot];
   EDITS = {}; INV = {}; NAMES = {}; PARTY = {}; PMOUNT = {}; RECRUIT = {}; GOLD = null; LEADER = null; CARRY = {};
+  TRIN = { lit: {}, stage: {} };
   SUB = "chars"; RECRUITED_ONLY = true; INVCAT = "regular"; ADDED = {}; SEARCH = "";
 
   const meta = s.meta || {};
@@ -471,7 +480,11 @@ function drawSlot() {
   const metaBits = [
     meta.chapter != null ? `Chapter ${meta.chapter}` : null,
     s.global.playtime ? `Playtime ${s.global.playtime}` : null,
-    leader, `Story phase ${s.global.storyPhase}`,
+    // The phase byte names the point of view the save is being played from, so say which
+    // one rather than leaving a bare number (s3save.PHASE_POV).
+    leader, `Story phase ${s.global.storyPhase}` +
+      (((REF.trinity || {}).phaseNames || {})[String(s.global.storyPhase)]
+        ? ` · ${(REF.trinity.phaseNames || {})[String(s.global.storyPhase)]}` : ""),
   ].filter(Boolean).join(" · ");
 
   const co = s.carryover || {};
@@ -506,6 +519,65 @@ function drawSlot() {
     // is not an edit, and the header must not claim it is.
     const edits = Object.keys(CARRY).length + Object.entries(NAMES)
       .filter(([k, v]) => { const n = (s.names || []).find((x) => x.key === k); return n && v !== n.value; }).length;
+    return bits.map(esc).join(" · ") + (edits ? ` · <b class="fold-edited">${edits} edit(s)</b>` : "");
+  };
+
+  // ---- Trinity Sight (the chapter-select screen) ---------------------------
+  // Three pieces of save state, and they are the three the game's own menu builder reads:
+  // the six-bit flame mask at 0x34, and one progress counter per point of view in the bank
+  // at 0x3B0 (s3save: TRINITY_POVS / STAGE_BASE — the disassembly is in the comment there).
+  // Not yet play-tested, which the panel says out loud rather than implying confidence the
+  // research does not have.
+  const tr = s.trinity || { povs: [], main: {} };
+  const TR = REF.trinity || { povs: [], main: { chapters: [], labels: {} } };
+  const trRef = (k) => TR.povs.find((p) => p.key === k) || { chapters: [] };
+  const trLit = (p) => (TRIN.lit[p.key] !== undefined ? TRIN.lit[p.key] : p.lit);
+  const trStage = (key, cur) => (TRIN.stage[key] !== undefined ? TRIN.stage[key] : cur);
+  // A stage the save holds that is not one of the chapter-opening values (a mid-chapter
+  // save, which is most of them) still has to be selectable, or opening the panel and
+  // touching nothing would silently propose moving the player back to a chapter start.
+  const trOpts = (rows, cur, zero) => {
+    const opts = [{ v: 0, l: zero }].concat(rows.map((r) => ({ v: r.value, l: r.label })));
+    if (cur && !opts.some((o) => o.v === cur)) opts.push({ v: cur, l: `stage ${cur} (as saved)` });
+    return opts.sort((x, y) => x.v - y.v);
+  };
+  const trRow = (p) => {
+    const ref = trRef(p.key);
+    const rows = ref.chapters.map((c) => ({ value: c.value, label: `Chapter ${c.chapter}` }));
+    const cur = trStage(p.key, p.stage);
+    const on = trLit(p);
+    const opts = trOpts(rows, p.stage, "— not started —").map((o) =>
+      `<option value="${o.v}"${o.v === cur ? " selected" : ""}>${esc(o.l)}</option>`).join("");
+    return `<div class="row" style="gap:8px;align-items:baseline;flex-wrap:wrap">
+      <label class="row" style="gap:6px;cursor:pointer;min-width:150px;align-items:baseline">
+        <input type="checkbox" data-tflame="${p.key}"${on ? " checked" : ""}${on !== p.lit ? ' class="dirty"' : ""}>
+        <b>Flame ${p.flame} · ${esc(p.name)}</b></label>
+      <select data-tstage="${p.key}" data-def="${p.stage}"${cur !== p.stage ? ' class="dirty"' : ""}
+              style="min-width:170px">${opts}</select>
+      <span class="muted" style="font-size:12px">0x${hx(ref.stageOffset || 0, 3)} · flag 0x${hx(TR.flagOffset || 0, 2)} bit ${p.bit} · stage ${p.stage}</span>
+    </div>`;
+  };
+  const trMainRow = () => {
+    const m = tr.main || {}, ref = TR.main || { chapters: [], labels: {} };
+    const rows = (ref.chapters || []).map((c) => ({ value: c.value, label: (ref.labels || {})[String(c.chapter)] || `Chapter ${c.chapter}` }));
+    const cur = trStage("main", m.stage || 0);
+    const opts = trOpts(rows, m.stage || 0, "— before the merge —").map((o) =>
+      `<option value="${o.v}"${o.v === cur ? " selected" : ""}>${esc(o.l)}</option>`).join("");
+    return `<div class="row" style="gap:8px;align-items:baseline;flex-wrap:wrap">
+      <b style="min-width:150px">${esc(ref.name || "Main story")}</b>
+      <select data-tstage="main" data-def="${m.stage || 0}"${cur !== (m.stage || 0) ? ' class="dirty"' : ""}
+              style="min-width:170px">${opts}</select>
+      <span class="muted" style="font-size:12px">0x${hx(ref.stageOffset || 0, 3)} · no flame of its own · stage ${m.stage || 0}</span>
+    </div>`;
+  };
+  const trFoldSummary = () => {
+    const lit = (tr.povs || []).filter(trLit);
+    const bits = [`${lit.length}/${(tr.povs || []).length} flames lit`];
+    if (lit.length) bits.push(lit.map((p) => p.name).join(", "));
+    const m = tr.main || {};
+    const mCh = trStage("main", m.stage || 0);
+    if (mCh) bits.push((TR.main?.labels || {})[String((TR.main?.chapters || []).filter((c) => mCh >= c.value).pop()?.chapter)] || `main stage ${mCh}`);
+    const edits = Object.keys(TRIN.lit).length + Object.keys(TRIN.stage).length;
     return bits.map(esc).join(" · ") + (edits ? ` · <b class="fold-edited">${edits} edit(s)</b>` : "");
   };
 
@@ -554,6 +626,26 @@ function drawSlot() {
         </div>
         <h3 class="sec">Names</h3>
         <div class="grid" id="names">${names}</div>
+      </details>
+      <details class="fold" id="trfold"${TRFOLD ? " open" : ""}>
+        <summary class="bag-h"><span class="chev">▸</span>Trinity Sight — points of view &amp; chapters
+          <span class="u" id="trfoldsum">${trFoldSummary()}</span></summary>
+        <div class="grid" id="trinity" style="gap:6px;margin-top:6px">
+          ${(tr.povs || []).map(trRow).join("")}
+          <hr style="border:0;border-top:1px solid var(--bd);margin:2px 0">
+          ${trMainRow()}
+        </div>
+        <div class="muted" style="font-size:12px;margin:6px 0 0">
+          The chapter-select screen reads exactly three things, and these are they: the
+          <b>flame mask</b> (flag byte <code>0x${hx(TR.flagOffset || 0, 2)}</code>, one bit per point of view) and one
+          <b>progress counter</b> each (the eight-slot bank at <code>0x${hx(TR.stageOffset || 0, 3)}</code>). Each point of
+          view has its own scale, so the dropdowns offer the stage values real saves hold at
+          the start of each of that character's chapters — Chris has three, Thomas two,
+          Koroku and Luc one each. Chapters 4-5 belong to the merged story on its own row;
+          the game keeps Hugo/Chris/Geddoe in step with it from the merge onwards.
+          <b>Not play-tested yet:</b> lighting a flame out of order (Luc's before the game is
+          cleared) may not lead anywhere the game is ready for — keep a backup save.
+        </div>
       </details>
       <h3 class="sec">Gold</h3>
       <label class="field" style="max-width:200px"><span>Gold / potch</span>
@@ -611,6 +703,20 @@ function drawSlot() {
     refreshCoFold();
   }));
   const cob = $("#coBonus"); if (cob) cob.onclick = openCarryoverBonus;
+  refreshTrFold = () => { const el = $("#trfoldsum"); if (el) el.innerHTML = trFoldSummary(); };
+  $("#trfold").ontoggle = (e) => { TRFOLD = e.target.open; };
+  $$("input[data-tflame]").forEach((cb) => (cb.onchange = () => {
+    const k = cb.dataset.tflame, was = !!(tr.povs || []).find((p) => p.key === k)?.lit;
+    if (cb.checked === was) delete TRIN.lit[k]; else TRIN.lit[k] = cb.checked;
+    cb.classList.toggle("dirty", cb.checked !== was);
+    refreshTrFold();
+  }));
+  $$("select[data-tstage]").forEach((sel) => (sel.onchange = () => {
+    const k = sel.dataset.tstage, was = +sel.dataset.def, now = +sel.value;
+    if (now === was) delete TRIN.stage[k]; else TRIN.stage[k] = now;
+    sel.classList.toggle("dirty", now !== was);
+    refreshTrFold();
+  }));
   $("#goldfld").oninput = (e) => {
     e.target.classList.toggle("dirty", e.target.value !== e.target.dataset.def);
     GOLD = +e.target.value;
@@ -1794,7 +1900,8 @@ function syncQtyCell(btn, slot, id) {
 function hasChanges() {
   return Object.keys(EDITS).length || Object.keys(INV).length || Object.keys(NAMES).length ||
     Object.keys(PARTY).length || Object.keys(PMOUNT).length || Object.keys(RECRUIT).length || GOLD !== null ||
-    LEADER !== null || Object.keys(CARRY).length;
+    LEADER !== null || Object.keys(CARRY).length ||
+    Object.keys(TRIN.lit).length || Object.keys(TRIN.stage).length;
 }
 
 const RANK_LABEL = (v) => (RANK_TIERS.find((t) => t[0] === v) || [v, "?"])[1];
@@ -1816,6 +1923,29 @@ function buildDiff() {
     if (!!on !== !!f.loaded)
       rows.push({ g: "Carryover", t: `${g === "s1" ? "Suikoden I" : "Suikoden II"} data loaded: ${f.loaded ? "yes" : "no"} → ${on ? "yes" : "no"}` });
   });
+  {
+    const tr = s.trinity || { povs: [], main: {} };
+    const TR = REF.trinity || { povs: [], main: { chapters: [], labels: {} } };
+    const chapterOf = (rows_, v) => {
+      const hit = (rows_ || []).filter((c) => v >= c.value).pop();
+      return v && hit ? hit.chapter : 0;
+    };
+    Object.entries(TRIN.lit).forEach(([k, on]) => {
+      const p = (tr.povs || []).find((x) => x.key === k); if (!p || !!on === !!p.lit) return;
+      rows.push({ g: "Trinity Sight", t: `${p.name}'s flame: ${p.lit ? "lit" : "dark"} → ${on ? "lit" : "dark"}` });
+    });
+    Object.entries(TRIN.stage).forEach(([k, v]) => {
+      const isMain = k === "main";
+      const cur = isMain ? (tr.main?.stage || 0) : ((tr.povs || []).find((x) => x.key === k)?.stage || 0);
+      if (v === cur) return;
+      const ref = isMain ? (TR.main || {}) : (TR.povs || []).find((x) => x.key === k) || {};
+      const label = (ch) => !ch ? "not started"
+        : isMain ? ((ref.labels || {})[String(ch)] || `chapter ${ch}`) : `chapter ${ch}`;
+      const name = isMain ? (ref.name || "Main story") : ((tr.povs || []).find((x) => x.key === k)?.name || k);
+      rows.push({ g: "Trinity Sight",
+        t: `${name}: ${label(chapterOf(ref.chapters, cur))} (stage ${cur}) → ${label(chapterOf(ref.chapters, v))} (stage ${v})` });
+    });
+  }
   Object.entries(NAMES).forEach(([k, v]) => {
     const n = (s.names || []).find((x) => x.key === k);
     if (n && v !== n.value) rows.push({ g: "Names", t: `${n.label}: "${n.value}" → "${v}"` });
@@ -2004,6 +2134,11 @@ function exportSaveJSON() {
     _folder: s.folder, _label: s.label, _playtime: s.global.playtime, _storyPhase: s.global.storyPhase,
     gold: s.global.gold, fieldCharacter: { id: s.global.partyLeader, name: REF.charById[s.global.partyLeader] || null },
     carryover: { s1: !!s.carryover?.s1?.loaded, s2: !!s.carryover?.s2?.loaded },
+    // Trinity Sight: the flame per point of view plus its progress counter. Stages are the
+    // game's own numbers (see s3save.TRINITY_POVS), so a hand-edited value round-trips.
+    trinitySight: Object.assign({},
+      ...(s.trinity?.povs || []).map((p) => ({ [p.key]: { lit: !!p.lit, stage: p.stage, _chapter: p.chapter, _name: p.name } })),
+      { main: { stage: s.trinity?.main?.stage || 0, _chapter: s.trinity?.main?.chapter || 0 } }),
     names, party, characters: chars, inventory };
   const json = JSON.stringify(out, null, 2);
   const base = (origName || "save").replace(/\.[^.]+$/, "");
@@ -2030,6 +2165,16 @@ async function importSaveJSON(file) {
   if (data.fieldCharacter != null) { const id = idOf(data.fieldCharacter); if (id) { LEADER = id; staged++; } }
   if (data.carryover && typeof data.carryover === "object")
     ["s1", "s2"].forEach((g) => { if (typeof data.carryover[g] === "boolean") { CARRY[g] = data.carryover[g]; staged++; } });
+  if (data.trinitySight && typeof data.trinitySight === "object") {
+    const tr = s.trinity || { povs: [], main: {} };
+    Object.entries(data.trinitySight).forEach(([k, v]) => {
+      if (!v || typeof v !== "object") return;
+      const p = k === "main" ? tr.main : (tr.povs || []).find((x) => x.key === k);
+      if (!p) return;                                  // unknown key: a label, not an edit
+      if (typeof v.lit === "boolean" && v.lit !== !!p.lit) { TRIN.lit[k] = v.lit; staged++; }
+      if (Number.isFinite(v.stage) && (v.stage | 0) !== (p.stage || 0)) { TRIN.stage[k] = v.stage | 0; staged++; }
+    });
+  }
   if (data.names && typeof data.names === "object") Object.entries(data.names).forEach(([k, v]) => {
     if (typeof v === "string" && (s.names || []).some((n) => n.key === k)) { NAMES[k] = v; staged++; }
   });
@@ -2083,7 +2228,8 @@ async function doApply(mode) {
   const s = saves[curSlot];
   const payload = { edits: EDITS, invEdits: INV, nameEdits: NAMES, partyEdits: PARTY,
                     partyMountEdits: PMOUNT,
-                    recruitEdits: RECRUIT, gold: GOLD, leader: LEADER, carryover: CARRY };
+                    recruitEdits: RECRUIT, gold: GOLD, leader: LEADER, carryover: CARRY,
+                    trinity: TRIN };
   setStatus("Applying…", "");
   let res;
   try {
