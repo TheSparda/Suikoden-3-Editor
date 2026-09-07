@@ -1015,6 +1015,14 @@
   const psFree = () => inBlk(PS_HOOK.off, PS_HOOK.span) && psEq(psStock());
   const psBlkState = () => !inBlk(PS_HOOK.off, PS_HOOK.span) ? "oob"
     : psInstalled() ? "hook" : psFree() ? "stock" : "other";
+  // Is any call site still JUMPING into the block? That — not "is every site stock" — is what
+  // makes putting the dead routine back unsafe, and the distinction is not academic: the
+  // v1.106.0 LEGACY shape answers inline and never reaches the block, so a disc carrying it
+  // can have 640 bytes of unreachable helper tidied away without giving up a passive that
+  // works. Checked against the words actually on the disc, not against a flag.
+  const PS_JALS = new Set(Object.values(PS_HOOK.jal).map((w) => w >>> 0));
+  const psBlockReachable = () => PASSIVES.some((p) => p.sites.some((s) =>
+    inBlk(s.off, 4) && PS_JALS.has(readW(s.off, 4) >>> 0)));
 
   // ---- the per-rune bitmap ---------------------------------------------------
   const psMaskOff = (p) => PS_HOOK.off + PS_HOOK.maskOff + (p.id - PS_HOOK.first) * PS_HOOK.stride;
@@ -1061,11 +1069,11 @@
       `the relocated helper — ${PS_HOOK.maskOff} bytes of code over the dead routine at VA 0x${hex(PS_HOOK.va, 7)}`);
     return true;
   }
-  // Put the routine back exactly as it was. Safe only once every site reads stock again, which
-  // is the caller's job — an installed block with a live `jal` into it would be a hang.
+  // Put the routine back exactly as it was. Safe once nothing jumps into it any more — an
+  // installed block with a live `jal` into it would be a hang.
   function psUninstall() {
     if (!psInstalled()) return;
-    if (!PASSIVES.every((p) => p.sites.every((s) => psSiteState(s) === "stock"))) return;
+    if (psBlockReachable()) return;
     writeBytes(PS_HOOK.off, psStock());
   }
   // Point this rune's sites at the helper, or back at the stock one, to match its bitmap.
@@ -9474,9 +9482,16 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const st = psStock();
       let diff = 0;
       for (let i = 0; i < st.length; i++) if (chgRead(dv, PS_HOOK.off + i, 1) !== st[i]) diff++;
+      // A block nothing jumps into is not a risk, and saying otherwise would send someone
+      // hunting a hang that cannot happen. It is still worth reporting — 640 bytes of
+      // unreachable code is exactly the leftover a half-migrated disc carries — so it is
+      // reported as tidy-up rather than as live engine code, and it restores on its own.
+      const reach = psBlockReachable();
       if (diff) out.push({ off: PS_HOOK.off, imm: true, w: st.length, block: st, group: "Passive runes",
-        label: `the relocated helper block (VA 0x${hex(PS_HOOK.va, 7)}, dead code on a stock disc)`,
-        stock: "the dead routine", got: `${diff} of ${st.length} bytes differ`, risk: psRisk });
+        label: `the relocated helper block (VA 0x${hex(PS_HOOK.va, 7)}, dead code on a stock disc)`
+          + (reach ? "" : " — nothing jumps into it, so this is leftover, not live"),
+        stock: "the dead routine", got: `${diff} of ${st.length} bytes differ`,
+        risk: reach ? psRisk : null });
     }
     return out;
   }
@@ -9489,9 +9504,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     if (!inBlk(a.off, a.w)) return false;
     if (a.block) {
       // Putting the dead routine back while a `jal` still points into it is a hang, so this
-      // one waits until every passive-rune site reads stock again (chgStockRevertAll does
-      // the sites first, which is what makes the all-at-once path safe).
-      if (!PASSIVES.every((p) => p.sites.every((s) => psSiteState(s) === "stock"))) return false;
+      // one waits until nothing jumps into it (chgStockRevertAll does the call sites first,
+      // which is what makes the all-at-once path safe). A block nothing reaches — the state
+      // a legacy-patched disc is in — is tidied on its own, without touching the passives.
+      if (psBlockReachable()) return false;
       writeBytes(a.off, a.block);
     } else writeW(a.off, a.w, a.stock);
     FIELD_REG[a.off] = { group: "Restored to stock", label: `${a.group} · ${a.label}`,
@@ -9921,8 +9937,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     on("chgStockAll", () => {
       const { done, held } = chgStockRevertAll(CHG_AUDIT);
       setStatus(`Staged a restore of ${done} code patch site(s) to their stock values.` +
-        (held ? ` ${held} left alone — the relocated helper block only goes back once every ` +
-                `passive-rune site reads stock, and some are outside the editable region.` : "") +
+        (held ? ` ${held} left alone — the relocated helper block only goes back once nothing ` +
+                `jumps into it, and some sites are outside the editable region.` : "") +
         ` Nothing is written until you save.`, held ? "warn" : "ok");
       drawView();
     });
@@ -9930,9 +9946,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const a = CHG_AUDIT[+b.dataset.srev];
       if (!a) return;
       if (chgStockRevertRow(a)) setStatus("Staged — those bytes go back to stock when you save.", "ok");
-      else setStatus("Left alone: the relocated helper block can only go back to the dead routine " +
-        "once every passive-rune call site reads stock again, or a live jump would land in it. " +
-        "Use \u201cRestore all\u201d, which does the call sites first.", "warn");
+      else setStatus("Left alone: a passive-rune call site still jumps into the relocated helper, " +
+        "so putting the dead routine back would leave that jump landing in restored code. " +
+        "Restore those sites first \u2014 or use \u201cRestore all\u201d, which does them in order.", "warn");
       drawView();
     }));
     const hexBox = q("#chgHex", host);

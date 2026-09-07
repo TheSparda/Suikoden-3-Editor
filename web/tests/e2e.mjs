@@ -18,7 +18,7 @@ import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY,
   ROOM_TEST_INDEX, ROOM_TABLE_A, ROOM_TABLE_B, SUBFILE_TEST_INDEX, SPLIT, SPLIT_STOCK,
   AVATAR_SITES, avatarWord, STORY_CASES, ENCMOVE_SITES, encMoveWord, ACTORFB_SITES,
   MOVESPD, MOVESPD_RUN, MOVESPD_CLASS, spdAddr, spdClassAddr, PASSIVE_SITES,
-  RUNEFX_SITES, RUNEFX_FLOAT, PS_HOOK, PS_HOOK_STOCK, PS_HOOK_JAL,
+  RUNEFX_SITES, RUNEFX_FLOAT, PS_HOOK, PS_HOOK_STOCK, PS_HOOK_JAL, PS_LEGACY_YES, PS_HOOK_CODE,
   SVAG_STREAM, SVAG_INTER, SVAG_BYTES } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -4861,6 +4861,95 @@ head("Changes tab — restore code patches to stock, with no base disc");
     r.wrote(hc, 4) && r.u32(hc) === (HORSE_CLAMP[0].stock >>> 0), "0x" + r.u32(hc).toString(16));
   check("Chris's assigned horse is hers again", r.wrote(hz, 2) && r.u16(hz) === HORSE_STOCK[2], String(r.u16(hz)));
   await page.context().close();
+  setServed(bytes);                                  // leave the fixture as we found it
+}
+
+// ---- Changes tab: the leftover helper block ---------------------------------------------------
+// The state a half-migrated disc is really in, and the one the old guard got wrong: the
+// relocated helper is INSTALLED but the call sites carry the v1.106.0 legacy shape, which
+// answers inline and never jumps into it. That is 640 bytes of unreachable code — worth
+// tidying, and safe to tidy, precisely because nothing reaches it. Keying the guard off
+// "every site reads stock" refused this disc and would have made the leftover permanent
+// unless you also gave up a passive that works.
+head("Changes tab — a helper block nothing jumps into is leftover, not live");
+{
+  const legacy = Uint8Array.from(bytes);
+  const dv = new DataView(legacy.buffer);
+  const unhex = (h) => { const c = h.replace(/[^0-9A-Fa-f]/g, ""), a = new Uint8Array(c.length >> 1);
+    for (let i = 0; i < a.length; i++) a[i] = parseInt(c.substr(i * 2, 2), 16); return a; };
+  const code = unhex(PS_HOOK_CODE);                      // this editor's helper, installed
+  legacy.set(code, PS_HOOK.off);
+  // ...and two sites in the legacy shape: the ds word moves up, the answer lands behind it.
+  const legacySites = [0x149F90, 0x14A1B4].map((o) => PASSIVE_SITES.find(([x]) => x === o)).filter(Boolean);
+  for (const [o, , ds] of legacySites) { dv.setUint32(o, ds >>> 0, true); dv.setUint32(o + 4, PS_LEGACY_YES, true); }
+  setServed(legacy);
+
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="changes"]');
+  await page.waitForSelector("#chgStockAll", { timeout: 15000 });
+  const blockRow = () => page.evaluate((off) => {
+    const tr = [...document.querySelectorAll("#isoView tbody tr")]
+      .find((r) => r.cells[0] && r.cells[0].textContent.trim().toLowerCase() === "0x" + off.toString(16));
+    return tr ? { text: tr.cells[1].textContent.replace(/\s+/g, " "), btn: !!tr.querySelector("[data-srev]"),
+                  i: tr.querySelector("[data-srev]")?.dataset.srev } : null;
+  }, PS_HOOK.off);
+  const row = await blockRow();
+  check("the leftover block is reported", !!row, row ? row.text.slice(0, 90) : "no row");
+  check("...and says nothing jumps into it", !!row && /nothing jumps into it/i.test(row.text));
+  check("...so it is NOT flagged as able to hang the game", !!row && !/⚠/.test(row.text), row ? row.text.slice(0, 90) : "");
+  check("...and offers its own restore", !!row && row.btn);
+
+  await page.click(`#isoView [data-srev="${row.i}"]`);
+  await page.waitForTimeout(150);
+  check("restoring it on its own is allowed", (await blockRow()) === null);
+  const r = await save(page);
+  check("the dead routine is back, byte for byte", (() => {
+    const st = unhex(PS_HOOK_STOCK);
+    for (let i = 0; i < st.length; i++) if (r.at(PS_HOOK.off + i) !== st[i]) return false;
+    return r.wrote(PS_HOOK.off, st.length);
+  })());
+  // "Left alone" has to be asserted as NOT WRITTEN, not as a value: the reader falls back to
+  // the pristine fixture for any byte the save did not touch, so reading these offsets would
+  // report the stock jal — the fixture's value, not the served disc's — and the check would
+  // fail on a correct restore for the wrong reason.
+  check("...and neither legacy passive site was written at all",
+    legacySites.every(([o]) => !r.wrote(o, 8)));
+  await page.context().close();
+
+  // The counterfactual, which is what stops this being a rule that only ever says yes: with a
+  // real jal into the block, the same button must refuse rather than strand a live jump.
+  const live = Uint8Array.from(legacy);
+  const site = PASSIVE_SITES.find(([o]) => o === 0x10407C);          // Killer, a `rec` site
+  new DataView(live.buffer).setUint32(site[0], PS_HOOK_JAL.rec >>> 0, true);
+  setServed(live);
+  const p2 = await newPage();
+  await loadIso(p2);
+  await p2.click('#isoTabs [data-v="changes"]');
+  await p2.waitForSelector("#chgStockAll", { timeout: 15000 });
+  const row2 = await (async () => {
+    const f = await p2.evaluate((off) => {
+      const tr = [...document.querySelectorAll("#isoView tbody tr")]
+        .find((r) => r.cells[0] && r.cells[0].textContent.trim().toLowerCase() === "0x" + off.toString(16));
+      return tr ? { risky: /⚠/.test(tr.cells[1].textContent), i: tr.querySelector("[data-srev]")?.dataset.srev } : null;
+    }, PS_HOOK.off);
+    return f;
+  })();
+  check("with a live jal, the same block IS flagged as live code", !!row2 && row2.risky);
+  await p2.click(`#isoView [data-srev="${row2.i}"]`);
+  await p2.waitForTimeout(150);
+  check("...and restoring it alone is refused", await p2.evaluate((off) =>
+    [...document.querySelectorAll("#isoView tbody tr")].some((r) =>
+      r.cells[0] && r.cells[0].textContent.trim().toLowerCase() === "0x" + off.toString(16)), PS_HOOK.off));
+  check("...with a status saying why", /still jumps into/i.test(await p2.textContent("#isoStatus")));
+  // Restore all does the call sites first, so it gets through where the lone row could not.
+  await p2.click("#chgStockAll");
+  await p2.waitForTimeout(200);
+  check("Restore all clears it anyway, in the right order", await p2.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /checked against their stock values/.test(x.textContent));
+    return /no code patch at all/.test(c ? c.textContent : "");
+  }));
+  await p2.context().close();
   setServed(bytes);                                  // leave the fixture as we found it
 }
 
