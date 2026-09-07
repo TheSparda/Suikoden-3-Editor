@@ -1,52 +1,18 @@
 # Web editor tests
 
-All suites run with plain Node (v18+) and need **no environment setup** — the Chromium binary
-is resolved automatically, see
-[`chromium-path.mjs`](#chromium-pathmjs--why-you-no-longer-set-pw_chromium).
+All suites run with plain Node (v18+):
 
 | command | what it runs | time |
 | --- | --- | --- |
-| `npm test` | every browser-free suite | ~3s |
-| **`npm run test:loop`** | **e2e smoke tier, 6 workers — the edit-and-check default** | **~10s** |
-| **`npm run test:gate`** | **`npm test` + whole e2e + `stream-save.mjs` — run before pushing** | **~70s** |
-| `npm run test:e2e` | the whole e2e suite sharded over 4 workers, + `stream-save.mjs` | ~66s |
-| `npm run test:fast` | same as `test:loop` (older name, kept for muscle memory) | ~10s |
-| `npm run test:e2e:serial` | the whole suite, one process (where the timings come from) | ~157s |
-| `npm run test:budget` | times e2e section-by-section against `timings.json` | ~157s |
+| `npm test` | every browser-free suite | ~8s |
+| `npm run test:fast` | e2e smoke tier, 6 workers — **reduced coverage** | ~9s |
+| `npm run test:e2e` | the whole e2e suite sharded over 4 workers, + `stream-save.mjs` | ~43s |
+| `npm run test:e2e:serial` | the same, one process (what CI's timings come from) | ~150s |
+| `npm run test:budget` | times e2e section-by-section against `timings.json` | ~150s |
 | `npm run test:overlay` | the ISO-load overlay + boot gate | ~5s |
 
-### Which one to run, and when
-
-The two that matter are `test:loop` and `test:gate`. The rest are for specific jobs.
-
-1. **While you are working: `npm run test:loop`.** 10s, 34 of the 119 sections, one per feature
-   area. It answers "did I obviously break something", and that is all it answers — it prints
-   `PARTIAL RUN` and the count it skipped, every time.
-2. **Before you push: `npm run test:gate`.** The full suite plus the browser-free ones in one
-   command. This is the local gate, and it exists because a red push costs a whole CI cycle.
-3. **CI on every push: the full suite, unconditionally.** `.github/workflows/web-tests.yml`
-   runs `shard.mjs` on any push touching `web/**`, `Editor/**` or `tools/**`. That is the real
-   gate; nothing you can run locally weakens it. Skipping step 2 doesn't lose coverage, it just
-   means you find out from CI in ~2min instead of locally in ~70s.
-4. **`npm run test:budget`: CI's job, not yours.** It is a separate `continue-on-error` job in
-   the same workflow, and it runs the suite UNSHARDED — so running it by hand costs ~157s to
-   duplicate something CI already did and that is advisory anyway. Run it only when you are
-   deliberately changing what the suite costs, and then with `--update` (see
-   [`budget.mjs`](#budgetmjs--so-the-suite-doesnt-quietly-get-slow-again)).
-
-**Run the full suite, not the loop, whenever the change touches something the tier is blind to
-by construction** — the tier is breadth-first, so it has one section per area and none of the
-depth:
-
-- `synth-iso.mjs` — the fixture all 119 sections decode. Change it and you can invalidate every
-  section at once, including the 85 the tier never ran.
-- `sw.js` — the service worker / cache version. The streaming-save path is `stream-save.mjs`,
-  which the tier does not include at all.
-- `e2e.mjs`, `validate.mjs`, `shard.mjs`, `tiers.json` — the harness itself.
-- any byte offset or table layout. The tier's one-section-per-area picks are decode checks; the
-  write-through-to-both-copies, bulk-idempotency and restore-to-stock-byte-exactness checks are
-  in the 85 it skips, and that is exactly where this project's real bugs have been.
-
+`test:fast` is for the edit-and-check loop, not for clearing a commit — see
+[the e2e section](#running-it-in-under-a-minute--shardmjs-tiers-and-the-timing-budget).
 `version-drift.mjs` is a pre-push check run on its own (see below):
 
 ## `version-drift.mjs` — pre-push, catches the collision git can't
@@ -322,59 +288,21 @@ present, so it never breaks a minimal setup.
 
 ```bash
 npm --prefix web/tests install          # installs playwright-core
-node web/tests/e2e.mjs                   # binary resolved automatically — no env needed
-PW_CHROMIUM=/path/to/chrome node web/tests/e2e.mjs   # override, e.g. to bisect a browser bug
+node web/tests/e2e.mjs                   # uses playwright's own chromium
+PW_CHROMIUM=/path/to/chrome node web/tests/e2e.mjs   # or point at an existing binary
 ```
-
-### `chromium-path.mjs` — why you no longer set `PW_CHROMIUM`
-
-**The browser you launch decides whether the suite finishes, and playwright's default is the
-wrong one.** `chromium.launch()` with no `executablePath` resolves to
-`chromium-<rev>/chrome-mac-arm64/Google Chrome for Testing.app/…`, and on that binary the
-`Last opened ISO (persist handle + reopen)` section dies with *"Target page, context or browser
-has been closed"* and **aborts the run** — every section after it is skipped, not passed.
-
-That cost real time repeatedly: sessions would locate `headless_shell` by hand, list cache
-directories, mistake the abort for a flaky section, and retry against another build. The hunt
-routinely took longer than the suite it was trying to run. `chromium-path.mjs` now decides it
-once, and every browser suite prints the binary it chose on its first line.
-
-What it knows, so you don't have to re-derive it:
-
-- **Only some builds work.** `chromium_headless_shell-1148` passes the suite;
-  `chromium_headless_shell-1243` **aborts in the same section as Chrome for Testing**. So
-  "newest headless_shell" is not the rule, and the module keeps an explicit `VERIFIED` list of
-  build revisions rather than a pattern. Adding to that list means running the *whole* suite
-  against the build first.
-- **A cache directory existing means nothing.** `chromium_headless_shell-1217`, `-1223` and
-  `-1234` can hold only `INSTALLATION_COMPLETE` / `DEPENDENCIES_VALIDATED` markers with no
-  binary at all. Sorting by revision and taking the first *directory* returns a path that
-  cannot launch — one session spent several turns on exactly that. Every candidate is checked
-  with `X_OK` first.
-- **Two naming eras**, both alive in a long-lived cache: `chrome-mac/headless_shell` (older)
-  and `chrome-headless-shell-mac-arm64/chrome-headless-shell` (newer). Both are matched.
-- Ruled out as the cause of the 1243 abort, so nobody re-probes them: OPFS, `createWritable`,
-  and structured-cloning a real handle into IndexedDB all behave identically on 1148 and 1243
-  over a localhost origin. The page dies on the `waitForSelector` right after `#isoClose`,
-  whose handler drops the ~4.6MB buffers and re-renders; the browser process is already gone
-  (playwright reports `kill ESRCH`) with no crash dump, which smells like a GC/OOM crash in the
-  newer build. Pinning that down is a separate investigation and is not needed to run the suite.
-
-If nothing usable is found it falls back to playwright's default and **says so**, naming the
-symptom you are about to hit and the fix (`npx playwright install chromium-headless-shell`).
-`PW_CHROMIUM` still overrides everything — that is how you'd bisect a browser-version failure.
 
 ### Running it in under a minute — `shard.mjs`, tiers, and the timing budget
 
-The suite is 119 sections and ~157s if you run it end to end in one process. Three things cut
+The suite is 117 sections and ~150s if you run it end to end in one process. Three things cut
 that, and they compose:
 
 ```bash
 cd web/tests
-npm run test:gate       # npm test + whole suite + stream-save  — ~70s, the pre-push gate
-npm run test:e2e        # whole suite, 4 workers      — ~66s
-npm run test:loop       # smoke tier, 6 workers       — ~10s, REDUCED COVERAGE
-node e2e.mjs            # everything, one process     — ~157s (where the timings come from)
+npm run test:e2e        # whole suite, 4 workers      — ~42s
+npm run test:fast       # smoke tier, 6 workers       — ~9s, REDUCED COVERAGE
+npm run test:budget     # times it against the baseline
+node e2e.mjs            # everything, one process     — ~150s (what CI's numbers come from)
 E2E_ONLY=Runes node e2e.mjs        # just the sections whose name matches
 ```
 
@@ -394,12 +322,10 @@ Sections are packed across shards **longest-first by their cost in `timings.json
 the four workers within a second of each other. Without that baseline it falls back to
 round-robin, and one worker draws several slow sections and finishes ~30% after the others.
 
-**`E2E_TIER=fast`** (i.e. `npm run test:loop`) runs the 34 sections listed in `tiers.json` — one
-per feature area, chosen for breadth per second. It is for the loop where you are changing one
-thing and want to know in ten seconds that you did not break something obvious. **It is not a
-gate**, it does not clear a commit, and CI never runs it: about a quarter of the suite's
-sections and a sixth of its time. See [Which one to run, and when](#which-one-to-run-and-when)
-for the cases where the tier is blind by construction and you must run the full suite.
+**`E2E_TIER=fast`** runs the ~33 sections listed in `tiers.json` — one per feature area, chosen
+for breadth per second. It is for the loop where you are changing one thing and want to know in
+ten seconds that you did not break something obvious. **It is not a gate**, it does not clear a
+commit, and CI never runs it: about a quarter of the suite's sections and a third of its time.
 If you add a view to the editor, add its section to `tiers.json`.
 
 A filtered or sharded run **never prints the unqualified `All e2e checks passed.`** It says how

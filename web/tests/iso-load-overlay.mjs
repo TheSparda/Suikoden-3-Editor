@@ -14,7 +14,6 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { chromiumPath, chromiumNote } from "./chromium-path.mjs";
 import { buildSynthIso, ENEMY_TEST_PACKS, ROOM_TEST_INDEX } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -39,8 +38,7 @@ await new Promise((r) => srv.listen(0, r));
 const base = `http://localhost:${srv.address().port}/web/index.html`;
 
 let browser;
-console.log(chromiumNote());
-try { browser = await chromium.launch({ executablePath: chromiumPath() }); }
+try { browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined }); }
 catch (e) { console.log("SKIP iso-load-overlay: no Chromium (" + e.message.split("\n")[0] + ")."); srv.close(); process.exit(0); }
 
 let fails = 0;
