@@ -1313,6 +1313,38 @@
   // The last two are NOT read on open — see loadDiscTables(). Until they are, inAux() and
   // auxWin() do not know their offsets, which is why every path that resolves an out-of-block
   // offset has to load them first.
+  // ---- the herb "mount button" (Zexen Forest) --------------------------------
+  // One EDS routine, stamped out 28 times across MORI, dismounts the player, runs the pickup
+  // and remounts. Decoded in MOUNT_SYSTEM_RESEARCH.md §14j; six instances agree in 26 of 27
+  // halfwords. Its last instruction is the most reusable mount on the disc:
+  //
+  //   op 55  Cond(0x28 = RIDE, PLAYER)   <- guard: only when already mounted
+  //   op 255                             <- the branch that consumes it
+  //   op 113 (PLAYER.mount)
+  //   op 24  RideOffSetS(PLAYER, 2)      <- dismount
+  //   …pickup…
+  //   op 22  RideOnSetS(PLAYER, 0)       <- remount; 0 resolves to rider + 0x180
+  //
+  // Three halfwords turn it into a mount you can trigger on foot: invert the guard, and
+  // convert the dismount into a second mount so it cannot run RideOff against a null partner
+  // (0x179F58C would load a null and pass it straight on). Both opcodes are 8 bytes with the
+  // same operand shape, so the instruction stream stays aligned.
+  //
+  // Inverting the CONDITION rather than the branch is deliberate: `op 255`'s polarity is not
+  // established, and flipping 0x28→0x29 is correct either way.
+  //
+  // It still only fires for a rider who HAS a staged horse — the mount comes from
+  // `rider + 0x180`, which the list2 +0x66 field fills (§14b). Chris ships with one; Hugo
+  // does not, and needs one set on the Mounts tab first.
+  const HERB = {
+    off: 0xB6E77EFA, len: 0x20,
+    sites: [
+      { rel: 0x02, stock: 0x0028, alt: 0x0029, what: "guard: RIDE \u2192 NORIDE" },
+      { rel: 0x14, stock: 0x0018, alt: 0x0016, what: "dismount \u2192 mount (op 24 \u2192 op 22)" },
+      { rel: 0x18, stock: 0x0002, alt: 0x0000, what: "mount operand \u2192 0 (your own horse)" },
+    ],
+  };
+
   let AUX = [];       // [{off, len, tag, buf, orig}] — empty until an ISO loads
   const auxHasPotch = () => AUX.some((w) => w.tag === "potch");
   const inAux = (off, n) => AUX.some((w) => off >= w.off && off + n <= w.off + w.len);
@@ -2344,6 +2376,17 @@
       }
     }
     if (aux.length !== AUX_WINDOWS.length) aux.length = 0;
+    // The herb window is read on open too — 0x20 bytes, and the Test tab needs it synchronously
+    // to show its own state. Kept out of the check above so an unreadable herb window leaves the
+    // potch pair intact, and vice versa: each is independently optional.
+    try {
+      const hr = await readRanges(file, [[HERB.off, Math.min(HERB.off + HERB.len, file.size)]], 1);
+      const hc = hr.chunks[0];
+      if (hc && hc.length >= HERB.len) {
+        const hb = hc.slice(0, HERB.len);
+        aux.push({ off: HERB.off, len: HERB.len, tag: "herb", buf: hb, orig: hb.slice() });
+      }
+    } catch (e) { /* optional, like every other window */ }
     // commit
     BUF = buf; DV = dv; ORIG = buf.slice(); ODV = new DataView(ORIG.buffer);
     AUX = aux;
@@ -5099,7 +5142,7 @@
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "avatar";
-  const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"]];
+  const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"], ["herb", "Mount button"]];
   function drawTest(host) {
     host.innerHTML = `
       <div class="warnbox" style="margin:0 0 12px" data-sum="Experimental — widening the model whitelist rewrites game code and is not confirmed in play, and story scripts reset the leader byte at chapter transitions.">
@@ -5117,6 +5160,69 @@
     qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
     if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
     else if (TESTVIEW === "horse") drawHorseClamp(q("#testView", host));
+    else if (TESTVIEW === "herb") drawHerb(q("#testView", host));
+  }
+
+  // ---- Mount button: turn one herb pickup into an on-demand mount ---------------
+  function herbState() {
+    if (!auxWin(HERB.off, HERB.len)) return "absent";
+    const cur = HERB.sites.map((c) => auxR16(HERB.off + c.rel));
+    if (cur.some((v) => v === null)) return "absent";
+    if (cur.every((v, i) => v === HERB.sites[i].stock)) return "stock";
+    if (cur.every((v, i) => v === HERB.sites[i].alt)) return "on";
+    return "unknown";
+  }
+  function drawHerb(host) {
+    const st = herbState();
+    if (st === "absent" || st === "unknown") {
+      host.innerHTML = `<div class="warnbox">${st === "absent"
+        ? "The Zexen Forest window isn't loaded for this disc, so this edit isn't offered. It is read when the ISO opens; reopening the disc may fix it."
+        : "These bytes are half-patched, or don't match this disc's script \u2014 no edit offered."}
+        Expected three halfwords at ISO 0x${HERB.off.toString(16).toUpperCase()}
+        +0x02 / +0x14 / +0x18.</div>`;
+      return;
+    }
+    const on = st === "on";
+    const rows = HERB.sites.map((c) => {
+      const cur = auxR16(HERB.off + c.rel);
+      return `<tr><td class="sl">0x${(HERB.off + c.rel).toString(16).toUpperCase()}</td>
+        <td><code>${cur.toString(16).padStart(4, "0")}</code></td>
+        <td>${esc2(c.what)}</td>
+        <td>${cur === c.stock ? '<span class="dim">stock</span>' : '<span class="tag acc2">patched</span>'}</td></tr>`;
+    }).join("");
+    host.innerHTML = `
+      <div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Mount button <span class="u">edits one script in Zexen Forest \u00b7 not played</span></div>
+        <div class="muted" style="margin:0 0 8px">Picking up a herb while mounted makes you dismount,
+          take it, and remount. That routine ends in the most reusable mount instruction on the disc
+          \u2014 <code>RideOn(PLAYER, 0)</code>, which names the horse only as <i>the actor six slots
+          along</i>. It is guarded so it only runs when you are <b>already</b> mounted, which is why
+          picking up a herb on foot does nothing.</div>
+        <div class="muted" style="margin:0 0 8px">This inverts that guard on <b>one</b> herb and turns
+          its dismount into a second mount, so walking over it <b>on foot mounts you instead</b>. The
+          dismount has to go: left in place it would run against a null partner. Both opcodes are
+          8 bytes, so the script stays aligned.</div>
+        <div class="warnbox" style="margin:0 0 8px"><b>It only works for a rider who has a horse
+          staged.</b> The mount comes from the party list six positions along, which the
+          <b>assigned-horse</b> field fills \u2014 <b>Chris ships with one, Hugo does not</b>. For Hugo,
+          set one on the <b>Mounts</b> tab first (the Zexen-knight horse needs no code patch).
+          <br>Untested in play, and one unknown worth having: the pickup opcodes are unidentified, so
+          if that herb is consumed when taken, the button may be single-use. Ride state survives a map
+          change, so once may be enough.</div>
+        <label class="field" style="max-width:460px">
+          <span>Herb at Zexen Forest 0x${HERB.off.toString(16).toUpperCase()}</span>
+          <select id="hbSel">
+            <option value="0"${on ? "" : " selected"}>Stock \u2014 remounts only if already mounted</option>
+            <option value="1"${on ? " selected" : ""}>Mount button \u2014 mounts you when on foot</option>
+          </select></label>
+        <table class="invtbl" style="margin-top:10px"><thead><tr><th>Offset</th><th>Value</th><th>What</th><th>State</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+    q("#hbSel", host).onchange = (e) => {
+      const want = e.target.value === "1";
+      HERB.sites.forEach((c) => auxW16(HERB.off + c.rel, want ? c.alt : c.stock));
+      scheduleBadge(); drawView();
+    };
   }
 
   // ---- Assigned horse: widen the clamp ----------------------------------------
