@@ -4077,6 +4077,15 @@ if (ON) { const page = await newPage();
   await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
   // as above: the how-to rows come from the fetched guide metadata, so wait for one to appear.
   await until(page, () => document.querySelectorAll(".starstbl tr.howrow .howto").length >= 1);
+  // ...and then for the guide ORDER, which is a SEPARATE fetch (s3_recruit_order.json) that
+  // re-renders the table on its own. Everything the guide order supplies lands in that one
+  // render — the #/ordinal, the Star of Destiny column, the stage cut, and next-up — so the
+  // ordinal appearing is the signal that the reads below see the joined table. The .howto wait
+  // above does NOT cover it: how-to text also comes from the meta file, which is a different
+  // fetch, so on a loaded machine that wait returns while the order file is still in flight and
+  // the checks read the pre-order render (one ungrouped stage, blank Star column, next-up
+  // naming the wrong character). That was three flaky failures under parallel shard load.
+  await until(page, () => [...document.querySelectorAll(".starstbl td.ordn")].some((td) => /\d/.test(td.textContent)));
   // progress header counts recruited over the tracked set (Hugo/Geddoe/Rico = 3 recruited)
   check("stars progress shows recruited count", /\b3\b/.test(await page.textContent(".starsnum")));
   check("progress bar renders", (await page.locator(".starsbar > span").count()) === 1);
