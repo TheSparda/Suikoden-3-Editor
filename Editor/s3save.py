@@ -129,6 +129,12 @@ STAT_OFFSETS = {"PWR": 0x20, "SKL": 0x22, "MAG": 0x24, "REP": 0x26,
 # offset against a value the save itself carries, so an offset drift fails loudly.
 PHASE_PROTAGONIST = {1: "Hugo", 2: "Chris", 3: "Geddoe", 4: "Thomas"}
 MERGE_PHASE = 5               # story phase at which the three parties (and bags) merge
+# The phase byte names a POINT OF VIEW, not a stage of the story: the corpus has 1 Hugo,
+# 2 Chris, 3 Geddoe, 4 Thomas, 5 Luc's own chapter and 7 the merged chapters 4-5 (6 is
+# unobserved). MERGE_PHASE stays right as the bag-layout test — phases 5 and 7 both use the
+# single shared bag — but "phase >= 5" is not "we are past the merge in the story".
+# See docs/TRINITY_SIGHT_RESEARCH.md §7.
+PHASE_POV = {1: "Hugo", 2: "Chris", 3: "Geddoe", 4: "Thomas", 5: "Luc", 7: "merged (Ch.4-5)"}
 
 # Character id stored at +0x0C of each record, per roster index. Unanimous across all 28
 # saves in the corpus (zero disagreements), which is what disproves the "roster order is
@@ -679,6 +685,185 @@ def detect_carryover(gamedata):
     return out
 
 
+# --- The Trinity Sight System ---------------------------------------------------
+# Which points of view the chapter-select screen offers, and which chapter each one is up
+# to. Three pieces of save state, and the menu builder names all three itself.
+#
+# The builder is in the DATA/ETC.BIN overlay (ISO 0x41A054EC, the copy the S2 importer
+# lives in) and loops SIX entries — `slti $v0, $s1, 6` — doing, per entry:
+#
+#     stage = Counter(table[entry].id - 1)       ; 0x16D39C8, get mode
+#     if GameFlag(4, entry, TEST)  state |= 1    ; this flame is lit
+#     if GameFlag(5, entry, TEST)  state |= 2    ; a second per-entry bit (see below)
+#     if stage                     state |= 4    ; this POV has been started
+#
+# So: flag byte 4 (file 0x34) is a six-bit "which flames are lit" mask, flag byte 5 is a
+# second bit per entry, and each POV owns one counter in the eight-slot u16 bank.
+#
+# Which bit is whose comes from the 20-save guide playthrough in the corpus, where the byte
+# reads 0x07 through Chris ch1, gains bit 3 in the Geddoe ch1 save (the walkthrough's "after
+# this, Thomas' flame at the Trinity Site will be lit"), gains bit 5 in the save where
+# Koroku is adopted, and gains bit 4 only in the two Luc-POV saves. The ELF's new-game init
+# sets exactly bits 0, 1 and 2 (0x17B9C68-0x17B9C94), which is the three starting flames
+# from the other direction. Note the bit order is NOT the on-screen flame order: Thomas is
+# the 4th flame and bit 3, but Luc is the 6th flame and bit 4, Koroku the 5th and bit 5.
+TRINITY_FLAG  = 4        # flag index (file 0x34): one bit per POV, "this flame is lit"
+TRINITY_FLAG2 = 5        # flag index (file 0x35): second per-POV bit, meaning unidentified
+TRINITY_SLOTS = 6        # entries the builder walks
+
+# The counter bank the builder reads the stage out of: eight u16 at RAM 0x196B790 through
+# accessor 0x16D39C8 (8 slots, mode 2 = set, mode 3 = get). The bank sits at +0x3A0 in the
+# same RAM struct whose +0x20 is the flag array, and the flag array is file 0x30 — so the
+# counters are file 0x3B0, and the corpus confirms it: the values there track each POV's
+# chapter exactly, save by save.
+STAGE_BASE  = 0x3B0
+STAGE_SLOTS = 8
+STAGE_MAX   = 0xFFFF
+
+# Per-POV stage values, read off the corpus. Each POV has its OWN scale (Chris's chapter 2
+# is 5 where Hugo's is 4), and a chapter spans several stages as it plays out, so what is
+# recorded here is the LOWEST value seen in each chapter — the chapter's opening state,
+# which is what a "put this POV at chapter N" edit wants. `seen` keeps the whole observed
+# set for that chapter so the UI can show its working.
+#
+#   slot 0        never anything but 0 in all 69 corpus saves
+#   slots 1-3     Hugo / Chris / Geddoe, proved by the guide playthrough: each one moves in
+#                 exactly the save where that protagonist's chapter advances
+#   slot 4        Thomas (two chapters, then it stops at 7)
+#   slot 5        Luc — 0 everywhere except the two Luc-POV saves (1 at his chapter's start)
+#   slot 6        Koroku by elimination: 0 in the playthrough that never walked as the dog,
+#                 9 in the two that did. The least-evidenced row here.
+#   slot 7        the merged main story (chapters 4-5). Script handler 0x17B1BF0 reads slot
+#                 7 and writes it into slots 1, 2 and 3, which is why H/C/G and the main
+#                 story all read 9/10/11/12 together once the parties merge.
+#
+# Chapter 3 has a threshold in code as well: 0x17B8AC0 reads slots 1-3 and tests each with
+# `slti $v0, $v0, 8`, so 8 is the engine's own "has reached chapter 3" line.
+TRINITY_POVS = [
+    {"key": "hugo",   "name": "Hugo",   "bit": 0, "slot": 1, "flame": 1,
+     "chapters": [(1, 1, [1, 2, 3]), (2, 4, [4]), (3, 8, [8])]},
+    {"key": "chris",  "name": "Chris",  "bit": 1, "slot": 2, "flame": 2,
+     "chapters": [(1, 1, [1, 3]), (2, 5, [5]), (3, 7, [7, 8])]},
+    {"key": "geddoe", "name": "Geddoe", "bit": 2, "slot": 3, "flame": 3,
+     "chapters": [(1, 3, [3]), (2, 4, [4]), (3, 8, [8])]},
+    {"key": "thomas", "name": "Thomas", "bit": 3, "slot": 4, "flame": 4,
+     "chapters": [(1, 3, [3]), (2, 7, [7])]},
+    {"key": "koroku", "name": "Koroku", "bit": 5, "slot": 6, "flame": 5,
+     "chapters": [(1, 9, [9])]},
+    {"key": "luc",    "name": "Luc",    "bit": 4, "slot": 5, "flame": 6,
+     "chapters": [(1, 1, [1])]},
+]
+# The merged story is not a flame — it has no bit and is not one of the builder's six
+# entries — but it lives in the same bank and late saves are unreadable without it.
+MAIN_STAGE = {"key": "main", "name": "Main story (merged)", "slot": 7,
+              "chapters": [(4, 9, [9, 10]), (5, 11, [11]), (6, 12, [12])]}
+MAIN_CHAPTER_LABELS = {4: "Chapter 4", 5: "Chapter 5", 6: "Cleared"}
+
+
+def stage_value(gamedata, slot):
+    """One counter out of the eight-slot progress bank (0 for an out-of-range slot)."""
+    if not (0 <= slot < STAGE_SLOTS):
+        return 0
+    off = STAGE_BASE + slot * 2
+    if off + 2 > len(gamedata):
+        return 0
+    return struct.unpack_from("<H", gamedata, off)[0]
+
+
+def set_stage(buf, slot, value):
+    """Write one progress counter into a bytearray. True if it changed."""
+    if not (0 <= slot < STAGE_SLOTS):
+        return False
+    off = STAGE_BASE + slot * 2
+    if off + 2 > len(buf):
+        return False
+    value = _clamp(value, 2, STAGE_MAX)
+    if struct.unpack_from("<H", buf, off)[0] == value:
+        return False
+    struct.pack_into("<H", buf, off, value)
+    return True
+
+
+def _chapter_of(stage, chapters):
+    """Which chapter a stage value falls in: the last chapter whose opening value it has
+    reached. 0 = not started."""
+    if not stage:
+        return 0
+    ch = 0
+    for num, first, _seen in chapters:
+        if stage >= first:
+            ch = num
+    return ch
+
+
+def trinity_reference():
+    """Static tables the UI needs to build the Trinity Sight panel: one row per point of
+    view (which flame, which flag bit, which counter slot, and the chapter -> stage values),
+    plus the merged main story."""
+    def rows(entry):
+        return [{"chapter": num, "value": first, "seen": list(seen)}
+                for num, first, seen in entry["chapters"]]
+    return {
+        "flagOffset": FLAG_BASE + TRINITY_FLAG, "flagIndex": TRINITY_FLAG,
+        "flag2Offset": FLAG_BASE + TRINITY_FLAG2, "flag2Index": TRINITY_FLAG2,
+        "stageOffset": STAGE_BASE, "stageSlots": STAGE_SLOTS,
+        "phaseNames": {str(k): v for k, v in PHASE_POV.items()},
+        "povs": [{"key": p["key"], "name": p["name"], "bit": p["bit"], "slot": p["slot"],
+                  "flame": p["flame"], "stageOffset": STAGE_BASE + p["slot"] * 2,
+                  "chapters": rows(p)} for p in TRINITY_POVS],
+        "main": {"key": MAIN_STAGE["key"], "name": MAIN_STAGE["name"],
+                 "slot": MAIN_STAGE["slot"],
+                 "stageOffset": STAGE_BASE + MAIN_STAGE["slot"] * 2,
+                 "chapters": rows(MAIN_STAGE),
+                 "labels": {str(k): v for k, v in MAIN_CHAPTER_LABELS.items()}},
+    }
+
+
+def decode_trinity(gamedata):
+    """This save's Trinity Sight state: per POV whether its flame is lit, what its progress
+    counter reads and which chapter that is; plus the merged main story and the raw bytes,
+    since anyone poking the save by hand wants 0x34 and 0x3B0, not a paraphrase."""
+    povs = []
+    for p in TRINITY_POVS:
+        stage = stage_value(gamedata, p["slot"])
+        povs.append({
+            "key": p["key"], "name": p["name"], "flame": p["flame"],
+            "bit": p["bit"], "slot": p["slot"],
+            "lit": game_flag(gamedata, TRINITY_FLAG, p["bit"]),
+            "second": game_flag(gamedata, TRINITY_FLAG2, p["bit"]),
+            "stage": stage, "chapter": _chapter_of(stage, p["chapters"]),
+            "chapterMax": max(n for n, _f, _s in p["chapters"]),
+        })
+    main_stage = stage_value(gamedata, MAIN_STAGE["slot"])
+    return {
+        "povs": povs,
+        "main": {"key": MAIN_STAGE["key"], "name": MAIN_STAGE["name"],
+                 "slot": MAIN_STAGE["slot"], "stage": main_stage,
+                 "chapter": _chapter_of(main_stage, MAIN_STAGE["chapters"])},
+        "flagByte": gamedata[FLAG_BASE + TRINITY_FLAG] if len(gamedata) > FLAG_BASE + TRINITY_FLAG else 0,
+        "flagOffset": FLAG_BASE + TRINITY_FLAG,
+        "stageOffset": STAGE_BASE,
+        "stages": [stage_value(gamedata, i) for i in range(STAGE_SLOTS)],
+    }
+
+
+def apply_trinity_edits(buf, trinity):
+    """Apply {"lit": {povKey: bool}, "stage": {povKey|"main": value}} to a gamedata
+    bytearray. Returns the number of fields that actually moved — ticking a flame that is
+    already lit is not an edit, same rule the carryover flags follow."""
+    by_key = {p["key"]: p for p in TRINITY_POVS}
+    changed = 0
+    for key, on in ((trinity or {}).get("lit") or {}).items():
+        p = by_key.get(key)
+        if p and set_game_flag(buf, TRINITY_FLAG, p["bit"], bool(on)):
+            changed += 1
+    for key, val in ((trinity or {}).get("stage") or {}).items():
+        slot = MAIN_STAGE["slot"] if key == MAIN_STAGE["key"] else (by_key.get(key) or {}).get("slot")
+        if slot is not None and set_stage(buf, slot, int(val)):
+            changed += 1
+    return changed
+
+
 # --- Inventory ------------------------------------------------------------------
 # Entries are 8 bytes: item id (u16) + count (u16) + 4 bytes of per-item state.
 # Empty slot = id 0. The whole region is a uniform array of EIGHT 30-entry bags at
@@ -1173,6 +1358,7 @@ def decode_save(gamedata, meta=None):
     checks = validate_save(gamedata, chars, inv, meta)
     return {"size": len(gamedata), "checksumWord": struct.unpack_from("<I", gamedata, 0)[0],
             "global": g, "names": names, "carryover": detect_carryover(gamedata),
+            "trinity": decode_trinity(gamedata),
             "party": decode_party(gamedata),
             "partyMounts": decode_party_mounts(gamedata),
             "formation": decode_formation(gamedata),
@@ -1208,7 +1394,8 @@ def _clamp(v, width, cap=None):
 
 def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
                             party_edits=None, recruit_edits=None, gold=None,
-                            carryover=None, leader=None, party_mount_edits=None):
+                            carryover=None, leader=None, party_mount_edits=None,
+                            trinity=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
                              "skills": {slot: {"id": id, "rank": rank}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
@@ -1219,6 +1406,8 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
         picks which model, the ISO's +0x66 decides whether one is staged at all.
     leader: party id for the leader / field avatar at 0x12 (see FIELD_AVATAR_IDS).
     carryover: {"s1": bool, "s2": bool} — the Suikoden I / II "data was loaded" flags.
+    trinity: {"lit": {povKey: bool}, "stage": {povKey|"main": stageValue}} — which Trinity
+        Sight flames are lit and how far each point of view has got (see TRINITY_POVS).
     recruit_edits: {rosterIndex: value}, where value is a bool (recruit/un-recruit) OR a
         dict {"recruited": bool, "recruiter": "Hugo"|"Chris"|"Geddoe"|"Thomas"|""} to also
         set which protagonist recruited them (pre-merge party ownership).
@@ -1368,6 +1557,8 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
             idx, bit = CARRYOVER_FLAGS[game]
             if set_game_flag(b, idx, bit, bool(on)):
                 changed += 1
+    # Trinity Sight flames + per-POV chapter counters. Same "only count real movement" rule.
+    changed += apply_trinity_edits(b, trinity)
     return fix_gamedata_checksum(bytes(b)), changed
 
 def _backup_once(path, make_backup):
@@ -1379,7 +1570,7 @@ def _backup_once(path, make_backup):
 
 def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name_edits=None,
                      party_edits=None, recruit_edits=None, gold=None, carryover=None,
-                     leader=None, party_mount_edits=None):
+                     leader=None, party_mount_edits=None, trinity=None):
     """Apply edits to one save's gamedata, in place, for any supported container
     (memory card, .psu export, or raw gamedata). Fixes the save checksum (and, for
     memory cards, per-page ECC). Backs up the file first by default."""
@@ -1387,11 +1578,11 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
     if fmt in ("psu", "gamedata"):
         return _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
                                       party_edits, recruit_edits, gold, carryover, leader,
-                                      party_mount_edits=party_mount_edits)
+                                      party_mount_edits=party_mount_edits, trinity=trinity)
     if fmt in ("cbs", "sharkport", "psv"):
         return _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
                                       party_edits, recruit_edits, gold, carryover, leader,
-                                      party_mount_edits=party_mount_edits)
+                                      party_mount_edits=party_mount_edits, trinity=trinity)
     card = load_card(path)
     # locate the folder + its gamedata
     target = None
@@ -1405,7 +1596,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
         return {"error": "gamedata not found in save folder"}
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits, party_edits,
                                               recruit_edits, gold, carryover, leader,
-                                              party_mount_edits=party_mount_edits)
+                                              party_mount_edits=party_mount_edits, trinity=trinity)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if make_backup:
@@ -1421,7 +1612,7 @@ def write_save_edits(path, folder, edits, make_backup=True, inv_edits=None, name
 
 def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
                            party_edits, recruit_edits, gold, carryover=None, leader=None,
-                           party_mount_edits=None):
+                           party_mount_edits=None, trinity=None):
     """Edit the S3 gamedata inside a .cbs / .sps / .xps file. SharkPort stores files
     uncompressed, so its gamedata is patched in place at its absolute offset.
     CodeBreaker is decompressed (RC4+zlib), patched, and re-encoded. The S3 checksum is
@@ -1439,7 +1630,7 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
                                                   carryover, leader,
-                                                  party_mount_edits=party_mount_edits)
+                                                  party_mount_edits=party_mount_edits, trinity=trinity)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1461,7 +1652,7 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
                                                   carryover, leader,
-                                                  party_mount_edits=party_mount_edits)
+                                                  party_mount_edits=party_mount_edits, trinity=trinity)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1486,7 +1677,7 @@ def _write_individual_save(fmt, path, edits, make_backup, inv_edits, name_edits,
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                               party_edits, recruit_edits, gold,
                                               carryover, leader,
-                                                  party_mount_edits=party_mount_edits)
+                                                  party_mount_edits=party_mount_edits, trinity=trinity)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     body[off:off + len(new_gd)] = new_gd
@@ -1802,7 +1993,7 @@ def _read_individual_save(path, fmt):
 
 def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
                            party_edits, recruit_edits, gold, carryover=None, leader=None,
-                           party_mount_edits=None):
+                           party_mount_edits=None, trinity=None):
     """Write edits into a .psu export or a raw gamedata file. No ECC (neither format
     has it); the gamedata's own checksum is recomputed by apply_edits_to_gamedata.
     Same-length in-place write, so the container layout is untouched."""
@@ -1812,7 +2003,7 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
         new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                                   party_edits, recruit_edits, gold,
                                                   carryover, leader,
-                                                  party_mount_edits=party_mount_edits)
+                                                  party_mount_edits=party_mount_edits, trinity=trinity)
         if changed == 0:
             return {"ok": True, "changed": 0, "note": "no editable fields in request"}
         _backup_once(path, make_backup)
@@ -1829,7 +2020,7 @@ def _write_save_edits_flat(fmt, path, edits, make_backup, inv_edits, name_edits,
     new_gd, changed = apply_edits_to_gamedata(gd, edits, inv_edits, name_edits,
                                               party_edits, recruit_edits, gold,
                                               carryover, leader,
-                                                  party_mount_edits=party_mount_edits)
+                                                  party_mount_edits=party_mount_edits, trinity=trinity)
     if changed == 0:
         return {"ok": True, "changed": 0, "note": "no editable fields in request"}
     if not psu.write_file("gamedata", new_gd):
