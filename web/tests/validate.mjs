@@ -685,6 +685,10 @@ console.log("QoL guards:");
     ? ok : bad)("save-editor renders guide notes on stats, rune slots and skill slots");
   const iso = fs.readFileSync(path.join(WEB, "iso.js"), "utf8");
   (/RenameCore\.streamReplacer/.test(iso) && /src=["']rename-core\.js["']/.test(html) ? ok : bad)("ISO editor wires the character-rename streaming replacer");
+  // The rename panel is a fold, and its open state is read back out of the DOM at redraw time —
+  // a card that trusted only its `toggle` handler would snap shut on the next edit in the tab.
+  (/<details class="card fold" id="rnBox"/.test(iso) && /q\("#rnBox", host\); if \(b\) rnOpen = b\.open/.test(iso)
+    ? ok : bad)("the character-rename panel is collapsible and keeps its open state across a redraw");
   (/function markFlagsField/.test(iso) ? ok : bad)("ISO editor has bit-aware Target/AOE highlight");
   (/class="spdesc"/.test(iso) && /class="undesc"/.test(iso) && /class="fddesc"/.test(iso) ? ok : bad)("ISO editor has editable spell + unite + food descriptions");
   (/<input type="file" id="isoFileInput">/.test(iso) ? ok : bad)("ISO file input has no restrictive accept filter (Android can select .iso)");
