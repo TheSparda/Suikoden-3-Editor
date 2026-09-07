@@ -1152,6 +1152,10 @@ function drawStars() {
     // Runes, armour and key items are one per slot with the count left at 0; only real
     // stackables carry a quantity. Same rule the Inventory tab writes.
     INV[t.slot] = itemStackable(id) ? { id, qty: 1 } : { id };
+    // Point the Inventory tab at the sub-tab this item actually lands in. Key items and party
+    // items are separate lists there, so a Screw staged while that tab is on Party Items would
+    // be nowhere to be seen — which reads as an add that didn't take.
+    INVCAT = itemCategory(id) === "key" ? "key" : "regular";
     setStatus(`${itemLabel(id)} → ${t.region}, slot ${t.slot} — staged, not yet saved`);
     drawStars(); refreshHealthBadge();
   }));
@@ -1616,8 +1620,18 @@ function drawItems() {
   const s = saves[curSlot];
   const inv = s.inventory || [];
   const wantKey = INVCAT === "key";
-  const nKey = inv.reduce((a, b) => a + b.items.filter((it) => it.category === "key").length, 0);
-  const nReg = inv.reduce((a, b) => a + b.items.length, 0) - nKey;
+  // Slots staged this session — this tab's "+ Add item" and the 108-Stars checklist's
+  // "＋ add to <bag>" both park a slot in ADDED and write the item into INV. They are part of
+  // the inventory the moment they are staged, so they count toward the tab badges and the
+  // bag's used tally; a Screw that lands in Hugo's bag while the badge still reads
+  // "Key / Valuables (0)" reads as an add that silently failed.
+  const stagedIn = (bi) => ADDED[bi] || [];
+  const stagedId = (sl) => (INV[sl] || {}).id || 0;
+  const stagedIds = Object.values(ADDED).flat().map(stagedId).filter(Boolean);
+  const nKey = inv.reduce((a, b) => a + b.items.filter((it) => it.category === "key").length, 0)
+    + stagedIds.filter((id) => itemCategory(id) === "key").length;
+  const nReg = inv.reduce((a, b) => a + b.items.length, 0)
+    + stagedIds.length - nKey;
 
   // Equipment, runes and key items are ONE PER SLOT in this game: the count field is 0 and
   // several copies live in several slots. A count > 0 on one of them is an entry the game
@@ -1627,9 +1641,13 @@ function drawItems() {
   const qtyCell = (it) => it.stackable
     ? `<input type="number" min="1" max="9" style="width:74px" data-invslot="${it.slot}" data-k="qty" data-def="${it.qty}" value="${Math.max(1, it.qty)}">`
     : `<span class="muted" title="this item is one-per-slot — the game stores several copies as several slots, with the count left at 0">1 <span class="dim">per slot</span></span>`;
-  const rowHTML = (it) => `<tr>
+  // A staged slot is flagged the way every other pending edit is — changed-row tint plus a
+  // "staged" pill — so it can't be mistaken for something the save already held. Its picker's
+  // baseline is 0 (the empty slot it came from), which keeps it marked whatever you pick.
+  const rowHTML = (it) => `<tr class="${it.added ? "dirtyrow" : ""}">
       <td class="sl">${it.slot}</td>
-      <td><button type="button" class="picker" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.id}">${esc(itemLabel(it.id))}</button>${
+      <td><button type="button" class="picker${it.added && it.id ? " dirty" : ""}" data-invslot="${it.slot}" data-k="id" data-val="${it.id}" data-def="${it.added ? 0 : it.id}">${esc(itemLabel(it.id))}</button>${
+        it.added && it.id ? ` <span class="pill" title="added this session — staged, not yet written to the save">staged</span>` : ""}${
         it.displayed ? ` <span class="pill" title="this item is currently on display in the castle">on display</span>` : ""}</td>
       <td>${qtyCell(it)}</td>
       <td class="ty">${it.category}</td>
@@ -1643,16 +1661,19 @@ function drawItems() {
     // A slot added this session shows whatever has been staged into it — the checklist's
     // "＋ get it" fills one in directly, and an empty row where the Rose Brooch is supposed to
     // be would read as if the add had failed. Still-empty ones stay in the tab you added from.
-    const added = (ADDED[bi] || []).map((sl) => {
+    const added = stagedIn(bi).map((sl) => {
       const st = INV[sl] || {}, id = st.id || 0;
-      return { slot: sl, id, qty: st.qty || 0, stackable: id ? itemStackable(id) : true,
+      return { slot: sl, id, added: true, qty: st.qty || 0, stackable: id ? itemStackable(id) : true,
                category: id ? itemCategory(id) : (wantKey ? "key" : "consumable") };
     }).filter((r) => !r.id || (r.category === "key") === wantKey);
     const list = items.concat(added);
     // Only append AFTER the bag's last used entry: the game keeps each bag packed from its
     // base and adds new pickups at the tail, so a slot in an interior gap can be dropped
     // the next time it repacks the list.
-    const free = (bag.appendSlots || bag.freeSlots || []).filter((sl) => !(ADDED[bi] || []).includes(sl));
+    const free = (bag.appendSlots || bag.freeSlots || []).filter((sl) => !stagedIn(bi).includes(sl));
+    // What the bag holds once the staged adds are written — an empty slot claimed by
+    // "+ Add item" isn't an item yet, so it only comes off `free`, not onto `used`.
+    const used = bag.used + stagedIn(bi).filter(stagedId).length;
     const rows = list.map(rowHTML).join("") || `<tr><td colspan="5" class="muted">no items</td></tr>`;
     // A team's CARRIED bag being empty before the merge means their chapter hasn't started:
     // the game stocks that bag itself at the start of the chapter, overwriting whatever is
@@ -1663,7 +1684,7 @@ function drawItems() {
            The game stocks the bag when that chapter begins and overwrites what's there — so add items after you've played as them, not before.</div>`
       : "";
     return `<div class="bag"><div class="bag-h">${esc(bag.region)}
-        <span class="u">${bag.used}/${bag.capacity} slots</span>
+        <span class="u">${used}/${bag.capacity} slots</span>
         ${free.length ? `<button class="chip mini" data-addbag="${bi}" data-freeslot="${free[0]}">+ Add item</button>
            <span class="u">${free.length} free</span>` : `<span class="u">bag full</span>`}</div>
       ${unstarted}
