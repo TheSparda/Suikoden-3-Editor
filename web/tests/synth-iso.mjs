@@ -23,7 +23,7 @@ export const GEAR = { P: 0x410000, stride: 0x44, def: 0x10, price: 0x08, effs: [
 // Rune item table (iso.js RUNE_TBL): indexed by ITEM id, name ptr @+0 / desc ptr @+4. It is
 // the only source of text for the passive support runes, so the fixture plants one of those
 // (Balance) alongside the magic runes in the character's slots.
-export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, spells: 0x18 };
+export const RUNE_TBL = { off: 0x3EAF78, stride: 0x20, name: 0x00, desc: 0x04, elem: 0x14, cat: 0x16, spells: 0x18 };
 export const TABLES = { list1: [4078716, 140], list2: [4068152, 132], list3: [4089904, 8], list4: [4061704, 28] };
 // War-battle class reference (iso.js CLASS_POOL / CLASS_TBL): a pool of 78 string pointers and
 // a 43x47 table of (type, modifier) pool indices. Indexed [skillA-1][skillB-1]; column == skill id.
@@ -597,6 +597,7 @@ export function buildSynthIso() {
     const o = RUNE_TBL.off + r.id * RUNE_TBL.stride;
     w32(o + RUNE_TBL.name, put(r.name)); w32(o + RUNE_TBL.desc, put(r.desc));
     (r.spells || [0, 0, 0, 0]).forEach((gid, k) => w16(o + RUNE_TBL.spells + k * 2, gid));
+    if (r.spells && r.spells[0]) w16(o + RUNE_TBL.elem, 1);      // Fire family; category stays 0
   }
   // ---- duplicated description fixture (issue #11) -----------------------------------------
   // On a real disc 27 descriptions are stored TWICE, at two addresses reached from two
@@ -628,8 +629,12 @@ export function buildSynthIso() {
     const spellNameCopy = put(twinRune.name);
     w32(so + 8, spellNameCopy);
     // ...and the rune points AT that spell, the way every real attack rune does: slot 1 holds
-    // its own attack (1-based, so TWIN_SPELL + 1) and the other three are free.
+    // its own attack (1-based, so TWIN_SPELL + 1) and the other three are free. It is also
+    // category 2 — a SPECIAL-ATTACK rune, the kind that (played 2026-09-06) fires slot 1 with
+    // no menu however many slots are filled. The fixture needs one so the Rune type control
+    // has a row that actually reads "Special attack".
     w16(o + RUNE_TBL.spells, TWIN_SPELL + 1);
+    w16(o + RUNE_TBL.cat, 2);
     mapping.twin = { text: TWIN_TEXT, rune: twinRune,
       runeOff: runeCopy - ELF_VADDR + ELF_BASE, spellOff: spellCopy - ELF_VADDR + ELF_BASE, spellIdx: TWIN_SPELL,
       runeNameOff: runeNameCopy - ELF_VADDR + ELF_BASE, spellNameOff: spellNameCopy - ELF_VADDR + ELF_BASE };
