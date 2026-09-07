@@ -727,8 +727,18 @@ them fixed the scene on the same save, and the toggle that wrote them has since 
 from the Test tab — it could never have helped (the actor namespace it patched is used **zero
 times in 12,055 references** across every town script) and it caused the hang it was meant to
 fix. The audit still detects and repairs it, which is the point of keeping the constants. The one ordering rule the button enforces for you: the passive-rune
-helper block only goes back to the dead routine once every call site into it reads stock again,
-because a live jump into restored code would be its own hang.
+helper block only goes back to the dead routine once **nothing jumps into it**, because a live
+jump landing in restored code would be its own hang. "Restore all" does the call sites first,
+so it gets through where a lone row cannot.
+
+That rule is reachability, not tidiness, and the difference matters on a real disc. A disc
+patched before the trampoline existed carries the older **inline** shape at its call sites —
+which answers on the spot and never reaches the block — so it can end up with the helper
+installed and **nothing pointing at it**: 640 bytes of unreachable leftover. The audit reports
+that as leftover rather than as live code, doesn't flag it as able to hang anything, and lets
+you restore it **on its own**, keeping passives that work. (Found on a real disc 2026-09-06;
+the earlier "every call site must read stock" rule refused it, which would have made the
+leftover permanent unless you also gave up a working patch.)
 
 Use it when a patched disc and the game disagree. That is exactly how the duplicated rune
 descriptions (issue #11) stayed invisible for a release: the edit was on the disc, just on the
