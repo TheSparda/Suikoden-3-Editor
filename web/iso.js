@@ -4235,6 +4235,16 @@
     return list.map((id) => `<option value="${id}"${id === cur ? " selected" : ""}>${hex(id, 2)} · ${skillName(id)}</option>`).join("");
   }
   // ---- Mounts: the three hard-coded battle rider/mount pairs -------------------
+  // Which of the Mounts tab's explainer <details> the user has open, so a re-render does not
+  // snap them shut. Read SYNCHRONOUSLY out of the DOM before re-rendering rather than tracked
+  // through `ontoggle`: that event is queued, so opening a fold and immediately changing a
+  // dropdown re-renders before the handler has run and the fold closes anyway. (Same trap the
+  // Runes/Passives tab hit — thanks to that session for the diagnosis.)
+  const mntFolds = {};
+  function snapMntFolds(host) {
+    qa("details[data-fold]", host).forEach((d) => { mntFolds[d.dataset.fold] = d.open; });
+  }
+
   function drawMounts(host) {
     const riderRow = (id) => MOUNTS.riders.concat(MOUNTS.ridersNoBank).find((r) => r[0] === id) || null;
     const riderName = (id) => (riderRow(id) || [])[1] || null;
@@ -4307,7 +4317,7 @@
       const tier = tierOf(rId, mId), td = MOUNTS.TIERS[tier];
       const stockNote = `stock: ${riderName(sr) || sr} + ${mountName(sm) || sm}`;
       const who = rId && mId ? `${riderName(rId) || `model ${rId}`} + ${mountName(mId) || `model ${mId}`}` : null;
-      return `<details class="char" data-rec="${rIdSites[0]}" open><summary>
+      return `<details class="char" data-fold="pair${i}" data-rec="${rIdSites[0]}"${mntFolds[`pair${i}`] === false ? "" : " open"}><summary>
           <span class="chev">▸</span><span class="nm">Pair ${i + 1}</span>
           ${badge(tier, who)}
           <span class="muted">${esc2(stockNote)}</span></summary>
@@ -4393,7 +4403,7 @@
           how Bright joins) and both Chris and Bright deployed.</div>
         <div class="bag-h" style="margin-top:12px">Who can ride what <span class="u">confidence per combination</span></div>
         ${matrix}
-        <details class="note"><summary>Where the markers come from, and how to give one rider two mounts</summary>
+        <details class="note" data-fold="markers"${mntFolds.markers ? " open" : ""}><summary>Where the markers come from, and how to give one rider two mounts</summary>
           <ul style="margin:4px 0 0 18px">
             <li><b>Riders</b> listed by default are the models that carry the <code>301/320/340</code>
               <i>mounted battle</i> clips — Hugo, Chris, Roland, Leo, Percival, Borus, Futch, Franz, and
@@ -4440,7 +4450,7 @@
           you are in. To <i>force</i> a mount in battle instead, use <b>Ruby</b> in the pair table above —
           she is a party member, so she brings her own battle slot.</div>
         <div class="grid eq">${horseRows}</div>
-        <details class="note"><summary>Why only two horses, and what each character can actually do</summary>
+        <details class="note" data-fold="horses"${mntFolds.horses ? " open" : ""}><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
             <li>The code that reads this does <code>(value − 308) &lt; 2</code> unsigned, so <b>only those two ids
               are honoured</b> and any other mount id is read and silently discarded. That window is six
@@ -4483,7 +4493,7 @@
       if (!btn) {
         if (!dirty) { scheduleBadge(); return; }
         btn = document.createElement("button"); btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
-        btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); offs.forEach((o) => revertRange(o, 2)); drawView(); };
+        btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); offs.forEach((o) => revertRange(o, 2)); snapMntFolds(host); drawView(); };
         el.insertAdjacentElement("afterend", btn); el._revBtn = btn;
       }
       btn.classList.toggle("show", dirty);
@@ -4491,7 +4501,7 @@
       scheduleBadge();
     }
     { const cb = q("#mntAll", host);
-      if (cb) cb.onchange = () => { mntAllRiders = cb.checked; drawView(); }; }
+      if (cb) cb.onchange = () => { mntAllRiders = cb.checked; snapMntFolds(host); drawView(); }; }
     qa("select.mnt-mech", host).forEach((sel) => {
       const off = +sel.dataset.off;
       sel.onchange = () => {
@@ -4530,7 +4540,7 @@
       sel.onchange = () => {
         offs.forEach((o, n) => { writeW(o, 2, +sel.value || 0);
           reg(o, 2, "num", "Battle mounts", relabel(i, `rider${n ? " (delay-slot copy)" : ""}`)); });
-        drawView();
+        snapMntFolds(host); drawView();
       };
       markSites(sel, offs, origLbl);
     });
@@ -4540,7 +4550,7 @@
       sel.onchange = () => {
         writeW(off, 2, +sel.value || 0);
         reg(off, 2, "num", "Battle mounts", relabel(i, "mount"));
-        drawView();
+        snapMntFolds(host); drawView();
       };
       markSites(sel, [off], origLbl);
     });
