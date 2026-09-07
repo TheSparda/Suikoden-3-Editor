@@ -97,10 +97,17 @@ SPELL_STRIDE     = 0x20
 SPELL_ELEM_OFF   = SPELL_STRIDE + 0x04   # +0x24 from a record's own base
 # Two more tail fields, pinned 2026-08-30 against the spell AND unite tables at once:
 #   radius — size of the area/line template. Nonzero for every AREA or LINE record and zero
-#     for every single/all-target one: 130/130 across 94 spells + 38 unites, no exception.
+#     for every single/all-target one: 131/131 across the 93 spells whose tail is readable
+#     plus 38 unites, no exception (the 94th spell's tail falls outside the table).
 #     Spells run 1..4 (Dancing Flames 2 -> Blazing Wall 3 -> Explosion 4); area unites are 3.
+#     Because it holds in BOTH directions it is a coupling, not a coincidence: setting
+#     flags14's AREA bit (or the 0x10 line bit in the target byte) without also setting a
+#     radius asks for an area of size ZERO, and clearing them without zeroing radius strands
+#     a template size. `set-spell --field flags14` takes a whole word and does NOT touch this
+#     byte for you — pass `--field radius` in the same run. The web editor couples the two
+#     itself (see needsRadius/radiusFix in web/iso.js).
 #   chance — % chance the status lands. Nonzero for exactly the records with flags14 bit21
-#     set (130/130) and it matches the text: unite "Knight B" = 30 vs "30% chance of
+#     set (131/131) and it matches the text: unite "Knight B" = 30 vs "30% chance of
 #     deathblow", Wind of Sleep 60, Funeral Wind 80, Open Gate 80, Ready!/Go! 100.
 # The old "misc" field read this chance byte from the record's own base, i.e. one record
 # early, so it reported every spell's value against the WRONG spell.

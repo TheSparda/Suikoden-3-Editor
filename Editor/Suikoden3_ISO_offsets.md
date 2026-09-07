@@ -216,6 +216,43 @@ tracks the attack runes, `0x0010` the heal/buff family, `0x0004` the "land-based
 restriction (Earthquake, Land of Eternity) and `0x0020` a status rider. Only bit 16 is pinned; the
 rest are left alone by every editor write, which is why they never needed to be.
 
+### The RADIUS byte is the third field a targeting change moves
+
+**`AREA_BIT` on its own does not make an area spell.** The size of the template lives in a separate
+byte in the record tail (`SPELL.radius` / `UNITE.radius`, `+0x01` into the tail — remember a
+record's last 8 bytes are stored one record AHEAD), and on a pristine disc it is not independent of
+the flags: **nonzero on every record that has a template and zero on every record that does not —
+131/131 across the 93 spells whose tail is readable and the 38 unites, no exceptions in either
+direction** (`web/tests/spell-radius-real-iso.mjs` asserts it against the disc; the 94th spell's
+tail falls outside the table, so there is no byte to read for it).
+
+The line bit counts as a template too: target byte `0x10` carries a radius with `AREA_BIT` **clear**.
+So both dropdowns can strand the byte, in both directions.
+
+| shape | radius | stock values | examples |
+|---|---|---|---|
+| AREA bit set | **nonzero** | `2`×7 `3`×5 `4`×4 (spells), `3`×12 (every area unite) | Dancing Flames 2 → Blazing Wall 3 → Explosion 4; Mercenary B 3 |
+| target byte `0x10` (line), AREA clear | **nonzero** | `1`×4 `3`×2 | Thunder Runner 1, Sickle-Weasel 1, Furious Blow 3 |
+| everything else (single / whole-side / chanter / pair) | **0** | `0`×97 | Flaming Arrows `0x00000A0A` r0, Kite `0x0081020A` r0 |
+
+Turning "Area of effect" on for one of the 34 plain single-target spells therefore asked the engine
+for **an area of size zero** — a combination no stock record has — and turning it back off left a
+stranded template size on a record with nothing to size. `web/iso.js` now closes both directions
+with `needsRadius()` / `radiusFix()`, applied by `syncRadius()` after every flags14 write:
+
+- **only when the byte contradicts the new shape.** A size that already agrees is never touched, so
+  Explosion's authored `4` survives an unrelated Target change and a rune reskin does not flatten a
+  graded family to one number.
+- **defaults are stock values, not inventions.** `3` for an area (the mode across both tables, the
+  only value any area unite uses, and the middle of the fire ladder) and `1` for a line
+  (Thunder Runner's, 4 of the 6).
+- **an explicitly edited Radius wins.** Radius has always been a user-editable field; once a row's
+  Radius has been typed in, the coupling steps aside and says so in the status line instead of
+  overwriting a decision the user already made.
+
+**Any tool that writes flags14 must consider this byte too.** `s3patch.py set-spell --field flags14`
+takes a whole word and will not touch radius for you — set `--field radius` in the same run.
+
 ### flags14 low byte (bits 0–7) = damage/effect kind
 Validated against descriptions: `0x0A`=direct damage (44 of 63 say "DMG"),
 `0x87`=pure heal (5/5 restore HP), `0x42`=status/utility (sleep, silence),
