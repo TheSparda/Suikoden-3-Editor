@@ -464,19 +464,22 @@ head("Passives view — choose who gets a support rune for free");
     check("the block starts out untouched", /the first character you choose installs it/i.test(txt));
     check("Fortune is listed as the one with no site at all", /no site found/.test(txt));
     check("the four dogs are named as not offered", /Koichi, Connie, Kosanji, Kogoro/.test(txt));
-    // The confidence markers are the contract now that one of the two field sites has a play
-    // report: the tab must not blur "watched working" and "decoded and byte-verified" back
-    // together, and it must not quietly inherit a marker earned by a different patch shape.
+    // The confidence markers are the contract. One field site HAS a play report — but it was
+    // earned under the dropped-call patch shape, not this one, so the tab must carry the report
+    // and refuse to let it set a badge. Blurring those two is the failure this guards.
     check("Sunbeam's play report is carried, with what was observed",
-      /watched working \(2026-09-06\)/i.test(txt) && /party healed by walking with nobody carrying the rune/i.test(txt));
-    check("...and is not claimed for this mechanism",
-      /marked <?b?>?expected<?\/?b?>? rather than confirmed/i.test(txt.replace(/\s+/g, " ")));
-    check("...and a passing test is explicitly not enough to upgrade it",
-      /will not upgrade a marker on a passing test/i.test(txt));
-    check("every other rune reads untested", /<\/b>?untested/i.test(txt) || /untested/i.test(txt)); }
-  const marks = await page.$$eval("#isoView table.invtbl tbody tr", (rows) =>
-    rows.map((r) => r.textContent).filter((t) => /expected|untested|confirmed/.test(t)).length);
-  check("every rune row carries a confidence marker", marks >= 22, String(marks));
+      /watched working: forced to yes, the party healed by walking with nobody\s+carrying the rune/i.test(txt.replace(/\s+/g, " "))
+      || /party healed by walking with nobody carrying the rune/i.test(txt.replace(/\s+/g, " ")));
+    check("...and named as belonging to the previous patch shape",
+      /previous<\/i>? patch shape/i.test(txt.replace(/\s+/g, " ")) || /previous patch shape/i.test(txt.replace(/\s+/g, " ")));
+    check("...and it says what that leaves untested here", /the trampoline itself/i.test(txt.replace(/\s+/g, " ")));
+    check("...and a passing test is explicitly not enough to move a marker",
+      /a marker moves on a play report and never on a passing test/i.test(txt.replace(/\s+/g, " ")));
+    check("every rune here reads untested", /every rune here\s+reads untested/i.test(txt.replace(/\s+/g, " "))); }
+  const rows = await page.$$eval("#isoView table.invtbl tbody tr", (r) => r.map((x) => x.textContent));
+  check("every rune row carries a confidence marker",
+    rows.filter((t) => /untested|confirmed/.test(t)).length >= 22, String(rows.length));
+  check("...and none of them claims confirmed", rows.filter((t) => /confirmed/.test(t)).length === 0);
 
   // Wall (0x1BE) is the interesting one: ten sites, one of each kind — a record site, a charId
   // site and eight acting-unit sites — so picking one character exercises all three trampolines.
