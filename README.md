@@ -208,8 +208,9 @@ came up empty are recorded in the offsets doc so nobody repeats them), and Korok
 whose character records live outside the array the table indexes. The same tab
 also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
 constants across 12 runes, read out of the instruction each rune runs right after it has asked
-whether you have it. *Sunbeam heals 15HP a combat turn and 1HP every 0.3 seconds of walking*, and
-both of those numbers are editable, as are Killer's and Counter's ×150%, Gale's SPD boost,
+whether you have it. *Sunbeam heals 15HP a combat turn and 3.33HP a second of walking*, and
+both of those numbers are editable — on the Passives tab, and on Sunbeam's own row on the
+**Runes** tab under **Strength**, which is the same bytes from either side — as are Killer's and Counter's ×150%, Gale's SPD boost,
 Haziness' real dodge chance (30%, which its menu text never states), Drain's and Barrier's
 divisors, Hunter's damage clamp, Violence's half-HP trigger, and the doubling/halving shifts
 behind Wall, Double-Strike, Fire Sealing, Wizard and Warrior. These need **no switch** and work
