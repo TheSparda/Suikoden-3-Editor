@@ -1191,12 +1191,15 @@ console.log("In-ELF text heuristic:");
   (/input type="text" class="rname"/.test(iso) ? ok : bad)("the Runes tab renders a rename field");
   (/input type="text" class="rdesc"/.test(iso) ? ok : bad)("the Runes tab renders a menu-text field");
   (/qa\("input\.rname"/.test(iso) ? ok : bad)("the rename field is wired to a write");
-  // Same failure mode, twice more: a tab's hint outlived what the tab does. The Encounter hint
-  // said per-area base rates "aren't editable" for the 20 releases after they became editable,
-  // and the Passives hint still described the whole-party, two-rune, drop-the-call version after
-  // the tab had gone per-character across 22 runes with Fortune and Prosperity on their own
-  // switch. A hint is the only description most people read, so pin both corrections — and pin
-  // the caveat each one exists to carry, since that is the part a rewrite tends to drop.
+  // Same failure mode, five times over: a tab's hint outlived what the tab does. The Encounter
+  // hint said per-area base rates "aren't editable" for the 20 releases after they became
+  // editable; the Passives hint still described the whole-party, two-rune, drop-the-call version
+  // after the tab had gone per-character across 22 runes with Fortune and Prosperity on their own
+  // switch; and Enemies, Sets and Food each named a fraction of their tab — no spawn formations,
+  // no effect ownership, no rename. None of the last three was WRONG, which is why they survived
+  // so long: a hint that undersells its tab hides a feature just as well as one that denies it.
+  // A hint is the only description most people read, so pin every correction — and pin the caveat
+  // each one exists to carry, since that is the part a rewrite tends to drop.
   const encHint = /\n\s*encounter: "([^"]*)"/.exec(iso);
   (encHint && !/aren't editable/.test(encHint[1]) ? ok : bad)("the Encounter hint no longer says per-area rates aren't editable");
   (encHint && /[Pp]er-area base rates are editable/.test(encHint[1]) ? ok : bad)("the Encounter hint says per-area base rates are editable");
@@ -1206,6 +1209,17 @@ console.log("In-ELF text heuristic:");
   (psHint && !/CONFIRMED IN PLAY/.test(psHint[1]) ? ok : bad)("the Passives hint claims no play confirmation under this patch shape");
   (psHint && /THE CHARACTERS YOU\s+CHOOSE/.test(psHint[1]) ? ok : bad)("the Passives hint says a passive goes to chosen characters");
   (psHint && /OFF ENEMIES/.test(psHint[1]) ? ok : bad)("the Passives hint keeps the off-enemies guarantee");
+  const enHint = /\n\s*enemies: "([^"]*)"/.exec(iso);
+  (enHint && /SPAWNS AND FORMATIONS/.test(enHint[1]) ? ok : bad)("the Enemies hint names the spawns + formations editor");
+  (enHint && /CRASH THE GAME/.test(enHint[1]) ? ok : bad)("the Enemies hint keeps the off-roster-monster caveat");
+  (enHint && /bulk multipliers/i.test(enHint[1]) ? ok : bad)("the Enemies hint names the bulk multipliers");
+  const setsHint = /\n\s*sets: "([^"]*)"/.exec(iso);
+  (setsHint && /EFFECT OWNERSHIP/.test(setsHint[1]) ? ok : bad)("the Sets hint names the effect-ownership controls");
+  (setsHint && /cannot be added, only moved/.test(setsHint[1]) ? ok : bad)("the Sets hint keeps the no-new-effects caveat");
+  (setsHint && /COMPOUNDS per member/.test(setsHint[1]) ? ok : bad)("the Sets hint says the forced potch bonus compounds");
+  const foodHint = /\n\s*food: "([^"]*)"/.exec(iso);
+  (foodHint && /renaming the dish/.test(foodHint[1]) ? ok : bad)("the Food hint says a dish can be renamed");
+  (foodHint && /IN PLACE/.test(foodHint[1]) ? ok : bad)("the Food hint keeps the written-in-place length cap");
 }
 
 console.log(failures ? `\nFAILED (${failures})` : "\nAll checks passed.");
