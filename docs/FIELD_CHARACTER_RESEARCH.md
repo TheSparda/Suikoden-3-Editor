@@ -620,9 +620,13 @@ there is a reason rather than a suspicion. It also retires the reasoning in §9 
 > **CORRECTED 2026-09-06 by a playtest report — "could never have fired" was wrong, and this
 > is the second time in this document that a census got generalised past what it measured.**
 >
-> **The observation.** On a disc carrying this patch, **the game stopped adding party members
-> correctly**. Restoring the two words at ISO `0x1FD238`/`0x1FD23C` fixed it. So the patch fires,
-> and it does harm — the one thing this section confidently ruled out.
+> **The observations — two of them, the same day, from two directions.** On one disc carrying
+> this patch **the game stopped adding party members correctly**; on another it **froze the Brass
+> Castle → plains transition** with only Chris's horse staged. Restoring the two words at ISO
+> `0x1FD238`/`0x1FD23C` fixed both, each on the same save that had just failed. So the patch
+> fires, and it does harm — the one thing this section confidently ruled out. The toggle that
+> applied it was **retired in v1.135.0**; the constants stay, because detecting and repairing an
+> affected disc is what they are worth now.
 >
 > **Where the reasoning went wrong.** The table above is a census of **script handles**, and it
 > is still correct: scenes really never name a character by id. The error is the next sentence.
@@ -646,9 +650,9 @@ there is a reason rather than a suspicion. It also retires the reasoning in §9 
 >
 > **What survives.** The census, the slot-shaped hypothesis in the next paragraph, and the fact
 > that the patch never fixed the freeze it was written for. What does not survive is the claim
-> that it is inert. The editor now ships the opposite verdict: the Test tab's toggle is labelled
-> **confirmed harmful**, and the Changes tab opens with a **Party formation** card that leads
-> with this finding and restores the two words in one click.
+> that it is inert. The editor now ships the opposite verdict: the toggle is **gone**, the Test
+> tab keeps the section as a record of the dead end, and the Changes tab opens with a **Party
+> formation** card that leads with this finding and restores the two words in one click.
 >
 > **The lesson, restated because this document keeps relearning it.** §14d of the mount doc was
 > corrected the same way and on the same day: an argument from *"the archive does not name that
