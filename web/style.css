@@ -131,6 +131,70 @@ input:hover:not(:focus), select:hover:not(:focus) { border-color:var(--acc); }
 input.dirty, select.dirty { color:var(--warn); border-color:var(--warnbd); background:var(--changed-bg); }
 input.ro { color:var(--mut); }
 
+/* ===== checkboxes =====================================================================
+   The box itself is sized once, here, instead of per tab. A browser's default 13px glyph is
+   a miss on a phone, and this editor is used on one, so every checkbox in the app is 20px
+   (22px at phone width) — the same control the Characters tab's passive-rune tiles already
+   used, now the app-wide default rather than one tab's exception. `accent-color` is what
+   makes every tick the same gold/crimson: the box stays a NATIVE checkbox, so the focus
+   ring, :indeterminate and the platform's own tick all keep working, which a custom-drawn
+   box would have to re-implement. The rune tiles (.cprune) go bigger still and override it. */
+input[type=checkbox] { width:20px; height:20px; flex:none; accent-color:var(--acc);
+  -webkit-tap-highlight-color:transparent; }
+/* A staged-but-unsaved tick. The `input.dirty` colour/border/background below is inert on a
+   checkbox — a browser paints the native glyph and ignores all three — so the mark has to be
+   something that survives native rendering: an outline around the box. `--warn` is close
+   enough to `--acc` that recolouring the tick alone would not read. */
+input[type=checkbox].dirty { outline:2px solid var(--warnbd); outline-offset:2px;
+  border-radius:3px; }
+
+/* .ckrow — a <label> wrapping a checkbox and its wording, which is the shape nearly every
+   checkbox in the app takes. The WHOLE row is the target: 44px tall (what a finger actually
+   needs) and, being the label, tapping the words toggles the box. Text is centred against
+   the box rather than baseline-aligned — a 20px box has no useful text baseline, so the old
+   `align-items:baseline` hung it above its own line. */
+.ckrow { display:flex; align-items:center; gap:9px; flex-wrap:wrap; min-height:44px;
+  cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.ckrow > input[type=checkbox] { margin:0; }
+/* The row wraps by default so a trailing "0x31 bit 2 (mask 0x04)" drops to its own line in a
+   narrow card rather than squeezing into a second column. .ckrow.nowrap is for the rows where
+   there is no trailing anything and the label is the only text: flex line-breaking goes by an
+   item's UNSHRUNK width, so in a narrow table cell a name a few pixels too wide moved to its
+   own line and orphaned the box above it. Held on one line with min-width:0, the name wraps
+   inside itself instead and stays beside the box it ticks. */
+.ckrow > b, .ckrow > span { min-width:0; }
+.ckrow.nowrap { flex-wrap:nowrap; }
+/* A row whose label is a sentence or two rather than a phrase: keep the box on the first
+   line instead of centring it against a paragraph. */
+.ckrow.top { align-items:flex-start; }
+.ckrow.top > input[type=checkbox] { margin-top:1px; }
+/* Stacked lists where a full 44px each would space the list out more than it groups it. */
+.ckrow.tight { min-height:34px; }
+/* .ckrow.tile — the passive-rune treatment for a GRID of many boxes (spell effects/status):
+   a bordered, tinted target whose on-state reads at arm's length, not only at the glyph. */
+.ckrow.tile { align-items:flex-start; padding:8px 11px; border:1px solid var(--line);
+  border-radius:10px; background:var(--input-bg); transition:border-color .12s,background .12s; }
+.ckrow.tile > input[type=checkbox] { margin-top:1px; }
+.ckrow.tile > span { flex:1 1 120px; min-width:0; }
+.ckrow.tile:hover { border-color:var(--acc); }
+.ckrow.tile:has(input:checked) { border-color:var(--acc);
+  background:color-mix(in srgb,var(--acc) 12%,var(--input-bg)); }
+/* A tile lives inside a .field, whose `span` rule paints every label muted grey. An on tile
+   has to read as on from its wording too, not only from the tick — except the `warn` span an
+   unlabelled-but-SET bit carries, which stays the colour of the thing nobody has named. (The
+   app has no bare `.warn` colour rule — only .tag.warn / .status.warn — so give it one here,
+   or an unknown bit renders identically to a known one.) */
+.ckrow.tile > span.warn { color:var(--warn); }
+.ckrow.tile:has(input:checked) > span:not(.warn) { color:var(--ink); }
+/* .ckinline — a checkbox that sits mid-sentence in a hint line, so it has to stay inline. */
+.ckinline { display:inline-flex; align-items:center; gap:6px; vertical-align:middle;
+  min-height:34px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.ckinline > input[type=checkbox] { margin:0; }
+/* .ckcell — a checkbox alone in a table cell, with no wording to extend the target. The
+   label fills the cell so the miss-radius is the cell, not the 20px box. */
+.ckcell { display:flex; align-items:center; justify-content:center; min-height:40px;
+  min-width:38px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+
 .subtabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
 /* the ISO view has 9 tabs — keep them on one swipeable row instead of stacking */
 #isoTabs { flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
@@ -198,7 +262,9 @@ input.search, input.picker-search {
 .story-tag { font-size:11px; color:var(--warn); white-space:nowrap; }
 /* recruit team multi-select: a character can be on several protagonists' teams (save bitmask) */
 .teamcell { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
-.tmbox { display:inline-flex; align-items:center; gap:3px; font-size:12px; color:var(--mut); cursor:pointer; padding:2px 5px; border:1px solid var(--line); border-radius:6px; }
+.tmbox { display:inline-flex; align-items:center; gap:5px; font-size:13px; color:var(--mut);
+  cursor:pointer; padding:4px 8px; min-height:38px; border:1px solid var(--line); border-radius:8px;
+  -webkit-tap-highlight-color:transparent; }
 .tmbox input { margin:0; }
 .tmbox:has(input:checked) { color:var(--fg,inherit); border-color:var(--acc); background:var(--changed-bg,transparent); }
 
@@ -383,7 +449,8 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .cf-g { font-family:var(--titlefont); color:var(--acc2); font-size:13px; margin-bottom:4px; }
 .cf-row { font-size:13px; color:var(--ink); padding:2px 0 2px 10px; border-left:2px solid var(--line); margin-bottom:2px; }
 .recent { margin-top:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:var(--mut); font-size:13px; }
-.recent .autochk { display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none; }
+.recent .autochk { display:inline-flex; align-items:center; gap:7px; min-height:38px;
+  cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; }
 .recent .autochk input { margin:0; accent-color:var(--acc); }
 
 /* ===== small-screen / Android tuning (≤480px: most target devices) ===== */
@@ -399,6 +466,15 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
   input[type=text], input[type=number], select, button.picker { min-height:44px; font-size:15px; }
   .toolbar button { min-height:44px; }
   .subtabs .chip { min-height:38px; }
+
+  /* Same bump for every checkbox and its row. This block sits ABOVE the .cprune media rules
+     on purpose — the rune tiles want 24px, and equal-specificity later wins. */
+  input[type=checkbox] { width:22px; height:22px; }
+  .ckrow { min-height:48px; }
+  .ckrow.tight { min-height:38px; }
+  .ckinline, .pschip, .recent .autochk { min-height:40px; }
+  .ckcell { min-height:44px; min-width:42px; }
+  .tmbox { min-height:44px; padding:5px 10px; font-size:14px; }
 
   /* two mode tabs split the full width and are easy to tap */
   .modebar { gap:6px; }
@@ -464,11 +540,15 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 
 /* Passives: the character picker. 75 names have to be scannable inside one table cell, so the
    chips wrap into a fixed-height scroller rather than pushing the row to a screen and a half. */
-.pschips { max-height:190px; overflow-y:auto; display:flex; flex-wrap:wrap; gap:2px 6px;
-  padding:5px 6px; border:1px solid var(--line); border-radius:6px; background:var(--input-bg); }
-.pschip { font-size:11px; color:var(--ink); white-space:nowrap; display:inline-flex;
-  align-items:center; gap:3px; padding:1px 4px; border-radius:4px; cursor:pointer; }
+.pschips { max-height:250px; overflow-y:auto; display:flex; flex-wrap:wrap; gap:3px 5px;
+  padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--input-bg); }
+/* Denser than a .ckrow on purpose — 75 names have to stay scannable — but the box is the
+   app's standard 20px and the chip is a 34px target, so it is still thumb-sized. */
+.pschip { font-size:12px; color:var(--ink); white-space:nowrap; display:inline-flex;
+  align-items:center; gap:6px; padding:2px 7px; min-height:34px; border-radius:6px;
+  cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .pschip:hover { background:var(--line); }
+.pschip:has(input:checked) { color:var(--acc2); background:color-mix(in srgb,var(--acc) 14%,transparent); }
 .pschip input { margin:0; }
 
 /* Characters tab: "Passive runes forced on", the same bitmaps asked per unit. Unlike the picker
