@@ -3371,10 +3371,23 @@ Two kinds of space were surveyed.
 | `.lit4` gap to `.sdata` | `0x42DC84` | `0x19E6484` | 124 | all zero |
 
 410 bytes in total, but scattered — the largest single run is 124 bytes, which is not enough for
-a helper plus its table. Recorded here so the next person does not re-derive it. (`.bss` is
-`0x2EE64` bytes of memsz with no file backing, so it is not usable for static data: the CRT
-zeroes it.) Zero-word runs *inside* `.text` are not free space — 24,449 of them exist and all but
-one are delay-slot `nop`s; the longest is 44 bytes at VA `0x1917394`.
+a helper plus its table. Recorded here so the next person does not re-derive it. Zero-word runs
+*inside* `.text` are not free space either: 24,449 of them exist, all but one are delay-slot
+`nop`s, and the longest is 44 bytes at VA `0x1917394`.
+
+**Two tails past the loaded image, and only one of them is memory — WHERE IT IS NOT.** These get
+conflated, and the conflation points at 210 KB of nothing:
+
+| | | |
+|---|---|---|
+| `p_filesz` = `0x38D430` | loaded image ends **ISO `0x431C30`** | everything the loader copies |
+| `p_memsz` − `p_filesz` = **`0x2F0B4`** | VA `0x19EA430`..`0x1A194E4` | mapped, **no file backing** — `.sbss` (`0x1AC`) + `.bss` (`0x2EE64`) + alignment. Not usable for static data: the CRT zeroes it, so anything written into the image there is gone before `main`. |
+| ISO `0x431C30`..`0x465DF0` | section headers + symtab | **never copied into RAM.** Code written here would not execute. |
+
+The second tail is memory without a file; the third is a file without memory. The reason
+`ELF_END` is `0x465DF0` at all is arithmetic on the *third* one — `e_shoff` `0x3C1678` + 99 × 40,
+from the ELF base at ISO `0xA3800` — and it is not a hint that anything past `0x431C30` is
+usable. The whole inventory is the dead routine and the five padding gaps above; nothing else.
 
 **The dead routine at VA `0x16BF1E0`**, named in the status-effect section above as the one
 routine that reads per-status levels off a record, is 656 bytes (`0x16BF1E0..0x16BF470`, ending
