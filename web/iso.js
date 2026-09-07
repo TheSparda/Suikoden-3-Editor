@@ -743,35 +743,39 @@
   // `where` is where in the game the ask happens, because that is what a "yes" means: a field ask
   // runs once per party slot, a battle ask runs for whichever unit is acting.
   const PASSIVES = [
-    { id: 0x1B9, where: "field", proof: "expected",
+    { id: 0x1B9, where: "field", proof: "untested",
       what: "The field encounter roll (VA 0x1702740) walks party slots 1–6 asking this, and turns on "
         + "the weak-foe skip if any of them says yes — so one chosen character covers the whole party.",
-      note: "The same site shape as Sunbeam's walk-heal, one function away, and Sunbeam has been "
-        + "watched working — so this is expected rather than a guess. Nobody has yet walked past a "
-        + "weak encounter with it on.",
+      note: "Nobody has walked past a weak encounter with this on. It was marked expected while the "
+        + "editor answered by dropping the call — Sunbeam's identical patch shape one function away "
+        + "had been played — but this version answers from a relocated helper, which nobody has "
+        + "played either, so that reasoning no longer carries.",
       sites: [{ off: 0x149F90, jal: 0x0C5B2D0E, ds: 0x240501B9, k: "id" }] },
-    { id: 0x1BA, where: "battle",
+    { id: 0x1BA, where: "battle", proof: "untested",
       what: "Multiplies the high-damage-hit chance by 150/100, at both sites that roll it.",
       sites: [{ off: 0x10407C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" },
               { off: 0x10413C, jal: 0x0C5B2CE0, ds: 0x240501BA, k: "rec" }] },
-    { id: 0x1BB, where: "battle",
+    { id: 0x1BB, where: "battle", proof: "untested",
       what: "Multiplies the counter-attack chance by 150/100 at all three sites that roll it.",
       sites: [{ off: 0x1038E0, jal: 0x0C5B2CE0, ds: 0x240501BB, k: "rec" },
               { off: 0x103B54, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" },
               { off: 0x103D28, jal: 0x0C5B2CE0, ds: 0x02228821, k: "rec" }] },
-    { id: 0x1BC, where: "battle", what: "Multiplies SPD by 150/100.",
+    { id: 0x1BC, where: "battle", proof: "untested", what: "Multiplies SPD by 150/100.",
       sites: [{ off: 0x10FD28, jal: 0x0C5B2CE0, ds: 0x240501BC, k: "rec" }] },
-    { id: 0x1BD, where: "both", proof: "expected",
+    { id: 0x1BD, where: "both", proof: "untested",
       what: "Both halves of the rune: the field walk-heal (VA 0x17029A0, once per party slot) and "
         + "the +15 HP a combat turn adds (the literal `addiu $v0,$v0,0xF` right after the check).",
-      note: "The walk-heal site is CONFIRMED IN PLAY (2026-09-06): forced to yes, the party healed "
-        + "by walking with nobody carrying the rune. That proves the site and the effect. What has "
-        + "changed since is only how the yes is delivered — a retargeted call into the relocated "
-        + "helper instead of a word written over the call — so the effect is proven and this "
-        + "delivery of it is not. The in-battle half has never been watched at all.",
+      note: "The walk-heal site WAS played on 2026-09-06, under the editor's previous patch shape: "
+        + "forced to yes by dropping the call, the party healed by walking with nobody carrying the "
+        + "rune. Kept here because it is real evidence — it proves 0x14A1B4 is the right site and "
+        + "that the code around it accepts a synthesised $v0 — but it is not evidence about this "
+        + "version, which keeps the call and retargets it at a relocated helper. The trampoline\'s "
+        + "own correctness, its $ra/$v0 handling and the bitmap lookup are all untested, so this "
+        + "reads untested until somebody plays THIS build. The in-battle half has never been "
+        + "watched at all.",
       sites: [{ off: 0x14A1B4, jal: 0x0C5B2D0E, ds: 0x240501BD, k: "id" },
               { off: 0x261184, jal: 0x0C5B2CE0, ds: 0x240501BD, k: "rec" }] },
-    { id: 0x1BE, where: "battle",
+    { id: 0x1BE, where: "battle", proof: "untested",
       what: "Doubles PDF at the damage site — and turns on the other half of the rune at eight "
         + "battle-action sites, which is what stops the character doing anything else.",
       sites: [{ off: 0x104368, jal: 0x0C5B2CE0, ds: 0x02129821, k: "rec" },
@@ -784,66 +788,66 @@
               { off: 0x25CC54, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
               { off: 0x25CC9C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" },
               { off: 0x25CD5C, jal: 0x0C606CEC, ds: 0x240501BE, k: "unit" }] },
-    { id: 0x1BF, where: "battle",
+    { id: 0x1BF, where: "battle", proof: "untested",
       what: "Opens the dodge roll — the code right after is `rand(100) < 30`, so the 30% is the "
         + "rune's real number.",
       sites: [{ off: 0x1037F4, jal: 0x0C5B2CE0, ds: 0x240501BF, k: "rec" }] },
-    { id: 0x1C0, where: "battle", what: "The critical-hit self-heal.",
+    { id: 0x1C0, where: "battle", proof: "untested", what: "The critical-hit self-heal.",
       sites: [{ off: 0x245D6C, jal: 0x0C606CEC, ds: 0x240501C0, k: "unit" }] },
-    { id: 0x1C1, where: "battle", what: "The magic-reflect roll.",
+    { id: 0x1C1, where: "battle", proof: "untested", what: "The magic-reflect roll.",
       sites: [{ off: 0x105200, jal: 0x0C5B2CE0, ds: 0x0200202D, k: "rec" }] },
-    { id: 0x1C2, where: "battle",
+    { id: 0x1C2, where: "battle", proof: "untested",
       what: "Clears the unbalance status bit (0x10) in both places the state is rebuilt.",
       sites: [{ off: 0x1100AC, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" },
               { off: 0x1100E0, jal: 0x0C5B2CE0, ds: 0x240501C2, k: "rec" }] },
-    { id: 0x1C3, where: "battle",
+    { id: 0x1C3, where: "battle", proof: "untested",
       what: "Zeroes incoming damage of one element and doubles another, at all four sites that "
         + "scale elemental damage.",
       sites: [{ off: 0x104858, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x104FC0, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x10544C, jal: 0x0C5B2CE0, ds: 0x240501C3, k: "rec" },
               { off: 0x1115C4, jal: 0x0C5B2CE0, ds: 0xAFA40000, k: "rec" }] },
-    { id: 0x1C4, where: "battle",
+    { id: 0x1C4, where: "battle", proof: "untested",
       what: "Three sites in the target picker: the one that decides a single-target attack may "
         + "not land here.",
       sites: [{ off: 0x22E694, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
               { off: 0x22EB04, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" },
               { off: 0x230B44, jal: 0x0C606CEC, ds: 0x240501C4, k: "unit" }] },
-    { id: 0x1C5, where: "battle", what: "The other side of the same picker — preferred target.",
+    { id: 0x1C5, where: "battle", proof: "untested", what: "The other side of the same picker — preferred target.",
       sites: [{ off: 0x230B64, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" },
               { off: 0x23AC20, jal: 0x0C606CEC, ds: 0x240501C5, k: "unit" }] },
-    { id: 0x1C6, where: "battle",
+    { id: 0x1C6, where: "battle", proof: "untested",
       what: "The auto-item action, in the turn planner and again where the action is issued.",
       sites: [{ off: 0x23B9CC, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" },
               { off: 0x259C48, jal: 0x0C606CEC, ds: 0x240501C6, k: "unit" }] },
-    { id: 0x1C7, where: "battle",
+    { id: 0x1C7, where: "battle", proof: "untested",
       what: "Doubles damage dealt AND damage taken — the two sites are the attacker's copy and "
         + "the defender's, and the shifts are literal `sll ...,1`.",
       sites: [{ off: 0x1047BC, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" },
               { off: 0x1047D0, jal: 0x0C5B2CE0, ds: 0x240501C7, k: "rec" }] },
-    { id: 0x1C8, where: "battle",
+    { id: 0x1C8, where: "battle", proof: "untested",
       what: "Moves half of the SKL-derived figure into MGC. Two sites: one adds the half, one "
         + "halves what is left.",
       sites: [{ off: 0x10FD64, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" },
               { off: 0x10FD9C, jal: 0x0C5B2CE0, ds: 0x240501C8, k: "rec" }] },
-    { id: 0x1C9, where: "battle", what: "The same pair of sites for REP into PWR.",
+    { id: 0x1C9, where: "battle", proof: "untested", what: "The same pair of sites for REP into PWR.",
       sites: [{ off: 0x10FDBC, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" },
               { off: 0x10FDF4, jal: 0x0C5B2CE0, ds: 0x240501C9, k: "rec" }] },
-    { id: 0x1CA, where: "battle",
+    { id: 0x1CA, where: "battle", proof: "untested",
       what: "Sets the asleep state at battle start and the berserk state on waking — the two "
         + "status writes right after each check.",
       sites: [{ off: 0x244B1C, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" },
               { off: 0x25DFC8, jal: 0x0C606CEC, ds: 0x240501CA, k: "unit" }] },
-    { id: 0x1CB, where: "battle", what: "The turn-4 wake-up.",
+    { id: 0x1CB, where: "battle", proof: "untested", what: "The turn-4 wake-up.",
       sites: [{ off: 0x2611C8, jal: 0x0C606CEC, ds: 0x240501CB, k: "unit" }] },
-    { id: 0x1CC, where: "battle",
+    { id: 0x1CC, where: "battle", proof: "untested",
       what: "Always berserk: one site in the stat module and two that set the state in battle.",
       sites: [{ off: 0x105634, jal: 0x0C5B2CE0, ds: 0x240501CC, k: "rec" },
               { off: 0x25DFE8, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" },
               { off: 0x2610D0, jal: 0x0C606CEC, ds: 0x240501CC, k: "unit" }] },
-    { id: 0x1CD, where: "battle", what: "The berserk-on-heavy-damage trigger.",
+    { id: 0x1CD, where: "battle", proof: "untested", what: "The berserk-on-heavy-damage trigger.",
       sites: [{ off: 0x244B3C, jal: 0x0C606CEC, ds: 0x240501CD, k: "unit" }] },
-    { id: 0x1CE, where: "battle",
+    { id: 0x1CE, where: "battle", proof: "untested",
       what: "Clamps the damage dealt (the site writes a literal 5 over it) and turns on the "
         + "item-drop side.",
       sites: [{ off: 0x1035E0, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
@@ -853,8 +857,11 @@
   // Fortune is the one support rune with no decoded site at all (see the note above). Named here
   // so the tab can say so by name rather than just leaving a gap in the list.
   const PS_UNMAPPED = [0x1B8];
-  // v1.106.0's encoding, kept only so a disc patched by that version is READ correctly rather
-  // than mistaken for a stranger's patch. Nothing writes it any more.
+  // The encoding v1.106.0 through v1.113.0 wrote (the versions in between changed markers, prose
+  // and tests, never bytes), kept only so a disc patched by one of them is READ correctly rather
+  // than mistaken for a stranger's patch. Nothing writes it any more. It is TWO words and both are
+  // checked — the delay-slot instruction moved up into the jal's word, then this one — because the
+  // answer word alone also occurs in ordinary code.
   const PS_LEGACY_YES = 0x0004102B;          // sltu $v0,$zero,$a0
   // ---- the helper block ------------------------------------------------------
   const psHex = (s) => { const a = new Uint8Array(s.length >> 1); for (let i = 0; i < a.length; i++) a[i] = parseInt(s.substr(i * 2, 2), 16); return a; };
@@ -7619,7 +7626,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     off: ["off", "stock — this rune only does anything for someone who has it equipped"],
     on: ["ON", "this disc answers “yes” for the characters chosen here, and the stock answer for everyone else"],
     mixed: ["PARTLY", "some of this rune's sites point at the helper and some are stock — set it, or clear it, to make them agree"],
-    legacy: ["older patch", "an earlier version of this editor forced this rune on for everyone by dropping the call. Clear it to use the per-character form."],
+    legacy: ["older patch", "v1.106.0–v1.113.0 of this editor forced this rune on for everyone by dropping the call. Clear it to use the per-character form."],
     unknown: ["read-only", "this disc's code at one or more of these sites is not what the editor decoded, so it is not written"],
   };
   const PS_WHERE = { field: "asked on the field", battle: "asked in battle", both: "asked on the field and in battle" };
@@ -7636,12 +7643,13 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   }
   let PS_OPEN = 0;                     // which rune's character picker is expanded, if any
   // The badge beside each rune. Same vocabulary the Mounts tab uses, so "confirmed" means the same
-  // thing on both tabs: somebody played it, not that a test passed. "expected" is the tier this
-  // version needs and Mounts already has: the SITE has been watched working, but the mechanism
-  // that now answers it — a retargeted call rather than a word written over the call — has not.
+  // thing on both tabs: somebody played it, not that a test passed. There are deliberately only
+  // two tiers. A middle one was tried and removed: Sunbeam's play report was earned under the
+  // previous patch shape, and reasoning from "the site works" to "therefore this mechanism works"
+  // is exactly the inference a badge should not make on the reader's behalf. The evidence is kept
+  // in the rune's note, where it can be read for what it is.
   const PS_PROOF = {
     confirmed: ["confirmed", "var(--ok)", "watched working in game, through this mechanism"],
-    expected: ["expected", "var(--acc2)", "the site has been watched working, but not through the relocated helper"],
     untested: ["untested", "var(--warn)", "decoded and byte-verified, but not yet watched working in game"],
   };
   function psProofHTML(p) {
@@ -7798,13 +7806,14 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         (below), and the four dogs (Koichi, Connie, Kosanji, Kogoro) — they are list1 records 76–79 but the game
         keeps their character records in a separate block at VA <code>0x196560C</code>, outside the array this
         table indexes.</div>
-      <div class="okbox" style="margin:12px 0 10px"><b>One of these has been watched working (2026-09-06):</b>
-        Sunbeam's field walk-heal. Forced to yes, the party healed by walking with nobody carrying the rune —
-        which proves the <i>site</i> and the <i>effect</i>, and with them that answering this one question with a
-        yes is all a passive needs. It was proven with the previous patch shape, where the call was dropped and
-        the answer written into the word it vacated; this version answers the same question a different way, so
-        Sunbeam and Champion's are marked <b>expected</b> rather than confirmed, and everything else is
-        <b>untested</b>. This tab will not upgrade a marker on a passing test — only on a play report.</div>
+      <div class="muted" style="margin:12px 0 4px"><b>What has been played, and what it proves.</b> On 2026-09-06
+        Sunbeam's field walk-heal was watched working: forced to yes, the party healed by walking with nobody
+        carrying the rune. That was under the editor's <i>previous</i> patch shape, which dropped the call and
+        wrote the answer into the word it vacated. It is real evidence — it proves 0x14A1B4 is the right site and
+        that the code around it accepts a synthesised <code>$v0</code> — but it says nothing about the machinery
+        this version adds: the trampoline itself, its <code>$ra</code>/<code>$v0</code> handling, the bitmap
+        lookup, and whether 0x16BF1E0 is as dead in a running game as it is in the image. So <b>every rune here
+        reads untested</b>, that one included. A marker moves on a play report and never on a passing test.</div>
       <div class="warnbox" style="margin:12px 0 10px"><b>Experimental — not yet seen working in play.</b> Every
         site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, the helper is
         assembled and disassembled in the offsets doc, and clearing a rune restores the stock instruction exactly.
