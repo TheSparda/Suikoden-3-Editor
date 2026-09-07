@@ -68,8 +68,21 @@ catch (e) { console.log("SKIP e2e: no Chromium (" + e.message.split("\n")[0] + "
 // says in as many words that the rest was SKIPPED rather than green. A run that dies at line
 // N is evidence about nothing past N, and now it says so itself.
 //
-// This does NOT give per-block isolation — the run still stops at the first throw. Isolating
-// all 104 blocks means restructuring every one of them and is a separate change.
+// The exact shape of what this fixes, because it is subtler than "a truncated run looks green":
+// the process DID exit non-zero, but with no ✗ line and no summary at all. So `grep "✗"` came
+// back empty and the run read as clean to anything that greps rather than reading the tail —
+// the exit code was the only signal, and that is the one a human scanning output never sees.
+// A throw now fires three independent channels: a ✗ line (grep finds it), a FAILED summary
+// naming the section (a reader sees it), and a non-zero exit (CI sees it).
+//
+// STOPPING AT THE FIRST THROW IS A DELIBERATE FLOOR, NOT A TODO. It does not isolate blocks,
+// and isolating all 104 means restructuring every one of them — but if you take that on, the
+// property to preserve is that a swallowed throw still FAILS THE SUMMARY. A version that
+// continues past throws while counting them somewhere `fails` does not read would be strictly
+// WORSE than this one: it would print "All e2e checks passed" over a run that threw, which is
+// precisely the false-green this guard exists to make impossible. Stopping loudly beats
+// continuing quietly. Also note only the FIRST throw is reported; the cascade is ignored, so
+// one section is named rather than all of them.
 let aborted = null;
 function finishRun() {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best effort */ }
