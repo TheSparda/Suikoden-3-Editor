@@ -1024,93 +1024,106 @@
   const RF_MULT = ["×1 (no change)", "×2", "×4", "×8", "×16", "×32"];
   const RF_SHARE = ["all of it", "half", "a quarter", "an eighth", "a sixteenth"];
   const RUNEFX = [
-    { id: 0x1BD, key: "sunWalk", g: "Outside battle", kind: "f32", stock: 0.3, min: 0.01, max: 60,
-      label: "Sunbeam — walk-heal: 1 HP every N seconds", step: 0.01, unit: "s",
-      help: "The walking half of Sunbeam heals 1 HP each time this many seconds of field time have "
-        + "passed. The loop adds the frame delta to a running total, and once the total passes this "
-        + "number it divides by it, heals that many HP into every party slot that answers yes, and "
-        + "clears the total — so halving this doubles the rate, and a value small enough to be "
-        + "crossed every frame heals once per frame. It is a float in the executable's small-data "
-        + "pool, and the walk-heal is the ONLY instruction in the whole image that reads it, so "
-        + "nothing else moves with it.",
+    // Stored as an INTERVAL in seconds; shown as its reciprocal, a rate, so it reads as a
+    // sibling of "HP each combat turn" instead of as a bare constant. `recip` does that
+    // conversion in the UI layer only — the bytes on the disc are still the interval.
+    //
+    // "Per second of WALKING" is exact, and the distinction from "per step" is worth keeping:
+    // the loop is gated on the player's animation id (0x16F3860 tests anim 2..13 / 0x42..0x44,
+    // and 0x64..0x6F for kind 2 — the same animation-state test the Movement rules use), so it
+    // only ticks while a walk or run cycle is playing. But what it accumulates is the FRAME
+    // DELTA, not distance, so the heal is per unit of time spent moving and does NOT scale with
+    // how fast you move. Raise a character's run speed on the Movement tab and they cover more
+    // ground for the same heal.
+    { id: 0x1BD, key: "sunWalk", g: "Outside battle", kind: "f32", stock: 0.3, min: 0.0167, max: 60,
+      recip: true, stockShown: 3.33, step: 0.01, unit: "HP/s",
+      label: "Sunbeam — HP per second of walking", short: "HP / sec walking",
+      help: "Sunbeam's walking half. The field loop adds each frame's elapsed time to a running "
+        + "total and, once the total passes an interval stored on the disc, heals that many HP "
+        + "into every party slot that answers yes and clears the total. Stock is a 0.3 s interval "
+        + "= 3.33 HP a second. This box is the RATE; the interval written is 1 ÷ the rate. It only "
+        + "ticks while a walk or run animation is playing, but it counts TIME, not distance — so "
+        + "raising run speed on the Movement tab does not heal you any faster per second. The "
+        + "interval is a float in the executable's small-data pool and this loop is the only "
+        + "instruction in the whole image that reads it, so nothing else moves with it.",
       sites: [[0x42C3B0, 0x3E99999A]] },
     { id: 0x1BD, key: "sunTurn", g: "In battle", kind: "imm", stock: 15, min: 0, max: 9999,
-      label: "Sunbeam — HP healed each combat turn", unit: "HP",
+      label: "Sunbeam — HP healed each combat turn", short: "HP / combat turn", unit: "HP",
       help: "The literal `addiu $v0,$v0,0xF` immediately after the check: 15 HP added to the "
         + "unit's current HP once per combat turn. The value is added to a u16 with a signed "
         + "16-bit immediate, so the useful range stops at 32767.",
       sites: [[0x261198, 0x2442000F]] },
     { id: 0x1BA, key: "killer", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
-      label: "Killer — high-damage-hit chance", unit: "%",
+      label: "Killer — high-damage-hit chance", short: "Crit chance", unit: "%",
       help: "The chance the battle code already rolled is multiplied by this over 100, at both "
         + "sites that roll it. 100 makes the rune do nothing; 0 makes it a penalty.",
       sites: [[0x104088, 0x24020096], [0x104148, 0x24020096]] },
     { id: 0x1BB, key: "counter", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
-      label: "Counter — counter-attack chance", unit: "%",
+      label: "Counter — counter-attack chance", short: "Counter chance", unit: "%",
       help: "×N/100 at all three sites that roll a counter. Note the FIRST site's result then "
         + "runs into a hard cap the rune has no part in — `slti $v1,$s1,96` / `movn`, which "
         + "pins anything at or above 96 to 95 — so past roughly 64% base chance that site "
         + "stops responding. The other two sites have no such clamp.",
       sites: [[0x1038EC, 0x24020096], [0x103B60, 0x24020096], [0x103D34, 0x24020096]] },
     { id: 0x1BC, key: "gale", g: "In battle", kind: "imm", stock: 150, min: 0, max: 1000,
-      label: "Gale — SPD", unit: "%",
+      label: "Gale — SPD", short: "SPD", unit: "%",
       help: "SPD ×N/100. The result is masked to 16 bits right after, so keep the product under "
         + "65535 or it wraps.",
       sites: [[0x10FD34, 0x24020096]] },
     { id: 0x1BF, key: "haziness", g: "In battle", kind: "imm", stock: 30, min: 0, max: 100,
-      label: "Haziness — chance the attack misses", unit: "%",
+      label: "Haziness — chance the attack misses", short: "Dodge chance", unit: "%",
       help: "The rune opens a `rand(100) < 30` roll, and this is the 30 — the rune's real "
         + "number, which its menu text never states. 100 dodges everything the roll covers.",
       sites: [[0x10380C, 0x2842001E]] },
     { id: 0x1C0, key: "drain", g: "In battle", kind: "imm", stock: 3, min: 1, max: 999,
-      label: "Drain — self-heal is damage ÷ N", unit: "÷",
+      label: "Drain — self-heal is damage ÷ N", short: "Self-heal = dmg ÷", unit: "÷",
       help: "A critical hit heals the attacker for the damage dealt divided by this. Smaller heals "
         + "more; 1 gives back the whole hit. Zero is refused because the site divides by it.",
       sites: [[0x245D78, 0x24020003]] },
     { id: 0x1C1, key: "barrier", g: "In battle", kind: "imm", stock: 10, min: 1, max: 999,
-      label: "Barrier — reflect chance is the stat ÷ N", unit: "÷",
+      label: "Barrier — reflect chance is the stat ÷ N", short: "Reflect = stat ÷", unit: "÷",
       help: "The magic-reflect roll is `rand(100) < stat/N`, where the stat comes from the unit. "
         + "Smaller reflects more often. Zero is refused because the site divides by it.",
       sites: [[0x105218, 0x2403000A]] },
     { id: 0x1CE, key: "hunter", g: "In battle", kind: "imm", stock: 5, min: 0, max: 9999,
-      label: "Hunter — damage is clamped to", unit: "dmg",
+      label: "Hunter — damage is clamped to", short: "Damage clamped to", unit: "dmg",
       help: "The damage figure is replaced outright with this literal when the rune answers yes "
         + "— the clamp that makes Hunter a capture tool. Raising it un-clamps the rune while "
         + "leaving its item-drop half alone.",
       sites: [[0x1035E8, 0x24030005]] },
     { id: 0x1CD, key: "violence", g: "In battle", kind: "f32hi", stock: 50, min: 1, max: 100,
-      label: "Violence — goes berserk below this share of max HP", unit: "%",
+      label: "Violence — goes berserk below this share of max HP", short: "Berserk below", unit: "%",
       help: "The unit's HP fraction is compared against an inline 0.5f (`lui $at,0x3F00`). Only the "
         + "top half of the float is in the instruction, so a percentage is stored to about 0.002% "
         + "— close enough that every whole percent reads back as itself.",
       sites: [[0x244B54, 0x3C013F00]] },
     { id: 0x1BE, key: "wall", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
-      label: "Wall — PDF multiplier",
+      label: "Wall — PDF multiplier", short: "PDF multiplier",
       help: "The damage site doubles PDF with a literal `sll $v1,$s3,1`. The shift is the multiplier, "
         + "so it moves in powers of two. This is only Wall's defensive half — the eight "
         + "battle-action gates that stop the character doing anything else are untouched.",
       sites: [[0x104370, 0x00131840]] },
     { id: 0x1C7, key: "dblStrike", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
-      label: "Double-Strike — damage dealt and taken",
+      label: "Double-Strike — damage dealt and taken", short: "Damage multiplier",
       help: "Two `sll $s0,$s0,1` sites — the attacker's copy and the defender's — written "
         + "together, so the rune stays symmetrical. They still stack the way the stock rune does: "
         + "when both sides wear one, both shifts apply.",
       sites: [[0x1047C8, 0x00108040], [0x1047DC, 0x00108040]] },
     { id: 0x1C3, key: "fireSeal", g: "Multipliers", kind: "sa", mult: "sll", stock: 1, min: 0, max: 5,
-      label: "Fire Sealing — damage taken from the doubled element",
+      label: "Fire Sealing — damage taken from the doubled element", short: "Weak-element damage",
       help: "Fire Sealing zeroes one element's incoming damage and doubles another's; this is the "
         + "doubling, at all three sites that scale elemental damage. The zeroed half is a branch, "
         + "not a number, and the rune's fourth site is slot bookkeeping — neither is editable "
         + "here.",
       sites: [[0x104878, 0x00101040], [0x104FE0, 0x00111040], [0x10546C, 0x00101040]] },
     { id: 0x1C8, key: "wizard", g: "Multipliers", kind: "sa", mult: "srl", stock: 1, min: 0, max: 4,
-      label: "Wizard — how much of the figure moves",
+      label: "Wizard — how much of the figure moves", short: "Share moved",
       help: "Wizard halves with `srl ...,1` in two places — one adds the half in, the other "
         + "halves what is left — and both are written together so the pair stays consistent. "
         + "“all of it” is a shift of zero, which leaves the instruction a plain move.",
       sites: [[0x10FD84, 0x00021042], [0x10FDA8, 0x00101042]] },
     { id: 0x1C9, key: "warrior", g: "Multipliers", kind: "sa", mult: "srl", stock: 1, min: 0, max: 4,
-      label: "Warrior — how much of the figure moves",
+      label: "Warrior — how much of the figure moves", short: "Share moved",
       help: "The same pair of halvings as Wizard, on the other pair of stats.",
       sites: [[0x10FDDC, 0x00021042], [0x10FE00, 0x00101042]] },
   ];
@@ -1142,9 +1155,46 @@
     });
     return n;
   }
+  // `recip` entries store an interval but are shown as a rate. Everything below the UI — the
+  // stock words, the audit, the Changes rows — still deals in the stored value; only these two
+  // helpers and the field renderer know about the flip.
+  const rfShown = (e, stored) => (e.recip ? Math.round((1 / stored) * 100) / 100 : stored);
+  const rfStored = (e, shown) => {
+    if (!e.recip) return shown;
+    // Snap back to the exact stock interval when the rate rounds to the stock rate, so a nudge
+    // and a nudge back leaves zero staged bytes instead of 0.3 -> 0.3003.
+    if (Math.abs(shown - e.stockShown) < 0.005) return e.stock;
+    return Math.round((1 / shown) * 100000) / 100000;
+  };
   const rfChoices = (e) => (e.mult === "srl" ? RF_SHARE : RF_MULT).slice(e.min, e.max + 1);
   const rfShow = (e, v) => (e.kind === "sa" ? (e.mult === "srl" ? RF_SHARE : RF_MULT)[v] || `shift ${v}`
     : e.unit === "÷" ? `÷${v}` : `${v}${e.unit ? (e.unit === "%" ? "%" : " " + e.unit) : ""}`);
+  // Stock, in the units the box shows — "3.33 HP/s", not the 0.3 s interval behind it.
+  const rfStockShown = (e) => rfShow(e, e.recip ? e.stockShown : e.stock);
+
+  // ONE field renderer, used by the Rune power card on the Passives tab and by the per-rune
+  // controls on the Runes tab. `short` picks the compact label; both emit class="rf" with the
+  // same data-k, so wireRf drives either without knowing which tab it is on.
+  function rfField(e, short) {
+    const st = rfState(e), nm = runeInfo(e.id).name || hex(e.id, 3);
+    const text = short ? (e.short || e.label) : e.label;
+    const head = `<span>${esc2(text)}
+      <span class="u" title="${esc2(nm + " — " + e.help)}">stock ${esc2(rfStockShown(e))}</span></span>`;
+    if (!st.known) return `<label class="field">${head}
+      <input type="number" class="rf" data-k="${e.key}" value="" disabled
+        title="This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only."></label>`;
+    if (e.kind === "sa") {
+      const opts = rfChoices(e).map((t, i) => `<option value="${i + e.min}"${i + e.min === st.value ? " selected" : ""}>${esc2(t)}</option>`).join("");
+      return `<label class="field">${head}<select class="rf" data-k="${e.key}">${opts}</select></label>`;
+    }
+    const shown = rfShown(e, st.value);
+    const lo = e.recip ? Math.round((1 / e.max) * 100) / 100 : e.min;
+    const hi = e.recip ? Math.round((1 / e.min) * 100) / 100 : e.max;
+    return `<label class="field">${head}
+      <input type="number" class="rf" data-k="${e.key}" min="${lo}" max="${hi}"${e.step ? ` step="${e.step}"` : ""} value="${shown}"></label>`;
+  }
+  // Which knobs a given rune has, for the Runes tab. Sunbeam is the only one with two.
+  const rfForRune = (id) => RUNEFX.filter((e) => e.id === id);
 
   const mipsSll = (rd, rt, sa) => (rt << 16) | (rd << 11) | (sa << 6);
   function potchWords(m) {      // -> [sll word, addu word] or null if unsupported
@@ -7388,6 +7438,20 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <span class="muted">${esc2(x.detail)}</span></div>`).join("");
   }
 
+  // A passive support rune's strength, on the rune's own row. These are the same controls as the
+  // Rune power card on the Passives tab and the same bytes — a rune's description is already
+  // editable from two tabs for the same reason, so the precedent is the tab's own.
+  //
+  // Only the 12 runes that HAVE a number get a block; the rest of the 23 passives set a state bit
+  // or gate a branch, and an empty "strength" box for them would read as a value of nothing
+  // rather than as no value.
+  function runePowerHTML(id) {
+    const fx = rfForRune(id);
+    if (!fx.length) return "";
+    return `<div class="runeslots"><div class="muted" style="margin:8px 0 2px">Strength
+        <span class="u" title="These are engine code constants, not fields on the rune's record, so they are GLOBAL — the number applies to everyone who equips this rune, enemies included. The rune still has to be equipped. Same controls as the Rune power card on the Passives tab; editing either moves the same bytes.">what this passive is worth · global</span></div>
+      <div class="grid">${fx.map((e) => rfField(e, true)).join("")}</div></div>`;
+  }
   function drawRunes(host) {
     const all = runeIds().map(runeInfo);
     const q2 = SEARCH;
@@ -7420,9 +7484,13 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         spell to four. Whichever slots you use, the levels a character has to reach before the later ones
         unlock are <b>not</b> in this record and are not editable yet; test a reassigned rune in game
         before building a run around it.
-        What those runes do instead is engine code, and that code is on the <b>Passives</b> tab: the two
-        that work outside battle can be switched on for the whole party without the rune, and the rest are
-        listed there with what they do and why they are not offered.
+        What those runes do instead is engine code. For the twelve whose effect is built on a number —
+        Sunbeam's <b>HP a combat turn</b> and <b>HP a second of walking</b>, Killer's and Counter's chances,
+        Haziness' dodge roll, Hunter's damage clamp, the Wall/Double-Strike/Wizard multipliers and the rest —
+        that number is editable in <b>Strength</b> on the rune's own row below. Those are engine constants, so
+        they are <b>global</b>: the rune still has to be equipped, but the value applies to everyone who
+        equips it. Whether a passive fires <i>without</i> the rune is a different patch and lives on the
+        <b>Passives</b> tab, which also lists the passives that have no number to move.
         Which rune a character has equipped is set on the <b>Characters</b> tab.</div>
       <table class="invtbl"><thead><tr><th style="width:8%">ID</th><th style="width:20%">Rune</th>
         <th style="width:36%">What it does</th><th>Who has it / where to get it</th></tr></thead>
@@ -7453,9 +7521,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                   </div>`).join("")}</div>`
               : r.grants.length ? `<div class="grants">${r.grants.map((s) =>
                   `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
+            ${runePowerHTML(r.id)}
           </td>
           <td>${runeWhoHTML(r)}</td></tr>`).join("")
         || `<tr><td colspan="4" class="muted">no matches</td></tr>`}</tbody></table>`;
+    wireRf(host);
     qa("[data-rgrp]", host).forEach((b) => (b.onclick = () => { RUNE_GROUP = b.dataset.rgrp; drawRunes(host); }));
     // A granted-spell chip hands off to the Spells tab with the search box already narrowed
     // AND the record itself open, so a rune whose whole content is one attack — Kite, Phoenix —
@@ -7584,22 +7654,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const groups = [];
     for (const e of RUNEFX) if (!groups.includes(e.g)) groups.push(e.g);
     const rows = groups.map((g) => {
-      const fields = RUNEFX.filter((e) => e.g === g).map((e) => {
-        const st = rfState(e), nm = runeInfo(e.id).name || hex(e.id, 3);
-        const head = `<span>${esc2(e.label)}
-          <span class="u" title="${esc2(nm + " — " + e.help)}">stock ${esc2(rfShow(e, e.stock))}</span></span>`;
-        // A read-only control keeps its class and key so it is still findable and still names
-        // the addresses that disagree — hiding it would leave a silent gap in the card.
-        if (!st.known) return `<label class="field">${head}
-          <input type="number" class="rf" data-k="${e.key}" value="" disabled
-            title="This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only."></label>`;
-        if (e.kind === "sa") {
-          const opts = rfChoices(e).map((t, i) => `<option value="${i + e.min}"${i + e.min === st.value ? " selected" : ""}>${esc2(t)}</option>`).join("");
-          return `<label class="field">${head}<select class="rf" data-k="${e.key}">${opts}</select></label>`;
-        }
-        return `<label class="field">${head}
-          <input type="number" class="rf" data-k="${e.key}" min="${e.min}" max="${e.max}"${e.step ? ` step="${e.step}"` : ""} value="${st.value}"></label>`;
-      }).join("");
+      const fields = RUNEFX.filter((e) => e.g === g).map((e) => rfField(e, false)).join("");
       return `<div class="bag-h" style="margin-top:10px">${esc2(g)}</div><div class="grid">${fields}</div>`;
     }).join("");
     const unknown = RUNEFX.filter((e) => !rfState(e).known).length;
@@ -7625,6 +7680,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       <div class="row" style="margin-top:10px"><button class="chip mini" id="rfReset">Restore all to stock</button></div>
     </details>`;
   }
+  // Read the card's REAL open state out of the DOM, synchronously, right before anything
+  // re-renders. `ontoggle` alone is not enough: <details> fires toggle in a queued task, so a
+  // user who opens the card and immediately changes a value can re-render before that event is
+  // delivered — rfOpen is still false and the card they just opened snaps shut under them.
+  // (It also made the e2e racy: it passed for a while, then failed on the same bytes.)
+  const rfSyncOpen = () => { const b = q("#rfBox"); if (b) rfOpen = b.open; };
   function wireRf(host) {
     const box = q("#rfBox", host); if (box) box.ontoggle = () => { rfOpen = box.open; };
     qa(".rf", host).forEach((el) => {
@@ -7633,18 +7694,21 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       // immediate, the whole word for a shift, the float itself for the walk-heal interval.
       markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
       el.onchange = () => {
-        const n = rfWrite(e, el.value);
+        rfSyncOpen();
+        const n = rfWrite(e, rfStored(e, +el.value || 0));
         drawView();
-        setStatus(`${runeInfo(e.id).name || hex(e.id, 3)} — ${e.label}: ${rfShow(e, n)} `
-          + `(stock ${rfShow(e, e.stock)}).`, "ok");
+        setStatus(`${runeInfo(e.id).name || hex(e.id, 3)} — ${e.short || e.label}: `
+          + `${rfShow(e, rfShown(e, n))} (stock ${rfStockShown(e)}).`, "ok");
       };
     });
     const rb = q("#rfReset", host);
     if (rb) rb.onclick = () => {
+      rfSyncOpen();
       RUNEFX.forEach((e) => rfWrite(e, e.stock));
       drawView(); setStatus("Rune power restored to stock.", "ok");
     };
   }
+
   function drawPassives(host) {
     // The Rune power card remembers whether it was open in `rfOpen`, which its `toggle` handler
     // sets — but `toggle` is dispatched on a later task, so an edit made in the same tick as the

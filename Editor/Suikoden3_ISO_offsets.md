@@ -3251,7 +3251,7 @@ into another shape's word corrupts the instruction rather than the number:
 
 | rune | what the number is | stock | file offsets | stock word |
 |---|---|---|---|---|
-| Sunbeam `0x1BD` | walk-heal: 1 HP every N seconds | 0.3 | `0x42C3B0` | `3E99999A` (float, not code) |
+| Sunbeam `0x1BD` | walk-heal interval, shown as HP/s | 0.3 s = 3.33 HP/s | `0x42C3B0` | `3E99999A` (float, not code) |
 | Sunbeam `0x1BD` | HP added each combat turn | 15 | `0x261198` | `2442000F` |
 | Killer `0x1BA` | high-damage-hit chance × N/100 | 150 | `0x104088`, `0x104148` | `24020096` |
 | Counter `0x1BB` | counter chance × N/100 | 150 | `0x1038EC`, `0x103B60`, `0x103D34` | `24020096` |
@@ -3295,6 +3295,18 @@ Sunbeam's alone and nothing else moves when it does.
 `$s2` is initialised to 0 before the loop and its only other use is `andi $a2,$s2,0xFFFF` — the
 heal amount — so a shorter interval scales the rate cleanly, including past one tick per frame.
 
+**It counts time, not steps** (2026-09-06). The loop only runs while a movement animation is
+playing — `0x1702930` calls `0x16F3860(kind@+2, anim@+14)`, which returns 1 for anim `2..13` or
+`0x42..0x44`, and for kind 2 `0x64..0x6F`; that is the same animation-state test the Movement
+rules feature already patches, and the encounter roll one function away calls the same two
+helpers (`0x149C2C` / `0x149C48`). But what accumulates is the **frame delta**
+(`0x17129D8` = `return *(float*)0x0196A3C0`, 65 callers across the image — a generic
+seconds-per-frame), not distance. So "1 HP every 0.3 s of walking" is exact and "1 HP per N
+steps" is not: raising a character's run speed on the Movement tab makes them cover more ground
+for the same heal. The editor therefore shows this knob as a **rate in HP/s** (stock 3.33) and
+stores its reciprocal, snapping back to the exact `3E99999A` when the rate reads as stock so a
+nudge-and-undo leaves zero changed bytes.
+
 **Why the HP-per-tick is NOT exposed.** `mfc1 $s2,$f1` at `0x14A194` could be overwritten with
 `addiu $s2,$zero,N` for a flat heal, and it would be reversible and correctly scoped (the `bc1f`
 skips it, so an un-crossed interval still heals nothing). It is left alone because it buys
@@ -3311,7 +3323,11 @@ Counter's first site runs into `slti $v1,$s1,0x60` / `addiu $v0,$zero,0x5F` / `m
 `0x10390C`..`0x103914`, which pins any counter chance at or above 96 to **95** — so raising
 Counter past roughly 64% base stops moving that site. Gale's product is masked to 16 bits.
 
-Shipped as the **Rune power** card inside the Passives tab (`web/iso.js:rfCard` / `RUNEFX`).
+Shipped in two places off one renderer (`web/iso.js:rfField`): the **Rune power** card inside the
+Passives tab (`rfCard`), and a per-rune **Strength** block on the rune's own row on the Runes tab
+(`runePowerHTML`), which is where someone looking up Sunbeam expects to find "HP a combat turn".
+Both emit the same `class="rf"` controls and are driven by the same `wireRf`, so they cannot
+drift; a rune's description is already editable from two tabs for the same reason.
 Each site is registered in the Changes tab under "Rune power" and audited against its stock
 word by `chgCodeAudit`, so a disc patched some other way still gets named.
 
