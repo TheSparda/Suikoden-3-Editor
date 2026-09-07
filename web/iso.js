@@ -854,8 +854,13 @@
               { off: 0x104838, jal: 0x0C5B2CE0, ds: 0x240501CE, k: "rec" },
               { off: 0x2463CC, jal: 0x0C606CEC, ds: 0x240501CE, k: "unit" }] },
   ];
-  // Fortune is the one support rune with no decoded site at all (see the note above). Named here
-  // so the tab can say so by name rather than just leaving a gap in the list.
+  // Fortune is the one support rune with no site in the EXECUTABLE. That is not the same as no
+  // site at all, and the earlier claim that it had none was wrong: its check is
+  // `jal 0x181B3B0` / `addiu $a1,$zero,0x1B8` in the battle-results OVERLAY at 0x3F3E6938 (and
+  // its streaming twin 0x3F3EF138), which no amount of searching PT_LOAD could ever have found.
+  // Its EXP multiplier IS editable — see the RUNEFX "fortune" entry. It stays listed here
+  // because this table is about the equipped-check SWITCHES, and the switch machinery only
+  // reaches the ELF block; the overlay check is decoded but not switchable yet.
   const PS_UNMAPPED = [0x1B8];
   // The encoding v1.106.0 through v1.113.0 wrote (the versions in between changed markers, prose
   // and tests, never bytes), kept only so a disc patched by one of them is READ correctly rather
@@ -995,7 +1000,7 @@
   // WHAT IS NOT HERE, and why. Champion's, Skunk, Firefly, Medicine, Balance, Waking, Alertness
   // and Fury have no magnitude at their sites at all — they set a state bit or gate a branch, so
   // there is no number to move. Fire Sealing's fourth site (0x1115C4) is slot bookkeeping, not
-  // damage. Fortune has no site anywhere (see PS_UNMAPPED). And Sunbeam's walk-heal HP-per-tick
+  // damage. Fortune IS here now, in the overlay (see its entry). And Sunbeam's walk-heal HP-per-tick
   // could be forced to a flat N by overwriting its `mfc1 $s2,$f1` with an `addiu`, but that
   // throws away the elapsed-interval count the stock code computes for no gain the interval
   // knob below does not already give: shortening the interval scales the same rate, and leaves
@@ -1054,6 +1059,35 @@
         + "interval is a float in the executable's small-data pool and this loop is the only "
         + "instruction in the whole image that reads it, so nothing else moves with it.",
       sites: [[0x42C3B0, 0x3E99999A]] },
+    // Fortune \u2014 the one entry that is NOT in the boot ELF, and the reason three exhaustive
+    // PT_LOAD searches concluded it had no site at all. Its equipped-check and its multiplier
+    // both live in the battle-results OVERLAY (see AUX_WINDOWS), ~1 GB into the disc:
+    //
+    //   3F3E6938  jal 0x181B3B0 / addiu $a1,$zero,0x1B8   count party members holding Fortune
+    //   3F3E6954  addiu $a0,$zero,1                       default multiplier
+    //   3F3E6958  slti  $v1,$s0,1                         nobody has it?
+    //   3F3E6960  addiu $v0,$zero,2                       <- THIS, the doubling
+    //   3F3E6964  movz  $a0,$v0,$v1                       someone has it -> take the 2
+    //   ...1064 bytes later, per character:
+    //   3F3E6D94  lw   $a0,100($sp)
+    //   3F3E6D98  mult $v0,$v0,$a0                        EXP *= multiplier
+    //
+    // That `mult` is the R5900 THREE-operand form (rd=$v0), so it really does write the product
+    // back; read as the two-operand MIPS I `mult` it looks like a no-op and the whole trail
+    // reads as a dead end. Exactly two copies exist on the disc, 0x8800 apart \u2014 a full-image
+    // scan for the 8-byte check pattern finds those two and nothing else.
+    { id: 0x1B8, key: "fortune", g: "After the battle", kind: "imm", aux: true,
+      stock: 2, min: 0, max: 999,
+      label: "Fortune \u2014 EXP multiplier", short: "EXP multiplier", unit: "\u00D7",
+      help: "What the battle-results loop multiplies every character's EXP by. The loop above it "
+        + "counts how many party members hold a Fortune Rune and picks 2 over 1 when the count "
+        + "is NONZERO \u2014 so one Fortune already doubles EXP for the whole party and a second "
+        + "one adds nothing at all. 1 disables the rune; 0 zeroes every EXP award. It is a real "
+        + "integer multiply rather than a shift, so any value works arithmetically, but only 1 "
+        + "and 2 are values the game itself ever produces \u2014 anything else is untested. "
+        + "Written to both streaming copies. This is overlay code, not the executable, so it is "
+        + "only editable once the disc's battle-results windows have been read.",
+      sites: [[0x3F3E6960, 0x24020002], [0x3F3EF160, 0x24020002]] },
     { id: 0x1BD, key: "sunTurn", g: "In battle", kind: "imm", stock: 15, min: 0, max: 9999,
       label: "Sunbeam — HP healed each combat turn", short: "HP / combat turn", unit: "HP",
       help: "The literal `addiu $v0,$v0,0xF` immediately after the check: 15 HP added to the "
@@ -1134,16 +1168,31 @@
       help: "The same pair of halvings as Wizard, on the other pair of stats.",
       sites: [[0x10FDDC, 0x00021042], [0x10FE00, 0x00101042]] },
   ];
-  function rfSiteOk(off, stock, kind) {
+  // An `aux` entry reads and writes the battle-results OVERLAY instead of the ELF block.
+  // Everything else about it is identical — same shape guard, same stock word, same value
+  // maths, same renderer, same wiring. Only the accessor changes.
+  const rfRead = (e, off) => (e.aux ? auxR32(off) : readW(off, 4));
+  const rfOrig = (e, off) => (e.aux ? auxO32(off) : origW(off, 4));
+  const rfPut = (e, off, v) => (e.aux ? auxW32(off, v) : writeW(off, 4, v));
+  function rfSiteOk(e, off, stock) {
+    if (e.aux) {
+      // null means the overlay window was never read — a short disc, or a fixture that does
+      // not reach 1 GB. Unavailable is not the same as "not what we decoded", but both have to
+      // end in a read-only control rather than a write into nothing.
+      const w = auxR32(off);
+      return w !== null && RF_KIND[e.kind].fits(w >>> 0, stock >>> 0);
+    }
     if (!inBlk(off, 4)) return false;
-    return RF_KIND[kind].fits(readW(off, 4) >>> 0, stock >>> 0);
+    return RF_KIND[e.kind].fits(readW(off, 4) >>> 0, stock >>> 0);
   }
   function rfState(e) {
-    if (!e.sites.every(([off, w]) => rfSiteOk(off, w, e.kind))) return { known: false };
+    if (!e.sites.every(([off, w]) => rfSiteOk(e, off, w)))
+      return { known: false, missing: !!e.aux && !auxHasPotch() };
     const K = RF_KIND[e.kind];
-    const vals = e.sites.map(([off]) => K.get(readW(off, 4) >>> 0));
+    const vals = e.sites.map(([off]) => K.get(rfRead(e, off) >>> 0));
     return { known: true, agree: vals.every((v) => v === vals[0]), value: vals[0], vals,
-      dirty: e.sites.some(([off]) => isDirty(off, 4)) };
+      dirty: e.aux ? e.sites.some(([off]) => (rfRead(e, off) >>> 0) !== (rfOrig(e, off) >>> 0))
+        : e.sites.some(([off]) => isDirty(off, 4)) };
   }
   // Registered per site and numbered, for the same reason fxWrite numbers its: three rows that
   // all read "Counter — counter-attack chance" look like duplicates, "site 2 of 3" does not.
@@ -1155,8 +1204,11 @@
       : clampInt(v, e.min, e.max);
     const nm = (REF.items && REF.items[e.id]) || `rune ${hex(e.id, 3)}`;
     e.sites.forEach(([off, stock], i) => {
-      if (!rfSiteOk(off, stock, e.kind)) return;
-      writeW(off, 4, K.put(readW(off, 4) >>> 0, n));
+      if (!rfSiteOk(e, off, stock)) return;
+      rfPut(e, off, K.put(rfRead(e, off) >>> 0, n));
+      // Overlay offsets sit outside the ELF block, so FIELD_REG cannot carry them; the aux
+      // review block decodes those by hand instead (see the Armor sets / Rune power rows).
+      if (e.aux) return;
       const tail = e.sites.length > 1 ? ` (site ${i + 1} of ${e.sites.length})` : "";
       reg(off, K.width, K.disp, "Rune power", `${nm} · ${e.label}${tail}`);
     });
@@ -1189,7 +1241,9 @@
       <span class="u" title="${esc2(nm + " — " + e.help)}">stock ${esc2(rfStockShown(e))}</span></span>`;
     if (!st.known) return `<label class="field">${head}
       <input type="number" class="rf" data-k="${e.key}" value="" disabled
-        title="This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only."></label>`;
+        title="${st.missing
+          ? "unavailable — this value lives in the disc's battle-results overlay, and those windows have not been read (a short or partial disc image)"
+          : `This disc's code at ${e.sites.map(([o]) => "0x" + hex(o, 6)).join(", ")} isn't what this control patches, so it is read-only.`}"></label>`;
     if (e.kind === "sa") {
       const opts = rfChoices(e).map((t, i) => `<option value="${i + e.min}"${i + e.min === st.value ? " selected" : ""}>${esc2(t)}</option>`).join("");
       return `<label class="field">${head}<select class="rf" data-k="${e.key}">${opts}</select></label>`;
@@ -1236,9 +1290,16 @@
   //   +8 sll / +12 addu      (the multiplier)
   // Read once on ISO load, then ride along every save/export path. No undo integration:
   // the Sets view gives each aux field its own restore control instead.
-  const AUX_WINDOWS = [0x3F3E6994, 0x3F3EF194];   // the potch overlay pair (16 bytes each)
-  const AUX_LEN = 16;
-  const AUX_MASK = 0, AUX_MULT = 8;        // offsets within a potch window
+  // The battle-results overlay pair. Two streaming copies of one function, 0x8800 apart, and
+  // the window now starts 0x34 EARLIER than it used to: Fortune's EXP multiplier lives in the
+  // same function, ahead of the potch code, and this is the only window that reaches it.
+  //   +0x00  addiu $v0,$zero,2   Fortune: the EXP multiplier (was the window base before)
+  //   +0x34  andi  $v0,$v0,mask  which armour set owns the potch bonus
+  //   +0x3C  sll / +0x40 addu    the potch multiplier itself
+  const AUX_WINDOWS = [0x3F3E6960, 0x3F3EF160];
+  const AUX_LEN = 0x48;
+  const AUX_FORTUNE = 0;                   // offsets within a battle-results window
+  const AUX_MASK = 0x34, AUX_MULT = 0x3C;
   // AUX holds three kinds of window, told apart by `tag`:
   //   "potch" — the two fixed 16-byte overlay windows (Sets view). Read when the disc opens.
   //   "enemy" — coalesced spans covering enemy and war stat records, reward blocks and spawn
@@ -2405,6 +2466,11 @@
       const oldMask = auxO32(w0 + AUX_MASK) & 0xFFFF, newMask = auxR32(w0 + AUX_MASK) & 0xFFFF;
       if (oldMask !== newMask)
         rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
+      // Fortune shares this window (it is the same battle-results function), and its offsets are
+      // outside the ELF block, so FIELD_REG can't carry it — decode the row here like the two above.
+      const oldF = auxO32(w0 + AUX_FORTUNE) & 0xFFFF, newF = auxR32(w0 + AUX_FORTUNE) & 0xFFFF;
+      if (oldF !== newF)
+        rows.push({ g: "Rune power", t: `Fortune — EXP multiplier: ×${oldF} → ×${newF} (both overlay copies)` });
     }
     // Enemy and room fields (registered on edit; dirty state re-checked live so reverts
     // drop out of the list). Room rows are counted apart so the per-area bulk summary
@@ -7700,7 +7766,28 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const e = RUNEFX.find((x) => x.key === el.dataset.k); if (!e || el.disabled) return;
       // The revert tooltip shows the value in the shape it actually has: a decimal for an
       // immediate, the whole word for a shift, the float itself for the walk-heal interval.
-      markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
+      // markField reads isDirty/origW/revertRange, all of which are ELF-block only — an aux
+      // entry gets its dirty mark and revert driven off the overlay's own before-image instead.
+      if (e.aux) {
+        // Same dirty mark and same ↺ as every other control, driven off the overlay's own
+        // before-image. auxRevertAt reverts the span across BOTH streaming copies at once,
+        // which is what keeps the two from drifting apart.
+        const dirty = rfState(e).dirty;
+        el.classList.toggle("dirty", dirty);
+        if (dirty && !el._revBtn) {
+          const btn = document.createElement("button");
+          btn.type = "button"; btn.className = "revert"; btn.textContent = "↺";
+          const was = RF_KIND[e.kind].get(rfOrig(e, e.sites[0][0]) >>> 0);
+          btn.title = `Restore original (${rfShow(e, was)})`;
+          btn.setAttribute("aria-label", `Restore original value (${rfShow(e, was)})`);
+          btn.onclick = (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            auxRevertAt(AUX_FORTUNE, 4); drawView();
+          };
+          el.insertAdjacentElement("afterend", btn);
+          el._revBtn = btn; btn.classList.add("show");
+        }
+      } else markField(el, e.sites[0][0], RF_KIND[e.kind].width, RF_KIND[e.kind].disp);
       el.onchange = () => {
         rfSyncOpen();
         const n = rfWrite(e, rfStored(e, +el.value || 0));
@@ -7760,12 +7847,16 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     }).join("");
     const gap = PS_UNMAPPED.filter((id) => !q2 || (REF.items[id] || "").toLowerCase().includes(q2))
       .map((id) => `<tr class="muted">
-        <td><b>${esc2(REF.items[id] || hex(id, 3))}</b><div style="font-size:11px">no site found · id ${hex(id, 3)}</div></td>
+        <td><b>${esc2(REF.items[id] || hex(id, 3))}</b><div style="font-size:11px">not in the executable · id ${hex(id, 3)}</div></td>
         <td>${esc2(runeTblDesc(id) || (REF.runeFood && REF.runeFood[String(id)]) || "—")}</td>
-        <td colspan="3">Nothing to switch, and nothing found to switch it at. Its item id appears nowhere in the game
-          code as an argument, no call to any of the three equipped-rune lookups passes it, and no data table
-          pairs it with another support-rune id — so whatever grants this bonus does not ask the question the
-          other 22 ask.</td>
+        <td colspan="3">Not switchable here, but <b>no longer a mystery</b>. This rune asks the same question
+          the other 22 ask — it just asks it somewhere no search of the executable could reach: the
+          <b>battle-results overlay</b>, about 1&nbsp;GB into the disc, at <code>0x3F3E6938</code> and its
+          streaming twin <code>0x3F3EF138</code>. The loop there counts how many party members hold this rune
+          and doubles everyone's EXP if the count is nonzero, so <b>one is as good as six</b>. The multiplier
+          itself is editable — see <b>EXP multiplier</b> under Rune power, and on this rune's own row on the
+          Runes tab. Only the on/off switch is missing, because the switch machinery reaches the executable
+          and this site is not in it.</td>
       </tr>`).join("");
     const blkLine = blk === "hook"
       ? `The helper is installed at <code>0x${hex(PS_HOOK.off, 6)}</code> (VA <code>0x${hex(PS_HOOK.va, 7)}</code>).
