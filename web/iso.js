@@ -2542,7 +2542,7 @@
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
     // The base disc itself is not: it is the pristine reference and outlives any one image.
-    CHG_REGIONS = null; CHG_AUX = null; CHG_ROWS = []; CHG_AUDIT = [];
+    CHG_REGIONS = null; CHG_AUX = null; CHG_ROWS = []; CHG_AUDIT = []; PSW = null;
     VIEW = "chars"; SEARCH = "";
     autoReopenDone = true;                      // one disc per page load decides itself; Close must stay closed
     if (handle) rememberIso(isoName, handle);   // persist the handle for one-tap reopen (FS only)
@@ -3372,7 +3372,7 @@
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
-      test: "One retired patch kept only as a record, and one experiment whose outcome is unknown. The RETIRED one is the Scene actor fallback: it made an actor nobody can find resolve to the player, it never fixed the hang it was written for (scenes address actors by slot, and the namespace it patched is used zero times across 12,055 actor references in every town script on the disc), and on 2026-09-06 it was confirmed in play to cause harm \u2014 one disc STOPPED ADDING PARTY MEMBERS CORRECTLY and another froze a scene transition, both fixed by restoring its two words. Nothing can turn it on any more; if your disc already carries it, the Changes tab opens with a Party formation card that leads with it and puts it back. The live experiment is Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
+      test: "Non-stock code is the tab's entry point and needs no second file: it lists every site on the open disc whose CODE differs from a pristine USA disc and gives each one a checkbox, so a disc that started misbehaving can be bisected \u2014 switch one off, save, try it, switch it back if it was not the one. Rows stay on screen after you switch them off, and the ones that can hang a game rather than just change a number are listed first with the reason. It covers code only; for the data tables point the Changes tab at a base disc. Beyond it: one retired patch kept only as a record, and one experiment whose outcome is unknown. The RETIRED one is the Scene actor fallback: it made an actor nobody can find resolve to the player, it never fixed the hang it was written for (scenes address actors by slot, and the namespace it patched is used zero times across 12,055 actor references in every town script on the disc), and on 2026-09-06 it was confirmed in play to cause harm \u2014 one disc STOPPED ADDING PARTY MEMBERS CORRECTLY and another froze a scene transition, both fixed by restoring its two words. Nothing can turn it on any more; if your disc already carries it, the Changes tab opens with a Party formation card that leads with it and puts it back. The live experiment is Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, the set-bonus constants patched straight out of the game code (potch multiplier per wearer, Destiny\u2019s counter chance, Pale Moon\u2019s heal share), and EFFECT OWNERSHIP \u2014 which set grants which effect. Every bonus is a hard-coded check on the set number, so the potch bonus, the bonus counter chance, heal-on-hit, counter-damage halving and Mole\u2019s squeaky footsteps can each be pointed at a different set and one set can hold several \u2014 but a genuinely NEW effect cannot be added, only moved. Two of those checks are bit tests rather than equality, which is why they offer set combinations instead of single sets. Prosperity\u2019s worn-set check carries its forced-on switch here too, the same one the Passives tab shows: ticked, every party member counts as wearing the set \u2014 and this multiplier COMPOUNDS per member, so six members at the stock \u00d73 pay 3\u2076 = \u00d7729. The multiplier itself lives in a streaming battle overlay rather than the executable, so it reads unavailable on a disc whose overlay this editor cannot verify. Each set shows the bonus decoded off the code beside what the Suikosource guide claims; where they disagree (the guide\u2019s Prosperity \u00d77, Guardian\u2019s counter +50%) the code is what this disc does.",
       food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description. Both strings are written IN PLACE over their own bytes and capped to the slot the disc reserves, and a dish\u2019s name is the very string the item table points at \u2014 there is no second copy to drift, so the recipe list, the item menu and every picker move together. The checkbox at the top rewrites the \u201cHeals N HP\u201d / \u201cN% chance\u201d numbers inside the description to match what you type, so the text does not end up contradicting the table.",
@@ -3397,7 +3397,7 @@
       mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
       movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
       story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
-      test: "One retired patch confirmed to break party addition, kept as a record and still repairable, and one experiment whose outcome is unknown.",
+      test: "A checkbox per non-stock code patch on the open disc, for bisecting one that misbehaves, plus one retired patch and one live experiment.",
       text: "The UI, battle and menu strings inside the executable. Each is capped to its original byte length.",
       encounter: "How often random battles trigger, as one percentage of the game's stock rate, plus the per-map rates.",
       war: "War-battle units: level, HP and the 8 combat stats of every soldier, leader unit and war monster.",
@@ -5323,10 +5323,13 @@
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
-  let TESTVIEW = "avatar";
-  const TESTS = [["avatar", "Field character"], ["horse", "Assigned horse"], ["herb", "Mount button"]];
+  let TESTVIEW = "patches";       // the switchboard first: it is the tab's diagnostic entry point
+  const TESTS = [["patches", "Non-stock code"], ["avatar", "Field character"],
+    ["horse", "Assigned horse"], ["herb", "Mount button"]];
   function drawTest(host) {
-    host.innerHTML = `
+    // The Field-character warning is about ONE subtab's patch, so it only belongs above that
+    // subtab — on the switchboard it would read as a warning about switching patches OFF.
+    host.innerHTML = `${TESTVIEW === "avatar" ? `
       <div class="warnbox" style="margin:0 0 12px" data-sum="Experimental — widening the model whitelist rewrites game code and is not confirmed in play, and story scripts reset the leader byte at chapter transitions.">
         <b>Experimental — rewrites game code, and is not confirmed in play.</b>
         <b>Field character</b> widens the model whitelist past the stock eight. Everyone beyond
@@ -5336,13 +5339,184 @@
         <br>Keep a backup save. Note too that story scripts rewrite the leader byte themselves
         at <b>chapter transitions</b>, so a pick holds only until the next scene that sets it.
       </div>
+` : ""}
       <div class="subtabs" id="testTabs" style="margin-bottom:12px">${TESTS.map(([k, l]) =>
         `<button class="chip${k === TESTVIEW ? " on" : ""}" data-t="${k}">${l}</button>`).join("")}</div>
       <div id="testView"></div>`;
     qa("#testTabs [data-t]", host).forEach((b) => (b.onclick = () => { TESTVIEW = b.dataset.t; drawView(); }));
-    if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
+    if (TESTVIEW === "patches") drawPatchSwitch(q("#testView", host));
+    else if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
     else if (TESTVIEW === "horse") drawHorseClamp(q("#testView", host));
     else if (TESTVIEW === "herb") drawHerb(q("#testView", host));
+  }
+
+  // ---- Non-stock code: one checkbox per patched site -------------------------
+  // The Changes tab already audits the code against its stock words, but its control is a
+  // one-way "restore" button: a row leaves the table the moment you stage it, so you cannot
+  // see what you have turned off, and you cannot put one back to compare. That is the wrong
+  // shape for the job this tab exists for — open a disc that misbehaves, switch things off
+  // one at a time, and find which one it was.
+  //
+  // So this is the same audit with a SWITCH per row. Unticking stages the stock word;
+  // reticking stages the patch again, which is why the rows have to outlive the audit that
+  // found them: PSW keeps each row's patched value alongside its stock one, and a row stays
+  // on screen (unticked) after the audit stops reporting it.
+  //
+  // The one ordering rule is the relocated helper block's, and it is the same rule the
+  // Changes tab obeys: the dead routine cannot go back while a passive-rune `jal` still
+  // points into it, or a live jump lands in restored code. "Turn all off" therefore does the
+  // call sites first, and "turn all back on" does the block first.
+  let PSW = null;                            // { rows: [...] }, rebuilt per disc
+  const pswBytes = (off, n) => BUF.slice(off - ELF_BASE, off - ELF_BASE + n);
+  const pswEq = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const pswLen = (r) => (r.isBlock ? r.stockBytes.length : r.w);
+
+  // Fold the current audit into the sticky row list: new findings get a row, findings we
+  // already know refresh their patched value (a site can be re-patched to something else
+  // between draws), and rows the audit no longer reports stay put as "off".
+  function pswSync() {
+    if (!PSW) PSW = { rows: [] };
+    for (const a of chgCodeAudit(DV)) {
+      const key = `${a.off}:${a.block ? "b" : a.w}`;
+      let r = PSW.rows.find((x) => x.key === key);
+      if (!r) {
+        r = { key, off: a.off, w: a.w, imm: !!a.imm, isBlock: !!a.block,
+              group: a.group, label: a.label, risk: a.risk || "" };
+        if (a.block) { r.stockBytes = a.block; r.patchBytes = pswBytes(a.off, a.block.length); }
+        else { r.stockVal = a.stock >>> 0; r.patchVal = a.got >>> 0; }
+        PSW.rows.push(r);
+      } else if (r.isBlock) r.patchBytes = pswBytes(a.off, r.stockBytes.length);
+      else r.patchVal = a.got >>> 0;
+    }
+    // Risky first, then by offset. Stable, so ticking a box never makes the list jump.
+    PSW.rows.sort((x, y) => (y.risk ? 1 : 0) - (x.risk ? 1 : 0) || x.off - y.off);
+    return PSW.rows;
+  }
+  // "off" = stock, "on" = the patch this row recorded, "other" = someone wrote a third thing
+  // (another editor, or a staged edit of your own) — worth naming rather than guessing at.
+  function pswState(r) {
+    if (!inBlk(r.off, pswLen(r))) return "oob";
+    if (r.isBlock) {
+      const cur = pswBytes(r.off, r.stockBytes.length);
+      return pswEq(cur, r.patchBytes) ? "on" : pswEq(cur, r.stockBytes) ? "off" : "other";
+    }
+    const cur = readW(r.off, r.w) >>> 0;
+    return cur === r.patchVal ? "on" : cur === r.stockVal ? "off" : "other";
+  }
+  const pswBlockFree = () => PASSIVES.every((p) => p.sites.every((s) => psSiteState(s) === "stock"));
+  // Returns false when the ordering rule holds the write back, so the caller can say so
+  // instead of silently doing nothing.
+  function pswSet(r, on) {
+    if (!inBlk(r.off, pswLen(r))) return false;
+    if (r.isBlock) {
+      if (!on && !pswBlockFree()) return false;
+      writeBytes(r.off, on ? r.patchBytes : r.stockBytes);
+    } else writeW(r.off, r.w, on ? r.patchVal : r.stockVal);
+    FIELD_REG[r.off] = { group: on ? "Patch switched back on" : "Restored to stock",
+      label: `${r.group} · ${r.label}`, off: r.off, width: pswLen(r),
+      kind: r.isBlock ? "bytes" : r.w === 4 ? "word" : "num" };
+    return true;
+  }
+
+  function drawPatchSwitch(host) {
+    const rows = pswSync();
+    const on = rows.filter((r) => pswState(r) === "on");
+    const risky = on.filter((r) => r.risk);
+    if (!rows.length) {
+      host.innerHTML = `<div class="card"><div class="bag-h">Code that isn't stock
+        <span class="u">no base disc needed</span></div>
+        <div class="muted">Every code patch site this editor knows about holds its stock value, so
+        there is nothing to switch off. If this disc still misbehaves, the cause is in the <b>data</b>
+        — items, stats, spells, enemies, text — and that needs a pristine base disc to see:
+        <b>Changes</b> tab, <i>Base disc</i>.</div></div>`;
+      return;
+    }
+    const fmt = (r, v) => r.imm ? String(v) : "0x" + hex(v, 8);
+    let h = `<div class="card" style="margin:0 0 12px">
+      <div class="bag-h">Code that isn't stock <span class="u">${on.length} of ${rows.length} switched on</span></div>
+      <div class="muted" style="margin:0 0 8px" data-sum="Every code patch on this disc, with a switch each. Untick to stage the stock word, retick to put the patch back — so you can bisect a misbehaving disc one patch at a time.">Every site on this disc whose <b>code</b> differs from
+        a pristine USA disc, with a switch each. <b>Untick</b> to stage the stock word;
+        <b>retick</b> to put the patch back. Rows do not disappear when you switch them off, which
+        is the point — you can turn one off, save, try it, and turn it back on if it wasn't the
+        one. Nothing is written until you <b>Save</b>.</div>
+      <div class="muted" style="margin:0 0 8px">This reads the disc <b>with your staged edits on
+        top</b>, and it needs no second file: every patch replaces a word this repo has decoded.
+        It says nothing about the data tables — for those, point the <b>Changes</b> tab at a
+        pristine base disc.</div>`;
+    if (risky.length) {
+      h += `<div class="warnbox" style="margin:0 0 10px" data-sum="Some switched-on patches can hang the game rather than just change a number; they are listed first and each says why."><b>${risky.length} switched-on patch${risky.length === 1 ? "" : "es"} can hang
+        the game</b> rather than just change a number. They are listed first and each says what it
+        does when it goes wrong. If a scene froze, a party failed to appear, or a battle behaved
+        impossibly, switch these off first, save, and try it again.</div>`;
+    }
+    h += `<div class="row" style="gap:8px;margin:0 0 10px">
+      <button class="chip mini" id="pswOff">Switch all ${rows.length} off (stock)</button>
+      <button class="chip mini" id="pswOn">Switch all back on</button></div>
+      <table class="invtbl"><thead><tr><th style="width:7%">On</th><th style="width:12%">Offset</th>
+        <th>What</th><th style="width:24%">Stock → patched</th><th style="width:9%">State</th>
+        </tr></thead><tbody>`;
+    let group = null;
+    rows.forEach((r, i) => {
+      if (r.group !== group) {
+        group = r.group;
+        const nOn = rows.filter((x) => x.group === group && pswState(x) === "on").length;
+        const nIn = rows.filter((x) => x.group === group).length;
+        h += `<tr><td colspan="5" class="grouphead"><b>${esc2(group)}</b>
+          <span class="u">${nOn} of ${nIn} on</span></td></tr>`;
+      }
+      const st = pswState(r);
+      const oob = st === "oob";
+      const badge = st === "on" ? '<span class="tag acc2">patched</span>'
+        : st === "off" ? '<span class="dim">stock</span>'
+        : st === "oob" ? '<span class="dim">not loaded</span>'
+        : '<span class="tag">changed elsewhere</span>';
+      h += `<tr><td><input type="checkbox" data-psw="${i}"${st === "on" ? " checked" : ""}${
+          oob ? " disabled" : ""}></td>
+        <td class="sl">0x${hex(r.off, 6)}</td>
+        <td>${esc2(r.label)}${r.risk ? `<div class="muted" style="font-size:11px;margin-top:2px">⚠ ${esc2(r.risk)}</div>` : ""}</td>
+        <td>${r.isBlock ? `<span class="muted">the dead routine</span> → <b>${r.stockBytes.length} bytes of helper</b>`
+          : `<span class="muted">${fmt(r, r.stockVal)}</span> → <b>${fmt(r, r.patchVal)}</b>`}</td>
+        <td>${badge}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+    host.innerHTML = h;
+
+    const held = (n) => ` ${n} left alone — the relocated helper block only goes back once every ` +
+      `passive-rune site reads stock, and some sites are outside the loaded region.`;
+    qa("[data-psw]", host).forEach((cb) => {
+      // A site holding a third value is neither on nor off, and the tri-state box says so
+      // rather than picking one and looking wrong.
+      if (pswState(PSW.rows[+cb.dataset.psw]) === "other") cb.indeterminate = true;
+      cb.onchange = () => {
+      const r = PSW.rows[+cb.dataset.psw];
+      if (!r) return;
+      if (pswSet(r, cb.checked)) {
+        setStatus(cb.checked
+          ? `Staged — ${r.group} · ${r.label} goes back to its patched value when you save.`
+          : `Staged — ${r.group} · ${r.label} goes back to stock when you save.`, "ok");
+      } else {
+        setStatus("Left alone: the relocated helper block can only go back to the dead routine once " +
+          "every passive-rune call site reads stock again, or a live jump would land in it. " +
+          "Use “Switch all off”, which does the call sites first.", "warn");
+      }
+      scheduleBadge(); drawView();
+      }; });
+    q("#pswOff", host).onclick = () => {
+      let done = 0, stuck = 0;
+      for (const r of PSW.rows) if (!r.isBlock) { if (pswSet(r, false)) done++; else stuck++; }
+      for (const r of PSW.rows) if (r.isBlock) { if (pswSet(r, false)) done++; else stuck++; }
+      setStatus(`Staged a restore of ${done} site(s) to stock.` + (stuck ? held(stuck) : "") +
+        " Nothing is written until you save.", stuck ? "warn" : "ok");
+      scheduleBadge(); drawView();
+    };
+    q("#pswOn", host).onclick = () => {
+      let done = 0, stuck = 0;
+      for (const r of PSW.rows) if (r.isBlock) { if (pswSet(r, true)) done++; else stuck++; }
+      for (const r of PSW.rows) if (!r.isBlock) { if (pswSet(r, true)) done++; else stuck++; }
+      setStatus(`Staged ${done} patch(es) back on.` + (stuck ? held(stuck) : "") +
+        " Nothing is written until you save.", stuck ? "warn" : "ok");
+      scheduleBadge(); drawView();
+    };
   }
 
   // ---- Mount button: turn one herb pickup into an on-demand mount ---------------

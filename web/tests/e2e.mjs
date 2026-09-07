@@ -1066,6 +1066,7 @@ head("Field character — the whitelist that decides who you can walk around as"
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
+  await page.click('#testTabs [data-t="avatar"]');          // the tab opens on the switchboard now
   await page.waitForSelector("#avWide", { timeout: 3000 });
   // The readout is the only feedback there is that a patch took, so it is the thing under
   // test: it re-runs the game's chain over the bytes on screen. Stock must be the eight the
@@ -1121,6 +1122,7 @@ head("Field character — chips; Story content in its own view");
 { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="test"]');
   await page.waitForSelector('#testTabs [data-t="avatar"]', { timeout: 3000 });
+  await page.click('#testTabs [data-t="avatar"]');          // the tab opens on the switchboard now
   await page.waitForSelector("#avWide", { timeout: 3000 });
   // Per-area coverage used to ride on each chip as a second condition to satisfy. Play
   // testing retired it — the shipped characters worked everywhere — so the chips must not
@@ -1181,6 +1183,7 @@ head("Field character — chips; Story content in its own view");
   // why, which is what actually has to survive. The repair path for a disc that already
   // carries the patch is covered by the Changes-tab restore section further down.
   await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="avatar"]');          // the tab opens on the switchboard now
   await page.waitForSelector("#avStock", { timeout: 3000 });
   { const txt = await page.textContent("#isoView");
     check("the section is still there to explain the softlock", /Scene softlocks/.test(txt));
@@ -1314,6 +1317,85 @@ head("Encounter multipliers — walking / running / mounted, apart");
   { const r = await save(page);
     check("restoring 100/120/150 rewrites the stock words byte for byte",
       ENC_SITES.every((o, i) => r.u32(o) === ENC_STOCK[i])); }
+  await page.context().close();
+}
+
+head("Non-stock code — a checkbox per patch, so a misbehaving disc can be bisected");
+// The Changes tab's audit has a one-way restore button: a row leaves the table the moment you
+// stage it. This switchboard's whole reason to exist is that a row must SURVIVE being switched
+// off, so you can turn one patch off, save, try the disc, and put it back if it wasn't the one.
+// That round trip is what this test pins — the table rendering is incidental.
+{ const page = await newPage(); await loadIso(page);
+  const view = async () => (await page.textContent("#isoView")).replace(/\s+/g, " ");
+  const rowsNow = () => page.$$eval("[data-psw]", (els) => els.length);
+
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector('#testTabs [data-t="patches"]', { timeout: 3000 });
+  const before = await rowsNow();
+
+  // Stage a code patch elsewhere in the editor, then come back: the switchboard reads the disc
+  // WITH staged edits on top, so it has to notice a patch it did not exist for.
+  // TWO patches, because switching one off has to leave the OTHER one staged — otherwise the
+  // disc is byte-identical to the file again and there is no save to inspect.
+  await page.click('#isoTabs [data-v="encounter"]');
+  await page.waitForSelector("input.enc-mult", { timeout: 3000 });
+  await page.fill('input.enc-mult[data-k="run"]', "60");
+  await page.dispatchEvent('input.enc-mult[data-k="run"]', "change");
+  await page.waitForSelector("input.enc-mult", { timeout: 3000 });
+  await page.fill('input.enc-mult[data-k="ride"]', "113");
+  await page.dispatchEvent('input.enc-mult[data-k="ride"]', "change");
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector("[data-psw]", { timeout: 3000 });
+  check("patches staged on another tab show up here", (await rowsNow()) === before + 2);
+  { const txt = await view();
+    check("...named by group and site", /Encounter rate/.test(txt) && /running multiplier/.test(txt));
+    check("...with both words spelled out", /0x24020078/.test(txt) && /0x2402003C/.test(txt));
+    check("...and counted in the header", /switched on/.test(txt)); }
+
+  // Rows are ordered risky-first, so a box is found by its row, not its index — and by OFFSET,
+  // not by label: "running multiplier" is a substring of "mounted running multiplier", and
+  // matching on the label silently drove the wrong row.
+  const tag = (off) => "0x" + off.toString(16).toUpperCase().padStart(6, "0");
+  const boxAt = async (off) => {
+    const i = await page.$$eval("[data-psw]", (els, want) => els.findIndex((e) =>
+      (e.closest("tr").textContent || "").includes(want)), tag(off));
+    check(`the row for ${tag(off)} is on screen`, i >= 0);
+    return `[data-psw="${i}"]`;
+  };
+  const runSel = await boxAt(ENC_SITES[3]);
+  check("the staged patch's box starts ticked", await page.isChecked(runSel));
+
+  // Switch it off. The row must stay — that is the difference from the Changes tab.
+  await page.uncheck(runSel);
+  await page.waitForSelector("[data-psw]", { timeout: 3000 });
+  check("the row survives being switched off", (await rowsNow()) === before + 2,
+    `before=${before} now=${await rowsNow()}`);
+  { const txt = await view();
+    check("...and reads back as stock", /running multiplier/.test(txt) && /stock/.test(txt)); }
+  check("...with its box unticked", !(await page.isChecked(await boxAt(ENC_SITES[3]))));
+  { const r = await save(page);
+    // The two sites are one word apart, so a save coalesces them into a single write and
+    // `wrote` cannot tell them apart. The VALUE is the assertion that means anything here.
+    check("the switched-off site saves as stock", r.u32(ENC_SITES[3]) === ENC_STOCK[3]);
+    check("...while the one left switched on saves patched", (r.u32(ENC_SITES[2]) & 0xFFFF) === 113); }
+
+  // ...and back on again, from the row that stayed behind. Without the sticky row there is
+  // nothing left to click, which is the bug this section was added to fix.
+  await page.check(await boxAt(ENC_SITES[3]));
+  await page.waitForSelector("[data-psw]", { timeout: 3000 });
+  { const r = await save(page);
+    check("re-ticking puts the patch back", (r.u32(ENC_SITES[3]) & 0xFFFF) === 60);
+    check("...with its opcode half intact", (r.u32(ENC_SITES[3]) >>> 16) === 0x2402); }
+
+  // The bulk control, which is the one someone reaches for on a disc they did not patch. No
+  // save to inspect afterwards on purpose — with everything back to stock the disc matches the
+  // file again, which is exactly the end state being asserted.
+  await page.click("#pswOff");
+  await page.waitForSelector("[data-psw]", { timeout: 3000 });
+  { const txt = await view();
+    check("Switch all off leaves none on", /0 of \d+ switched on/.test(txt)); }
+  check("...and unticks every box",
+    (await page.$$eval("[data-psw]", (els) => els.every((e) => !e.checked))));
   await page.context().close();
 }
 
@@ -1762,6 +1844,7 @@ head("Party formation — the no-base-disc check, and restoring a staged edit");
   // too — a reader who arrives with a broken party should recognise it where the patch used to
   // live, not only on the screen that repairs it. Wait on #avStock: #avActorFb is gone.
   await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="avatar"]');          // the tab opens on the switchboard now
   await page.waitForSelector("#avStock", { timeout: 3000 });
   { const txt = (await page.textContent("#isoView")).replace(/\s+/g, " ");
     // The toggle is retired (v1.135.0), so the Test tab's job here is to keep the record: say
