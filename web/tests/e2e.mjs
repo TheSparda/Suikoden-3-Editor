@@ -2950,6 +2950,78 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.context().close();
 }
 
+head("Growth — bulk skill caps: all-S, unlock-only, restore, scope");
+if (ON) { const page = await newPage(); await loadIso(page);
+  const [l2b, l2s] = TABLES.list2;
+  const rec = l2b + 1 * l2s;                      // synth rec #1: cap#1 = B+(5), cap#2 = A(6), rest 0
+  const cap = (k) => rec + 16 + k;                // skill id k+1's max byte
+  const other = l2b + 5 * l2s + 16;               // some other character's first cap (ships 0)
+  await page.click('#isoTabs [data-v="growth"]');
+  check("the Growth tab carries the bulk skill-cap card", !!(await page.$("#scBox")));
+  await openFold(page, "#scBox");
+
+  // Restore on a pristine disc is a no-op — it writes the bytes that are already there.
+  await page.click("#sc-disc"); await page.waitForTimeout(120);
+  check("restore stages nothing on an unedited disc", await nothingStaged(page));
+
+  // Unlock-only is the whole point of the second button: it must NOT flatten the grades the
+  // disc already gives a character, only lift the bytes reading "Can't get".
+  await page.click("#sc-lock"); await page.waitForTimeout(150);
+  check("unlock stages something", await somethingStaged(page));
+  await openFold(page, "#scBox");
+  await page.click("#sc-disc"); await page.waitForTimeout(150);
+  check("restore puts a bulk unlock back", await nothingStaged(page));
+  await openFold(page, "#scBox");
+  await page.click("#sc-lock"); await page.waitForTimeout(150);
+  let r = await save(page);
+  check("unlock keeps the disc's own grade on skill 1 (B+ = 5)", r.u8(cap(0)) === 5, String(r.u8(cap(0))));
+  check("unlock keeps skill 2 at A (6)", r.u8(cap(1)) === 6, String(r.u8(cap(1))));
+  check("unlock lifts a can't-get skill to S (7)", r.u8(cap(2)) === 7, String(r.u8(cap(2))));
+  check("unlock reaches the whole roster, not just record #1", r.u8(other) === 7, String(r.u8(other)));
+
+  // The grade picker feeds both buttons, and "set every skill" overwrites what unlock preserved.
+  await page.click('#isoTabs [data-v="growth"]');
+  await openFold(page, "#scBox");
+  await page.selectOption("#sc-grade", "2");      // D
+  check("the button says what it will write", /Set every skill to D/.test(await page.textContent("#sc-all")),
+    await page.textContent("#sc-all"));
+  await page.click("#sc-all"); await page.waitForTimeout(150);
+  r = await save(page);
+  check("set-every-skill overwrites the grade unlock preserved (B+ -> D)", r.u8(cap(0)) === 2, String(r.u8(cap(0))));
+  check("set-every-skill writes the whole 43-byte array", r.u8(cap(42)) === 2, String(r.u8(cap(42))));
+  check("set-every-skill reaches the whole roster", r.u8(other) === 2, String(r.u8(other)));
+
+  // A hand-typed Max: has to be warned about before a roster-wide write eats it.
+  await openRec(page, `details.char[data-rec="${rec}"]`);
+  const maxSel = `details.char[data-rec="${rec}"] select[data-off="${cap(0)}"]`;
+  await page.selectOption(maxSel, "7"); await page.waitForTimeout(80);
+  await openFold(page, "#scBox");
+  let asked = null;
+  page.once("dialog", (d) => { asked = d.message(); d.dismiss(); });
+  await page.click("#sc-all"); await page.waitForTimeout(150);
+  check("a roster-wide cap write warns before eating a hand-edited cap", /will be overwritten/.test(asked || ""), asked || "no dialog");
+  check("dismissing leaves the hand edit intact", (await page.locator(maxSel).inputValue()) === "7");
+  await page.click("#isoResetBtn"); await page.waitForTimeout(120);
+
+  // Filter scope, same rule as the scaling card above it.
+  const name = await page.textContent(`details.char[data-rec="${rec}"] .nm`);
+  await page.fill("#isoSearch", name); await page.waitForTimeout(150);
+  await openFold(page, "#scBox");
+  check("a filter reveals the cap card's scope picker", !!(await page.$("#sc-scope")));
+  await page.selectOption("#sc-scope", "filter");
+  await page.selectOption("#sc-grade", "7");
+  await page.click("#sc-all"); await page.waitForTimeout(150);
+  r = await save(page);
+  check("scoped cap write hits the matching record", r.u8(cap(0)) === 7 && r.u8(cap(42)) === 7);
+  // The reader falls back to the pristine fixture for anything this save didn't touch, so the
+  // assertion is "not written", not a value comparison.
+  check("scoped cap write leaves every other character alone", !r.wrote(other));
+  await page.fill("#isoSearch", ""); await page.waitForTimeout(120);
+  await openFold(page, "#scBox");
+  check("clearing the filter hides the cap card's scope picker", !(await page.$("#sc-scope")));
+  await page.context().close();
+}
+
 head("Spells / Unites — bulk Power scale (the difficulty presets' other halves)");
 if (ON) { const page = await newPage(); await loadIso(page);
   const spPow = SPELL.off + 0x1C, unPow = UNITE.off + 0x1C;
