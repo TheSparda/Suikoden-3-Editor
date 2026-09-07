@@ -230,6 +230,18 @@ export const spdClassAddr = (rec) => TABLES.list2[0] + rec * TABLES.list2[1] + M
 export const HORSE_OFF = 0x66;
 export const HORSE_STOCK = { 2: 309, 12: 308, 17: 308, 19: 308, 20: 308, 39: 308 };
 export const horseAddr = (roster) => TABLES.list2[0] + roster * TABLES.list2[1] + HORSE_OFF;
+// The clamp that decides which assigned-horse ids the engine honours: six identical
+// `sltiu rX, rY, 2` sites, three of them party helpers and one PartyPut's own position
+// 7-12 guard. Planted stock so the Test tab's widen control and the Changes tab's Party
+// formation card both decode on the synthetic disc instead of reading "not this build".
+export const HORSE_CLAMP = [
+  { off: 0x10EEEC, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x10EF0C, stock: 0x2C630002, alt: 0x2C630100 },
+  { off: 0x146EDC, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x14711C, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x1471A8, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
+];
 // Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
 // the two rounding sweeteners, and the Adrenaline Power pair-sum.
 export const MECH = {
@@ -495,6 +507,7 @@ export function buildSynthIso() {
   for (const [rec, cls] of Object.entries(MOVESPD_CLASS)) bytes[spdClassAddr(+rec)] = cls;
   for (const [roster, v] of Object.entries(HORSE_STOCK)) w16(horseAddr(+roster), v);
   for (const d of Object.values(MECH)) w32(d.off, d.stock);
+  HORSE_CLAMP.forEach((c) => w32(c.off, c.stock));
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));

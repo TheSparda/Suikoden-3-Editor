@@ -439,6 +439,94 @@
     },
   };
 
+  // ---- party formation: everything on the disc that can change who joins you ---
+  // One place to answer "my save adds party members fine on a stock disc and not on
+  // mine — what did I do", and to put it back.
+  //
+  // Why this is its own thing and not just "Revert all". That button reverts the edits
+  // STAGED in this session; a party bug is found chapters later, long after the session
+  // that caused it saved and closed. Reverting a change already written to the disc
+  // otherwise needs a pristine base disc for the Changes tab to diff against — so every
+  // entry here names its OWN stock value instead, and both the check and the restore work
+  // with nothing but the disc you have open.
+  //
+  // Ordered by how much each one can move the party list, worst first. Only six of this
+  // editor's features can touch party formation at all, and the first two are the only
+  // ones that change its SHAPE:
+  //
+  //   assigned horse   list2 +0x66. PartyPut stages the horse at pos+6 (MOUNT_SYSTEM
+  //                    _RESEARCH §14b), so this decides how many of positions 7-12 are
+  //                    occupied before anyone is added.
+  //   clamp            the six sltiu sites that decide which horse ids count. Three are
+  //                    party helpers and one is PartyPut's own 7-12 guard.
+  //   battle mounts    IsValidRidePair's three pairs. Battle only; listed because it is
+  //                    the other half of the mount system and shares its failure stories.
+  //   field character  the avatar model whitelist. Does not add or remove anyone, but a
+  //                    leader the game never hands you is how the party gets into a state
+  //                    the engine does not produce for itself.
+  //   scene softlock   the actor-lookup fallback. Documented to recurse forever.
+  //   story content    which team's events a leader gets.
+  //
+  // Every stock value quoted below was read back off a pristine SLUS-20387, and
+  // web/tests/party-fix.mjs re-reads all of them from the disc in ISO/ when one is there.
+  // The assigned-horse table is the entry that needed the measurement rather than the
+  // reading: zeroing the other 74 records is only safe because exactly six of the 80 carry
+  // a nonzero +0x66 on a stock disc (recs 2, 12, 17, 19, 20, 39 — Chris on her own horse
+  // and the five other Zexen Knights on the knight horse), which the test asserts.
+  const PARTYFIX = [
+    { key: "horse", title: "Assigned horse", group: "Assigned horse",
+      what: "One u16 on each character's own record naming a horse. When the party is formed, "
+        + "PartyPut writes that horse into the party list six positions along — party slot 3 gets "
+        + "a horse at position 9 — and scene setup builds it as a real actor beside them.",
+      breaks: "This is the one that changes the SHAPE of the party list. Hand horses to characters "
+        + "who don't ship with one and positions 7-12 fill with mounts the game then has to stage "
+        + "and load in every area, so a party that formed cleanly on a stock disc need not on this "
+        + "one. It is also saved state: the list is written when the party is BUILT, so a save made "
+        + "on a patched disc carries the staged horses with it.",
+      restores: "the six Zexen Knights' horses, and nothing else" },
+    { key: "clamp", title: "Assigned-horse clamp", group: "Assigned horse",
+      what: "The six `sltiu rX, rY, 2` instructions that throw away any assigned horse outside a "
+        + "window two ids wide. Stock admits 308-309; widened to 256 it admits 308-563.",
+      breaks: "Three of the six sites are party helpers and one is PartyPut's own position 7-12 "
+        + "guard, so a widened clamp is what lets a wider horse id reach the party list at all. "
+        + "Inert while every +0x66 above is stock — which is exactly why the two are checked "
+        + "together and restored together.",
+      restores: "all six sites to `sltiu … , 2`" },
+    { key: "pairs", title: "Battle mounts", group: "Battle mounts",
+      what: "IsValidRidePair's three hard-coded (rider, mount) comparisons — stock Hugo+Fubar, "
+        + "Futch+Bright, Franz+Ruby.",
+      breaks: "It does not add or remove anyone: both halves of a pair have to be in the party "
+        + "already, and the pairing is read at mount time in battle. Listed because it is the other "
+        + "half of the mount system, and because the formation menu is already known not to show a "
+        + "re-paired mount even when the battle mounting works.",
+      restores: "the three retail pairs" },
+    { key: "avatar", title: "Field character", group: "Field character",
+      what: "The eight-id whitelist that decides whose model the field even asks for, plus the two "
+        + "range bounds around it.",
+      breaks: "No party member is added or removed here either — the pick itself is a save edit. "
+        + "But it is what lets a leader the game never hands you stand in slot 1, and the party "
+        + "states that reach are ones the engine does not produce for itself: a scene that stages "
+        + "the protagonist as cast while the protagonist is also IN the party binds two actor "
+        + "records to one model slot, which is the known scene freeze (FIELD_CHARACTER_RESEARCH).",
+      restores: "the stock eight (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris)" },
+    { key: "actorfb", title: "Scene actor fallback", group: "Scene softlocks",
+      what: "Two words that turn \"an actor nobody can find\" into \"an actor nobody can find is "
+        + "the player\".",
+      breaks: "Tried in play and it did not fix the hang, and it can hang harder: the fallback "
+        + "re-enters the same lookup with your leader's id, so a scene whose actor table has no "
+        + "record for your leader recurses forever. If this is on, turn it off.",
+      restores: "`jr $ra` / `move $v0, $zero`" },
+    { key: "story", title: "Story content", group: "Story content",
+      what: "The nine case immediates that turn the leader byte into a team index, picking which "
+        + "variant of a town's content loads.",
+      breaks: "Blanking a case hands that character Hugo's events instead of their own. That is a "
+        + "fix, not a bug — it is what makes empty dialogue boxes render — so this is here to be "
+        + "READ rather than reset. Only put it back if you want the disc's own routing.",
+      // Held back from the one-button restore: putting these back is not a repair, it is
+      // undoing a fix somebody chose. It gets its own button and says so.
+      holdBack: true, restores: "all nine cases to the ids the disc compares" },
+  ];
+
   // ---- what counts as "moving" for a random encounter -------------------------
   // Before the rate is even computed, the roll is gated on the PLAYER OBJECT's current
   // motion slot (`obj->+0x0E`) and object kind (`obj->+0x02`):
@@ -3194,7 +3282,7 @@
       enemies: "Per-area enemy editor: level, HP, the 8 combat stats, EXP/SP/potch rewards and the drop table, decoded straight from each area's battle packs \u2014 81 packs, 715 enemies, 1,961 stat variants \u2014 and written back to EVERY STREAMING COPY at once. There is no global monster table, so the same Blade Bunny is a different record in every region it appears in and is tuned per area. Bulk multipliers scale HP, all 8 stats, level, EXP, SP, potch or drop weights across every pack or just the ones the filter is showing, and they normally measure from the STOCK disc's numbers, so re-applying \u00d71.2 stays \u00d71.2 instead of stacking to \u00d71.44 and \u201crestore stock values\u201d can undo a scale already saved into a file; on a disc the index doesn't describe the tab says so and falls back to this file's own values rather than writing someone else's numbers over yours. Each zone's SPAWNS AND FORMATIONS are editable as well: which monster each spawn slot holds and which stat variant of it, and the encounter groups themselves \u2014 a relative weight and one member pick per slot, so raising a weight makes that group show up more often. The slot picker only offers the pack's own roster, because a monster from another pack would spawn with no model loaded and CRASH THE GAME, and a formation can shrink but never grow past its original size (fixed allocation on disc). A pack whose offsets don't verify against a pristine disc ships read-only rather than wrong. Suikosource bestiary included as reference.",
       war: "War / major-battle units: level, HP and the 8 combat stats of every war-battle soldier (Zexen, Karaya, Lizard, Duck, Mantor, Harmonian), enemy leader unit and chapter-5 war monster, per unit or in bulk (multiply the whole opposition, or just the leader units). Your own units use the characters' save stats. Army skill list included as reference.",
       ref: "Reference (read-only): searchable item, class and skill lookups, where each item comes from, every packed sub-file on the disc, and where the game decides which music plays. Runes used to live here; they are their own tab now, because renaming a rune and rewriting its menu text are edits, not reference.",
-      changes: "Everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Separately: the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc). This is where to look when a patched disc and the game disagree.",
+      changes: "Starts with PARTY FORMATION: the six things this editor can change that reach who joins your party — assigned horses, the clamp around them, the battle-mount pairs, the field-character whitelist, the scene actor fallback and the story routing — each checked against its own stock value read off a pristine disc, with a button to put any of them back. That check needs no second file, and it is the one thing here that catches a change written in an EARLIER session, after Revert all has nothing left to revert. Below it: everything that is different between the disc you have open and a pristine base disc you point at — the whole history of the image, whoever applied it and whenever, decoded field by field. Then the edits you have staged this session but not saved, and a check of every code patch site against its documented stock word (that half needs no base disc either). This is where to look when a patched disc and the game disagree.",
     };
     // One-line versions of the hints above, for the "Show more" collapse (blurb-core.js).
     // Only the long ones need an entry: a tab with no summary here, or one whose hint runs
@@ -3215,7 +3303,7 @@
       encounter: "How often random battles trigger, as one percentage of the game's stock rate, plus the per-map rates.",
       war: "War-battle units: level, HP and the 8 combat stats of every soldier, leader unit and war monster.",
       ref: "Read-only lookups: items, classes, skills, item sources, packed sub-files, mounts, music and treasure.",
-      changes: "What differs between your disc and a pristine base disc, what you have staged, and a code-patch audit.",
+      changes: "Party formation checked against stock and restorable, what differs from a pristine base disc, what you have staged, and a code-patch audit.",
       gear: "Equipment records: name, DEF, price, description and all five effect slots.",
       sets: "The five armour sets, the set-bonus constants patched out of the game code, and which set grants which effect.",
       food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description.",
@@ -4902,6 +4990,12 @@
           <b>re-formed</b> (the party list is saved state), and the model has to be loadable in the area
           you are in. To <i>force</i> a mount in battle instead, use <b>Ruby</b> in the pair table above —
           she is a party member, so she brings her own battle slot.</div>
+        <div class="muted" style="margin:0 0 8px" data-sum="Handing out horses changes the shape of the party list; the Changes tab's Party formation card puts every one of them back to stock.">Because a horse takes a party-list position of its own,
+          this is the setting most likely to be behind &ldquo;my save adds party members fine on a
+          stock disc and not on mine&rdquo;. The <b>Changes</b> tab opens with a <b>Party formation</b>
+          card that checks every one of these against the value a pristine disc holds and puts them
+          back in one click &mdash; no base disc needed, and it works on a horse handed out in a
+          session that is long since saved and closed.</div>
         <div class="grid eq">${horseRows}</div>
         <details class="note" data-fold="horses"${mntFolds.horses ? " open" : ""}><summary>Why only two horses, and what each character can actually do</summary>
           <ul style="margin:4px 0 0 18px">
@@ -5192,6 +5286,11 @@
           do not ship with. Two things to expect: the horse only appears once the party is
           <b>re-formed</b> (the list is saved state, and it is written when the party is built),
           and the model still has to be loadable in the area you are standing in.</div>
+        <div class="muted" style="margin:0 0 8px" data-sum="Three of the six sites are party helpers and one is PartyPut's own 7-12 guard; the Changes tab's Party formation card restores them.">Three of the six sites are party helpers and one is
+          <code>PartyPut</code>&rsquo;s own position 7&ndash;12 guard, so this is party-list code even
+          though it changes nothing on its own. If a party stops forming correctly, the
+          <b>Changes</b> tab&rsquo;s <b>Party formation</b> card checks this and the horses it admits
+          together, and restores both.</div>
         <label class="field" style="max-width:420px">
           <span>Assigned-horse list</span>
           <select id="hcSel">
@@ -8940,6 +9039,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       const l2 = LIST2_GROWTH.concat(LIST2_FIXED);
       for (let s = 0; s < 43; s++) l2.push([`Skill cap ${skillName(s + 1)}`, LIST2_SKILLMAX_START + s, 1, "max"]);
       l2.push(["Movement class", MOVESPD.classOff, 1, "num"]);
+      // +0x66 was undocumented space when this map was written, so a horse handed out on the
+      // Mounts tab used to land in the record's "other bytes" filler row. It is the single
+      // most consequential byte pair in list2 for party formation — name it.
+      l2.push(["Assigned horse", MOUNTS.horse.off, 2, "num"]);
       recTable("list2", LIST_COUNT.list2, "Growth", nm2, l2);
     }
     recTable("list3", LIST_COUNT.list3, "Support", nm3, LIST3_FIELDS);
@@ -9084,6 +9187,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     AVATAR.slots.forEach((s) => code(s.off, `Field character · ${s.label}`));
     AVATAR.ACTORFB.sites.forEach((s, k) => code(s.off, `Scene actor fallback · word ${k + 1}`, "hex"));
     AVATAR.STORY.cases.forEach((c) => code(c.off, `Story content · case for id ${hex(c.id, 2)} (team ${c.idx})`));
+    MOUNTS.horseClamp.sites.forEach((c, k) =>
+      code(c.off, `Assigned-horse clamp · site ${k + 1} of ${MOUNTS.horseClamp.sites.length}`, "hex"));
+    code(MOUNTS.mech.pool.off, `Mount mechanics · ${MOUNTS.mech.pool.label}`, "hex");
+    code(MOUNTS.mech.adren.off, `Mount mechanics · ${MOUNTS.mech.adren.label}`, "hex");
+    code(MOUNTS.mech.roundRider.off, `Mount mechanics · ${MOUNTS.mech.roundRider.label}`);
+    code(MOUNTS.mech.roundMount.off, `Mount mechanics · ${MOUNTS.mech.roundMount.label}`);
 
     const out = (() => {
       const kept = chgDisjoint(ChangesCore.sortRegions(named));
@@ -9264,6 +9373,133 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     setStatus(`Exported ${patches.length} applied change(s) as a .s3mod recipe.`, "ok");
   }
 
+  // ---- party formation: resolve the sites, check them, put them back ----------
+  // Resolved from the same constants the tabs write through, so a table that moves moves in
+  // one place. Every site carries its own stock value (see PARTYFIX): no base disc is read
+  // here, which is the whole point — a party bug is found long after the session that
+  // caused it, when there is nothing left staged to revert.
+  function partyFixSites(key) {
+    const out = [];
+    const site = (off, w, stock, label, kind) => {
+      if (inBlk(off, w)) out.push({ off, w, stock: w === 4 ? stock >>> 0 : stock & 0xFFFF, label, kind: kind || "num" });
+    };
+    if (key === "horse") {
+      const [b, st] = TABLES.list2, nm = (REF.names && REF.names.list2) || {};
+      for (let i = 0; i < LIST_COUNT.list2; i++)
+        site(b + i * st + MOUNTS.horse.off, 2, MOUNTS.horse.STOCK[i] || 0,
+          `${nm[String(i)] || `#${i}`} · assigned horse`);
+    } else if (key === "clamp") {
+      const n = MOUNTS.horseClamp.sites.length;
+      MOUNTS.horseClamp.sites.forEach((c, k) => site(c.off, 4, c.stock, `clamp site ${k + 1} of ${n}`, "hex"));
+    } else if (key === "pairs") {
+      MOUNTS.pairs.forEach((p, i) => {
+        p.riderSites.forEach((o, k) => site(o, 2, MOUNTS.STOCK[i][0],
+          `pair ${i + 1} rider${p.riderSites.length > 1 ? ` (site ${k + 1})` : ""}`));
+        site(p.mountSite, 2, MOUNTS.STOCK[i][1], `pair ${i + 1} mount`);
+      });
+    } else if (key === "avatar") {
+      AVATAR.gates.forEach((g) => site(g.off, 2, g.stock, g.label));
+      AVATAR.slots.forEach((s) => site(s.off, 2, s.stock, s.label));
+    } else if (key === "actorfb") {
+      const n = AVATAR.ACTORFB.sites.length;
+      AVATAR.ACTORFB.sites.forEach((s, k) => site(s.off, 4, s.stock, `word ${k + 1} of ${n}`, "hex"));
+    } else if (key === "story") {
+      AVATAR.STORY.cases.forEach((c) => site(c.off, 2, c.id, `case for id 0x${hex(c.id, 2)} (team ${c.idx})`));
+    }
+    return out;
+  }
+  const pfRead = (s) => (s.w === 4 ? r32(s.off) >>> 0 : r16(s.off));
+  // Reads the LIVE buffer, not the on-disk snapshot: a site changed by an edit staged this
+  // session is just as much "what this disc will do" as one written months ago.
+  function partyFixAudit() {
+    return PARTYFIX.map((g) => {
+      const sites = partyFixSites(g.key);
+      return { g, sites, bad: sites.filter((s) => pfRead(s) !== s.stock), absent: !sites.length };
+    });
+  }
+  // Stage the stock bytes over every non-stock site in the named groups. Goes through
+  // writeW/reg like any field edit, so it lands in undo, the dirty badge and the staged
+  // review list, and nothing is written to the disc until Save.
+  function partyFixRestore(keys) {
+    let n = 0;
+    for (const row of partyFixAudit()) {
+      if (keys && keys.indexOf(row.g.key) < 0) continue;
+      for (const s of row.bad) {
+        writeW(s.off, s.w, s.stock);
+        reg(s.off, s.w, s.kind, "Restored to stock", `${row.g.title} · ${s.label}`);
+        n++;
+      }
+    }
+    return n;
+  }
+  const pfFmt = (s, v) => (s.kind === "hex" ? "0x" + hex(v, 8) : String(v));
+
+  function partyFixCardHTML() {
+    const rows = partyFixAudit();
+    const changed = rows.filter((r) => r.bad.length);
+    const resettable = changed.filter((r) => !r.g.holdBack);
+    const held = changed.filter((r) => r.g.holdBack);
+    const nSites = resettable.reduce((a, r) => a + r.bad.length, 0);
+    let h = `<div class="card" style="margin:0 0 12px">
+      <div class="bag-h">Party formation <span class="u">${changed.length
+        ? `${changed.length} of ${rows.length} setting(s) are not stock` : "all stock"} · no base disc needed</span></div>
+      <div class="muted" style="margin:0 0 8px" data-sum="The six things this editor can change that affect who joins your party, each checked against its own stock value — so this works with no base disc.">Start here if a save that adds party members
+        correctly on a stock disc doesn't on this one. These are the <b>six things this editor can
+        change that reach party formation at all</b>, each checked against its own stock value read
+        off a pristine disc — so unlike the comparison above, this needs no second file, and it
+        catches a change written in an <b>earlier session</b> that <b>Revert all</b> can no longer
+        see. Restoring stages the stock bytes like any other edit: undoable, and nothing is written
+        until you save.</div>`;
+    if (!changed.length) {
+      h += `<div class="muted"><b>Nothing on this disc changes party formation.</b> All ${rows
+        .reduce((a, r) => a + r.sites.length, 0)} site(s) across the six settings hold the values a
+        pristine disc holds, so whatever is going wrong is not one of these — check the comparison
+        above with a base disc, and remember a save carries its own party list, so a list built on
+        a patched disc keeps its staged mounts even after the disc is put back.</div>`;
+    } else {
+      h += `<div class="row" style="gap:8px;margin:0 0 10px">
+        <button class="primary" id="pfAll"${nSites ? "" : " disabled"}>Restore ${nSites} site(s) to stock</button>
+        ${held.length ? `<span class="muted">${held.map((r) => esc2(r.g.title)).join(", ")} ${held.length === 1
+          ? "is" : "are"} left out of that — see below</span>` : ""}</div>`;
+    }
+    for (const r of rows) {
+      const state = r.absent ? `<span class="tag">not on this disc</span>`
+        : r.bad.length ? `<span class="tag warn">${r.bad.length} of ${r.sites.length} changed</span>`
+          : `<span class="tag ok">stock</span>`;
+      h += `<details class="note" style="margin:8px 0 0"${r.bad.length ? " open" : ""}><summary>${
+        esc2(r.g.title)} ${state}</summary>
+        <div class="muted" style="margin:6px 0 0"><b>What it is.</b> ${esc2(r.g.what)}</div>
+        <div class="muted" style="margin:6px 0 0"><b>How it bites.</b> ${esc2(r.g.breaks)}</div>`;
+      if (r.bad.length) {
+        h += `<table class="invtbl" style="margin:8px 0 0"><thead><tr><th style="width:14%">Offset</th>
+          <th>Site</th><th style="width:32%">Stock → this disc</th></tr></thead><tbody>${r.bad.map((s) =>
+          `<tr><td class="sl">0x${hex(s.off, 6)}</td><td>${esc2(s.label)}</td>
+            <td><span class="muted">${esc2(pfFmt(s, s.stock))}</span> → <b>${esc2(pfFmt(s, pfRead(s)))}</b></td></tr>`).join("")}</tbody></table>
+          <div class="row" style="gap:8px;margin:8px 0 0">
+            <button class="chip mini" data-pf="${esc2(r.g.key)}">Restore ${esc2(r.g.title.toLowerCase())} to stock</button>
+            <span class="muted">puts back ${esc2(r.g.restores)}</span></div>`;
+      }
+      h += `</details>`;
+    }
+    return h + `</div>`;
+  }
+  function wirePartyFix(host) {
+    const done = (n, what) => {
+      setStatus(n ? `Staged ${n} site(s) back to stock — ${what}. Nothing is written until you save.`
+        : `${what} — already stock, nothing to do.`, n ? "ok" : "warn");
+      drawView();
+    };
+    const all = q("#pfAll", host);
+    if (all) all.onclick = () => {
+      const keys = PARTYFIX.filter((g) => !g.holdBack).map((g) => g.key);
+      done(partyFixRestore(keys), "party formation");
+    };
+    qa("[data-pf]", host).forEach((b) => (b.onclick = () => {
+      const g = PARTYFIX.find((x) => x.key === b.dataset.pf);
+      done(partyFixRestore([b.dataset.pf]), g ? g.title.toLowerCase() : b.dataset.pf);
+    }));
+  }
+
   // ---- the view ---------------------------------------------------------------
   function drawChanges(host) {
     const staged = buildReview();
@@ -9276,6 +9512,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       is the only way to see a change that was applied in an earlier session. <b>Staged</b> is what you
       have changed since opening it and have not saved yet. Nothing about a stock disc ships with this
       editor (it is the game's own executable), so the base disc has to be your own pristine copy.</div>`;
+
+    // ---- party formation ----
+    // First on the tab on purpose: it is the only card here that needs no second file, and
+    // "my party stopped working" is the question people arrive on this tab holding.
+    h += partyFixCardHTML();
 
     // ---- base disc card ----
     h += `<div class="card" style="margin:0 0 12px"><div class="bag-h">Base disc</div>`;
@@ -9393,6 +9634,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     h += `</div>`;
 
     host.innerHTML = h;
+    wirePartyFix(host);
     const on = (id, fn) => { const b = q("#" + id, host); if (b) b.onclick = fn; };
     on("chgPick", chgPickBase);
     on("chgGrant", chgGrantBase);
