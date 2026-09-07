@@ -498,7 +498,7 @@ function drawSlot() {
     const f = co[g]; if (!f) return "";
     const on = CARRY[g] !== undefined ? CARRY[g] : f.loaded;
     const where = `0x${hx(f.flagOffset, 2)} bit ${f.flagBit} (mask 0x${hx(f.flagMask, 2)})`;
-    return `<label class="row" style="gap:8px;cursor:pointer;align-items:baseline">
+    return `<label class="ckrow">
       <input type="checkbox" data-carry="${g}"${on ? " checked" : ""}${on !== f.loaded ? ' class="dirty"' : ""}>
       <b>${label} data loaded</b>
       <span class="muted" style="font-size:12px">${where} · ${esc(Object.values(f.names || {}).join(" / "))}${f.customNames ? "" : " (defaults)"}</span></label>`;
@@ -551,7 +551,7 @@ function drawSlot() {
     const opts = trOpts(rows, p.stage, "— not started —").map((o) =>
       `<option value="${o.v}"${o.v === cur ? " selected" : ""}>${esc(o.l)}</option>`).join("");
     return `<div class="row" style="gap:8px;align-items:baseline;flex-wrap:wrap">
-      <label class="row" style="gap:6px;cursor:pointer;min-width:150px;align-items:baseline">
+      <label class="ckrow" style="min-width:150px">
         <input type="checkbox" data-tflame="${p.key}"${on ? " checked" : ""}${on !== p.lit ? ' class="dirty"' : ""}>
         <b>Flame ${p.flame} · ${esc(p.name)}</b></label>
       <select data-tstage="${p.key}" data-def="${p.stage}"${cur !== p.stage ? ' class="dirty"' : ""}
@@ -685,7 +685,7 @@ function drawSlot() {
             : `<button class="primary" id="saveBtn">Apply &amp; download</button>`}
         ${CAN_SHARE_FILES ? `<button id="shareBtn">Apply &amp; share…</button>` : ""}
         <button id="resetBtn">Reset</button>
-        <label class="row" style="gap:6px;cursor:pointer;font-size:12px;color:var(--mut)" title="Off = keep the original filename, so a download/share can overwrite the source card">
+        <label class="ckrow" style="font-size:12px;color:var(--mut)" title="Off = keep the original filename, so a download/share can overwrite the source card">
           <input type="checkbox" id="suffixChk"${ADD_SUFFIX ? " checked" : ""}> add “.edited” to copies</label>
         <span class="status" id="status"></span>
       </div>
@@ -745,7 +745,7 @@ function showSub() {
     $("#subhint").innerHTML = `Stats, equipped runes/armor, and skill slots per character, with the ` +
       `<b>guide's</b> skill caps, Lv-99 growth ranges and rune-slot unlock levels shown under each field. ` +
       `Tick <b>recruited</b> to add a not-yet-joined character (or untick to remove). ` +
-      `<label style="cursor:pointer;margin-left:6px"><input type="checkbox" id="reconly" ${RECRUITED_ONLY ? "checked" : ""}> recruited only</label>`;
+      `<label class="ckinline" style="margin-left:6px"><input type="checkbox" id="reconly" ${RECRUITED_ONLY ? "checked" : ""}> recruited only</label>`;
     drawChars();
     $("#reconly").onchange = (e) => { RECRUITED_ONLY = e.target.checked; drawChars(); };
   } else if (SUB === "recruit") {
@@ -918,7 +918,7 @@ function charCard(c) {
       <span class="lv">Lv ${c.level} · WLv ${c.weaponLv} · HP ${c.curHP}/${c.maxHP}</span></summary>
     <div class="char-body" data-roster="${c.rosterIndex}">
       <div class="row" style="gap:16px;margin-top:4px">
-        <label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-recruit="${c.rosterIndex}" ${c.recruited ? "checked" : ""}> recruited</label>
+        <label class="ckrow" style="min-height:38px"><input type="checkbox" data-recruit="${c.rosterIndex}" ${c.recruited ? "checked" : ""}> recruited</label>
         <span class="row" style="gap:4px;align-items:center">team(s)
           ${RECRUITERS.map((h) => `<label class="tmbox" title="${h}"><input type="checkbox" data-recteam="${c.rosterIndex}" value="${h}" ${(c.recruiters || []).includes(h) ? "checked" : ""}>${h[0]}</label>`).join("")}
           <span class="muted">none = shared</span></span></div>
@@ -1053,7 +1053,7 @@ function drawRecruit() {
     const boxes = RECRUITERS.map((h) => `<label class="tmbox" title="${h}"><input type="checkbox" data-tm="${c.rosterIndex}" value="${h}" ${st.teams.includes(h) ? "checked" : ""} ${dis}>${h[0]}</label>`).join("");
     const tag = story ? `<span class="story-tag" title="${esc(recruitHow(c.name) || "Joins automatically via the story")}">⚠ story</span>` : "";
     return `<tr class="${dirty ? "dirtyrow " : ""}${story ? "story-auto" : ""}">
-        <td><label class="row" style="gap:6px;cursor:pointer"><input type="checkbox" data-rec="${c.rosterIndex}" ${st.recruited ? "checked" : ""}> <span>${esc(c.name)}</span></label> ${tag}</td>
+        <td><label class="ckrow nowrap" style="min-height:40px"><input type="checkbox" data-rec="${c.rosterIndex}" ${st.recruited ? "checked" : ""}> <span>${esc(c.name)}</span></label> ${tag}</td>
         <td class="sl">#${c.rosterIndex}</td>
         <td class="teamcell">${boxes}<button class="chip mini" data-tmall="${c.rosterIndex}" ${dis}>All</button></td>
       </tr>`;

@@ -1611,13 +1611,13 @@
     // "what the game says" the Passives table shows: the item's own menu text, so the code
     // column beside it can be compared against what the game claims.
     const said = sw.id ? runeInfo(sw.id).text || "" : "";
-    return `<label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 2px">
+    return `<label class="ckrow tight" style="margin:0 0 2px">
         <input type="checkbox" class="auxsw" data-k="${sw.key}"${on ? " checked" : ""}${
           why ? ` disabled title="${esc2(why)}"` : ""}>
         <b>${esc2(sw.label)}</b>${said ? ` <span class="u" title="${esc2(said)}">what the game says</span>` : ""}${
           why ? ` <span class="muted" style="font-size:12px">${
             esc2(st === "oob" ? "unavailable on this disc image" : "read-only on this disc")}</span>` : ""}</label>
-      <div class="muted" style="font-size:12px;margin:0 0 10px 26px">${esc2(sw.help)}</div>`;
+      <div class="muted" style="font-size:12px;margin:0 0 10px 29px">${esc2(sw.help)}</div>`;
   }
   function wireAuxSw(host) {
     qa(".auxsw", host).forEach((el) => {
@@ -4091,7 +4091,7 @@
           <select id="shopLoc" style="display:block;width:100%">${locOpts}</select></label>
         <label style="display:block;width:100%;max-width:26em">Story stage
           <select id="shopStage" style="display:block;width:100%">${stageOpts}</select></label>
-        <label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="shopEmpty"${SHOP_EMPTY ? " checked" : ""}> <span>show empty slots</span></label>
+        <label class="ckrow tight"><input type="checkbox" id="shopEmpty"${SHOP_EMPTY ? " checked" : ""}> <span>show empty slots</span></label>
       </div>
       <div class="muted" style="margin-top:6px" data-sum="Each counter keeps four inventories and the game swaps between them as the story advances.">Each counter keeps four inventories and the game
         swaps between them as the story advances, so stage 1 is the earliest stock and the last
@@ -4287,7 +4287,7 @@
     return out;
   };
   function f18CtlHTML(i, v) {
-    const box = (b, unknown) => `<label class="row" style="gap:6px;cursor:pointer;margin:0;align-items:baseline">
+    const box = (b, unknown) => `<label class="ckrow tile" style="margin:0">
         <input type="checkbox" class="sp18" data-i="${i}" data-b="${b}"${((v >>> b) & 1) ? " checked" : ""}>
         <span${unknown ? ' class="warn"' : ""}>${esc2(F18_TEXT[b] || `bit ${b} — unknown, keep unless you know better`)}
           <span class="u">0x${hex(1 << b, 4)}</span></span></label>`;
@@ -4295,7 +4295,7 @@
     const unk = f18UnknownBits(v).map((b) => box(b, true)).join("");
     return `<div class="field" style="grid-column:1/-1">
         <span>Effects / status <span class="muted">(flags18 · any combination)</span></span>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:2px 14px;margin:4px 0 6px">${known}${unk}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:7px;margin:6px 0 8px">${known}${unk}</div>
         <label class="row" style="gap:6px;margin:0;align-items:baseline"><span class="muted">raw mask 0x</span>
           <input type="text" class="sp18hex" data-i="${i}" value="${hex(v, 8)}" style="width:11ch" spellcheck="false"></label>
         <div class="muted" style="margin-top:4px">${esc2(F18_NOTE)}</div></div>`;
@@ -4556,7 +4556,7 @@
         <label class="field"><span>Heals allies (HP)</span>
           <input type="number" id="spSplitHeal" min="0" max="${SPLIT.maxHeal}" value="${st.heal == null ? SPLIT.stockHeal : st.heal}"></label>
       </div>
-      <label class="row" style="gap:6px;cursor:pointer;margin:8px 0 0"><input type="checkbox" id="spSplitTgt" checked>
+      <label class="ckrow" style="margin:8px 0 0"><input type="checkbox" id="spSplitTgt" checked>
         also set that spell's Target to “All foes + allies” <span class="u">· both sides have to be in the target list for this to show</span></label>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="spSplitApply">Apply</button>
         <button class="chip mini" id="spSplitReset">Restore original</button>
@@ -4940,7 +4940,7 @@
         <span class="u">fills the fields — then Apply</span></div>
       <div class="row" style="margin-top:8px"><button class="primary mini" id="rsApply">Apply to rune</button>
         <span class="muted" id="rsInfo"></span></div></details>`;
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes <span class="u">\u00b7 applies to both bulk edits above too</span></label>`;
+    const updBox = `<label class="ckrow" style="margin:0 0 10px"><input type="checkbox" id="spUpd"${upd ? " checked" : ""}> also rewrite the damage number in each spell's description when Power changes <span class="u">\u00b7 applies to both bulk edits above too</span></label>`;
 
     const rows = [];
     for (let i = 0; i < SPELL.count; i++) {
@@ -5132,7 +5132,7 @@
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && !who.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, off, name, who });
     }
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes <span class="u">· applies to the bulk edit above too</span></label>`
+    const updBox = `<label class="ckrow" style="margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes <span class="u">· applies to the bulk edit above too</span></label>`
       + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
     const sec = (t) => `<div class="secdiv"><span>${t}</span></div>`;
     const radIx = recIndex();             // one scan of both tables for all 38 rows' hints
@@ -5247,7 +5247,7 @@
         <td><input type="number" class="fd" min="0" max="65535" style="width:90px" value="${r16(proc)}" data-off="${proc}" data-dptr="${dptr}" data-kind="proc" data-g="${esc2(name)}" data-l="Proc %"></td>
         ${descCell}</tr>`);
     }
-    host.innerHTML = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
+    host.innerHTML = `<label class="ckrow" style="margin:0 0 10px"><input type="checkbox" id="fUpd"${foodDescOn ? " checked" : ""}> also rewrite the "Heals N HP" / "N% chance" numbers in the description</label>
       <div style="overflow-x:auto"><table class="invtbl"><thead><tr><th>#</th><th>Name</th><th>Heal HP</th><th>Proc %</th><th>Description</th></tr></thead><tbody>${rows.join("") || `<tr><td colspan="5" class="muted">no matches</td></tr>`}</tbody></table></div>`;
     q("#fUpd", host).onchange = (e) => { foodDescOn = e.target.checked; };
     // reflect a food row's description string back into its editable cell (+ highlight)
@@ -5448,8 +5448,8 @@
         const d = MOUNTS.TIERS[k];
         return `<div class="mcfrow"><span class="mcf ${d.cls}">${d.mark} ${esc2(d.label)}</span>
           <span class="muted">${esc2(d.why)}</span></div>`; }).join("")}</div>
-      <label class="row" style="gap:6px;cursor:pointer;margin:10px 0 0;align-items:flex-start">
-        <input type="checkbox" id="mntAll"${mntAllRiders ? " checked" : ""} style="flex:0 0 auto;margin-top:3px">
+      <label class="ckrow top" style="margin:10px 0 0">
+        <input type="checkbox" id="mntAll"${mntAllRiders ? " checked" : ""}>
         <span style="flex:1 1 200px;min-width:0">also list riders with no mounted-battle bank (Geddoe,
         Thomas, Salome, Juan) — they pair up and then keep their normal battle pose</span></label>`;
     const [l2base, l2stride] = TABLES.list2;
@@ -5933,8 +5933,8 @@
         : st === "off" ? '<span class="dim">stock</span>'
         : st === "oob" ? '<span class="dim">not loaded</span>'
         : '<span class="tag">changed elsewhere</span>';
-      h += `<tr><td><input type="checkbox" data-psw="${i}"${st === "on" ? " checked" : ""}${
-          oob ? " disabled" : ""}></td>
+      h += `<tr><td><label class="ckcell"><input type="checkbox" data-psw="${i}"${st === "on" ? " checked" : ""}${
+          oob ? " disabled" : ""}></label></td>
         <td class="sl">0x${hex(r.off, 6)}</td>
         <td>${esc2(r.label)}${r.risk ? `<div class="muted" style="font-size:11px;margin-top:2px">⚠ ${esc2(r.risk)}</div>` : ""}</td>
         <td>${r.isBlock ? `<span class="muted">the dead routine</span> → <b>${r.stockBytes.length} bytes of helper</b>`
@@ -6738,7 +6738,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   function drawGear(host) {
     const g = scanGear();
     const ids = Object.keys(g).map(Number).sort((a, b) => a - b);
-    const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="gUpd"${gearDescOn ? " checked" : ""}> also rewrite the DEF(+N) number in the description when DEF changes</label>`;
+    const updBox = `<label class="ckrow" style="margin:0 0 10px"><input type="checkbox" id="gUpd"${gearDescOn ? " checked" : ""}> also rewrite the DEF(+N) number in the description when DEF changes</label>`;
     const rows = [];
     for (const iid of ids) {
       const nm = itemName(iid);
@@ -7581,11 +7581,11 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           playing. Walking and running are separate tests, and if neither matches, the roll is skipped
           entirely. That makes two things possible that a rate slider can't do.
         </div>
-        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 6px">
+        <label class="ckrow" style="margin:0 0 6px">
           <input type="checkbox" id="encWalk"${w ? " checked" : ""}>
           <b>Walking triggers encounters</b>
           <span class="muted" style="font-size:12px">off = walk anywhere in peace, run when you want to fight</span></label>
-        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 10px">
+        <label class="ckrow" style="margin:0 0 10px">
           <input type="checkbox" id="encRun"${r ? " checked" : ""}>
           <b>Running triggers encounters</b>
           <span class="muted" style="font-size:12px">stock rate is ${"×"}1.2 running, ${"×"}1.5 mounted</span></label>
@@ -8084,7 +8084,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <label class="field"><span>Scope</span><select id="${t.id}Scope">
           ${t.scopes.map((s) => `<option value="${s.v}"${t.mul.scope === s.v ? " selected" : ""}>${esc2(s.label)}</option>`).join("")}</select></label>
       </div>
-      ${known ? `<label class="row" style="gap:6px;cursor:pointer;margin:8px 0 0"><input type="checkbox" id="${t.id}Stock"${t.stock ? " checked" : ""}>
+      ${known ? `<label class="ckrow" style="margin:8px 0 0"><input type="checkbox" id="${t.id}Stock"${t.stock ? " checked" : ""}>
         <span>multiply the <b>stock</b> disc's values, not this file's <span class="u">· keeps ×1.2 at ×1.2 when you re-open a tuned ISO</span></span></label>` : ""}
       <div class="row" style="margin-top:8px;gap:8px;align-items:center">
         <button class="primary" id="${t.id}Apply">Apply multipliers</button>
@@ -10540,7 +10540,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           region — nothing has been applied to this image.</div>`;
       } else {
         h += `<div class="row" style="gap:8px;margin:0 0 10px">
-            <label class="row" style="gap:6px;cursor:pointer;margin:0"><input type="checkbox" id="chgHex"${CHG_HEX ? " checked" : ""}>
+            <label class="ckrow tight" style="margin:0"><input type="checkbox" id="chgHex"${CHG_HEX ? " checked" : ""}>
               show unlabelled byte runs${hidden && !CHG_HEX ? ` <span class="u">· ${hidden} hidden</span>` : ""}</label>
             <button class="chip mini" id="chgExport">Export as .s3mod</button>
             <button class="chip mini" id="chgRevertAll">Stage a revert of all of it</button></div>
