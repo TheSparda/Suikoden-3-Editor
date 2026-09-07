@@ -187,8 +187,15 @@ runes and 7 magic scrolls store their description twice, and 43 names are stored
 menu, the battle command and the item list agreeing. A rename shows up immediately in every
 picker, tooltip and list in the editor for that ISO, and the rune stays findable under its
 original name),
-**Passives** (the 22 **support runes** the engine actually asks about — *Wall*, *Fury*, *Hunter*,
-*Champion's*, *Sunbeam's* and the rest — handed to **the characters you choose**, without
+**Passives** (the four **party-wide** support effects — *Champion's* weak-foe skip, *Sunbeam's*
+walk-heal, *Fortune's* EXP bonus and *Prosperity's* potch bonus — forced on without equipping
+anything. Every OTHER support rune is handed out **per character, on that character's own card**
+in the Characters tab under *Passive runes forced on*; a rune's **strength** is edited on the
+**Runes** tab, on the rune's own row. Three questions, three places: whether it fires
+party-wide, whether it fires for this unit, and how much it is worth.
+
+The mechanism behind all of it: the 22 support runes the engine actually asks about — *Wall*,
+*Fury*, *Hunter* and the rest — can be handed to **the characters you choose**, without
 equipping the rune and without spending a rune slot. A support rune grants no spells and has no
 battle command: each is one question the engine asks at the moment it matters, *“does this
 character have item N equipped?”*, always through the same three seven-slot equipment lookups,
@@ -216,12 +223,13 @@ into the disc rather than in the executable — it asks exactly the same questio
 which is why three exhaustive searches of the executable found nothing. Its **EXP multiplier is
 editable** under Rune power; only the on/off switch is missing, because the switch machinery
 reaches the executable and that site isn't in it. Also not offered: Koroku's four dogs,
-whose character records live outside the array the table indexes. The same tab
-also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 16
-constants across 13 runes, read out of the instruction each rune runs right after it has asked
-whether you have it. *Sunbeam heals 15HP a combat turn and 3.33HP a second of walking*, and
-both of those numbers are editable — on the Passives tab, and on Sunbeam's own row on the
-**Runes** tab under **Strength**, which is the same bytes from either side — as are Killer's and Counter's ×150%, Gale's SPD boost,
+whose character records live outside the array the table indexes.
+
+Separately from all of that, a passive's **strength** — not *whether* it fires but **how much it
+is worth** — is 16 constants across 13 runes, read out of the instruction each rune runs right
+after it has asked whether you have it. Those live on the **Runes** tab, on the rune's own row
+under **Strength**, and nowhere else. *Sunbeam heals 15HP a combat turn and 3.33HP a second of
+walking*, and both of those numbers are editable, as are Killer's and Counter's ×150%, Gale's SPD boost,
 Haziness' real dodge chance (30%, which its menu text never states), Drain's and Barrier's
 divisors, Hunter's damage clamp, Violence's half-HP trigger, and the doubling/halving shifts
 behind Wall, Double-Strike, Fire Sealing, Wizard and Warrior. These need **no switch** and work

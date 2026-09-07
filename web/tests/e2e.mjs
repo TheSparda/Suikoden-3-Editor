@@ -500,9 +500,21 @@ head("Passives view — choose who gets a support rune for free");
   // Every rune with a decoded site is offered now, not just the two field party loops: the
   // answer is a retargeted call into a relocated helper, so a battle check can be scoped to one
   // character instead of being on for whichever unit is acting.
+  // v1.123.0 split the tab by question: THIS tab is the four party-wide, out-of-battle effects.
+  // Champion's (441) and Sunbeam (445) keep their pickers here because their field loops are
+  // party-wide; Fortune and Prosperity appear as the two reward multipliers. Per-unit
+  // enablement for EVERY rune is on the character's own card, and strength is on the Runes tab.
   const picks = await page.$$eval("button.psPick", (b) => b.map((x) => x.dataset.id));
-  check("all 22 runes with sites are offered", picks.length === 22, picks.join(","));
-  check("...including the in-battle ones", picks.includes("446") && picks.includes("462"), picks.join(","));
+  check("only the two field runes are offered here", picks.slice().sort().join(",") === "441,445", picks.join(","));
+  check("...and no in-battle rune is", !picks.includes("446") && !picks.includes("462"), picks.join(","));
+  { const html = await page.innerHTML("#isoView");
+    // Fortune and Prosperity are here as SWITCHES (auxSwBox), not as multipliers: the tab is
+    // four on/off questions and nothing else. No strength control may render on it — that is
+    // the whole point of the split, and a stray `.rf` here would mean strength regained a
+    // second home on another tab.
+    check("the other two of the four are here as overlay switches", /id="auxSwBox"/.test(html));
+    check("...and this tab renders no strength control at all",
+      !/class="rf"/.test(html) && !/id="rfBox"/.test(html)); }
   check("every rune starts with nobody chosen on a stock disc",
     (await page.$$eval("button.psPick", (b) => b.map((x) => x.textContent.trim()))).every((t) => t === "nobody"));
   { const txt = await page.textContent("#isoView");
@@ -534,19 +546,19 @@ head("Passives view — choose who gets a support rune for free");
     check("every rune here reads untested", /every rune here\s+reads untested/i.test(txt.replace(/\s+/g, " "))); }
   const rows = await page.$$eval("#isoView table.invtbl tbody tr", (r) => r.map((x) => x.textContent));
   check("every rune row carries a confidence marker",
-    rows.filter((t) => /untested|confirmed/.test(t)).length >= 22, String(rows.length));
+    rows.filter((t) => /untested|confirmed/.test(t)).length >= 2, String(rows.length));
   check("...and none of them claims confirmed", rows.filter((t) => /confirmed/.test(t)).length === 0);
 
-  // Wall (0x1BE) is the interesting one: ten sites, one of each kind — a record site, a charId
-  // site and eight acting-unit sites — so picking one character exercises all three trampolines.
-  await page.click('button.psPick[data-id="446"]');
-  await page.waitForSelector('input.psCh[data-id="446"]', { timeout: 3000 });
-  const boxes = await page.$$eval('input.psCh[data-id="446"]', (b) => b.map((x) => x.dataset.c));
+  // The picker UI itself, on Champion's (0x1B9) — one of the two runes this tab keeps. Wall's
+  // ten-site byte coverage lives on the character card now, where in-battle runes are enabled.
+  await page.click('button.psPick[data-id="441"]');
+  await page.waitForSelector('input.psCh[data-id="441"]', { timeout: 3000 });
+  const boxes = await page.$$eval('input.psCh[data-id="441"]', (b) => b.map((x) => x.dataset.c));
   check("the picker offers the 75 battle characters", boxes.length === 75, String(boxes.length));
   check("...named, not numbered",
     /Hugo/.test(await page.textContent(".pschips")) && /Emily/.test(await page.textContent(".pschips")));
 
-  await page.click('input.psCh[data-id="446"][data-c="1"]');       // Hugo
+  await page.click('input.psCh[data-id="441"][data-c="1"]');       // Hugo
   await page.waitForTimeout(80);
   check("choosing someone stages something", await somethingStaged(page));
   { const txt = await page.textContent("#isoView");
@@ -554,59 +566,40 @@ head("Passives view — choose who gets a support rune for free");
 
   // Unchoosing must restore the stock disc byte-for-byte — a tab that can only be applied in one
   // direction is a trap, and here that means the helper block goes back to the dead routine too.
-  await page.click('input.psCh[data-id="446"][data-c="1"]');
+  await page.click('input.psCh[data-id="441"][data-c="1"]');
   await page.waitForTimeout(80);
   check("unchoosing them clears every staged byte", await nothingStaged(page));
 
   // "everyone" is just all 75 bits, and it has to come back off again — checked here, BEFORE
   // the save, because saving makes the patched bytes the new pristine baseline and the badge
   // would then be measuring the wrong thing.
-  await page.click('button.psAll[data-id="446"]');
+  await page.click('button.psAll[data-id="441"]');
   await page.waitForTimeout(80);
   check("everyone sets the whole row", /everyone/.test(await page.textContent("#isoView")));
-  await page.click('button.psNone[data-id="446"]');
+  await page.click('button.psNone[data-id="441"]');
   await page.waitForTimeout(80);
   check("nobody puts the disc back exactly as it was, helper block included", await nothingStaged(page));
 
-  await page.click('input.psCh[data-id="446"][data-c="1"]');
-  await page.click('input.psCh[data-id="446"][data-c="2"]');       // + Chris
-  await page.waitForTimeout(80);
-  { const r = await save(page);
-    const wallSites = PASSIVE_SITES.filter(([o]) => [0x104368, 0x110F74, 0x25C844, 0x25C8F8, 0x25CA60,
-      0x25CB18, 0x25CBBC, 0x25CC54, 0x25CC9C, 0x25CD5C].includes(o));
-    const kindOf = (jal) => jal === 0x0C5B2CE0 ? "rec" : jal === 0x0C5B2D0E ? "id" : "unit";
-    check("every one of Wall's ten sites jals the helper entry for its kind",
-      wallSites.length === 10 && wallSites.every(([o, jal]) => r.u32(o) === PS_HOOK_JAL[kindOf(jal)] >>> 0));
-    check("...and not one delay slot moved",
-      PASSIVE_SITES.every(([o, , ds]) => r.u32(o + 4) === ds >>> 0));
-    check("no other rune's site was touched",
-      PASSIVE_SITES.filter(([o]) => !wallSites.some(([w]) => w === o))
-        .every(([o, jal]) => r.u32(o) === jal >>> 0));
-    // The helper itself: the code goes down verbatim, and the bitmap gets exactly two bits.
-    const code = PS_HOOK_STOCK;                                    // only used for its length
-    check("the helper's first instruction is in place", r.u32(PS_HOOK.off) === 0x24A3FE47);
-    const row = PS_HOOK.off + PS_HOOK.maskOff + (0x1BE - PS_HOOK.first) * PS_HOOK.stride;
-    check("Wall's bitmap has Hugo (record 1) and Chris (record 2) and nobody else",
-      r.u8(row) === 0b110 && Array.from({ length: PS_HOOK.stride - 1 }, (_, i) => r.u8(row + 1 + i)).every((b) => b === 0));
-    check("...and every other rune's bitmap is empty",
-      Array.from({ length: PS_HOOK.rows }, (_, k) => k).filter((k) => k !== 0x1BE - PS_HOOK.first)
-        .every((k) => Array.from({ length: PS_HOOK.stride }, (_, i) =>
-          r.u8(PS_HOOK.off + PS_HOOK.maskOff + k * PS_HOOK.stride + i)).every((b) => b === 0)));
-    check("the block's stock length is what iso.js writes", code.length / 2 === PS_HOOK.len); }
+  // Wall's byte-level coverage moved with the control: it is an in-battle rune, so it is no
+  // longer offered here. Same assertions, driven from Hugo's card — see the Characters view.
 
   await page.context().close();
 }
 head("Passives view — what it refuses to write");
 { // A disc whose code is not what we decoded is read-only, never overwritten.
+  // Drift CHAMPION'S site, not Wall's: Wall is an in-battle rune and is no longer offered on
+  // this tab, so asserting it is absent here would pass whether the guard worked or not.
+  // Champion's is one of the two runes this tab owns, so its absence is real evidence.
   const patched = Uint8Array.from(bytes);
-  new DataView(patched.buffer).setUint32(0x25C844, 0xDEADBEEF, true);       // one of Wall's sites
+  new DataView(patched.buffer).setUint32(0x149F90, 0xDEADBEEF, true);       // Champion's only site
   setServed(patched);
   const p2 = await newPage(); await loadIso(p2);
   await p2.click('#isoTabs [data-v="passives"]');
   await p2.waitForSelector("button.psPick", { timeout: 3000 });
   const offered = await p2.$$eval("button.psPick", (b) => b.map((x) => x.dataset.id));
-  check("a drifted site makes its rune read-only, not writable", !offered.includes("446"), offered.join(","));
-  check("...and only that rune", offered.includes("445") && offered.length === 21);
+  check("a drifted site makes its rune read-only, not writable", !offered.includes("441"), offered.join(","));
+  check("...and only that rune — Sunbeam is still offered",
+    offered.join(",") === "445", offered.join(","));
   await p2.context().close();
 
   // ...and so does a helper block that already holds somebody else's code.
@@ -690,19 +683,12 @@ head("Passives view — the two overlay switches (Fortune EXP, Prosperity potch)
 
 head("Passives view — rune power: what a passive is worth once it fires");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="passives"]');
-  await page.waitForSelector("#rfBox", { timeout: 3000 });
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.waitForSelector("input.rf", { timeout: 3000 });
   // The card is a separate patch from the switches above it: these constants live INSIDE each
   // rune's "if equipped" branch, so they work on a stock disc and need no switch. If that ever
   // stops being said on the tab, the controls read as part of the forcing feature and someone
   // will tick a box expecting them to do nothing without it.
-  { const txt = await page.textContent("#rfBox");
-    check("it says the switches and the numbers are separate things", /whether a passive runs/.test(txt));
-    check("...that the rune still has to be equipped", /still has to be equipped/.test(txt));
-    check("...and that these constants are global", /global/.test(txt));
-    check("Sunbeam's two numbers are named up front", /15 HP a combat turn and 1 HP every\s+0\.3 seconds/.test(txt)); }
-  check("the card starts collapsed", !(await page.locator('input.rf[data-k="sunTurn"]').isVisible()));
-  await page.click("#rfBox > summary");
   const keys = await page.$$eval(".rf", (n) => n.map((x) => x.dataset.k));
   check("every rune power control renders", keys.length === 16, keys.join(","));
   // Fortune is the ONE control backed by the battle-results overlay rather than the ELF block,
@@ -763,9 +749,8 @@ head("Passives view — rune power: what a passive is worth once it fires");
 
 head("Passives view — rune power reverts and refuses a drifted disc");
 { const page = await newPage(); await loadIso(page);
-  await page.click('#isoTabs [data-v="passives"]');
-  await page.waitForSelector("#rfBox", { timeout: 3000 });
-  await page.click("#rfBox > summary");
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.waitForSelector("input.rf", { timeout: 3000 });
   await page.fill('input.rf[data-k="killer"]', "400");
   await page.dispatchEvent('input.rf[data-k="killer"]', "change"); await page.waitForTimeout(60);
   await page.selectOption('select.rf[data-k="wizard"]', "0");
@@ -781,23 +766,29 @@ head("Passives view — rune power reverts and refuses a drifted disc");
     (await page.inputValue('input.rf[data-k="sunWalk"]')) === "3.33");
   // "Restore all to stock" has to put back the exact bytes, not merely a value that reads the
   // same — otherwise a round-trip leaves the disc quietly modified.
-  await page.click("#rfReset"); await page.waitForTimeout(80);
-  check("Restore all to stock clears every staged byte", await nothingStaged(page));
+  await page.fill('input.rf[data-k="killer"]', "150");
+  await page.dispatchEvent('input.rf[data-k="killer"]', "change"); await page.waitForTimeout(60);
+  await page.selectOption('select.rf[data-k="wizard"]', "1");
+  await page.waitForTimeout(80);
+  check("setting them back to stock clears every staged byte", await nothingStaged(page));
 
   { const patched = Uint8Array.from(bytes);
     new DataView(patched.buffer).setUint32(0x104088, 0xDEADBEEF, true);   // Killer, site 1 of 2
     setServed(patched);
     const p2 = await newPage(); await loadIso(p2);
-    await p2.click('#isoTabs [data-v="passives"]');
-    await p2.waitForSelector("#rfBox", { timeout: 3000 });
-    await p2.click("#rfBox > summary");
+    await p2.click('#isoTabs [data-v="runes"]');
+    await p2.waitForSelector("input.rf", { timeout: 3000 });
     check("a drifted site makes its control read-only, not writable",
       await p2.isDisabled('input.rf[data-k="killer"]'));
     check("...and only that one", !(await p2.isDisabled('input.rf[data-k="counter"]')));
-    // TWO here, not one: the drifted Killer site plus Fortune, which is permanently unavailable
-    // on a synth disc because its overlay window is past the end of the file.
-    check("...and the card counts both read-only controls (drifted Killer + unavailable Fortune)",
-      /2<\/b> control\(s\) are read-only/.test(await p2.innerHTML("#rfBox")));
+    // Fortune is read-only here too, always: its multiplier lives in the battle-results
+    // overlay, which a 4.6 MB synth disc does not reach. So exactly two controls are off —
+    // the drifted Killer and the unreachable Fortune — and that asymmetry is the assertion.
+    check("...and Fortune is read-only for a different reason: no overlay on a synth disc",
+      await p2.isDisabled('input.rf[data-k="fortune"]')
+      && /unavailable/.test(await p2.getAttribute('input.rf[data-k="fortune"]', "title")));
+    check("...exactly those two, nothing else",
+      (await p2.$$eval(".rf:disabled", (n) => n.map((x) => x.dataset.k).sort())).join(",") === "fortune,killer");
     await p2.context().close();
     setServed(bytes); }
   await page.context().close();
@@ -821,9 +812,8 @@ head("Runes view — a passive rune's strength on its own row");
   // Editing from the Runes tab must move the same bytes the Passives card does.
   await page.fill('input.rf[data-k="sunTurn"]', "99");
   await page.dispatchEvent('input.rf[data-k="sunTurn"]', "change"); await page.waitForTimeout(80);
-  await page.click('#isoTabs [data-v="passives"]');
-  await page.waitForSelector("#rfBox", { timeout: 3000 });
-  await page.click("#rfBox > summary");
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.waitForSelector("input.rf", { timeout: 3000 });
   check("the Passives card sees the edit made on the Runes tab",
     (await page.inputValue('input.rf[data-k="sunTurn"]')) === "99");
   { const r = await save(page);
@@ -846,6 +836,87 @@ head("Runes view — a passive rune's strength on its own row");
   await p2.context().close();
   await page.context().close();
 }
+
+head("Characters view — force a passive on this unit, from their own card");
+{ const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.waitForSelector("details.char", { timeout: 3000 });
+  await page.fill("#isoSearch", "Hugo"); await page.waitForTimeout(150);
+  await page.click("details.char summary");                 // cards build lazily
+  await page.waitForSelector("input.cpOn", { timeout: 3000 });
+  // The point of the move: enablement for EVERY rune is here, on the unit — including the
+  // in-battle ones the Passives tab no longer offers.
+  const ids = await page.$$eval("input.cpOn", (n) => n.map((x) => x.dataset.id));
+  check("Hugo's card offers every rune with a decoded site", ids.length === 22, String(ids.length));
+  check("...including the in-battle ones the Passives tab dropped",
+    ids.includes("446") && ids.includes("447") && ids.includes("462"));
+  check("...and every box is for THIS character's record index",
+    (await page.$$eval("input.cpOn", (n) => [...new Set(n.map((x) => x.dataset.c))])).join(",") === "1");
+  check("nothing is ticked on a stock disc", (await page.$$("input.cpOn:checked")).length === 0);
+  { const txt = await page.textContent("details.char .cpBox");
+    check("the block says the effect is theirs alone", /theirs alone/.test(txt));
+    check("...that no rune slot is spent", /without equipping them/.test(txt));
+    check("...and that it is untested in play", /watched working in play/.test(txt)); }
+
+  // Wall (0x1BE): ten sites, one of each trampoline kind — a record site, a charId site and
+  // eight acting-unit sites — so one tick exercises all three. These are the assertions that
+  // used to run off the Passives tab picker, unchanged apart from what drives them.
+  await page.click('input.cpOn[data-id="446"][data-c="1"]');      // Hugo
+  await page.waitForTimeout(100);
+  check("ticking Wall for Hugo stages something", await somethingStaged(page));
+  await page.click('input.cpOn[data-id="446"][data-c="1"]');
+  await page.waitForTimeout(100);
+  check("unticking it clears every staged byte, helper block included", await nothingStaged(page));
+  await page.click('input.cpOn[data-id="446"][data-c="1"]');
+  await page.waitForTimeout(100);
+  await page.fill("#isoSearch", "Chris"); await page.waitForTimeout(150);
+  await page.click("details.char summary");
+  await page.waitForSelector('input.cpOn[data-id="446"]', { timeout: 3000 });
+  check("Wall already reads ON for Hugo when Chris's card opens",
+    (await page.$$eval('input.cpOn[data-id="446"]', (n) => n.map((x) => x.dataset.c))).join(",") === "2");
+  await page.click('input.cpOn[data-id="446"][data-c="2"]');      // + Chris
+  await page.waitForTimeout(100);
+  { const r = await save(page);
+    const wallSites = PASSIVE_SITES.filter(([o]) => [0x104368, 0x110F74, 0x25C844, 0x25C8F8, 0x25CA60,
+      0x25CB18, 0x25CBBC, 0x25CC54, 0x25CC9C, 0x25CD5C].includes(o));
+    const kindOf = (jal) => jal === 0x0C5B2CE0 ? "rec" : jal === 0x0C5B2D0E ? "id" : "unit";
+    check("every one of Wall's ten sites jals the helper entry for its kind",
+      wallSites.length === 10 && wallSites.every(([o, jal]) => r.u32(o) === PS_HOOK_JAL[kindOf(jal)] >>> 0));
+    check("...and not one delay slot moved",
+      PASSIVE_SITES.every(([o, , ds]) => r.u32(o + 4) === ds >>> 0));
+    check("no other rune's site was touched",
+      PASSIVE_SITES.filter(([o]) => !wallSites.some(([w]) => w === o))
+        .every(([o, jal]) => r.u32(o) === jal >>> 0));
+    // The helper itself: the code goes down verbatim, and the bitmap gets exactly two bits.
+    const code = PS_HOOK_STOCK;                                    // only used for its length
+    check("the helper's first instruction is in place", r.u32(PS_HOOK.off) === 0x24A3FE47);
+    const row = PS_HOOK.off + PS_HOOK.maskOff + (0x1BE - PS_HOOK.first) * PS_HOOK.stride;
+    check("Wall's bitmap has Hugo (record 1) and Chris (record 2) and nobody else",
+      r.u8(row) === 0b110 && Array.from({ length: PS_HOOK.stride - 1 }, (_, i) => r.u8(row + 1 + i)).every((b) => b === 0));
+    check("...and every other rune's bitmap is empty",
+      Array.from({ length: PS_HOOK.rows }, (_, k) => k).filter((k) => k !== 0x1BE - PS_HOOK.first)
+        .every((k) => Array.from({ length: PS_HOOK.stride }, (_, i) =>
+          r.u8(PS_HOOK.off + PS_HOOK.maskOff + k * PS_HOOK.stride + i)).every((b) => b === 0)));
+    check("the block's stock length is what iso.js writes", code.length / 2 === PS_HOOK.len); }
+  await page.context().close();
+}
+
+head("Characters view — a rune it cannot write stays read-only on the card");
+{ const patched = Uint8Array.from(bytes);
+  new DataView(patched.buffer).setUint32(0x1037F4, 0xDEADBEEF, true);   // Haziness' only site
+  setServed(patched);
+  const page = await newPage(); await loadIso(page);
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.waitForSelector("details.char", { timeout: 3000 });
+  await page.fill("#isoSearch", "Hugo"); await page.waitForTimeout(150);
+  await page.click("details.char summary");
+  await page.waitForSelector("input.cpOn", { timeout: 3000 });
+  check("a drifted rune is read-only on the card, not silently written",
+    await page.isDisabled('input.cpOn[data-id="447"][data-c="1"]'));
+  check("...and the runes around it are still live",
+    !(await page.isDisabled('input.cpOn[data-id="446"][data-c="1"]')));
+  await page.context().close();
+  setServed(bytes); }
 
 head("Mounts view — rewrite the battle rider/mount pairs");
 { const page = await newPage(); await loadIso(page);
