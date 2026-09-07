@@ -1202,9 +1202,8 @@ that prompted this section. There is nothing waiting on the animation.
 **So what does exclude Koroku?** Three candidates remain, and every one of them is about the
 *player object*, not its animation data:
 
-1. **`op 181` @ `0x17ABAD8`** — the routine's only blocker. 1912 bytes, 48 distinct call
-   targets, state machine on `ctx+0x02`, in PT_LOAD so it is readable. Whatever he fails, the
-   stall surfaces here.
+1. **`op 181` @ `0x17ABAD8`** — dug into; see *The per-motion-slot dispatch* below. This is
+   where the stall is, and the mechanism is now traced end to end.
 2. ~~**`op 55 Cond(...)`**~~ — **enumerated, and eliminated.** See below.
 3. **`op 109`'s branch on an actor kind being 7** (`0x17A22B4`) — kind is a property of the
    model, and Koroku is animal-rigged. Noted earlier and still unexplored.
@@ -1212,6 +1211,79 @@ that prompted this section. There is nothing waiting on the animation.
 None is proven. Three theories have already been falsified here by evidence, so the bar for the
 next one should be a condition observed to differ between Koroku and Luc, not a mechanism that
 merely could.
+
+### The per-motion-slot dispatch — a mechanism that fits every observation
+
+Tracing `op 181` end to end finally produces a mechanism that is model-dependent, explains the
+symptom, and explains why all three earlier patches were irrelevant.
+
+**`op 181` is a 23-state machine.** It keeps its state in the byte at `ctx+0x02` and dispatches
+through a jump table at `0x19C8DC0` indexed by `state+1`. It advances the script's instruction
+pointer in exactly one place (`0x17ABC2C`); every other path returns without advancing, which is
+how it waits. Each state has the same shape:
+
+```
+    jal   <step function>
+    beq   $v0, $zero, <return without advancing>   ; not done -> come back next frame
+    ...
+    sb    <state+1>, 2($ctx)                        ; done -> next step
+```
+
+So each step waits for one function to return non-zero. **States 2, 17 and 19 all wait on
+`0x16EFD28`.**
+
+**`0x16EFD28` dispatches on the actor's current motion slot.** It fetches the actor kind via
+`0x16C7338` — the same getter `op 109` compares against 7 — reads `obj+0x0E`, the current motion
+slot, bounds-checks it against `0x13D` (317, the motion-table size) and jumps through a
+**317-entry per-slot table at `0x19B9E90`**.
+
+**And that table is mostly empty.** Of 317 slots, **246 land on `0x16F154C`**, which is the
+shared exit: `move $v0, $s2 ; jr $ra`. `$s2` is initialised to **zero** at `0x16EFD38` and only
+the real slot handlers overwrite it — they reach the exit via `0x16F151C`, which calls
+`SetMotion` and stores its result. So:
+
+| the actor's motion slot | returns | effect on `op 181` |
+|---|---|---|
+| has a real handler (71 slots) | non-zero | the state advances |
+| one of the 246 fallback slots | **0** | **the state never advances — the script waits forever** |
+
+**Now put Koroku in it.** Slot coverage, from the decoded motion table:
+
+| slots | handlers |
+|---|---|
+| humanoid walk `2–13` | 10 distinct real handlers |
+| `neutral_L`/`neutral_R` `0–1` | 2 real handlers |
+| **animal-block run `282–287`** | **all six on the `0x16F154C` fallback** |
+
+Koroku's run cycle is in the animal block — established twice independently, from the ELF's
+range tests in §8 and from the decoded motion table. A humanoid's is at `14–19`, which is
+handled. **So the same actor state that made his running skip encounter rolls also lands him on
+a dispatch slot that answers "0" forever.**
+
+That fits everything: Luc works (humanoid slots), walking/talking/battles are fine (they never
+run `op 181`), and the three animation patches could not have helped because **the dispatch is on
+the slot number, not on whether a clip resolves** — they changed which clip is found, never which
+slot the actor occupies.
+
+**It also predicts something testable for free.** If this is right, the hang depends on *what
+Koroku is doing when the script starts*, not on the herb:
+
+- run up to a herb and press X → animal-block slot → fallback → **hang**
+- stand still first, or walk up, and press X → `neutral_*` or `walk_*` → real handler → **works**
+
+That experiment needs no patch and would confirm or kill the mechanism in one minute. It should
+be run before anything is built, because three mechanisms have already been falsified here.
+
+**If it is confirmed, the fix is one instruction.** `0x16EFD38` initialises the default answer
+to zero; making it one means an unhandled motion slot reports *done* instead of hanging:
+
+| ISO | vaddr | stock | patched |
+|---|---|---|---|
+| `0x137538` | `0x16EFD38` | `0x0000902D` — `move $s2,$zero` | `0x24120001` — `addiu $s2,$zero,1` |
+
+Real handlers overwrite `$s2` before returning, so their answers are unchanged; only the
+otherwise-silent fallback moves. Not built, and not to be built until the free experiment says
+the mechanism is real.
 
 ### `op 55`'s condition codes, enumerated — and what they rule out
 
