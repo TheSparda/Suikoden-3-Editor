@@ -276,7 +276,7 @@ Kite  = item 365, record file 0x3EDD18, slots at 0x3EDD30
         07 00 00 00 | 00 00 02 00 | 4E 00 | 00 00 | 00 00 | 00 00
                                      ^Kite   ^^^^^^ three free slots
 ```
-Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0), and the rune's element family and category alongside them (v1.104.0). The
+Shipped in the web editor as four dropdowns per rune on the Runes tab (v1.103.0), and the rune's element family and category alongside them (v1.125.0). The
 old `RUNE_SPELLS` hardcoded name map is **deleted** — the binding is read off the disc,
 so there is no second copy to drift.
 
@@ -297,7 +297,7 @@ What this does and does not settle:
 - The only field separating the 27 that behave this way from the 45 that do not is
   **category (+0x16)**: every special-attack rune is `2`, everything else is `0`.
 - **Setting +0x16 to 0 is the untested experiment.** Exposed as *Rune type* on the Runes tab
-  (v1.104.0) rather than left as a hex-only byte. It may well change other behaviour —
+  (v1.125.0) rather than left as a hex-only byte. It may well change other behaviour —
   a category-2 rune is a free action, not a chant — so treat it as an experiment.
 - The cheap discriminator, if anyone doubts the mechanism works at all: **Blinking (id 335)
   and Shield (id 336) are category 0 and each ship with slot 4 free.** Fill one. If a 4th
