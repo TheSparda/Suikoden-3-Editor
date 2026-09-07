@@ -318,6 +318,22 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
 .pg-meta { font-variant-numeric:tabular-nums; }
 .bar-fill.err { background:var(--crimson); }
 
+/* An ISO WRITE THAT FINISHED (iso.js progressModal only — not the save-file modal, which is
+   over in a second). A streaming save re-writes the whole 4 GB disc and runs a minute or
+   more, so nobody sits watching it: the moment it lands, the dimmed backdrop floods with the
+   accent colour — the same gold (crimson on parchment) as the primary buttons — so a glance
+   from across the room says "done". Success only; a failure keeps the neutral dim, with the
+   bar going crimson as before, because a red-alert backdrop and a gold one must not read the
+   same. The ::before is the attention pulse: two quick washes, then it settles to the flood.
+   .modal itself is lifted above it (a positioned pseudo-element would otherwise paint over
+   the static card and hide the message). */
+.modal-ov.pg-ok { background:color-mix(in srgb,var(--acc) 82%,transparent); }
+.modal-ov.pg-ok .modal { position:relative; z-index:1; border-color:var(--acc); }
+.modal-ov.pg-ok::before { content:""; position:absolute; inset:0; pointer-events:none;
+  background:var(--acc); animation:pg-flood .9s ease-out 2 both; }
+@keyframes pg-flood { 0% { opacity:0; } 18% { opacity:1; } 100% { opacity:0; } }
+@media (prefers-reduced-motion:reduce) { .modal-ov.pg-ok::before { display:none; } }
+
 /* "opening a disc" overlay (blocks the loader while an ISO — usually the auto-reopened
    one — is being read; reuses the save-progress modal's body + bar) */
 .ld-note { margin-top:10px; font-size:12px; }

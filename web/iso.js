@@ -3114,6 +3114,10 @@
         el("pgTitle").textContent = isErr ? "Save failed" : "Done";
         el("pgMsg").textContent = msg;
         bar.classList.remove("indet"); fill.style.width = "100%"; fill.classList.toggle("err", !!isErr);
+        // Flood the dimmed backdrop with the accent colour on success (see .pg-ok in style.css).
+        // A streaming save runs a minute or more and nobody watches it finish; a black overlay
+        // that only changed its wording was routinely missed. Failures keep the neutral dim.
+        ov.classList.toggle("pg-ok", !isErr);
         // Completion readout: time taken, plus size + average throughput when a byte total is given.
         const parts = [`⏱ ${fmtDuration(ms)}`];
         if (!isErr && extra && extra.bytes) {
