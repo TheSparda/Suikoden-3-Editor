@@ -393,34 +393,46 @@
     // tail-jump to the player lookup instead of returning null: "an actor nobody can find
     // is you". That is as close as this gets to Koroku delivering Hugo's lines.
     //
-    // The risk is stated in the UI rather than hidden: 0x17B5CC8 calls back into this same
-    // function with the leader byte, so if a scene's actor table has no record for YOUR
-    // leader, the fallback recurses forever. Two instructions is not enough room for a
-    // guard — the exit can hold `j; nop` or `jr $ra; move`, but not a conditional with both
-    // paths — so this ships as an opt-in experiment, not a fix.
-    // CONFIRMED HARMFUL IN PLAY (2026-09-06). Until now the honest status was "tried, did not
-    // fix the hang, and might hang harder" — a null result plus a predicted risk. It now has a
-    // specific, reproduced consequence: with these two words applied, THE GAME STOPS ADDING
-    // PARTY MEMBERS CORRECTLY, and restoring them fixes it. Reported against a disc whose only
-    // other party-touching edits were checked stock, and the repair was the restore of these
-    // two words alone.
+    // RETIRED as an option (v1.135.0). Both halves of the case against it are settled:
     //
-    // Why that is the expected shape of the damage, stated as inference and not as proof: this
-    // patch's whole content is that FindActorByCharId stops returning NULL. Null is not an
-    // error to its callers, it is the ANSWER "no actor for that character is staged" — and it
-    // is the only answer they have. Replacing it with the player's actor means every caller
-    // that asked "is this character here?" is told yes, and handed the leader. The party code
-    // is full of exactly that question (PartyPut / StageActor / HorseActorPos all resolve a
-    // position to a character to an actor), so it is the subsystem most exposed to the change,
-    // and the one where a wrong yes is silent rather than loud.
+    //   * it cannot help. The event scripts were disassembled: of 12,055 actor references
+    //     across every town script on the disc, the `0x400|N` namespace this patches is used
+    //     ZERO times. Scenes address actors by slot, so the miss-exit is never taken THERE.
+    //   * it causes the hang it was meant to fix. 0x17B5CC8 calls back into this same
+    //     function with the leader byte, so a scene whose actor table has no record for YOUR
+    //     leader recurses forever. CONFIRMED IN PLAY 2026-09-06: a disc carrying it froze the
+    //     Brass Castle -> plains transition with only Chris's horse staged, and restoring
+    //     these two words fixed that scene on the same save. Two instructions is not enough
+    //     room for a guard — the exit can hold `j; nop` or `jr $ra; move`, but not a
+    //     conditional with both paths — so there was nowhere to put the check.
+    //   * it breaks PARTY FORMATION. Second, independent report the same day: on a disc
+    //     carrying it the game stopped adding party members correctly, and again restoring
+    //     these two words is what fixed it. Two different faces of one patch.
     //
-    // It stays offered rather than removed — the repo's rule is that a decoded patch is
-    // offered with its verdict attached — but the verdict is now "this breaks the party", not
-    // "unknown".
+    // Which is also the correction the script census needs, because "the miss-exit is never
+    // taken" does not follow from it. The census counted SCRIPT handles and is still right
+    // about them; FindActorByCharId is the engine's general "which actor is this character"
+    // lookup and the party and mount code calls it DIRECTLY (MOUNT_SYSTEM_RESEARCH §14a
+    // records one such caller in passing — the window it declines to search IS the party
+    // block's mount range). So the exit is reached; just not from a script.
+    //
+    // And that is why party formation is the subsystem that shows it. The whole content of
+    // the patch is that this lookup stops returning null — and null is not a failure to its
+    // callers, it is the answer "no actor for that character is staged". Substitute the
+    // player's actor and every caller that asked "is this character here?" is told yes and
+    // handed the leader. PartyPut / StageActor / HorseActorPos are built out of that
+    // question, and a wrong yes there is silent rather than a crash. Read off the code, not
+    // caught in the act — but it predicts both reports.
+    //
+    // The constants stay because DETECTING and REPAIRING a disc that already carries it is
+    // the reason they are still worth having: chgCodeAudit names both words and its restore
+    // puts them back, and the Changes tab's Party formation card leads with it. Nothing
+    // writes `alt` any more — keep it as the recognition pattern, so an affected disc is
+    // reported as this patch rather than as an unlabelled byte run.
     ACTORFB: {
       sites: [
-        { off: 0x1FD238, stock: 0x03E00008, alt: 0x085ED732 },   // jr $ra   -> j 0x17B5CC8
-        { off: 0x1FD23C, stock: 0x0000102D, alt: 0x00000000 },   // move v0,0 -> nop
+        { off: 0x1FD238, stock: 0x03E00008, alt: 0x085ED732 },   // jr $ra   -> j 0x17B5CC8 (never written now)
+        { off: 0x1FD23C, stock: 0x0000102D, alt: 0x00000000 },   // move v0,0 -> nop      (never written now)
       ],
       target: 0x17B5CC8,
     },
@@ -501,18 +513,21 @@
     // it leads the list. Everything below it is a mechanism with no report attached.
     { key: "actorfb", title: "Scene actor fallback", group: "Scene softlocks", confirmed: true,
       what: "Two words that turn \"an actor nobody can find\" into \"an actor nobody can find is "
-        + "the player\". An opt-in experiment from the Test tab, offered as an attempt to make a "
-        + "stand-in protagonist speak the lines a scene wrote for someone else.",
-      breaks: "CONFIRMED IN PLAY (2026-09-06): with this applied the game stops adding party "
-        + "members correctly, and restoring these two words is what fixed it. It is also the "
-        + "only entry on this card with a report behind it rather than a mechanism. The shape "
-        + "fits: the entire content of the patch is that the actor lookup stops returning null "
-        + "— and null is not an error to its callers, it is the answer \"no actor for that "
-        + "character is staged\". Take it away and every caller that asked \"is this character "
-        + "here?\" is told yes and handed the party leader. It can hang outright too: the "
-        + "fallback re-enters the same lookup with your leader's id, so a scene whose actor "
-        + "table has no record for your leader recurses forever. It never did the job it was "
-        + "added for. If it is on, turn it off.",
+        + "the player\". It was an opt-in experiment on the Test tab, offered as an attempt to "
+        + "make a stand-in protagonist speak the lines a scene wrote for someone else. RETIRED "
+        + "in v1.135.0 \u2014 nothing can turn it on any more, so this card is now the way a "
+        + "disc that already carries it gets found and fixed.",
+      breaks: "CONFIRMED IN PLAY (2026-09-06), twice the same day and from two directions: a "
+        + "disc carrying it stopped adding party members correctly, and another froze the Brass "
+        + "Castle \u2192 plains transition. Restoring these two words fixed both. It is the only "
+        + "entry on this card with a report behind it rather than a mechanism, and one cause "
+        + "covers both symptoms: the entire content of the patch is that the actor lookup stops "
+        + "returning null \u2014 and null is not an error to its callers, it is the answer "
+        + "\"no actor for that character is staged\". Take it away and every caller that asked "
+        + "\"is this character here?\" is told yes and handed the party leader, which is what "
+        + "party formation is built out of. It can also recurse forever and hang outright, "
+        + "because the fallback re-enters the same lookup with your leader's id. It never did "
+        + "the job it was added for either. If your disc carries it, this is almost certainly it.",
       restores: "`jr $ra` / `move $v0, $zero` — the lookup returns null again" },
     { key: "horse", title: "Assigned horse", group: "Assigned horse",
       what: "One u16 on each character's own record naming a horse. When the party is formed, "
@@ -3349,7 +3364,7 @@
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
-      test: "Experimental patches that are not known to work \u2014 and one now known to do HARM. The Scene actor fallback, which made an actor nobody can find resolve to the player, was reported on 2026-09-06 to STOP THE GAME ADDING PARTY MEMBERS CORRECTLY, and restoring its two words is what fixed it; it never fixed the hang it was written for either, because scenes address actors by slot and the namespace it patches is used zero times in every town script on the disc. It is labelled confirmed harmful here, and the Changes tab opens with a Party formation card that puts it back. The other experiment is Field character \u2014 who you run around the map as \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
+      test: "One retired patch kept only as a record, and one experiment whose outcome is unknown. The RETIRED one is the Scene actor fallback: it made an actor nobody can find resolve to the player, it never fixed the hang it was written for (scenes address actors by slot, and the namespace it patched is used zero times across 12,055 actor references in every town script on the disc), and on 2026-09-06 it was confirmed in play to cause harm \u2014 one disc STOPPED ADDING PARTY MEMBERS CORRECTLY and another froze a scene transition, both fixed by restoring its two words. Nothing can turn it on any more; if your disc already carries it, the Changes tab opens with a Party formation card that leads with it and puts it back. The live experiment is Field character \u2014 who you run around the map as. That is the party-leader byte at save 0x12, and it names a model \u2014 but the engine only ever requests the model of eight hardcoded ids (Hugo, Chris, Geddoe, Thomas, Koroku, Luc, Masked Luc, Grasslands Chris), which is exactly the set the game hands you itself. This widens that whitelist so the Save Editor's Field character picker can name anyone; the pick itself is a save edit, not an ISO one. Everyone beyond the stock eight is untested, and story scripts rewrite the leader byte at chapter transitions. Scripted scenes are authored for a specific protagonist and have been seen to hang with anyone else, so treat all of it as roaming-only and keep a backup save.",
       gear: "Equipment records: name, DEF, price, custom description, and all 5 effect slots (type / amount / stat or skill). Names and descriptions are rewritten in place, so each is capped to the character slot the disc already reserves for it — the new name then shows everywhere the game names that item.",
       sets: "Armor sets: which items complete each of the 5 sets, the set-bonus constants patched straight out of the game code (potch multiplier per wearer, Destiny\u2019s counter chance, Pale Moon\u2019s heal share), and EFFECT OWNERSHIP \u2014 which set grants which effect. Every bonus is a hard-coded check on the set number, so the potch bonus, the bonus counter chance, heal-on-hit, counter-damage halving and Mole\u2019s squeaky footsteps can each be pointed at a different set and one set can hold several \u2014 but a genuinely NEW effect cannot be added, only moved. Two of those checks are bit tests rather than equality, which is why they offer set combinations instead of single sets. Prosperity\u2019s worn-set check carries its forced-on switch here too, the same one the Passives tab shows: ticked, every party member counts as wearing the set \u2014 and this multiplier COMPOUNDS per member, so six members at the stock \u00d73 pay 3\u2076 = \u00d7729. The multiplier itself lives in a streaming battle overlay rather than the executable, so it reads unavailable on a disc whose overlay this editor cannot verify. Each set shows the bonus decoded off the code beside what the Suikosource guide claims; where they disagree (the guide\u2019s Prosperity \u00d77, Guardian\u2019s counter +50%) the code is what this disc does.",
       food: "The 60 consumables: heal amount and proc chance, plus renaming the dish and rewriting its description. Both strings are written IN PLACE over their own bytes and capped to the slot the disc reserves, and a dish\u2019s name is the very string the item table points at \u2014 there is no second copy to drift, so the recipe list, the item menu and every picker move together. The checkbox at the top rewrites the \u201cHeals N HP\u201d / \u201cN% chance\u201d numbers inside the description to match what you type, so the text does not end up contradicting the table.",
@@ -3374,7 +3389,7 @@
       mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
       movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
       story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
-      test: "One patch confirmed to break party addition (turn it off), and one experiment whose outcome is unknown. Read the warnings before using either.",
+      test: "One retired patch confirmed to break party addition, kept as a record and still repairable, and one experiment whose outcome is unknown.",
       text: "The UI, battle and menu strings inside the executable. Each is capped to its original byte length.",
       encounter: "How often random battles trigger, as one percentage of the game's stock rate, plus the per-map rates.",
       war: "War-battle units: level, HP and the 8 combat stats of every soldier, leader unit and war monster.",
@@ -5502,9 +5517,6 @@
     }
 
     const allowed = avatarAllowedIds();
-    const fbSites = AVATAR.ACTORFB.sites;
-    const fbBad = fbSites.some((f) => !inBlk(f.off, 4) || (r32(f.off) !== f.stock && r32(f.off) !== f.alt));
-    const actorFbOn = !fbBad && fbSites.every((f) => r32(f.off) === f.alt);
     const stock = new Set(AVATAR.STOCK_SET);
     const isWide = AVATAR.gates.every((g) => r16(g.off) === AVATAR.WIDE);
     // Chips used to carry per-area model coverage as well. Play testing retired it: the
@@ -5565,8 +5577,8 @@
           <span class="muted">· ${allowed.length} id${allowed.length === 1 ? "" : "s"}, read back from the patched bytes</span>
           <div style="margin:6px 0 0;line-height:2">${allowed.map(chip).join(" ")}</div>
         </div>
-        <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup · untested</span></div>
-        <div class="muted" style="margin:0 0 10px" data-sum="Scripts name actors two ways, and the by-character-id one returns nothing when that character is absent — which is exactly where the game stops.">
+        <div class="bag-h" style="margin:16px 0 8px">Scene softlocks <span class="u">the actor lookup \u00b7 retired</span></div>
+        <div class="muted" style="margin:0 0 10px" data-sum="Scripts name actors two ways, and the by-character-id one returns nothing when that character is absent \u2014 which is exactly where the game stops.">
           Scripts name an actor two ways. <b>"The player"</b> resolves through the leader byte and
           works for anyone — which is why your avatar walks into the scene, and why talking to
           NPCs is fine. <b>"The character whose id is N"</b> scans the scene's actor records for
@@ -5574,36 +5586,40 @@
           Hugo gets nothing the moment you are somebody else, and the beat that would have made
           him speak has no actor — which is exactly where the game stops.
         </div>
-        <label class="row" style="gap:8px;cursor:pointer;align-items:baseline;margin:0 0 6px">
-          <input type="checkbox" id="avActorFb"${actorFbOn ? " checked" : ""}>
-          <b>An actor nobody can find falls back to the player</b>
-          <span class="muted" style="font-size:12px">so Koroku answers to Hugo's id</span></label>
-        <div class="warnbox" style="margin:0 0 10px" data-sum="Confirmed in play on 2026-09-06 to stop party members being added; restoring it fixed that, and it never fixed the hang it was added for. Do not use it.">
-          <b>CONFIRMED HARMFUL &mdash; do not use this.</b> Reported from play on
-          <b>2026-09-06</b>: with this applied <b>the game stops adding party members
-          correctly</b>, and restoring these two words is what fixed it. Put it back from the
-          <b>Changes</b> tab, which now leads with a <b>Party formation</b> card built around
-          exactly this finding.
-          <div style="margin-top:8px"><b>It also never did the job it was added for.</b> The
-          event scripts were located and disassembled: across <b>12,055 actor references in every
-          town script on the disc, the by-character-id namespace this patch fixes is used exactly
-          zero times</b>. Scenes address actors by <i>slot</i>, so the hang this was meant to fix
-          was never going to be fixed here.</div>
-          <div style="margin-top:8px"><b>That measurement is also why the damage came as a
-          surprise, so it is worth being exact about what it did and did not show.</b> It counted
-          <i>script</i> references, and the conclusion drawn from it &mdash; &ldquo;this exit is
-          never taken&rdquo; &mdash; generalised from scripts to the whole engine. Scripts are not
-          the only caller. The party and mount code resolves a position to a character to an
-          actor through this same lookup, and there <b>null is the answer</b> rather than an
-          error: it means &ldquo;no actor for that character is staged&rdquo;. This patch removes
-          that answer and substitutes the party leader, so a caller asking &ldquo;is this
-          character here?&rdquo; is told yes. That much is inference from the code and not a
-          traced hang &mdash; but it is the first account that predicts what was observed.</div>
-          <div style="margin-top:8px">It can hang outright as well: the fallback re-enters the
-          same lookup with your leader's id, so in a scene whose actor table has no record for
-          <i>your</i> character it recurses forever. The exit is two instructions &mdash; enough
-          for a jump, not for a guard &mdash; so there is nowhere to put the check. Kept offered,
-          with its verdict attached, rather than removed.</div>
+        <div class="warnbox" style="margin:0 0 10px" data-sum="The toggle that patched that exit was removed: it cannot help (the namespace it fixes is used zero times in any town script) and it is confirmed in play to hang a scene transition."><b>The toggle that patched that exit has been removed.</b>
+          It made the miss-exit fall back to the player lookup — "an actor nobody can find is
+          you". Two findings retired it, and both are settled rather than suspected:
+          <ul style="margin:6px 0 0 18px;padding:0">
+            <li><b>It cannot help.</b> The event scripts were disassembled: across
+              <b>12,055 actor references in every town script on the disc, the by-character-id
+              namespace this patched is used exactly zero times</b>. Scenes address actors by
+              <i>slot</i>, so the exit is never taken.</li>
+            <li><b>It causes the hang it was meant to fix.</b> The fallback re-enters the same
+              lookup with your leader's id, so a scene whose actor table has no record for
+              <i>your</i> character recurses forever. <b>Confirmed in play (2026-09-06):</b> a disc
+              carrying it froze the Brass Castle → plains transition with only the horse staged,
+              and turning it back off fixed that scene on the same save. The exit is two
+              instructions — enough for a jump, not for a guard — so there was nowhere to put a
+              check.</li>
+            <li><b>It breaks party formation.</b> A second, independent report the same day:
+              on a disc carrying it <b>the game stopped adding party members correctly</b>, and
+              again restoring these two words is what fixed it. The two reports are one patch
+              seen from two sides &mdash; its whole content is that the actor lookup stops
+              returning <code>null</code>, and <code>null</code> is not a failure to its callers,
+              it is the answer &ldquo;no actor for that character is staged&rdquo;. Take that
+              answer away and everything asking &ldquo;is this character here?&rdquo; is told
+              yes and handed the party leader. That last step is read off the code rather than
+              caught in the act, but it predicts both reports &mdash; and it corrects the first
+              bullet, which counted <i>script</i> references: the party and mount code reaches
+              this lookup directly, so the exit is taken, just never from a script.</li>
+          </ul>
+        </div>
+        <div class="muted" style="margin:0 0 10px" data-sum="A disc that already carries this patch is still detected and repaired: the Changes tab lists it first and its restore button puts both words back."><b>Already have a disc with it on?</b> It is still
+          detected and still repairable — nothing was removed but the way to turn it <i>on</i>.
+          <b>Changes → Code patches</b> lists both words at
+          <code>0x${AVATAR.ACTORFB.sites.map((f) => hex(f.off, 6)).join("</code> and <code>0x")}</code>
+          at the top of the table, and the <b>\u21ba</b> beside them puts the stock exit back.
+          <b>Restore stock</b> on this tab covers them too, and the <b>Party formation</b> card at the top of <b>Changes</b> leads with this patch — it is the only entry there with a play report behind it.
         </div>
         <details class="note" style="margin:10px 0 0"><summary>The chain, and where each byte lives</summary>
           <pre style="white-space:pre-wrap;font-size:12px">FieldAvatarModelRequest(id)          ; vaddr 0x17B7560
@@ -5644,16 +5660,6 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       AVATAR.gates.forEach((g) => { writeW(g.off, 2, AVATAR.WIDE); reg(g.off, 2, "num", "Field character", g.label); });
       drawView();
     };
-    { const cb = q("#avActorFb", host);
-      if (cb) {
-        if (fbBad) { cb.disabled = true; cb.title = "these instructions aren't stock — not offered"; }
-        cb.onchange = () => {
-          fbSites.forEach((f) => { writeW(f.off, 4, cb.checked ? f.alt : f.stock);
-            reg(f.off, 4, "num", "Scene softlocks", "actor fallback"); });
-          drawView();
-        };
-        cb.classList.toggle("dirty", fbSites.some((f) => isDirty(f.off, 4)));
-      } }
     // Story content moved to its own view once it was confirmed working, so this button
     // restores only what this tab still owns — touching the story cases from here would
     // silently undo a setting the user made somewhere else.
@@ -9670,12 +9676,14 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         enumerates <i>every</i> patch on the disc in address order, which is the wrong shape for
         the question &ldquo;which of these is about my party, and what does it do to it&rdquo;.
         Restoring from either place stages the same bytes.</div>
-      <div class="warnbox" style="margin:0 0 8px" data-sum="One of the six has been watched doing this: the Scene actor fallback stopped party members being added, and restoring its two words fixed it. If it is on, turn it off.">Of the six, <b>one has actually been watched doing
-        this</b>. The <b>Scene actor fallback</b> &mdash; an opt-in experiment on the Test tab
-        &mdash; was reported on <b>2026-09-06</b> to stop the game adding party members correctly,
-        and restoring its two words is what fixed it. It never did the job it was added for
-        either. <b>If it is on, turn it off</b>; it is first in the list below. The other five
-        are mechanisms with no report attached, and each says so.</div>`;
+      <div class="warnbox" style="margin:0 0 8px" data-sum="One of the six has been watched doing this: the Scene actor fallback stopped party members being added, and restoring its two words fixed it. Check it first.">Of the six, <b>one has actually been watched doing
+        this</b>. The <b>Scene actor fallback</b> was reported on <b>2026-09-06</b> to stop the
+        game adding party members correctly &mdash; and, separately the same day, to freeze a
+        scene transition &mdash; and restoring its two words is what fixed both. It never did the
+        job it was added for either, so the toggle that applied it has been <b>retired</b>: this
+        card is how a disc that already carries it gets found and put back. <b>It is first in the
+        list below &mdash; check it before anything else.</b> The other five are mechanisms with
+        no play report attached, and each one says so.</div>`;
     if (!changed.length) {
       h += `<div class="muted"><b>Nothing on this disc changes party formation.</b> All ${rows
         .reduce((a, r) => a + r.sites.length, 0)} site(s) across the six settings hold the values a
