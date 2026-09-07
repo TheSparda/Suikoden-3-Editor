@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
@@ -915,8 +915,62 @@ head("Characters view — a rune it cannot write stays read-only on the card");
     await page.isDisabled('input.cpOn[data-id="447"][data-c="1"]'));
   check("...and the runes around it are still live",
     !(await page.isDisabled('input.cpOn[data-id="446"][data-c="1"]')));
+  // A disabled checkbox alone explains nothing on a phone, where there is no tooltip to hover:
+  // the tile has to SAY it is read-only in text you can read.
+  const lockedTxt = await page.textContent('.cprune:has(input.cpOn[data-id="447"]) .cpr-w');
+  check("...and the locked tile says why in visible text, not only in a tooltip",
+    /read-only/.test(lockedTxt), lockedTxt);
   await page.context().close();
   setServed(bytes); }
+
+// The card's rune list is the control this tab is used for on a phone, so its touch shape is
+// part of the feature, not styling trivia: one column, a target you can hit with a thumb, and
+// the whole tile — not just the 13px box — toggling the rune.
+head("Characters view — the forced-passive tiles are thumb-sized on a phone");
+{ const page = await newPage({ width: 390, height: 844 }); await loadIso(page);
+  await page.click('#isoTabs [data-v="chars"]');
+  await page.waitForSelector("details.char", { timeout: 3000 });
+  await page.fill("#isoSearch", "Hugo"); await page.waitForTimeout(150);
+  await page.click("details.char summary");
+  await page.waitForSelector("label.cprune", { timeout: 3000 });
+  const tiles = await page.$$eval("label.cprune", (n) => n.map((el) => {
+    const r = el.getBoundingClientRect(), b = el.querySelector("input.cpOn").getBoundingClientRect();
+    return { h: Math.round(r.height), w: Math.round(r.width), x: Math.round(r.x),
+             box: Math.round(Math.min(b.width, b.height)),
+             name: (el.querySelector(".cpr-n") || {}).textContent || "",
+             where: (el.querySelector(".cpr-w") || {}).textContent || "" };
+  }));
+  check("every rune is a tile, not a chip", tiles.length === 22, String(tiles.length));
+  check("...each at least 44px tall", tiles.every((t) => t.h >= 44),
+    String(Math.min(...tiles.map((t) => t.h))));
+  check("...stacked one per row, so none is a sliver",
+    new Set(tiles.map((t) => t.x)).size === 1 && tiles.every((t) => t.w >= 240),
+    `${new Set(tiles.map((t) => t.x)).size} column(s), narrowest ${Math.min(...tiles.map((t) => t.w))}px`);
+  check("...with a checkbox big enough to hit on its own — and at the phone size, so the "
+    + "@media rules are really winning", tiles.every((t) => t.box >= 24),
+    String(Math.min(...tiles.map((t) => t.box))));
+  check("...and each tile names its rune and says where it is asked",
+    tiles.every((t) => t.name.trim()) && tiles.every((t) => /field|battle/.test(t.where)),
+    tiles[0].name + " / " + tiles[0].where);
+  // Tapping the rune's NAME must toggle it: the tile is a <label>, so the whole 44px block is
+  // the target and nobody has to find the box.
+  const wall = 'label.cprune:has(input.cpOn[data-id="446"][data-c="1"])';
+  await page.click(`${wall} .cpr-n`);
+  await page.waitForTimeout(100);
+  check("tapping the tile's name ticks the rune", await page.isChecked(`${wall} input.cpOn`));
+  check("...and stages the patch", await somethingStaged(page));
+  check("...and the tile reads as on without inspecting the box",
+    await page.evaluate((sel) => document.querySelector(sel).classList.contains("on"), wall));
+  check("...and the header counts it", /1 on/.test(await page.textContent("details.char .bag-h")));
+  // Undoing a few taps one tile at a time is the tedious half on a phone, hence one button.
+  check("a 'turn all off' button appears once something is on",
+    (await page.$$("details.char button.cpAllOff")).length === 1);
+  await page.click("details.char button.cpAllOff");
+  await page.waitForTimeout(100);
+  check("...and it clears every staged byte, helper block included", await nothingStaged(page));
+  check("...and takes itself away again", (await page.$$("details.char button.cpAllOff")).length === 0);
+  check("...leaving no tile ticked", (await page.$$("input.cpOn:checked")).length === 0);
+  await page.context().close(); }
 
 head("Mounts view — rewrite the battle rider/mount pairs");
 { const page = await newPage(); await loadIso(page);
@@ -3865,6 +3919,115 @@ head("Suikoden I / II carryover (save editor, Pyodide stubbed)");
   await page.click("#cfCancel");
   await page.context().close();
 }
+head("Trinity Sight — points of view & chapters (save editor, Pyodide stubbed)");
+{ const page = await newPage();
+  // The flame mask and the per-POV progress counters are whole-save state, so the stub
+  // carries a decoded `trinity` block shaped like s3save.decode_trinity() plus the
+  // REF.trinity reference. Where those numbers COME from is save_roundtrip.py's job; what
+  // this proves is the wiring — that a flame tick and a chapter pick reach the write
+  // payload, and that a fold closed over them still admits they are there.
+  await page.addInitScript(`
+    const POVS = [
+      ['hugo','Hugo',0,1,1,true,3,1], ['chris','Chris',1,2,2,true,0,0],
+      ['geddoe','Geddoe',2,3,3,true,0,0], ['thomas','Thomas',3,4,4,false,0,0],
+      ['koroku','Koroku',5,6,5,false,0,0], ['luc','Luc',4,5,6,false,0,0],
+    ].map((x) => ({ key: x[0], name: x[1], bit: x[2], slot: x[3], flame: x[4],
+                    lit: x[5], second: false, stage: x[6], chapter: x[7], chapterMax: 3 }));
+    const CH = { hugo: [[1,1],[2,4],[3,8]], chris: [[1,1],[2,5],[3,7]], geddoe: [[1,3],[2,4],[3,8]],
+                 thomas: [[1,3],[2,7]], koroku: [[1,9]], luc: [[1,1]] };
+    const TRREF = { flagOffset: 0x34, flagIndex: 4, flag2Offset: 0x35, flag2Index: 5,
+      stageOffset: 0x3B0, stageSlots: 8,
+      povs: POVS.map((p) => ({ key: p.key, name: p.name, bit: p.bit, slot: p.slot, flame: p.flame,
+        stageOffset: 0x3B0 + p.slot * 2,
+        chapters: CH[p.key].map((c) => ({ chapter: c[0], value: c[1], seen: [c[1]] })) })),
+      main: { key: 'main', name: 'Main story (merged)', slot: 7, stageOffset: 0x3B0 + 14,
+        chapters: [{ chapter: 4, value: 9, seen: [9] }, { chapter: 5, value: 11, seen: [11] },
+                   { chapter: 6, value: 12, seen: [12] }],
+        labels: { 4: 'Chapter 4', 5: 'Chapter 5', 6: 'Cleared' } } };
+    const TRIN_DEC = { povs: POVS, main: { key: 'main', name: 'Main story (merged)', slot: 7, stage: 0, chapter: 0 },
+      flagByte: 0x07, flagOffset: 0x34, stageOffset: 0x3B0, stages: [0,3,0,0,0,0,0,0] };
+    const SAVES = [{ label: 'Slot 1', folder: 'BASLUS-x', checksumWord: 0, meta: { chapter: 1 },
+      global: { partyLeader: 1, playtime: '1:00', storyPhase: 1, gold: 1000 }, leaderName: 'Hugo',
+      carryover: {}, trinity: TRIN_DEC, names: [], characters: [], party: [0,0,0,0,0,0], inventory: [] }];
+    window.__payloads = [];
+    window.loadPyodide = async () => ({
+      FS: { writeFile() {}, readFile() { return new Uint8Array([0,1,2,3]); } },
+      runPython(code) {
+        if (code.includes('load_reference()')) return JSON.stringify({
+          items: [], skills: [], charById: { 1: 'Hugo' }, charRoster: { 1: 0 }, charChoices: [1],
+          carryover: { flags: {}, chars: [], runes: [], runeSlots: [] }, trinity: TRREF });
+        if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
+        if (code.startsWith('apply_edits(')) {
+          window.__payloads.push(code.slice(code.indexOf('(') + 1, code.lastIndexOf(')')));
+          return JSON.stringify({ changed: 2 });
+        }
+        return undefined;
+      },
+    });
+  `);
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await dismissBoot(page);
+  await page.waitForFunction(() => { const b = document.querySelector("#pickBtn"); return b && !b.disabled; }, { timeout: 15000 });
+  await page.setInputFiles("#file", { name: "save.bin", mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 4]) });
+  await page.waitForSelector("#trfold", { timeout: 5000 });
+
+  const sum0 = await page.textContent("#trfoldsum");
+  check("the panel ships collapsed but reports how many flames are lit",
+    !(await page.locator("#trfold").evaluate((e) => e.open)) && /3\/6 flames lit/.test(sum0), sum0);
+  check("...and names them, so the closed header answers the question on its own",
+    /Hugo, Chris, Geddoe/.test(sum0), sum0);
+  await openFold(page, "#trfold");
+  check("all six points of view render, in flame order",
+    (await page.locator("#trinity input[data-tflame]").count()) === 6);
+  const trText = (await page.textContent("#trinity")).replace(/\s+/g, " ");
+  check("each row is labelled by flame number and names its bit and counter address",
+    /Flame 4 · Thomas/.test(trText) && /Flame 6 · Luc/.test(trText) && /0x3BA · flag 0x34 bit 4/.test(trText),
+    trText.slice(0, 240));
+  check("a lit flame reads as ticked and a dark one does not",
+    (await page.isChecked('input[data-tflame="hugo"]')) && !(await page.isChecked('input[data-tflame="luc"]')));
+  check("the chapter dropdown offers only that character's own chapters",
+    (await page.locator('select[data-tstage="thomas"] option').count()) === 3 &&
+    (await page.locator('select[data-tstage="luc"] option').count()) === 2,
+    "thomas=" + (await page.locator('select[data-tstage="thomas"] option').count()));
+  check("the merged story gets its own row, with its own labels",
+    /Main story \(merged\)/.test(trText) &&
+    (await page.locator('select[data-tstage="main"] option').count()) === 4);
+  check("a POV's current stage is preselected as its chapter",
+    (await page.inputValue('select[data-tstage="hugo"]')) === "3");
+
+  // Light Luc's flame and put Chris at her chapter 2: two staged edits, one payload.
+  await page.check('input[data-tflame="luc"]'); await page.waitForTimeout(40);
+  await page.selectOption('select[data-tstage="chris"]', "5"); await page.waitForTimeout(40);
+  check("both controls mark themselves dirty",
+    (await page.locator('input[data-tflame="luc"]').evaluate((e) => e.classList.contains("dirty"))) &&
+    (await page.locator('select[data-tstage="chris"]').evaluate((e) => e.classList.contains("dirty"))));
+  check("the header counts them, so closing the fold cannot hide them",
+    /2 edit\(s\)/.test(await page.textContent("#trfoldsum")), await page.textContent("#trfoldsum"));
+  await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
+  const review = (await page.textContent(".cf-list")).replace(/\s+/g, " ");
+  check("the review list spells out the flame in words, not a bit number",
+    /Luc's flame: dark → lit/.test(review), review.slice(0, 200));
+  check("...and the chapter move with both the chapter and the raw stage",
+    /Chris: not started \(stage 0\) → chapter 2 \(stage 5\)/.test(review), review.slice(0, 260));
+  await page.click("#cfOk");
+  await until(page, () => (window.__payloads || []).length > 0);
+  const sent = JSON.parse(JSON.parse(await page.evaluate(() => window.__payloads[0].split(", ").slice(2).join(", "))));
+  check("the write payload carries the flame and the counter",
+    sent.trinity && sent.trinity.lit.luc === true && sent.trinity.stage.chris === 5,
+    JSON.stringify(sent.trinity));
+  check("...and nothing the user did not touch",
+    Object.keys(sent.trinity.lit).length === 1 && Object.keys(sent.trinity.stage).length === 1,
+    JSON.stringify(sent.trinity));
+
+  // Putting a control back where the save had it is a no-op, not a second staged change.
+  await page.uncheck('input[data-tflame="luc"]'); await page.waitForTimeout(40);
+  await page.selectOption('select[data-tstage="chris"]', "0"); await page.waitForTimeout(40);
+  check("returning both to their saved values clears the staging",
+    await page.evaluate(() => !("luc" in TRIN.lit) && !("chris" in TRIN.stage)));
+  check("the header drops the count with them", !/edit\(s\)/.test(await page.textContent("#trfoldsum")));
+  await page.context().close();
+}
+
 head("Undo/redo + skill-cap & rune presets");
 { const page = await newPage(); await loadIso(page);
   const [l4b] = TABLES.list4;
@@ -4499,6 +4662,77 @@ head("Changes tab — already on this disc, vs a base disc");
     return c ? c.textContent.replace(/\s+/g, " ").slice(0, 200) : "";
   });
   check("the stock-word audit renders without a base disc", auditCard.length > 0, auditCard.slice(0, 80));
+  await page.context().close();
+  setServed(bytes);                                  // leave the fixture as we found it
+}
+
+// ---- Changes tab: putting a code patch back --------------------------------------------------
+// The other half of the audit. Reporting a patch is only useful if you can undo it, and the
+// disc that needs undoing is usually one you no longer have a clean copy of — so this path
+// takes no base disc at all, and writes the decoded stock values back from the constants
+// web/tests/stock-restore.mjs checks against a pristine disc.
+head("Changes tab — restore code patches to stock, with no base disc");
+{
+  const patched = Uint8Array.from(bytes);
+  const dv = new DataView(patched.buffer);
+  // Four patches from three groups, all of them ones the tab marks as able to hang a game.
+  ACTORFB_SITES.forEach(([off, , alt]) => dv.setUint32(off, alt >>> 0, true));
+  HORSE_CLAMP.forEach((c) => dv.setUint32(c.off, c.alt >>> 0, true));
+  dv.setUint16(AVATAR_SITES[1][0], 0x53, true);          // the avatar whitelist, widened
+  dv.setUint16(horseAddr(2), 325, true);                 // Chris given a horse the clamp normally refuses
+  setServed(patched);
+
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="changes"]');
+  await page.waitForSelector("#chgStockAll", { timeout: 15000 });
+  const card = () => page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /checked against their stock values/.test(x.textContent));
+    return c ? c.textContent.replace(/\s+/g, " ") : "";
+  });
+  const before = await card();
+  check("the audit finds the patches with no base disc chosen",
+    /Scene actor fallback/.test(before) && /Field character/.test(before) && /Mounts/.test(before),
+    before.slice(0, 100));
+  check("it says how many can hang the game", /can hang the game/.test(before));
+  check("the risky findings are listed first", await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#isoView .grouphead")].map((r) => r.textContent);
+    return rows.length > 0 && /Scene actor fallback|Mounts|Field character/.test(rows[0]);
+  }));
+  check("every finding offers its own ↺", await page.evaluate(() =>
+    document.querySelectorAll("#isoView [data-srev]").length > 0));
+
+  await page.click("#chgStockAll");
+  await page.waitForTimeout(150);
+  const after = await card();
+  check("after Restore all, the audit is empty", /no code patch at all/.test(after), after.slice(0, 120));
+  const staged = await page.evaluate(() => {
+    const c = [...document.querySelectorAll("#isoView .card")].find((x) => /Staged, not yet saved/.test(x.textContent));
+    return c ? c.textContent.replace(/\s+/g, " ") : "";
+  });
+  check("the restore is staged, not written", /Restored to stock/.test(staged), staged.slice(0, 120));
+  check("restoring wrote nothing to the disc", (await page.evaluate(() => window.__writes.length)) === 0);
+  // Undo has to reach it too — a restore is one user action, so it is one undo step.
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(150);
+  check("undo puts the patches back (the restore is one undo step)",
+    /Scene actor fallback/.test(await card()));
+  await page.keyboard.press("Control+Shift+z");
+  await page.waitForTimeout(150);
+  check("redo takes them away again", /no code patch at all/.test(await card()));
+
+  // ...and the bytes that reach the disc. `wrote` is asserted alongside each value because
+  // the reader falls back to the PRISTINE fixture for anything unwritten — which is the same
+  // number a correct restore produces, so the value alone would pass on a no-op.
+  const r = await save(page);
+  const fb = ACTORFB_SITES[0][0], av = AVATAR_SITES[1][0], hz = horseAddr(2), hc = HORSE_CLAMP[0].off;
+  check("the scene-fallback word was written back as `jr $ra`",
+    r.wrote(fb, 4) && r.u32(fb) === (ACTORFB_SITES[0][1] >>> 0), "0x" + r.u32(fb).toString(16));
+  check("the avatar gate was written back to its stock immediate",
+    r.wrote(av, 2) && r.u16(av) === AVATAR_SITES[1][1], String(r.u16(av)));
+  check("the assigned-horse clamp was written back to `sltiu 2`",
+    r.wrote(hc, 4) && r.u32(hc) === (HORSE_CLAMP[0].stock >>> 0), "0x" + r.u32(hc).toString(16));
+  check("Chris's assigned horse is hers again", r.wrote(hz, 2) && r.u16(hz) === HORSE_STOCK[2], String(r.u16(hz)));
   await page.context().close();
   setServed(bytes);                                  // leave the fixture as we found it
 }

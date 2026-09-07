@@ -238,6 +238,17 @@ export const MECH = {
   roundMount: { off: 0x226FF8, stock: 0x26100001 },
   adren:      { off: 0x262CD0, stock: 0x02228821, alt: 0x00000000 },
 };
+// The six `sltiu $vX, $vX, 2` sites that clamp the assigned horse to 308/309. Planted stock
+// because the Changes tab's code audit reads them: an unplanted zero here would have the
+// fixture report six code patches it does not carry.
+export const HORSE_CLAMP = [
+  { off: 0x10EEEC, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x10EF0C, stock: 0x2C630002, alt: 0x2C630100 },
+  { off: 0x146EDC, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x14711C, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x1471A8, stock: 0x2C420002, alt: 0x2C420100 },
+  { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
+];
 // Rune power (iso.js RUNEFX): the magnitudes the passive runes are worth, planted stock so the
 // Passives tab's controls decode and a write has a real instruction to rewrite the value inside.
 // `kind` mirrors iso.js so the e2e can assert the right bits moved — an `imm` write must leave
@@ -495,6 +506,7 @@ export function buildSynthIso() {
   for (const [rec, cls] of Object.entries(MOVESPD_CLASS)) bytes[spdClassAddr(+rec)] = cls;
   for (const [roster, v] of Object.entries(HORSE_STOCK)) w16(horseAddr(+roster), v);
   for (const d of Object.values(MECH)) w32(d.off, d.stock);
+  for (const d of HORSE_CLAMP) w32(d.off, d.stock);
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));
