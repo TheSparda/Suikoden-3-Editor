@@ -511,7 +511,13 @@ head("Passives view — choose who gets a support rune for free");
     check("...and where the helper goes", /0x16BF1E0/.test(txt));
     check("it says how enemies are kept out", /off enemies/i.test(txt));
     check("the block starts out untouched", /the first character you choose installs it/i.test(txt));
-    check("Fortune is listed as the one with no site at all", /no site found/.test(txt));
+    // Fortune WAS "no site found" until its check turned up in the battle-results overlay. The
+    // tab must now say where it is, not that it is nowhere — a stale "no site" would send the
+    // next person hunting for something already found.
+    check("Fortune is listed as decoded-but-not-switchable, not as missing",
+      /not in the executable/.test(txt) && !/no site found/.test(txt));
+    check("...and it names the overlay it is actually in", /battle-results overlay/.test(txt));
+    check("...and says one is as good as six", /one is as good as six/.test(txt));
     check("the four dogs are named as not offered", /Koichi, Connie, Kosanji, Kogoro/.test(txt));
     // The confidence markers are the contract. One field site HAS a play report — but it was
     // earned under the dropped-call patch shape, not this one, so the tab must carry the report
@@ -652,8 +658,17 @@ head("Passives view — rune power: what a passive is worth once it fires");
   check("the card starts collapsed", !(await page.locator('input.rf[data-k="sunTurn"]').isVisible()));
   await page.click("#rfBox > summary");
   const keys = await page.$$eval(".rf", (n) => n.map((x) => x.dataset.k));
-  check("every rune power control renders", keys.length === 15, keys.join(","));
-  check("...none of them read-only on a stock disc", (await page.$$(".rf:disabled")).length === 0);
+  check("every rune power control renders", keys.length === 16, keys.join(","));
+  // Fortune is the ONE control backed by the battle-results overlay rather than the ELF block,
+  // and the synthetic disc is 4.6 MB — it does not reach the ~1 GB those windows live at. So on
+  // this fixture it must degrade to unavailable, and every other control must still be live.
+  // That asymmetry is the assertion: "all editable" would hide a broken aux path, and "all
+  // read-only" would hide a broken ELF path.
+  const off = await page.$$eval(".rf:disabled", (n) => n.map((x) => x.dataset.k));
+  check("only Fortune is read-only here — its overlay is past the end of a synth disc",
+    off.join(",") === "fortune", off.join(",") || "(none)");
+  check("...and it says why, rather than looking broken",
+    /unavailable/.test(await page.getAttribute('input.rf[data-k="fortune"]', "title")));
   check("the shift controls are dropdowns, not free numbers",
     (await page.$$eval("select.rf", (n) => n.map((x) => x.dataset.k))).sort().join(",")
       === "dblStrike,fireSeal,wall,warrior,wizard");
@@ -733,8 +748,10 @@ head("Passives view — rune power reverts and refuses a drifted disc");
     check("a drifted site makes its control read-only, not writable",
       await p2.isDisabled('input.rf[data-k="killer"]'));
     check("...and only that one", !(await p2.isDisabled('input.rf[data-k="counter"]')));
-    check("...and the card says how many are read-only",
-      /1<\/b> control\(s\) are read-only/.test(await p2.innerHTML("#rfBox")));
+    // TWO here, not one: the drifted Killer site plus Fortune, which is permanently unavailable
+    // on a synth disc because its overlay window is past the end of the file.
+    check("...and the card counts both read-only controls (drifted Killer + unavailable Fortune)",
+      /2<\/b> control\(s\) are read-only/.test(await p2.innerHTML("#rfBox")));
     await p2.context().close();
     setServed(bytes); }
   await page.context().close();
@@ -771,9 +788,15 @@ head("Runes view — a passive rune's strength on its own row");
   const p2 = await newPage(); await loadIso(p2);
   await p2.click('#isoTabs [data-v="runes"]');
   await p2.waitForSelector(".invtbl", { timeout: 3000 });
-  await p2.fill("#isoSearch", "Fortune"); await p2.waitForTimeout(120);
-  check("Fortune has no Strength block — it has no number to move",
+  // Balance clears a status bit and Fury sets one — neither has a literal to move, so neither
+  // gets a block. (Fortune DOES have one now: its multiplier lives in the battle-results
+  // overlay. It was listed here as "no number to move" until that site was found.)
+  await p2.fill("#isoSearch", "Balance"); await p2.waitForTimeout(120);
+  check("Balance has no Strength block — it has no number to move",
     (await p2.locator(".rf").count()) === 0);
+  await p2.fill("#isoSearch", "Fortune"); await p2.waitForTimeout(120);
+  check("Fortune DOES have one, and it is the overlay-backed EXP multiplier",
+    (await p2.$$eval(".rf", (n) => n.map((x) => x.dataset.k))).join(",") === "fortune");
   await p2.context().close();
   await page.context().close();
 }
