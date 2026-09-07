@@ -206,6 +206,20 @@ for (const [name, [base, stride, count]] of Object.entries(TABLES)) {
   // check exists to catch.
   (/\n\s*wireRf\(host\);/.test(iso) ? ok : bad)(
     "drawPassives still wires the Rune power controls (a wireRf(host); call, not just the declaration)");
+  // The same controls also render per-rune on the Runes tab, which is where someone looking up
+  // Sunbeam expects to find "HP a combat turn". Two call sites now, one per tab.
+  (/\$\{runePowerHTML\(r\.id\)\}/.test(iso) ? ok : bad)(
+    "drawRunes still renders each passive rune's Strength block");
+  ((iso.match(/\n\s*wireRf\(host\);/g) || []).length === 2 ? ok : bad)(
+    `wireRf is called from both tabs (found ${(iso.match(/\n\s*wireRf\(host\);/g) || []).length}, expected 2 — Passives and Runes)`);
+  // One renderer feeds both tabs. If they ever diverge into two copies, a knob added to RUNEFX
+  // silently appears on one tab only.
+  (/function rfField\(e, short\)/.test(iso) && /rfField\(e, false\)/.test(iso) && /rfField\(e, true\)/.test(iso) ? ok : bad)(
+    "both tabs render their controls through the one rfField()");
+  // The walk-heal is stored as an interval and shown as a rate; the snap-back is what keeps a
+  // nudge-and-undo from leaving 1/3.33 = 0.3003 on the disc instead of the stock 0.3.
+  (/Math\.abs\(shown - e\.stockShown\) < 0\.005\) return e\.stock/.test(iso) ? ok : bad)(
+    "the rate control snaps back to the exact stock interval");
 }
 {
   const oob = MOUNT_SITES.filter((o) => o < ELF_BASE || o + 4 > ELF_END);
