@@ -43,11 +43,13 @@
   // to, so a spell reads every tail field at (own base + stride + x). Element was already known
   // to sit there; two more tail fields are now pinned, each against both tables at once:
   //   radius (+0x01 into the tail) — the size of the area/line template. Nonzero for every AREA
-  //     or LINE record and zero for every single/all-target one, 130/130 across the 94 spells
-  //     and 38 unites with no exception. Spells run 1..4 (Dancing Flames 2 -> Blazing Wall 3 ->
-  //     Explosion 4), every area unite is 3.
+  //     or LINE record and zero for every single/all-target one, 131/131 across the 93 spells
+  //     whose tail is readable and the 38 unites, with no exception. Spells run 1..4 (Dancing
+  //     Flames 2 -> Blazing Wall 3 -> Explosion 4), every area unite is 3. Because that holds in
+  //     BOTH directions it is a coupling, not a coincidence: see needsRadius / radiusFix, which
+  //     keep an AOE or Target change from leaving an area of size 0 (or a size with no area).
   //   chance (+0x06 into the tail for spells, +0x04 for unites) — % chance the status lands.
-  //     Nonzero for exactly the records with flags14 bit21 set, again 130/130, and it reads
+  //     Nonzero for exactly the records with flags14 bit21 set, again 131/131, and it reads
   //     straight off the text: unite "Knight B" = 30 vs "30% chance of deathblow", Wind of
   //     Sleep 60, Funeral Wind 80, Open Gate 80 (deathblow), Ready!/Go! 100.
   // A unite record is 8 bytes longer than a spell record, so the same shift leaves its tail
@@ -1767,6 +1769,44 @@
     const wholeSide = (tb === 0x01 || tb === 0x02 || tb === 0x03) && !(v & AREA_BIT);
     return (wholeSide ? (v | NO_AIM_BIT) : (v & ~NO_AIM_BIT)) >>> 0;
   };
+  // The RADIUS byte is the third field a targeting change moves, and the same trap again. It is
+  // the SIZE of the area/line template (record tail, +0x01 — see the SPELL/UNITE comment), and
+  // it is not optional: nonzero on every record that has a template and zero on every record
+  // that does not — 131/131 across the 93 spells whose tail is readable and the 38 unites of a
+  // pristine SLUS-20387, no exceptions in either direction.
+  //
+  // So AREA_BIT on its own is only half of "make this an area spell". Flipping "Area of effect"
+  // to on for one of the 34 plain single-target spells asks the engine for an area of size ZERO
+  // — a combination no stock record has — and flipping it back off strands a template size on a
+  // record with nothing to size. The line bit counts the same way: target byte 0x10 ("line of
+  // foes") carries a radius with AREA_BIT CLEAR (Thunder Runner r1, Furious Blow r3), so the
+  // Target dropdown can strand it exactly as the AOE toggle can, in both directions.
+  const LINE_BIT = 0x10;                    // target-byte bit 4 = line/front, radius-bearing
+  const needsRadius = (v) => !!(v & AREA_BIT) || !!(((v >> 8) & 0x7F) & LINE_BIT);
+  // Stock sizes, so a default is a real value and not an invention: AREA spells run 2×7 3×5 4×4
+  // and every one of the 12 AREA unites is 3, which makes 3 the mode across both tables and the
+  // middle of the graded fire family (Dancing Flames 2 -> Blazing Wall 3 -> Explosion 4). LINE
+  // spells are 1×4 3×2, so 1 — Thunder Runner's.
+  const AREA_RADIUS = 3, LINE_RADIUS = 1;
+  const defaultRadius = (v) => ((v & AREA_BIT) ? AREA_RADIUS : LINE_RADIUS);
+  // Rows whose Radius the user typed in by hand this session, per table. The coupling is a
+  // DEFAULT, not a rule the editor enforces: Radius has always been an editable field, and
+  // overwriting an authored 4 with our 3 — or clearing it because the shape changed — would be
+  // taking a decision the user already made. Once a row is in here the coupling steps aside and
+  // says so instead of writing.
+  const radiusTyped = { spell: new Set(), unite: new Set() };
+  // What a flags14 write owes the radius byte, or null for "nothing to do". Deliberately narrow:
+  // it fires only when the byte CONTRADICTS the new shape (0 with a template, nonzero without),
+  // so a stock 2 or an authored 4 on a record that still has an area is left exactly alone.
+  //   -> null                     already agrees, or nothing to say
+  //   -> { skip: true, want }     contradicts, but the user owns this value — warn, don't write
+  //   -> { radius, want }         contradicts and is ours to fix — write this
+  const radiusFix = (kind, idx, cur, v) => {
+    const want = needsRadius(v);
+    if (want === (cur !== 0)) return null;
+    if (radiusTyped[kind].has(idx)) return { skip: true, want };
+    return { radius: want ? defaultRadius(v) : 0, want };
+  };
   const F18_BITS = { 1: "poison", 3: "instant-death", 4: "unbalance", 9: "teleport/chant",
     10: "sleep", 13: "silence/berserk", 14: "mgc-boost", 15: "mgc-shield", 19: "mgc-immune-once",
     21: "buff-pdf/mdf", 22: "sword-fire", 23: "sword-lightning", 24: "sword-wind",
@@ -2578,6 +2618,7 @@
     isoHandle = handle; isoFile = file; isoName = file.name || "game.iso";
     gearCache = null; gearAlias = {}; dropDescCaches(); TEXTS = null; DESC_ALIAS = NAME_ALIAS = null; resetUndo(); Object.keys(FIELD_REG).forEach((k) => delete FIELD_REG[k]);
     recipeExported = false; saveNudged = false; RENAMES = {}; rnOpen = false;
+    radiusTyped.spell.clear(); radiusTyped.unite.clear();   // "the user authored this row's Radius" is about THIS disc
     // The region map is keyed to the base disc's pointers, and the out-of-block comparison
     // to the windows THIS disc loaded — both are stale the moment a different disc opens.
     // The base disc itself is not: it is the pristine reference and outlives any one image.
@@ -3409,10 +3450,10 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.145.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.145.0 with a retargeted spell still carries that; set the Target again and rebuild.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. THE MECHANISM ITSELF WAS WATCHED WORKING ON 2026-09-06: Balance and Fury were both forced on for Chris from her own card and both effects showed up in combat, which proves the relocated helper, its register handling and the per-character bitmap. That was through the helper\u2019s record and acting-unit entries \u2014 and both runes on THIS tab enter through the third one, which resolves a character id first, so neither has been watched and every row here still reads untested. So do the two overlay switches, which are a different patch shape again. Sunbeam\u2019s field walk-heal was played the same day, but under the editor\u2019s previous patch shape, which dropped the call instead of retargeting it. Keep a backup disc.",
-      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field).",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on.",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
@@ -3435,10 +3476,10 @@
       chars: "Starting skills, ranks, equipped runes and gear \u2014 plus forcing a support rune\u2019s passive on for this character alone, which is confirmed in play for the mechanism and two runes.",
       growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
-      spells: "The spell / rune-effect table: power, cast, element, target, area and status, per spell. Retargeting is confirmed in play from v1.145.0 on \u2014 an older build's Target write soft-locked the battle.",
+      spells: "The spell / rune-effect table: power, cast, element, target, area and status. Area of effect now moves Radius with it, and retargeting is confirmed in play from v1.141.0 on \u2014 older builds soft-locked.",
       runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
       passives: "The support runes whose passive can be forced on without the rune equipped, and what each one is worth.",
-      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table.",
+      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table. Area of effect moves Radius with it.",
       mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
       movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
       story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
@@ -4197,8 +4238,40 @@
     for (let i = 0; i < SPELL.count; i++) { const n = strAt(r32(SPELL.off + i * SPELL.stride + 0x08)); if (!(n in m)) m[n] = i; }
     return m;
   }
+  // The radius half of a flags14 write: read the byte, ask radiusFix what it owes the new
+  // shape, write it if it is ours to write, and hand back a sentence either way. Nothing here
+  // is silent — a default we filled in is worth as much to the user as one we declined to.
+  //
+  // `notes` is an optional collector, so a bulk caller (rune reskin) can surface one line for a
+  // run of spells instead of shouting once per record. `radOff` is null for the one row whose
+  // tail falls outside its table (the last spell): there is no byte to write there, so the most
+  // it can do is say the shape now wants one.
+  function syncRadius(kind, idx, radOff, v, name, notes) {
+    if (radOff == null) {
+      if (!needsRadius(v)) return null;
+      const note = { level: "warn", msg: `${name}: this is the last record in the table, so its Radius byte falls outside it and can't be set — an area or line here would have no size.` };
+      if (notes) notes.push(note);
+      return note;
+    }
+    const cur = r8(radOff), fix = radiusFix(kind, idx, cur, v);
+    if (!fix) return null;
+    let note;
+    if (fix.skip) {
+      note = { level: "warn", msg: fix.want
+        ? `${name}: Area of effect is on but Radius is 0, so the area has no size — and you set Radius by hand, so it was left alone. Stock area records use 1–4.`
+        : `${name}: Radius is still ${cur} but this record has no area to size — and you set Radius by hand, so it was left alone. Stock uses 0 here.` };
+    } else {
+      writeW(radOff, 1, fix.radius); reg(radOff, 1, "num", name, "Radius");
+      note = { level: "ok", msg: fix.want
+        ? `${name}: Radius was 0, so it was set to ${fix.radius} — an area of size 0 does nothing. Every stock area record carries 1–4; edit Radius if you want a different size.`
+        : `${name}: Radius was cleared to 0 — this record no longer has an area or line to size.` };
+    }
+    if (notes) notes.push(note);
+    return note;
+  }
   // Shared edit engine for a spell record (used by per-spell controls AND rune reskin).
-  function applySpell(idx, f, updateDesc) {
+  // `notes`, when given, collects the radius-coupling messages syncRadius produces.
+  function applySpell(idx, f, updateDesc, notes) {
     const off = SPELL.off + idx * SPELL.stride, name = strAt(r32(off + 0x08));
     let descRes = null;
     if (f.power != null) {
@@ -4211,6 +4284,12 @@
     }
     if (f.target != null) { let v = r32(off + 0x14); v = syncNoAim((v & 0xFFFF80FF) | ((f.target & 0x7F) << 8)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
     if (f.aoe != null) { let v = r32(off + 0x14); v = syncNoAim(f.aoe ? (v | AREA_BIT) : (v & ~AREA_BIT)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
+    // Radius follows the FINAL shape, so a call that moves Target and AOE together (rune reskin
+    // can) is sized once from the result rather than twice on the way there. An explicit
+    // f.radius in the same call is the user's own value and wins outright — it is written below,
+    // and it also means the coupling has nothing to contradict.
+    if ((f.target != null || f.aoe != null) && f.radius == null)
+      syncRadius("spell", idx, idx + 1 < SPELL.count ? off + SPELL.radius : null, r32(off + 0x14), name, notes);
     // statusMask writes flags18 whole, so a composite record (e.g. the 0x1DE7 restore-all
     // spells) survives an edit instead of being flattened to a single bit. f.status is the older
     // one-of form, still used by the rune-reskin card's dropdown.
@@ -4218,6 +4297,7 @@
     else if (f.status != null) { const rev = {}; for (const b in F18_BITS) rev[F18_BITS[b]] = 1 << b; writeW(off + 0x18, 4, f.status === "none" ? 0 : (rev[f.status] || 0)); reg(off + 0x18, 4, "status", name, "Status"); }
     if (f.radius != null && idx + 1 < SPELL.count) {
       const ro = off + SPELL.radius; writeW(ro, 1, clampInt(f.radius, 0, 255)); reg(ro, 1, "num", name, "Radius");
+      radiusTyped.spell.add(idx);           // authored from here on — the coupling stops guessing
     }
     if (f.chance != null && idx + 1 < SPELL.count) {
       const co = off + SPELL.chance; writeW(co, 2, clampInt(f.chance, 0, 100)); reg(co, 2, "num", name, "Status chance %");
@@ -4457,7 +4537,7 @@
   // Point both immediates at one spell (editor row) and set the heal number. `setTarget`
   // also gives that spell the both-sides target byte — without it the ally side never
   // enters the target list and the heal profile has nobody to land on.
-  function applySplit(idx, heal, setTarget) {
+  function applySplit(idx, heal, setTarget, notes) {
     const id = clampInt(idx, 0, SPELL.count - 1) + 1;
     writeW(SPLIT.route, 4, splitWord(SPLIT.routeOp, id));
     reg(SPLIT.route, 4, "spellid", "Damage+heal", "spell that splits");
@@ -4465,7 +4545,7 @@
     reg(SPLIT.amtSel, 4, "spellid", "Damage+heal", "spell the heal number belongs to");
     writeW(SPLIT.amt, 4, splitWord(SPLIT.amtOp, clampInt(heal, 0, SPLIT.maxHeal)));
     reg(SPLIT.amt, 4, "imm16", "Damage+heal", "heal HP");
-    if (setTarget) applySpell(idx, { target: 0x03 }, false);
+    if (setTarget) applySpell(idx, { target: 0x03 }, false, notes);
   }
   function splitCard() {
     const st = splitState();
@@ -4520,10 +4600,13 @@
     const sel = q("#spSplitSpell", host); if (!sel) return;
     splitInfo(host);
     q("#spSplitApply", host).onclick = () => {
-      const idx = +sel.value;
-      applySplit(idx, +q("#spSplitHeal", host).value, q("#spSplitTgt", host).checked);
+      const idx = +sel.value, notes = [];
+      applySplit(idx, +q("#spSplitHeal", host).value, q("#spSplitTgt", host).checked, notes);
       drawView();
-      setStatus(`“${strAt(r32(SPELL.off + idx * SPELL.stride + 0x08))}” now damages foes and heals allies. Review, then Save.`, "ok");
+      // Both-sides has no template, so a spell that came in as a LINE (Shining Wind is one)
+      // loses its radius here — say so rather than let it move under the user.
+      setStatus(`“${strAt(r32(SPELL.off + idx * SPELL.stride + 0x08))}” now damages foes and heals allies. Review, then Save.`
+        + (notes.length ? ` · ${notes[0].msg}` : ""), notes.length ? notes[0].level : "ok");
     };
     q("#spSplitReset", host).onclick = () => {
       [SPLIT.route, SPLIT.amtSel, SPLIT.amt].forEach((o) => revertRange(o, 4));
@@ -4600,7 +4683,7 @@
             <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
             <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
-            <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}></label>
+            <label class="field"><span>Radius <span class="muted">(0 = no area · follows AOE/Target)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}></label>
             <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
             ${f18CtlHTML(i, f18)}
           </div></div></details>`;
@@ -4642,9 +4725,11 @@
     qa(".sp", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, k = el.dataset.k;
       const f = {}; f[k] = k === "aoe" ? el.value === "1" : k === "status" ? el.value : +el.value;
-      const dr = applySpell(i, f, spDescOn && k === "power");
+      const notes = [];
+      const dr = applySpell(i, f, spDescOn && k === "power", notes);
       updateSpellSummary(host, i);
       if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn");
+      else if (notes.length) setStatus(notes[0].msg, notes[0].level);
     }));
     // flags18 checkboxes: rebuild the whole mask from the boxes in this spell's block, so any
     // combination (and any set-but-unlabelled bit, which gets its own box) round-trips intact.
@@ -4688,7 +4773,12 @@
     qa(".sp", d).forEach((el) => {
       const [o, w, kind] = MAP[el.dataset.k];
       if (kind === "flags14") markFlagsField(el, off + o, el.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
-      else markField(el, off + o, w, kind);
+      else {
+        // Radius is the one field an edit to a DIFFERENT control can move (syncRadius), so its
+        // box has to be re-read from the bytes or it keeps showing the 0 that is no longer there.
+        if (el.dataset.k === "radius") el.value = rad;
+        markField(el, off + o, w, kind);
+      }
     });
     // flags18 is one word behind ~16 checkboxes, so highlight the changed bits but hang the
     // single ↺ off the raw-mask box — one revert for the word, not one per bit.
@@ -4724,9 +4814,14 @@
     if (num("#rsRadius") !== "") f.radius = +num("#rsRadius");
     if (num("#rsChance") !== "") f.chance = +num("#rsChance");
     if (!Object.keys(f).length) return setStatus("Set at least one field to apply.", "warn");
-    targets.forEach((i) => applySpell(i, f, spDescOn));
+    const notes = [];
+    targets.forEach((i) => applySpell(i, f, spDescOn, notes));
     drawView();
-    setStatus(`Reskinned ${targets.length} spell(s) for rune "${rune}". Review, then Save.`, "ok");
+    // One line for the run, not one per spell — but if the radius coupling had to speak up on
+    // any of them, that is the part worth reading, so it goes first and keeps its level.
+    const worst = notes.find((n) => n.level === "warn") || notes[0];
+    setStatus(`Reskinned ${targets.length} spell(s) for rune "${rune}". Review, then Save.`
+      + (worst ? ` · ${worst.msg}` : ""), worst ? worst.level : "ok");
   }
 
   // ---- unites ----------------------------------------------------------------
@@ -4767,7 +4862,7 @@
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
             <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
-            <label class="field"><span>Radius <span class="muted">(0 = no area)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}"></label>
+            <label class="field"><span>Radius <span class="muted">(0 = no area · follows AOE/Target)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}"></label>
             <label class="field"><span>Status chance %</span><input type="number" class="un" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}"></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`);
@@ -4780,7 +4875,7 @@
       qa(".un", d).forEach((c) => {
         const [o, w, kind] = UMAP[c.dataset.k];
         if (kind === "flags14") markFlagsField(c, off + o, c.dataset.k === "aoe" ? AREA_BIT : 0x7F00);
-        else markField(c, off + o, w, kind);
+        else { if (c.dataset.k === "radius") c.value = rad; markField(c, off + o, w, kind); }
       });
       const dEl = d.querySelector(".undesc");
       if (dEl) { const dptr = r32(off + 0x0C), doff = vaOff(dptr), dmax = origSlotLen(dptr); dEl.value = strFrom(BUF, doff, dmax); markField(dEl, doff, dmax, "text"); }
@@ -4795,9 +4890,17 @@
           if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn"); }
       }
       else if (k === "cast") { writeW(off + 0x10, 4, Math.max(0, +el.value || 0)); reg(off + 0x10, 4, "num", name, "Cast"); }
-      else if (k === "target") { let v = r32(off + 0x14); v = syncNoAim((v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Target"); }
-      else if (k === "aoe") { let v = r32(off + 0x14); v = syncNoAim(el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT)); writeW(off + 0x14, 4, v); reg(off + 0x14, 4, "flags14", name, "Area of effect"); }
-      else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); }
+      else if (k === "target" || k === "aoe") {
+        let v = r32(off + 0x14);
+        v = k === "target" ? ((v & 0xFFFF80FF) | ((+el.value & 0x7F) << 8))
+                           : (el.value === "1" ? (v | AREA_BIT) : (v & ~AREA_BIT));
+        v = syncNoAim(v); writeW(off + 0x14, 4, v);
+        reg(off + 0x14, 4, "flags14", name, k === "target" ? "Target" : "Area of effect");
+        // A unite record's tail is inside its own record, so every row has a radius byte to fix.
+        const note = syncRadius("unite", i, off + UNITE.radius, v, name);
+        if (note) setStatus(note.msg, note.level);
+      }
+      else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); radiusTyped.unite.add(i); }
       else if (k === "chance") { writeW(off + UNITE.chance, 2, clampInt(el.value, 0, 100)); reg(off + UNITE.chance, 2, "num", name, "Status chance %"); }
       markUnite(i);
     }));

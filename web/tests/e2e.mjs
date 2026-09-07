@@ -2666,10 +2666,16 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // Change Target → Target flags; the write must PRESERVE the AOE bit.
   await page.selectOption('details.char[data-i="0"] select[data-k="target"]', "2"); await page.waitForTimeout(60);
   check("Target change highlights Target", (await dirty("target")) === true);
+  // Radius is the third field a targeting change owes. synth spell0 ships radius 0, so turning
+  // AOE on asked for an area of size ZERO until syncRadius filled in the stock default — and the
+  // box has to SHOW the new value, or the user reads a 0 that is not in the bytes any more.
+  check("AOE on filled Radius with the stock default",
+    (await page.inputValue('details.char[data-i="0"] input[data-k="radius"]')) === "3");
   { const r = await save(page); const f14 = r.u32(SPELL.off + 0x14);
     check("Target write preserved AOE bit", ((f14 >> 8) & 0x7F) === 0x02 && !!(f14 & 0x8000));
     // bit16 = "no aiming step". An AREA spell is aimed, so all-foes + AOE must leave it CLEAR.
-    check("all-foes + AOE leaves bit16 clear", !(f14 & 0x00010000)); }
+    check("all-foes + AOE leaves bit16 clear", !(f14 & 0x00010000));
+    check("Radius reached the saved bytes", r.u8(SPELL.off + SPELL.radius) === 3); }
   // Turn AOE back off and the same target byte now means the whole foe side with nothing to aim
   // at — bit16 has to come ON. Leaving it off is what soft-locked Phoenix: the cursor sat on the
   // caster and its pair with no enemy selectable.
@@ -2680,8 +2686,25 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // 132 stock records) is proved without a browser in spell-target-real-iso.mjs, which is where
   // to add a case rather than buying another second here.
   await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "0"); await page.waitForTimeout(60);
+  check("AOE off cleared Radius again",
+    (await page.inputValue('details.char[data-i="0"] input[data-k="radius"]')) === "0");
   { const r = await save(page); const f14 = r.u32(SPELL.off + 0x14);
-    check("all-foes with AOE off sets bit16", ((f14 >> 8) & 0x7F) === 0x02 && !(f14 & 0x8000) && !!(f14 & 0x00010000)); }
+    check("all-foes with AOE off sets bit16", ((f14 >> 8) & 0x7F) === 0x02 && !(f14 & 0x8000) && !!(f14 & 0x00010000));
+    check("cleared Radius reached the saved bytes", r.u8(SPELL.off + SPELL.radius) === 0); }
+  // A Radius the user typed is theirs from then on. Type 4, turn AOE on (which would otherwise
+  // fill 3) and off (which would otherwise clear it): the value must not move either way, and
+  // the editor has to SAY it declined rather than leave a size-0 area unremarked.
+  await page.fill('details.char[data-i="0"] input[data-k="radius"]', "4");
+  await page.dispatchEvent('details.char[data-i="0"] input[data-k="radius"]', "change");
+  await page.waitForTimeout(60);
+  await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "1"); await page.waitForTimeout(60);
+  check("a typed Radius survives AOE on",
+    (await page.inputValue('details.char[data-i="0"] input[data-k="radius"]')) === "4");
+  await page.selectOption('details.char[data-i="0"] select[data-k="aoe"]', "0"); await page.waitForTimeout(60);
+  check("a typed Radius survives AOE off",
+    (await page.inputValue('details.char[data-i="0"] input[data-k="radius"]')) === "4");
+  check("and the editor says it left it alone",
+    /set Radius by hand/.test(await page.textContent("#isoStatus")));
   await page.context().close();
 }
 

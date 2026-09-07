@@ -49,17 +49,26 @@ console.log("spell-target-real-iso: flags14 bit16 (no-aiming-step)");
 check("AREA_BIT is bit15", AREA_BIT === 0x8000, hx(AREA_BIT));
 check("NO_AIM_BIT is bit16", NO_AIM_BIT === 0x00010000, hx(NO_AIM_BIT));
 
-// ---- both writers must route through it ---------------------------------------------------
+// ---- every writer must route through it ---------------------------------------------------
 // A target or AOE write that skips syncNoAim is exactly the bug this file is named after, and
 // it is invisible on a disc-less machine, so assert the call sites in source too.
-const writers = [...src.matchAll(/0xFFFF80FF\)?\s*\|\s*\(\(?\+?\w+(?:\.\w+)?\s*&\s*0x7F\)\s*<<\s*8\)/g)];
-check("both Target writers exist (spell + unite)", writers.length === 2, `found ${writers.length}`);
-const targetLines = src.split("\n").filter((l) => l.includes("0xFFFF80FF"));
-check("every Target write is wrapped in syncNoAim",
-  targetLines.length === 2 && targetLines.every((l) => l.includes("syncNoAim(")));
-const aoeLines = src.split("\n").filter((l) => /\|\s*AREA_BIT\)\s*:\s*\(v\s*&\s*~AREA_BIT\)/.test(l));
-check("every AOE write is wrapped in syncNoAim",
-  aoeLines.length === 2 && aoeLines.every((l) => l.includes("syncNoAim(")));
+//
+// Anchored on the WRITE rather than on the arithmetic: the unite handler folds Target and AOE
+// into one branch, so `v` is built on one line and stored on another and a per-line grep for
+// "0xFFFF80FF ... syncNoAim" would read as a pass only by accident. Each flags14 store has to
+// have syncNoAim applied to v within the three lines leading up to it.
+const lines = src.split("\n");
+const stores = lines.map((l, n) => [l, n]).filter(([l]) => /writeW\(off \+ 0x14, 4, v\)/.test(l));
+check("three flags14 writers (spell Target, spell AOE, unite Target/AOE)", stores.length === 3,
+  `found ${stores.length}`);
+const unsynced = stores.filter(([, n]) => !lines.slice(Math.max(0, n - 3), n + 1).join("\n").includes("syncNoAim("));
+check("every flags14 write is wrapped in syncNoAim", unsynced.length === 0,
+  unsynced.map(([, n]) => `line ${n + 1}`).join(" "));
+// And both shapes of the write still exist, so a refactor cannot pass the check above by
+// deleting a control instead of fixing it.
+check("the Target byte write exists", /0xFFFF80FF/.test(src) && src.match(/0xFFFF80FF/g).length === 2,
+  `${(src.match(/0xFFFF80FF/g) || []).length} sites`);
+check("the AOE bit write exists", (src.match(/\|\s*AREA_BIT\)\s*:\s*\(v\s*&\s*~AREA_BIT\)/g) || []).length === 2);
 
 if (!fs.existsSync(ISO)) {
   console.log(`SKIP the disc half: no disc at ${ISO} (set S3_ISO to point at one).`);
