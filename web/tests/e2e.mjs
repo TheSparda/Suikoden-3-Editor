@@ -5036,6 +5036,62 @@ head("Changes tab — a helper block nothing jumps into is leftover, not live");
   setServed(bytes);                                  // leave the fixture as we found it
 }
 
+// The switchboard's copy of the same rule. It has its OWN guarded write path (pswSet), so the
+// v1.137.0 finding has to be asserted through the checkbox too — and this is the exact state a
+// real disc was found in: helper installed, call sites in the legacy inline shape, nothing
+// jumping into the block. Unticking the block row alone must be allowed here.
+head("Non-stock code — the leftover helper block unticks on its own");
+{
+  const unhex = (h) => { const c = h.replace(/[^0-9A-Fa-f]/g, ""), a = new Uint8Array(c.length >> 1);
+    for (let i = 0; i < a.length; i++) a[i] = parseInt(c.substr(i * 2, 2), 16); return a; };
+  const legacy = Uint8Array.from(bytes);
+  const dv = new DataView(legacy.buffer);
+  legacy.set(unhex(PS_HOOK_CODE), PS_HOOK.off);
+  const legacySites = [0x149F90, 0x14A1B4].map((o) => PASSIVE_SITES.find(([x]) => x === o)).filter(Boolean);
+  for (const [o, , ds] of legacySites) { dv.setUint32(o, ds >>> 0, true); dv.setUint32(o + 4, PS_LEGACY_YES, true); }
+  setServed(legacy);
+
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector("[data-psw]", { timeout: 15000 });
+  const blockBox = () => page.evaluate((off) => {
+    const tag = "0x" + off.toString(16).toUpperCase().padStart(6, "0");
+    const tr = [...document.querySelectorAll("#isoView tbody tr")]
+      .find((r) => r.cells[1] && r.cells[1].textContent.trim() === tag);
+    if (!tr) return null;
+    const cb = tr.querySelector("[data-psw]");
+    return { i: cb && cb.dataset.psw, on: !!(cb && cb.checked),
+             state: tr.cells[4].textContent.trim(), risky: /⚠/.test(tr.cells[2].textContent) };
+  }, PS_HOOK.off);
+  const b0 = await blockBox();
+  check("the leftover block gets a row", !!b0 && b0.on, b0 ? b0.state : "no row");
+  check("...and is not flagged as able to hang the game", !!b0 && !b0.risky);
+
+  await page.uncheck(`[data-psw="${b0.i}"]`);
+  await page.waitForTimeout(150);
+  const b1 = await blockBox();
+  check("unticking it on its own is allowed", !!b1 && !b1.on && b1.state === "stock",
+    b1 ? `on=${b1.on} state=${b1.state}` : "row vanished");
+  { const r = await save(page);
+    const st = unhex(PS_HOOK_STOCK);
+    check("the dead routine is written back byte for byte", (() => {
+      for (let i = 0; i < st.length; i++) if (r.at(PS_HOOK.off + i) !== st[i]) return false;
+      return r.wrote(PS_HOOK.off, st.length);
+    })());
+    // Asserted as NOT WRITTEN, not as a value: the reader falls back to the pristine fixture
+    // for untouched bytes, so reading these would report the fixture's jal, not the disc's.
+    check("...and the legacy passive sites are left alone", legacySites.every(([o]) => !r.wrote(o, 8))); }
+
+  // And it goes back on from the row that stayed, which is the switchboard's whole point.
+  await page.check(`[data-psw="${b0.i}"]`);
+  await page.waitForTimeout(150);
+  { const b2 = await blockBox();
+    check("re-ticking reinstalls the helper", !!b2 && b2.on && b2.state === "patched"); }
+  await page.context().close();
+  setServed(bytes);                                  // leave the fixture as we found it
+}
+
 head("Long descriptions collapse, and stay how you left them");
 { const page = await newPage();
   await loadIso(page);
