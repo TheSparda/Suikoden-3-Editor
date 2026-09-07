@@ -205,11 +205,14 @@ about the trampoline, its register handling, the bitmap lookup, or whether the b
 is as dead in a running game as it is in the image. So it is kept as evidence and every rune
 still reads **untested**: a marker moves on a play report and never on a passing test. Keep a
 backup.
-Not offered: *Fortune*, whose effect doesn't ask the question the other 22 ask (the searches that
-came up empty are recorded in the offsets doc so nobody repeats them), and Koroku's four dogs,
+Not offered: *Fortune*, whose check turned out to live in a **streaming battle overlay** ~1GB
+into the disc rather than in the executable — it asks exactly the same question as the other 22,
+which is why three exhaustive searches of the executable found nothing. Its **EXP multiplier is
+editable** under Rune power; only the on/off switch is missing, because the switch machinery
+reaches the executable and that site isn't in it. Also not offered: Koroku's four dogs,
 whose character records live outside the array the table indexes. The same tab
-also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 15
-constants across 12 runes, read out of the instruction each rune runs right after it has asked
+also carries **Rune power** — not *whether* a passive fires but **how much it is worth**: 16
+constants across 13 runes, read out of the instruction each rune runs right after it has asked
 whether you have it. *Sunbeam heals 15HP a combat turn and 3.33HP a second of walking*, and
 both of those numbers are editable — on the Passives tab, and on Sunbeam's own row on the
 **Runes** tab under **Strength**, which is the same bytes from either side — as are Killer's and Counter's ×150%, Gale's SPD boost,
