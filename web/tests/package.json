@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node validate.mjs && node recruit-logic.mjs && node rename-core.mjs && node guide-core.mjs && node health-core.mjs && node text-core.mjs && node save-roundtrip.mjs && node field-avatar.mjs && node party-fix.mjs && node vcdiff.mjs && node desc-merge.mjs && node changes-core.mjs && node stock-restore.mjs && node svag-core.mjs && node blurb-core.mjs",
+    "test:loop": "E2E_TIER=fast E2E_WORKERS=6 node shard.mjs",
+    "test:gate": "npm test && node shard.mjs && node stream-save.mjs",
     "test:e2e": "node shard.mjs && node stream-save.mjs",
     "test:e2e:serial": "node e2e.mjs && node stream-save.mjs",
     "test:fast": "E2E_TIER=fast E2E_WORKERS=6 node shard.mjs",

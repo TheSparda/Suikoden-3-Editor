@@ -14,6 +14,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { chromiumPath, chromiumNote } from "./chromium-path.mjs";
 import { buildSynthIso, ELF_BASE, ELF_END, FOOD } from "./synth-iso.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -51,7 +52,8 @@ await new Promise((r) => srv.listen(0, r));
 const base = `http://localhost:${srv.address().port}/web/index.html`;
 
 let browser;
-try { browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined }); }
+console.log(chromiumNote());
+try { browser = await chromium.launch({ executablePath: chromiumPath() }); }
 catch (e) { console.log("SKIP stream-save: no Chromium (" + e.message.split("\n")[0] + ")."); srv.close(); process.exit(0); }
 
 console.log("streaming save (real service worker, real download):");
