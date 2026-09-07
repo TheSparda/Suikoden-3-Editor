@@ -163,9 +163,15 @@ across all 16 sharpen levels), **Shops**,
 **Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows
 for it, and **choose which spells it grants**. Every rune record carries **four spell slots**,
 and a rune with fewer spells than that is simply zero-padded — so *Kite* grants one attack and
-has **three free slots**, and filling one is how a rune is given a spell it never had. Each of
-the game's 94 spells can go in any slot. All 27 special-attack runes have the same three slots
-spare. Each filled slot is also a **link straight into the Spells tab with that record open**,
+has **three free slots**. Each of the game's 94 spells can go in any slot.
+**Tested on hardware:** on a *magic or support* rune this works — the game already reads every
+count the disc ships, one spell through four. On a *special-attack* rune (Kite, Phoenix, Goss —
+the 27 whose **Rune type** reads “Special attack”) it is **confirmed not to work on its own**:
+a Kite given four spells still fires slot 1 the instant it is chosen, with no list. The slots
+are written correctly; the battle menu never offers them. **Rune type** and **Element family**
+are editable next to the slots for exactly that reason — switching an attack rune to
+“Magic / support” is the one remaining lever, and it is untested. Each filled slot is also a
+**link straight into the Spells tab with that record open**,
 which stays the one place a spell's own power / cast / element / target / status is edited —
 and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
 status effect for an effect editor to hang off. The passive support runes ship with all four
