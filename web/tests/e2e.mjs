@@ -3423,12 +3423,13 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   // Same stub shape as the Recruit section. Hugo/Geddoe/Rico recruited; Chris (story),
   // Jeane + Lulu are optional recruits that should land in the "missing" worklist. Augustine
   // and Watari are there for the prerequisite chips: an item with a real source, and a potch
-  // price this save (1,000 gold) cannot meet.
+  // price this save (1,000 gold) cannot meet. Belle's errand wants a Screw, which is a KEY
+  // item — the Inventory tab keeps those in a separate list from party items.
   await page.addInitScript(`
     const CHARS = [
       ['Hugo','Hugo',true], ['Chris','',false], ['Jeane','',false],
       ['Geddoe','Geddoe',true], ['Rico','',true], ['Lulu','',false],
-      ['Augustine','',false], ['Watari','',false], ['Dominic','',false]
+      ['Augustine','',false], ['Watari','',false], ['Dominic','',false], ['Belle','',false]
     ].map((x, i) => ({ rosterIndex: i, name: x[0], recruiter: x[1], recruited: x[2],
       level: 10, curHP: 100, maxHP: 100, expToNext: 0, hasData: true,
       stats: { PWR: 1, SKL: 1, MAG: 1, REP: 1, PDF: 1, MDF: 1, SPD: 1, LUK: 1 }, equip: {}, skills: [] }));
@@ -3447,7 +3448,7 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
       runPython(code) {
         if (code.includes('load_reference()')) return JSON.stringify({
           items: [{ id: 315, name: 'Rose Brooch', cat: 'valuable' }, { id: 1, name: 'Medicine D', cat: 'consumable' },
-                  { id: 194, name: 'Mole Armor', cat: 'armor' }],
+                  { id: 194, name: 'Mole Armor', cat: 'armor' }, { id: 611, name: 'Screw', cat: 'valuable' }],
           skills: [], charById: { 1: 'Hugo' },
           charRoster: { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5 }, charChoices: [1, 2, 3, 4, 5, 6] });
         if (code.startsWith('load_saves(')) return JSON.stringify(SAVES);
@@ -3515,6 +3516,23 @@ head("108 Stars dashboard (save editor, Pyodide stubbed)");
   await page.click('[data-sub="items"]'); await page.waitForSelector(".bag");
   const hugoBag = await page.locator('.bag:has-text("Hugo")').first().textContent();
   check("the item shows up in that bag on the Inventory tab", /Rose Brooch/.test(hugoBag));
+  // it reads as a pending edit there, not as something the save already held, and the bag's
+  // own tallies move with it (1 loaded item + 1 staged = 2 of 30, one append slot left)
+  check("...marked as staged, on a changed row",
+    (await page.locator('.invtbl tr.dirtyrow:has-text("Rose Brooch") .pill:has-text("staged")').count()) === 1);
+  check("...and counted in the bag header", /2\/30 slots/.test(hugoBag) && /1 free/.test(hugoBag));
+  check("...and in the Party Items badge", /Party Items \(2\)/.test(await page.textContent('[data-invcat="regular"]')));
+  // A KEY item is kept in the tab's other list, so staging one has to bring that list with it:
+  // landing on Party Items with the Screw filed under Key / Valuables reads as a failed add.
+  await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
+  await until(page, () => document.querySelectorAll('.starstbl [data-needitem="611"]').length >= 1);
+  await page.click('.starstbl [data-needitem="611"]'); await page.waitForTimeout(80);
+  await page.click('[data-sub="items"]'); await page.waitForSelector(".bag");
+  check("a staged key item opens Inventory on the list that holds it",
+    (await page.textContent("[data-invcat].on")).startsWith("Key / Valuables"));
+  check("...and is visible there without touching a filter",
+    (await page.locator('.bag:has-text("Hugo") .invtbl tr.dirtyrow:has-text("Screw")').count()) === 1);
+  check("...counted in the Key / Valuables badge", /Key \/ Valuables \(1\)/.test(await page.textContent('[data-invcat="key"]')));
   await page.click('[data-sub="stars"]'); await page.waitForSelector(".starstbl");
   // a stage folds away, taking its rows with it
   const rowsBefore = await page.locator(".starstbl tbody tr:not(.phaserow)").count();
