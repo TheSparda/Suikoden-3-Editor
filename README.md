@@ -220,18 +220,7 @@ enemy's record is heap-allocated and can never land inside that array. So *Wall*
 Hugo alone, and everybody else — every ally, every enemy — gets the disc's own stock answer.
 Every site is byte-checked against a pristine disc before anything is written, and clearing a
 rune restores the stock instruction exactly; clearing every rune puts the borrowed routine back
-byte-for-byte. **The mechanism is confirmed in play**: on 2026-09-06 *Balance* and *Fury* were
-both forced on for Chris from her own card, and both effects showed up in combat — so the
-relocated helper runs in a running game, its register handling survives a real caller, the
-bitmap answers per character, and two runes can be on at once. That is the delivery, not the
-other 20 runes: each rune keeps **its own marker** on its tile, and the two that were played are
-the only ones that read *confirmed*. The helper has three entries and this report came in
-through two of them (the record and acting-unit ones); the third resolves a character id first
-and has never been played — which is why both runes on the **Passives** tab still read
-*untested*, since those are exactly the two sites that use it. Sunbeam's field walk-heal healed
-the party by walking with nobody carrying the rune earlier the same day, but under the editor's
-*previous* patch shape, which dropped the call instead of retargeting it. Both reports are kept
-for what they are: a marker moves on a play report and never on a passing test. Keep a backup.
+byte-for-byte, so anything set here comes straight back off.
 Not offered: *Fortune*, whose check turned out to live in a **streaming battle overlay** ~1GB
 into the disc rather than in the executable — it asks exactly the same question as the other 22,
 which is why three exhaustive searches of the executable found nothing. Its **EXP multiplier is
