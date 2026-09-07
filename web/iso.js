@@ -1752,6 +1752,10 @@
   // Target dropdown can strand it exactly as the AOE toggle can, in both directions.
   const LINE_BIT = 0x10;                    // target-byte bit 4 = line/front, radius-bearing
   const needsRadius = (v) => !!(v & AREA_BIT) || !!(((v >> 8) & 0x7F) & LINE_BIT);
+  // Which KIND of template a record has, or null for one that has none. The same number is not
+  // the same size in both: an area 3 and a line 3 are different templates, so the Radius hints
+  // group by shape before they group by number.
+  const radShape = (v) => (v & AREA_BIT) ? "area" : ((((v >> 8) & 0x7F) & LINE_BIT) ? "line" : null);
   // Stock sizes, so a default is a real value and not an invention: AREA spells run 2×7 3×5 4×4
   // and every one of the 12 AREA unites is 3, which makes 3 the mode across both tables and the
   // middle of the graded fire family (Dancing Flames 2 -> Blazing Wall 3 -> Explosion 4). LINE
@@ -3419,10 +3423,10 @@
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
-      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on.",
+      spells: "Spell / rune-effect table: power, cast (MOV), element, target, area-of-effect, status — plus the damage+heal slot (Shining Wind's split effect, movable to any spell), a rune reskin that edits every spell a rune grants at once, a bulk Power scale for the whole table (the difficulty presets' spell half), and optional description rewrites. A spell's name and description are not always its own: for the 20 attack runes and the 7 magic scrolls the same strings are also the RUNE's, and the rune menu reads the rune's copy. Edits here mirror every copy \u2014 but only while they still read alike, so on a disc already patched on one side, set it on the Runes tab instead. Retargeting is confirmed in play: Phoenix moved from one foe to All foes and fought correctly (2026-09-06). It is worth saying because it did NOT before v1.141.0 \u2014 the Target write left behind the flags14 bit that tells the engine there is nothing to aim at, and the battle soft-locked with the cursor stuck on the caster. A disc built before v1.141.0 with a retargeted spell still carries that; set the Target again and rebuild. Area of effect moves Radius with it, because a stock disc never has one without the other: switching it on for a spell that shipped with Radius 0 would ask for an area of size zero, so a stock size is filled in (and cleared again when it goes off). A Radius you type yourself is left alone from then on. A Radius number on its own says nothing, so each box names the other records that carry that size and each table opens with a legend of the sizes in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit.",
       runes: "Every rune in the game \u2014 rename it, rewrite the menu text the game shows for it, and choose which spells it grants. Each rune record carries FOUR spell slots; a rune with fewer spells is padded with empty ones, so filling an empty slot is how a rune is given a spell it never had \u2014 Kite ships with one attack and three slots free. Each filled slot links straight into the Spells tab with the record open, which stays the one place a spell\u2019s own power, cast, element, target, area and status are edited. Names and menu text are rewritten IN PLACE, so each is capped to the slot the disc already reserves for it, and both are mirrored: the 20 attack runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well (Kite the rune and Kite the spell it grants), so one edit updates every copy and the rune menu, the battle command and the item list all agree. The rest of the tab is reference: who carries each rune and where it drops.",
       passives: "This tab is the FOUR party-wide, out-of-battle effects and nothing else: Champion\u2019s (no encounters with weaker foes), Sunbeam\u2019s walk-heal, Fortune\u2019s EXP bonus and Prosperity\u2019s potch bonus. The OTHER support runes are handed to THE CHARACTERS YOU CHOOSE on each character\u2019s OWN CARD, in the Characters tab under \u201cPassive runes forced on\u201d \u2014 same bitmaps, same helper, asked per unit instead of per rune. A rune\u2019s STRENGTH (what it is worth once it fires) is edited on the Runes tab, on that rune\u2019s own row. Three questions, three places. A support rune grants no spells and has no battle command: each is one question the engine asks at the moment it matters, \u201cdoes this character have item N equipped?\u201d, through the same three seven-slot equipment lookups, and all 51 places it is asked, across 22 runes, are decoded and offered. The answer is not a word written over the call, it is a RETARGETED CALL: the site\u2019s jal keeps being a jal, its branch delay slot is never touched, one word per site changes, and the new target is a 288-byte helper relocated over a routine nothing in the image references, plus a 22\u00d716-byte table of one bit per character. The helper identifies the character the way the game does, by where its record sits in the static 112-entry array the engine indexes \u2014 which is also what keeps a forced in-battle passive OFF ENEMIES, since an enemy\u2019s record is heap-allocated and can never land inside that array. Everybody you did not choose gets the disc\u2019s own stock answer, so the rune still works when equipped and the passive is still off when it is not. Koroku\u2019s four dogs are not offered: their records live outside that array. Fortune and Prosperity are a different shape \u2014 their checks are not in the executable at all but in a streaming battle overlay the per-character table cannot reach, so each gets a plain on/off tickbox here, which costs nothing because both loops run after the fight over your own party: Fortune only tests whether the count is nonzero, so one is already as good as six. Prosperity COMPOUNDS per party member \u2014 six members at the stock \u00d73 pay 3\u2076 = \u00d7729. Every site is decoded from a pristine USA SLUS-20387 and byte-checked before it is written, and clearing a rune puts the stock instruction back exactly, so anything set here comes straight back off.",
-      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on.",
+      unites: "Unite (co-op) attack table: power, cast (MOV), target, and area-of-effect — plus a bulk Power scale for the whole table (the difficulty presets' unite half) and which characters perform each one (guide reference; the roster itself isn't an editable field). Area of effect moves Radius with it, the same way the Spells tab does: every one of the 12 area unites on a stock disc carries Radius 3 and every other unite carries 0, so switching it on fills that in rather than leaving an area of size zero. A Radius you type yourself is left alone from then on. A Radius number on its own says nothing, so each box names the other records that carry that size and each table opens with a legend of the sizes in use \u2014 read off this disc rather than a bundled list, so a retarget or a reskin moves a record between the groups as you edit.",
       mounts: "Which rider sits on which mount in battle. The game hard-codes exactly three pairs (stock: Hugo+Fubar, Futch+Bright, Franz+Ruby); this rewrites those three comparisons, so any rider with a mounted-battle animation bank can be put on Fubar, Bright or Ruby. Re-pairing is confirmed in-game, including across mount types (Hugo+Bright, Chris+Bright); each combination carries its own confidence marker. Both halves of a pair still have to be in your party for it to trigger, and the formation menu won't show the pairing even when it works.",
       movement: "How fast every character walks and runs on the FIELD \u2014 not in battle. Unlike most of this editor's field work it is not a code patch: speed is a table of 14 rows holding a walk speed, a run speed and a time scale, and a one-byte movement class on each character picks the row. Stock, walking is 2.0 for the whole cast and running is 6.0, 5.0 or 4.5 by class, so running as Hugo covers a third more ground than as Chris. Battle units get these same two fields overwritten at spawn from the character's loaded battle asset, which sits in the packed archives outside the executable, so battle movement is not editable here. Most of the cast can never be the field avatar (that is eight hardcoded ids, on the Test tab) \u2014 they are in the table because every recruit walks around Budehuc Castle and event scripts walk anyone through a scene. Edit a row to retune everyone in it, or change one character's class to give them someone else's speed. Mounts are ordinary field objects with their own class, so a mount's row is the mounted speed. The third column, time scale, is that object's clock multiplier \u2014 the engine multiplies each frame's elapsed time by it before advancing both the character's animation and the step that moves them, so 2.0 both animates and travels at double rate, while raising run alone makes a character skate. Confirmed in play: Koroku, whose class ships at run 6.0, moved at 2x when it was set to 12 and 3x at 18, so the value is linear in ground speed \u2014 pick the character, type the speed, and the tab finds a class row to hold it. The walk value, the time scale and the battle side are still unmeasured.",
       story: "Which team\u0027s events and dialogue a leader gets. The party-leader byte is also whose story this is: one switch turns it into a team index that picks which variant of a town\u0027s content loads, and Luc, Koroku, Sarah and Masked Luc each have their own. A town that ships nothing for their index shows EMPTY DIALOGUE BOXES. Hugo is index 0, and 0 is also what an unrecognised leader falls to, so switching a character to Hugo\u0027s retires its own case and hands it Hugo\u0027s events. Confirmed in play: this fixes the blank text boxes. It does not fix a cutscene that hangs \u2014 those experiments are under Test.",
@@ -3445,10 +3449,10 @@
       chars: "Starting skills, ranks, equipped runes and gear \u2014 plus forcing a support rune\u2019s passive on for this character alone, with no rune and no rune slot spent.",
       growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
-      spells: "The spell / rune-effect table: power, cast, element, target, area and status. Area of effect now moves Radius with it, and retargeting is confirmed in play from v1.141.0 on \u2014 older builds soft-locked.",
+      spells: "The spell / rune-effect table: power, cast, element, target, area and status. Area of effect moves Radius with it, and each Radius box names the records sharing that size.",
       runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
       passives: "The support runes whose passive can be forced on without the rune equipped, and what each one is worth.",
-      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table. Area of effect moves Radius with it.",
+      unites: "The unite attack table: power, cast, target and area, plus a bulk Power scale for the whole table. Area of effect moves Radius with it. Every Radius box names the other records that carry that size.",
       mounts: "Which rider sits on which mount in battle — the game's three hardcoded pairs, rewritten to any pair you like.",
       movement: "How fast every character walks and runs on the field. Plain table data, no code patched, confirmed in play.",
       story: "Which team's events and dialogue a leader gets — the fix for empty dialogue boxes as a stand-in character.",
@@ -4578,6 +4582,88 @@
       setStatus("Damage+heal restored to this disc's own wiring.", "ok");
     };
   }
+  // ---- what a Radius number MEANS, in company --------------------------------------------
+  // "Radius 3" tells you nothing unless you have read the table. What does tell you something is
+  // which records already carry that size, so every Radius box names a few of them and each tab
+  // carries a legend of the sizes in use. Read live off THIS disc's two tables rather than a
+  // bundled list of stock values: retarget or reskin a row and it moves between the groups as
+  // you edit, and a disc someone already patched describes itself rather than the disc it was.
+  //
+  // On a pristine SLUS-20387 that comes out as areas 2 (7 records) 3 (17) 4 (4) and lines 1 (4)
+  // 3 (2) — the numbers AREA_RADIUS/LINE_RADIUS are picked from, now visible instead of implied.
+  // Spells and unites are indexed together because they size the same templates and the graded
+  // families cross the two (every area unite is a 3, same as Blazing Wall).
+  function radiusIndex() {
+    const out = [];
+    for (let i = 0; i + 1 < SPELL.count; i++) {          // last spell's tail is outside the table
+      const off = SPELL.off + i * SPELL.stride, sh = radShape(r32(off + 0x14));
+      if (sh) out.push({ kind: "spell", i, off, sh, rad: r8(off + SPELL.radius) });
+    }
+    for (let i = 0; i < UNITE.count; i++) {
+      const off = UNITE.off + i * UNITE.stride, sh = radShape(r32(off + 0x14));
+      if (sh) out.push({ kind: "unite", i, off, sh, rad: r8(off + UNITE.radius) });
+    }
+    return out;
+  }
+  const radName = (r, kind) => (strAt(r32(r.off + 0x08)) || "#" + r.i) + (r.kind === kind ? "" : ` (${r.kind})`);
+  // Same-table records first, so the Spells tab names spells and the Unites tab names unites —
+  // the cross-table ones are still there, and labelled, when a size is thin on this side.
+  const radRank = (kind) => (a, b) => (a.kind === kind ? 0 : 1) - (b.kind === kind ? 0 : 1) || a.i - b.i;
+  const radSizes = (all, sh) => [...new Set(all.filter((r) => r.sh === sh && r.rad).map((r) => r.rad))].sort((a, b) => a - b);
+
+  // The line under one Radius box: what this row's number means, and what else carries it.
+  function radiusHint(kind, idx, all) {
+    const T = kind === "spell" ? SPELL : UNITE;
+    // A record's tail is stored one record ahead, so the last spell's Radius byte falls outside
+    // the table — the box is disabled, and this says why rather than sitting blank next to it.
+    if (kind === "spell" && idx + 1 >= SPELL.count)
+      return `this is the last record in the table, so its Radius byte falls outside it and can't be set`;
+    const off = T.off + idx * T.stride, sh = radShape(r32(off + 0x14)), rad = r8(off + T.radius);
+    if (!sh) return rad
+      ? `this record has no area or line to size — stock uses <b>0</b> here`
+      : `<b>0</b> — single-target, so there is no template to size`;
+    all = all || radiusIndex();
+    const scale = radSizes(all, sh).join(", ");
+    const art = sh === "area" ? "an" : "a";
+    if (!rad) return `${art} ${sh} of size <b>0</b> does nothing — sizes in use for ${art} ${sh}: ${scale}`;
+    const peers = all.filter((r) => r.sh === sh && r.rad === rad && !(r.kind === kind && r.i === idx)).sort(radRank(kind));
+    if (!peers.length) return `<b>${rad}</b> — no other ${sh} record on this disc uses it (in use: ${scale})`;
+    const show = peers.slice(0, 3).map((r) => radName(r, kind));
+    const more = peers.length - show.length;
+    return `<b>${rad}</b> = the ${sh} size of ${esc2(show.join(", "))}${more > 0 ? ` +${more} more` : ""}`
+      + ` · ${sh} sizes in use: ${scale}`;
+  }
+  // The legend at the top of a table: every size in use, with an example or two of each.
+  function radiusLegendHTML(kind, all) {
+    all = all || radiusIndex();
+    const part = (sh) => radSizes(all, sh).map((n) => {
+      const g = all.filter((r) => r.sh === sh && r.rad === n).sort(radRank(kind));
+      const show = g.slice(0, 2).map((r) => radName(r, kind)), more = g.length - show.length;
+      return `<b>${n}</b> ${esc2(show.join(", "))}${more > 0 ? ` +${more}` : ""}`;
+    }).join(" · ");
+    const area = part("area"), line = part("line");
+    return `<b>Radius</b> is the size of the template, and only means something next to the sizes already in use`
+      + ` on this disc${area ? ` — area: ${area}` : ""}${line ? ` · line: ${line}` : ""}.`
+      + ` <b>0</b> is every other record: no area, nothing to size.`;
+  }
+  // A bulk field sizes rows it cannot name one at a time, so it gets the numbers without the
+  // examples: which sizes this disc uses for each shape, and what leaving it blank will pick.
+  function radiusScaleText(all) {
+    all = all || radiusIndex();
+    const a = radSizes(all, "area").join(", "), l = radSizes(all, "line").join(", ");
+    return `sizes in use — area: ${a || "none"} · line: ${l || "none"}`
+      + ` · blank sizes each spell from its own shape (${AREA_RADIUS} / ${LINE_RADIUS})`;
+  }
+  // Any Target / Area-of-effect / Radius edit moves a record between these groups, so the whole
+  // tab's hints are rebuilt from one fresh index rather than only the row that was touched.
+  function refreshRadiusHints(host, kind) {
+    const all = radiusIndex();
+    const leg = q(`.radlegend[data-k="${kind}"]`, host);
+    if (leg) leg.innerHTML = radiusLegendHTML(kind, all);
+    qa(`.radhint[data-k="${kind}"]`, host).forEach((el) => { el.innerHTML = radiusHint(kind, +el.dataset.i, all); });
+    const sc = q(".radscale", host); if (sc) sc.textContent = radiusScaleText(all);
+  }
+
   let SPELL_JUMP = null;    // a spell index the Runes tab asked to land on, consumed on draw
   function drawSpells(host) {
     const upd = spDescOn;
@@ -4602,7 +4688,8 @@
         <label class="field"><span>Target</span><select id="rsTarget"><option value="">— no change —</option>${TARGET_OPTS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
         <label class="field"><span>Area of effect</span><select id="rsAoe"><option value="">— no change —</option><option value="1">on</option><option value="0">off</option></select></label>
         <label class="field"><span>Status</span><select id="rsStatus">${statOptsBlank}</select></label>
-        <label class="field"><span>Radius</span><input type="number" id="rsRadius" min="0" max="255" placeholder="no change"></label>
+        <label class="field"><span>Radius</span><input type="number" id="rsRadius" min="0" max="255" placeholder="no change">
+          <div class="fhint radscale">${radiusScaleText()}</div></label>
         <label class="field"><span>Status chance %</span><input type="number" id="rsChance" min="0" max="100" placeholder="no change"></label>
       </div>
       <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:4px">
@@ -4625,6 +4712,7 @@
       if (SEARCH && !name.toLowerCase().includes(SEARCH) && String(i) !== SEARCH) continue;
       rows.push({ i, off, name });
     }
+    const radIx = radiusIndex();          // one scan of both tables for all 94 rows' Radius hints
     const body = rows.map(({ i, off, name }) => {
       const canTail = i + 1 < SPELL.count, elVal = canTail ? (r16(off + SPELL.elem) & 0xFF) : 0;
       const radVal = canTail ? r8(off + SPELL.radius) : 0, chVal = canTail ? r16(off + SPELL.chance) : 0;
@@ -4647,7 +4735,8 @@
             <label class="field"><span>Element</span><select class="sp" data-i="${i}" data-k="elementId" ${canTail ? "" : "disabled"}>${elemSel}</select></label>
             <label class="field"><span>Target</span><select class="sp" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="sp" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
-            <label class="field"><span>Radius <span class="muted">(0 = no area · follows AOE/Target)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}></label>
+            <label class="field"><span>Radius <span class="muted">(follows AOE/Target)</span></span><input type="number" class="sp" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}" ${canTail ? "" : "disabled"}>
+              <div class="fhint radhint" data-k="spell" data-i="${i}">${radiusHint("spell", i, radIx)}</div></label>
             <label class="field"><span>Status chance %</span><input type="number" class="sp" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}" ${canTail ? "" : "disabled"}></label>
             ${f18CtlHTML(i, f18)}
           </div></div></details>`;
@@ -4659,7 +4748,9 @@
       + sec("Special effect \u00b7 one spell only") + splitCard()
       + sec("Bulk edit \u00b7 a whole rune") + reskin
       + sec("Bulk edit \u00b7 every spell") + powerBulkHTML("spell", spBulkPow, spBulkOpen)
-      + sec("Every spell") + updBox + body;
+      + sec("Every spell") + updBox
+      + `<div class="fhint radlegend" data-k="spell" style="margin:0 0 10px">${radiusLegendHTML("spell", radIx)}</div>`
+      + body;
 
     wireFx(host);
     wireSplit(host);
@@ -4692,6 +4783,9 @@
       const notes = [];
       const dr = applySpell(i, f, spDescOn && k === "power", notes);
       updateSpellSummary(host, i);
+      // Shape and size decide which group every row is in, so one row's edit can restate the
+      // legend and other rows' company — rebuild them all rather than only the one touched.
+      if (k === "radius" || k === "target" || k === "aoe") refreshRadiusHints(host, "spell");
       if (dr && dr.truncated) setStatus("Power saved — but this description is at its length limit, so the DMGx value couldn't be rewritten. Edit the Description field to shorten it and fit the new number.", "warn");
       else if (notes.length) setStatus(notes[0].msg, notes[0].level);
     }));
@@ -4799,8 +4893,11 @@
     const updBox = `<label class="row" style="gap:6px;cursor:pointer;margin:0 0 10px"><input type="checkbox" id="unUpd"${unDescOn ? " checked" : ""}> also rewrite the damage number in each unite's description when Power changes <span class="u">· applies to the bulk edit above too</span></label>`
       + `<div class="muted" style="margin:0 0 10px">Who can perform each unite comes from the Suikosource unite guide, not from the disc — the roster isn't stored in an editable field, so it's shown for reference only. Filtering searches character names too.</div>`;
     const sec = (t) => `<div class="secdiv"><span>${t}</span></div>`;
+    const radIx = radiusIndex();          // one scan of both tables for all 38 rows' Radius hints
     host.innerHTML = sec("Bulk edit · every unite") + powerBulkHTML("unite", unBulkPow, unBulkOpen)
-      + sec("Every unite") + updBox + (rows.map(({ i, off, name, who }) => {
+      + sec("Every unite") + updBox
+      + `<div class="fhint radlegend" data-k="unite" style="margin:0 0 10px">${radiusLegendHTML("unite", radIx)}</div>`
+      + (rows.map(({ i, off, name, who }) => {
       const f14 = r32(off + 0x14), tb = (f14 >> 8) & 0x7F;
       const radVal = r8(off + UNITE.radius), chVal = r16(off + UNITE.chance);
       const dptr = r32(off + 0x0C), dmax = origSlotLen(dptr), dcur = strAt(dptr);
@@ -4826,7 +4923,8 @@
             <label class="field"><span>Cast (MOV)</span><input type="number" class="un" data-i="${i}" data-k="cast" min="0" value="${r32(off + 0x10)}"></label>
             <label class="field"><span>Target</span><select class="un" data-i="${i}" data-k="target">${targetOptsHTML(tb)}</select></label>
             <label class="field"><span>Area of effect</span><select class="un" data-i="${i}" data-k="aoe"><option value="1"${(f14 & AREA_BIT) ? " selected" : ""}>on</option><option value="0"${!(f14 & AREA_BIT) ? " selected" : ""}>off</option></select></label>
-            <label class="field"><span>Radius <span class="muted">(0 = no area · follows AOE/Target)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}"></label>
+            <label class="field"><span>Radius <span class="muted">(follows AOE/Target)</span></span><input type="number" class="un" data-i="${i}" data-k="radius" min="0" max="255" value="${radVal}">
+              <div class="fhint radhint" data-k="unite" data-i="${i}">${radiusHint("unite", i, radIx)}</div></label>
             <label class="field"><span>Status chance %</span><input type="number" class="un" data-i="${i}" data-k="chance" min="0" max="100" value="${chVal}"></label>
           </div></div></details>`;
     }).join("") || `<div class="muted">no matches</div>`);
@@ -4867,6 +4965,7 @@
       else if (k === "radius") { writeW(off + UNITE.radius, 1, clampInt(el.value, 0, 255)); reg(off + UNITE.radius, 1, "num", name, "Radius"); radiusTyped.unite.add(i); }
       else if (k === "chance") { writeW(off + UNITE.chance, 2, clampInt(el.value, 0, 100)); reg(off + UNITE.chance, 2, "num", name, "Status chance %"); }
       markUnite(i);
+      if (k === "radius" || k === "target" || k === "aoe") refreshRadiusHints(host, "unite");
     }));
     qa(".undesc", host).forEach((el) => (el.onchange = () => {
       const i = +el.dataset.i, off = UNITE.off + i * UNITE.stride, name = strAt(r32(off + 0x08));
