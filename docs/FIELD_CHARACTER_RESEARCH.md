@@ -1167,6 +1167,67 @@ and the measured fact that Koroku's model lacks all fourteen `check_*` / `pickup
 Anyone resuming this should start from op 109 and from a script *known* to run for a herb —
 not from the animation system, which is now falsified three times over.
 
+### The herb routine, decoded — and what it does to the animation theory
+
+A peer session decoded the pick-up routine itself (Zexen Forest / MORI, 28 instances, six of
+them identical in 26 of 27 halfwords). See the mount research for the full derivation; what
+matters here is the shape:
+
+```
+op 55   Cond(0x28 = RIDE, PLAYER)     guard
+op 24   RideOffSetS(PLAYER, 2)
+op 183                                 <- the pick-up
+op 181  x2                             (one varying field)
+op 112  (PLAYER.mount)
+op 22   RideOnSetS(PLAYER, 0)          remount
+```
+
+This is the script that §9's dead ends kept failing to find. Run through the blocking analysis
+above:
+
+| opcode | blocks? | `SetMotion` | `TestFlag` |
+|---|---|---|---|
+| **183** — the pick-up | **no**, advances unconditionally | 0 | 0 |
+| **181** ×2 | **yes** — the only blocker | **0** | **0** |
+| 112, 55, 24, 22 | no | 0 | 55 tests `0x00080000` |
+
+**So the herb routine contains no animation wait at all.** The pick-up instruction does not
+block, and the one instruction that does makes neither a motion call nor a motion-flag test.
+That is an independent, script-side confirmation of the three failed patches: there was never an
+animation wait there to satisfy, so no amount of making clips resolve could have helped.
+
+It also means **"force a different animation for the pick-up" is not a route** — the request
+that prompted this section. There is nothing waiting on the animation.
+
+**So what does exclude Koroku?** Three candidates remain, and every one of them is about the
+*player object*, not its animation data:
+
+1. **`op 181` @ `0x17ABAD8`** — the routine's only blocker. 1912 bytes, 48 distinct call
+   targets, state machine on `ctx+0x02`, in PT_LOAD so it is readable. Whatever he fails, the
+   stall surfaces here.
+2. **`op 55 Cond(...)`** — the routine's first instruction, a general conditional on PLAYER
+   (`0x17AE4A8` → the evaluator at `0x17AE1E0`). One code is known from the mount work
+   (`0x28` RIDE / `0x29` NORIDE) and flipping it demonstrably changes behaviour, which proves
+   the routine branches on player-object properties. Enumerating the rest of the codes is the
+   obvious next step.
+3. **`op 109`'s branch on an actor kind being 7** (`0x17A22B4`) — kind is a property of the
+   model, and Koroku is animal-rigged. Noted earlier and still unexplored.
+
+None is proven. Three theories have already been falsified here by evidence, so the bar for the
+next one should be a condition observed to differ between Koroku and Luc, not a mechanism that
+merely could.
+
+### Ladders are a Hugo-only animation set
+
+Scanning every `cha_*` record for the `hasi_*` (ladder) clips at slots 20–34, **three models on
+the disc carry them**: `syu1` and `syu3` (Hugo) and `s2hr` (the Suikoden II hero). Chris,
+Geddoe, Thomas, Luc and Koroku all have none.
+
+So this is a limit of the **feature**, not of Koroku — anyone playing as a non-Hugo field
+character lacks ladder animations. Measured from the disc and not yet played, so what a ladder
+actually does with no clip is unknown; it is recorded in the editor as a measured caveat rather
+than a played result.
+
 ## 10. What shipped (v1.61.0, extended in v1.62.0 and v1.63.0)
 
 Both halves, because the cheap one covers six of the seven characters asked for and the other

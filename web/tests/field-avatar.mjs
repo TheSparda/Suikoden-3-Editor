@@ -150,6 +150,7 @@ console.log("Save-editor picker labelling:");
     check("Koroku's row is flagged as having a known problem", k.cat === "has a known problem", k.cat);
     check("...and says what breaks", /pick-up clips|pickup/i.test(k.desc), k.desc.slice(0, 70));
     check("...naming the cause", /animal-rigged/.test(k.desc));
+    check("...without asserting it as proven", /unproven/.test(k.desc));
     check("Luc's row records that he was confirmed working",
       /no problems/i.test(l.desc), l.desc.slice(0, 70));
     check("a character with no verdict keeps the generic blurb",

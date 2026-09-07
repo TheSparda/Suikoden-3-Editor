@@ -4762,10 +4762,17 @@ if (ON) { const page = await newPage();
   check("picking a character with a known problem warns immediately",
     /field pickups freeze/i.test(r.note), r.note.slice(0, 90));
   check("...naming the cause, not just the symptom", /animal-rigged/i.test(r.note));
+  // The herb routine has since been decoded and its only blocking instruction makes no
+  // animation calls, so the clip gap is correlation. The UI must not assert it as the cause.
+  check("...and hedging the cause it is not sure of", /unproven/i.test(r.note), r.note.slice(0, 120));
   check("...and the warning survives the 'keep instead' path",
     /field pickups freeze/i.test(r.noteAfterKeep), r.noteAfterKeep.slice(0, 90));
   check("the tab lists known limitations", /Known limitations/.test(r.tab));
   check("...marking Luc confirmed working", /confirmed working/i.test(r.tab));
+  // Ladders are a feature-wide limit, not Koroku's: three models on the disc carry hasi_*.
+  check("...and the ladder limit is scoped to the feature, not to Koroku",
+    /Every pick except Hugo/.test(r.tab) && /ladders/i.test(r.tab));
+  check("...saying it was measured, not played", /Measured from the disc, not\s+played/.test(r.tab));
   await page.context().close();
 }
 
