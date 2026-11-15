@@ -5286,7 +5286,11 @@ if (ON) {
   const e3 = await save(page);
   check("with no added spells left the element returns to stock 0",
     e3.u16(elemOff) === 0, String(e3.u16(elemOff)));
-  check("...and the rune is still converted", e3.u16(catOff) === 0, String(e3.u16(catOff)));
+  // (A save's captured writes hold only that save's diff — the category was written
+  // two saves ago — so the conversion is read off the toggle's rendered state.)
+  await reopen();
+  check("...and the rune is still converted (toggle still ticked)",
+    await page.evaluate((s) => { const el = document.querySelector(s); return !!el && el.checked; }, tog));
   // Unticking after all that restores both stock fields.
   await reopen(); await page.uncheck(tog); await page.waitForTimeout(150);
   const e4 = await save(page);
@@ -5376,7 +5380,12 @@ if (ON) {
   check("tier 2 writes both words of the recompute pair",
     r2.u32(MP_CAST[1].off) === MP_CAST[1].patch && r2.u32(MP_CAST[2].off) === MP_CAST[2].patch,
     MP_CAST.slice(1).map((c) => r2.u32(c.off).toString(16)).join(", "));
-  check("...and tier 1 stays on", r2.u32(MP_CAST[0].off) === MP_CAST[0].patch);
+  // (A save's captured writes hold only that save's diff, so tier 1's persistence is
+  // read off the control's state, the way the atklist section reads its own.)
+  await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="mpcast"]');
+  await page.waitForSelector("#mpT1Sel", { timeout: 3000 });
+  check("...and tier 1 still reads Free casts", (await page.inputValue("#mpT1Sel")) === "1");
   await page.click('#isoTabs [data-v="test"]');
   await page.click('#testTabs [data-t="mpcast"]');
   await page.waitForSelector("#mpT1Sel", { timeout: 3000 });
