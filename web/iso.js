@@ -1551,7 +1551,9 @@
         + "counts the yeses; any nonzero count doubles EXP for the whole party. Ticking this "
         + "answers yes for every member without calling the helper, so the bonus is always on. "
         + "One is as good as six, so this is exactly as strong as handing one character the rune "
-        + "— no more. What it multiplies by is the EXP multiplier under Rune power." },
+        + "— no more. What it multiplies by is the EXP multiplier under Rune power. "
+        + "The check is byte-verified against a pristine disc, but a forced Fortune has never "
+        + "been watched doubling an award in a running game — untested in play." },
     { key: "prosperity", rel: AUX_PROSP_CHK, jal: 0x0C606CDC, ds: 0x0220202D, yes: 0x2402FFFF,
       name: "Prosperity", need: "wear the set", group: "Armor sets",
       label: "Prosperity — the potch bonus with nobody wearing the set",

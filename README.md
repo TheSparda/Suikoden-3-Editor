@@ -221,11 +221,19 @@ Hugo alone, and everybody else — every ally, every enemy — gets the disc's o
 Every site is byte-checked against a pristine disc before anything is written, and clearing a
 rune restores the stock instruction exactly; clearing every rune puts the borrowed routine back
 byte-for-byte, so anything set here comes straight back off.
-Not offered: *Fortune*, whose check turned out to live in a **streaming battle overlay** ~1GB
-into the disc rather than in the executable — it asks exactly the same question as the other 22,
-which is why three exhaustive searches of the executable found nothing. Its **EXP multiplier is
-editable** under Rune power; only the on/off switch is missing, because the switch machinery
-reaches the executable and that site isn't in it. Also not offered: Koroku's four dogs,
+*Fortune* is the one support rune the helper cannot reach: its check turned out to live in a
+**streaming battle overlay** ~1GB into the disc rather than in the executable — it asks exactly
+the same question as the other 22, which is why three exhaustive searches of the executable
+found nothing. It gets its own switch on the Passives tab instead: the older two-word patch
+(the delay-slot instruction moved up into the call's word, the answer written into the word it
+vacated), written to **both streaming copies** of the overlay together, byte-checked before it
+is written and restored exactly by unticking. It is a whole-party switch rather than a
+per-character one, and for Fortune that loses nothing: the loop counts the yeses and tests
+whether the count is nonzero, so one forced yes is the whole effect. Its **EXP multiplier is
+editable** under Rune power. The switch is byte-verified against a pristine disc — and it has
+never been watched taking effect in a running game: **untested in play**. (A 2026-11-15 pass
+in the RE lab re-derived the site from the extracted disc, proved there is no third copy, and
+solved both copies' load bases — regions 35 and 47.) Also not offered: Koroku's four dogs,
 whose character records live outside the array the table indexes.
 
 Separately from all of that, a passive's **strength** — not *whether* it fires but **how much it

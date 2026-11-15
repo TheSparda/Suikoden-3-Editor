@@ -653,13 +653,22 @@ if (ON) { const page = await newPage(); await loadIso(page);
     // not been played. What it must still say is what is true of the disc — each site byte-checked
     // before it is written, each one restorable — because that is what makes the tab safe to use,
     // and it is the part a rewrite that strips "experimental" tends to take with it.
+    // The overlay card below the table is carved out of that rule since v1.153.0: it is a
+    // separate card with its own copy (asserted in its own section below), and Fortune's
+    // label there carries the one play caveat the bytes cannot settle — byte-verified, and
+    // never watched taking effect. The rule stands for the per-character table itself.
     const flat = txt.replace(/\s+/g, " ");
+    const flatNoAux = await page.evaluate(() => {
+      const v = document.querySelector("#isoView").cloneNode(true);
+      v.querySelector("#auxSwBox")?.remove();
+      return v.textContent.replace(/\s+/g, " ");
+    });
     check("it says every site is byte-checked before it is written",
       /byte-checked before it is written/i.test(flat));
     check("...and that clearing a rune restores the stock instruction exactly",
       /restores the stock instruction exactly/i.test(flat));
     check("no confidence marker or play report is left on this tab",
-      !/untested/i.test(flat) && !/2026-09-06/.test(flat) && !/not yet seen working in play/i.test(flat)); }
+      !/untested/i.test(flatNoAux) && !/2026-09-06/.test(flatNoAux) && !/not yet seen working in play/i.test(flatNoAux)); }
   const rows = await page.$$eval("#isoView table.invtbl tbody tr", (r) => r.map((x) => x.textContent));
   check("every rune row says what choosing someone does", rows.length === 2
     && rows.every((t) => /site/.test(t)), String(rows.length));
@@ -783,8 +792,13 @@ if (ON) { const page = await newPage(); await loadIso(page);
         && /no enemy is ever asked/.test(flat)); }
     check("it describes the two-word patch shape", /delay-slot instruction moves up/.test(txt));
     check("Prosperity's compounding is stated, not buried", /COMPOUNDS/.test(txt) && /×729/.test(txt));
-    check("...and it does not hedge about what has been played in the overlay",
-      !/not yet seen working in play/.test(txt) && !/untested/.test(txt)); }
+    // Fortune's label carries the one caveat the bytes cannot settle: the switch is
+    // byte-verified, and no forced Fortune has yet been watched doubling an award in a
+    // running game. (This assertion used to demand the opposite — no hedge at all. The
+    // 2026-11-15 re-derivation of the site in the RE lab restated the caveat, and the
+    // label now carries it; see games/suikoden3/FORTUNE_SWITCH.md in the lab repo.)
+    check("...and Fortune is labelled untested in play, byte-verified or not",
+      /untested in play/.test(txt)); }
   // The Prosperity switch also belongs beside the potch numbers it multiplies.
   await page.click('#isoTabs [data-v="sets"]');
   await page.waitForSelector("#setCards details.char", { timeout: 3000 });
