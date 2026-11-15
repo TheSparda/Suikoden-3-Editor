@@ -8929,6 +8929,43 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <span class="u" title="These are engine code constants, not fields on the rune's record, so they are GLOBAL — the number applies to everyone who equips this rune, enemies included. The rune still has to be equipped. Same controls as the Rune power card on the Passives tab; editing either moves the same bytes.">what this passive is worth · global</span></div>
       <div class="grid">${fx.map((e) => rfField(e, true)).join("")}</div></div>`;
   }
+  // ---- the special-attack spell list ------------------------------------------
+  // Everything that reads which spells a rune grants goes through two accessors —
+  // runeSpellCount (VA 0x16DC6C0) and runeSpellAt (VA 0x16DC7E0) — and both collapse the
+  // answer to "one spell, and it is slot 1" when the record's (category << 16) | element
+  // word is exactly 0x00010000 or 0x00020000: category 1 or 2 with element family 0. The
+  // battle menu is never shown more because it is never HANDED more — the list builder
+  // loops over the count the first accessor returns. Setting category to 0 takes the
+  // general path: the count is the nonzero slots and every filled slot is offered. The
+  // cost is real, and the control states it: category is also the execution-time flag
+  // that makes an attack rune a free action rather than a chant, so slot 1 casts as a
+  // normal spell once the type is 0. Category 2 with element != 0 (Devil's Doll,
+  // Spreading Flame) misses both constants and already lists — those rows get the note,
+  // not a toggle that would do nothing. Proven from the disassembly, byte-verified
+  // against a pristine disc, and not yet played.
+  const runeCollapses = (cat, elem) => (cat === 1 || cat === 2) && elem === 0;
+  function runeListHTML(r) {
+    const rec = RUNE_TBL.off + r.id * RUNE_TBL.stride;
+    const stockCat = inBlk(rec + RUNE_TBL.cat, 2) ? origW(rec + RUNE_TBL.cat, 2) : r.cat;
+    if (runeCollapses(r.cat, r.elem)) return `<div class="runemeta"><label class="ckrow tight" style="flex:1 1 100%;margin:0">
+        <input type="checkbox" class="rlist" data-id="${r.id}">
+        <span><b>Offer every filled spell slot in battle</b> — stock, this rune's type collapses
+        its list to slot 1 alone, however many slots are filled. Ticking this sets
+        <i>Rune type</i> above to “Magic / support”, which is the whole change: proven from the
+        engine's binding code and byte-verified, <b>not yet played</b>. Slot 1 then casts as a
+        normal spell — chant, and the per-slot MP gate — instead of firing as a free attack.</span></label></div>`;
+    if (r.cat === 0 && (r.group === "attack" || runeCollapses(stockCat, r.elem))) return `<div class="runemeta"><label class="ckrow tight" style="flex:1 1 100%;margin:0">
+        <input type="checkbox" class="rlist" data-id="${r.id}" checked>
+        <span><b>Offers every filled spell slot in battle</b> — <i>Rune type</i> above is set to
+        “Magic / support”, so the battle menu lists this rune's slots and slot 1 casts as a
+        normal spell. Unticking puts the stock type back: slot 1 alone, fired as a free
+        attack-rune action.</span></label></div>`;
+    if ((r.cat === 1 || r.cat === 2) && r.elem !== 0) return `<div class="runemeta"><div class="muted" style="flex:1 1 100%;font-size:12px">
+        No spell-list control needed: this rune's element family (${r.elem}) takes its
+        type-and-element word past the engine's special case, so it already offers every
+        filled slot — spells written into its free slots are listed with no change here.</div></div>`;
+    return "";
+  }
   function drawRunes(host) {
     const all = runeIds().map(runeInfo);
     const q2 = SEARCH;
@@ -8939,7 +8976,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       ${RUNE_GROUPS.map(([k, label, , , note]) => `<button class="chip${RUNE_GROUP === k ? " on" : ""} mini"
         data-rgrp="${k}" title="${esc2(note)}">${esc2(label)} (${tally(k)})</button>`).join("")}</div>`;
     host.innerHTML = chips +
-      `<div class="muted" style="margin:0 0 10px" data-sum="Every rune: what it does, its four spell slots, and who carries it. Reassigning slots is proven on magic and support runes and confirmed not to work by itself on special-attack runes.">Every rune in the game: what it does, which spells it
+      `<div class="muted" style="margin:0 0 10px" data-sum="Every rune: what it does, its spell slots, and who carries it. A special-attack rune's slots alone change nothing — its type collapses the list to slot 1; the row's spell-list control undoes that.">Every rune in the game: what it does, which spells it
         grants, and who carries it. Names and descriptions come off <b>this</b> disc's rune table, so an edit
         made here or on the Text tab shows everywhere the editor names that rune.
         <b>Spells granted</b> is the rune's own record, not a lookup: every rune holds
@@ -8955,17 +8992,32 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         to the on-disc slot. Twenty of these descriptions are stored twice on the disc — once here and once on the
         spell record of the attack the rune grants — and an edit writes <b>both</b>, which is what stopped rune text
         edits from showing up in game.
-        <b>What plays and what does not, as tested on hardware.</b> On a <b>magic or support rune</b>
+        <b>What plays and what does not.</b> On a <b>magic or support rune</b>
         (<i>Rune type</i> below reads “Magic / support”) the game already reads every count the disc
         ships, one spell through four, so reassigning those slots is on solid ground. On a
         <b>special-attack rune</b> — Kite, Phoenix, Goss, the 27 with <i>Rune type</i> “Special attack”
-        — it is <b>confirmed not to work by itself</b>: a Kite given four spells still fires slot 1 the
-        moment it is chosen, with no list to pick from. The slots are written correctly; the battle menu
-        simply never offers them. Setting <i>Rune type</i> to “Magic / support” is the experiment that
-        might open that menu — <b>untested, and it may change how the rune behaves in other ways</b>.
+        — filling the slots <b>by itself</b> changes nothing in battle: a Kite given four spells still
+        fires slot 1 the moment it is chosen, with no list to pick from. That is no longer a mystery.
+        The two engine functions everything reads a rune's spells through report <b>one spell — slot 1,
+        for every index</b> — whenever the record's type-and-element word is exactly the special-attack
+        one, so the battle menu is handed a one-entry list and has nothing more to offer. The
+        <b>spell-list control</b> on the row is the way out: it sets <i>Rune type</i> to
+        “Magic / support”, the accessors take their general path, and every filled slot is offered.
+        The mechanism is proven from the disassembly and the bytes are verified; it is <b>not yet
+        played</b>, and it is not free — the type is also the flag that makes an attack rune a free
+        action, so slot 1 stops being one and casts as a normal spell instead, chant and per-slot
+        MP gate included. Two of the 27 never collapsed at all: <b>Devil's Doll</b> and
+        <b>Spreading Flame</b> carry element family 1, their word misses the special case, and
+        spells written into their free slots are already offered — their rows say so instead of
+        offering the control. (The Test tab carries the global form of the same fix: NOP the two
+        compares in each accessor and every attack rune lists at once, keeping its type at
+        execution time.)
         The passive support runes ship with all four slots empty and are untested territory of their own.
-        Whichever slots you use, the levels a character has to reach before the later ones unlock are
-        <b>not</b> in this record and are not located; test in game before building a run around it.
+        And there is no level table behind any of this: a spell's level <b>is</b> its slot number,
+        and whether a given character may use a slot is a per-character byte the game keeps with
+        the unit — the per-level MP resource — not data in this record, so there is nothing here
+        to edit for it. A low-level character may find the later slots greyed; that is the stock
+        gate working, not an edit failing. Test in game before building a run around any of it.
         What those runes do instead is engine code. For the twelve whose effect is built on a number —
         Sunbeam's <b>HP a combat turn</b> and <b>HP a second of walking</b>, Killer's and Counter's chances,
         Haziness' dodge roll, Hunter's damage clamp, the Wall/Double-Strike/Wizard multipliers and the rest —
@@ -9008,7 +9060,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
                    <label class="field"><span class="muted">Element family
                      <span class="u">the rune's own, not its spells'</span></span>
                      <select class="relem" data-id="${r.id}">${runeElemOpts(r.elem)}</select></label>
-                 </div></div>`
+                 </div>${runeListHTML(r)}</div>`
               : r.grants.length ? `<div class="grants">${r.grants.map((s) =>
                   `<span class="spellchip">${esc2(s)}</span>`).join("")}</div>` : ""}
             ${runePowerHTML(r.id)}
@@ -9075,11 +9127,30 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           writeW(off, 2, clampInt(+el.value || 0, 0, 0xFFFF));
           reg(off, 2, "num", itemName(id), label);
           setStatus(sel === "select.rcat" && +el.value === 0
-            ? `${itemName(id)} is now a magic/support rune. Whether that gives it a spell menu is untested — try it in game.`
+            ? `${itemName(id)} is now a magic/support rune — every filled spell slot will be offered in battle (mechanism proven; not yet played), and slot 1 casts as a normal spell. Review, then Save.`
             : `${itemName(id)}: ${label.toLowerCase()} changed. Review, then Save.`, "ok");
           drawRunes(host);
         };
       }));
+    // The spell-list toggle: the same two bytes as Rune type above, wearing the consequence.
+    // Ticking writes category 0; unticking writes back the category this disc shipped with,
+    // read out of the pristine snapshot rather than assumed to be 2.
+    qa("input.rlist", host).forEach((el) => {
+      const id = +el.dataset.id, off = RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.cat;
+      if (!inBlk(off, 2)) { el.disabled = true; return; }
+      el.onchange = () => {
+        // Unticking restores the category the disc shipped with. Saving refreshes the
+        // snapshot, so a converted attack rune's snapshot may already read 0 — its stock
+        // category is 2 by family, which is the value to put back.
+        const stock = origW(off, 2);
+        writeW(off, 2, el.checked ? 0 : (stock === 1 || stock === 2 ? stock : 2));
+        reg(off, 2, "num", itemName(id), "Rune type");
+        setStatus(el.checked
+          ? `${itemName(id)} now lists every filled spell slot in battle (Rune type set to Magic / support). Proven from the engine's binding code; not yet played — and slot 1 now casts as a normal spell. Review, then Save.`
+          : `${itemName(id)} is a special-attack rune again — slot 1 only, fired as a free action. Review, then Save.`, "ok");
+        drawRunes(host);
+      };
+    });
     // In-place rename. Same write as the menu text below: the string is overwritten where it
     // already sits and null-padded, so no pointer on the disc moves and every menu that names
     // the rune reads through the one pointer it always did. An empty box would leave the rune

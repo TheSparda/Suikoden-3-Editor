@@ -176,20 +176,29 @@ and a rune with fewer spells than that is simply zero-padded — so *Kite* grant
 has **three free slots**. Each of the game's 94 spells can go in any slot.
 **Tested on hardware:** on a *magic or support* rune this works — the game already reads every
 count the disc ships, one spell through four. On a *special-attack* rune (Kite, Phoenix, Goss —
-the 27 whose **Rune type** reads “Special attack”) it is **confirmed not to work on its own**:
-a Kite given four spells still fires slot 1 the instant it is chosen, with no list. The slots
-are written correctly; the battle menu never offers them. **Rune type** and **Element family**
-are editable next to the slots for exactly that reason — switching an attack rune to
-“Magic / support” is the one remaining lever, and it is untested. Each filled slot is also a
+the 27 whose **Rune type** reads “Special attack”) filling the slots on its own changes
+nothing: a Kite given four spells still fires slot 1 the instant it is chosen, with no list.
+The mechanism behind that is now proven from the disassembly: the two engine functions
+everything reads a rune's spells through report one spell — slot 1, for every index — whenever
+the record's type-and-element word is exactly the special-attack one, so the battle menu is
+handed a one-entry list. The row's **spell-list control** is the way out: it sets **Rune type**
+to “Magic / support”, the general path lists every filled slot, and slot 1 then casts as a
+normal spell (chant and per-slot MP gate) instead of firing as a free attack — proven,
+byte-verified, and not yet played. Two of the 27 never collapsed: *Devil's Doll* and
+*Spreading Flame* carry element family 1, miss the special case, and already list. The Test
+tab carries the global form (NOP the two compares in each accessor; every attack rune lists
+at once, keeping its type at execution time). Each filled slot is also a
 **link straight into the Spells tab with that record open**,
 which stays the one place a spell's own power / cast / element / target / status is edited —
 and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
 status effect for an effect editor to hang off. The passive support runes ship with all four
 slots empty: what they do is engine code, not a spell — and the **Passives** tab is where that
 code is reached. Two caveats, both written into the tab:
-the character levels that gate a rune's later spells are **not** in this record and are not
-editable yet, and whether an attack rune will surface more than one spell is untested on
-hardware — try a reassigned rune in game before building a run around it. Names and menu text
+there is no character-level table gating a rune's later spells — a spell's level is its slot
+number, and the gate is a per-character per-slot byte kept with the unit (the per-level MP
+resource), so there is nothing in this record to edit for it; and an attack rune surfacing
+more than one spell, while mechanism-proven, is untested on hardware — try a reassigned rune
+in game before building a run around it. Names and menu text
 are rewritten in place, so each is capped to the slot
 the disc already reserves for it, and both are **mirrored across every copy**: the 20 attack
 runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well —

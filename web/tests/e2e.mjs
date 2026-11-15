@@ -3519,9 +3519,13 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // this tab, and the Passives card edits the identical bytes rather than a parallel field. A
   // spell's power/cast/element still has exactly one home, the spell record, reached from the
   // granted-spell links.
+  // `rlist` — the spell-list toggle — is admitted on the same terms: it writes the rune's own
+  // type field, the same two bytes the `rcat` dropdown beside it writes, wearing the
+  // consequence as its label. It is not a second home for anything; it is one field with two
+  // controls, like the Strength fields above.
   const kinds = await page.$$eval("#isoView input", (es) => [...new Set(es.map((e) => e.className))].sort());
-  check("the only editable text fields are the name, the menu text and passive strength",
-    kinds.every((k) => /^(rname|rdesc|rf)$/.test(k)), kinds.join(" | "));
+  check("the only editable text fields are the name, the menu text, passive strength and the spell-list toggle",
+    kinds.every((k) => /^(rname|rdesc|rf|rlist)$/.test(k)), kinds.join(" | "));
   const sels = await page.$$eval("#isoView select", (es) => [...new Set(es.map((e) => e.className))].sort());
   check("the only editable dropdowns are the rune record's own fields and passive strength",
     sels.length > 0 && sels.every((k) => /^(rspell|rcat|relem|rf)$/.test(k)), sels.join(" | "));
@@ -5145,9 +5149,10 @@ if (ON) {
   check("a slot can be emptied", r2.u16(slotOff(full.id, 3)) === 0, String(r2.u16(slotOff(full.id, 3))));
 
   // Rune type (+0x16) is the field that separates the 45 runes the game gives a spell menu
-  // from the 27 special-attack ones it does not — filling slots on one of those 27 is
-  // confirmed not to work on its own, so this control is the only lever left to try. It has
-  // to be a real 2-byte write, and it must not disturb the slots sitting next to it.
+  // from the 27 special-attack ones it does not — filling slots on one of those 27 changes
+  // nothing by itself, because the binding accessors collapse a category-2/element-0 rune
+  // to slot 1; this control is the lever that undoes the collapse. It has to be a real
+  // 2-byte write, and it must not disturb the slots sitting next to it.
   await page.click('#isoTabs [data-v="runes"]');
   await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase()); await page.waitForTimeout(150);
   const catSel = `#isoView select.rcat[data-id="${mapping.twin.rune.id}"]`;
@@ -5161,6 +5166,57 @@ if (ON) {
     String(r3.u16(slotOff(mapping.twin.rune.id, 0))));
   await page.context().close();
 }
+
+head("Runes tab — the special-attack spell-list toggle");
+if (ON) {
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="runes"]');
+  const twin = mapping.twin.rune;                          // Great Hawk: category 2, element 0
+  const catOff = RUNE_TBL.off + twin.id * RUNE_TBL.stride + RUNE_TBL.cat;
+  const elemOff = RUNE_TBL.off + twin.id * RUNE_TBL.stride + RUNE_TBL.elem;
+  const tog = `#isoView input.rlist[data-id="${twin.id}"]`;
+  await page.fill("#isoSearch", twin.name.toLowerCase()); await page.waitForTimeout(150);
+  // Stock, the twin's (category, element) word is exactly the special case the engine's
+  // binding accessors collapse, so the row carries the toggle, unticked.
+  check("a collapsing attack rune gets the spell-list toggle, unticked",
+    await page.evaluate((s) => { const el = document.querySelector(s); return !!el && !el.checked; }, tog));
+  check("...and its Rune type reads Special attack",
+    (await page.inputValue(`#isoView select.rcat[data-id="${twin.id}"]`)) === "2");
+  // A rune that ships as category 0 has nothing to undo, so it gets no toggle at all.
+  const full = mapping.runes[0];
+  await page.fill("#isoSearch", full.name.toLowerCase()); await page.waitForTimeout(150);
+  check("a stock magic rune gets no toggle",
+    await page.evaluate((id) => !document.querySelector(`#isoView input.rlist[data-id="${id}"]`), full.id));
+  await page.fill("#isoSearch", twin.name.toLowerCase()); await page.waitForTimeout(150);
+  // Ticking writes category 0 — the same two bytes the Rune type select writes.
+  await page.check(tog); await page.waitForTimeout(150);
+  const r1 = await save(page);
+  check("ticking the toggle writes category 0", r1.u16(catOff) === 0, String(r1.u16(catOff)));
+  check("...and the element beside it is untouched", r1.u16(elemOff) === 0, String(r1.u16(elemOff)));
+  // The converted row keeps the toggle, ticked, and unticking restores the STOCK category
+  // read off the disc rather than assuming it was 2.
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", twin.name.toLowerCase()); await page.waitForTimeout(150);
+  check("a converted rune keeps the toggle, ticked",
+    await page.evaluate((s) => { const el = document.querySelector(s); return !!el && el.checked; }, tog));
+  await page.uncheck(tog); await page.waitForTimeout(150);
+  const r2 = await save(page);
+  check("unticking restores the stock category 2", r2.u16(catOff) === 2, String(r2.u16(catOff)));
+  // Element 1 takes the same rune out of the special case entirely (Devil's Doll and
+  // Spreading Flame ship this way): the toggle is replaced by the already-lists note.
+  await page.click('#isoTabs [data-v="runes"]');
+  await page.fill("#isoSearch", twin.name.toLowerCase()); await page.waitForTimeout(150);
+  await page.selectOption(`#isoView select.relem[data-id="${twin.id}"]`, "1"); await page.waitForTimeout(150);
+  check("with element 1 the toggle is replaced by the already-lists note",
+    await page.evaluate((id) => {
+      const row = document.querySelector(`#isoView select.rcat[data-id="${id}"]`)?.closest("td");
+      return !document.querySelector(`#isoView input.rlist[data-id="${id}"]`)
+        && !!row && /already offers every/.test(row.textContent);
+    }, twin.id));
+  await page.context().close();
+}
+
 
 // ---- Changes tab: what is already on the disc ----------------------------------------------
 // The one thing this tab does that nothing else can: report a change nobody staged this
