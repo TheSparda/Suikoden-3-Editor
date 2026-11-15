@@ -9025,9 +9025,84 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   // that makes an attack rune a free action rather than a chant, so slot 1 casts as a
   // normal spell once the type is 0. Category 2 with element != 0 (Devil's Doll,
   // Spreading Flame) misses both constants and already lists — those rows get the note,
-  // not a toggle that would do nothing. Proven from the disassembly, byte-verified
-  // against a pristine disc, and not yet played.
+  // not a toggle that would do nothing.
+  //
+  // Played 2026-11-15 (PCSX2, Chris/Phoenix — PCSX2_TESTS.md in the RE lab), and the
+  // play test corrected the recipe: category 0 ALONE is not enough. The rune pane grew
+  // to show the added spells, but choosing the rune still fired slot 1 instantly —
+  // the battle menu's confirm path treats an element-0 rune as a single-action attack
+  // rune no matter what the binding serves. With the element ALSO set nonzero the list
+  // opened, and the borrowed spell was selected and cast (chant, MP charge consumed).
+  // So the toggle writes both fields: category 0, and the element family of the first
+  // added spell that has one — and keeps the element following the added spells for as
+  // long as the toggle is on. Unticking restores BOTH stock fields.
   const runeCollapses = (cat, elem) => (cat === 1 || cat === 2) && elem === 0;
+  // A spell's element family, read off its own record the same way the Spells tab reads
+  // it (low byte of the u16 at SPELL +0x24; the last spell's byte falls outside the
+  // table, so an unreadable one reports 0 = no family).
+  const spellElemOf = (gid) => {
+    const row = gid - 1;
+    if (!BUF || row < 0 || row + 1 >= SPELL.count) return 0;
+    const o = SPELL.off + row * SPELL.stride + SPELL.elem;
+    return inBlk(o, 2) ? (r16(o) & 0xFF) : 0;
+  };
+  // The spells this rune has been GIVEN — current slots minus the stock ones, counted
+  // with multiplicity so handing a rune a second copy of its own attack still counts
+  // as native. Slot order preserved: the first added spell leads.
+  function addedSpellIds(id) {
+    const rec = RUNE_TBL.off + id * RUNE_TBL.stride;
+    const stock = [];
+    for (let k = 0; k < RUNE_TBL.slotCount; k++) {
+      const o = rec + RUNE_TBL.spells + k * 2;
+      stock.push(inBlk(o, 2) ? o16(o) : 0);
+    }
+    const out = [];
+    for (const gid of runeSpellIds(id)) {
+      if (!gid) continue;
+      const at = stock.indexOf(gid);
+      if (at >= 0) stock.splice(at, 1); else out.push(gid);
+    }
+    return out;
+  }
+  // What the toggle wants the element to be: the family of the first added spell that
+  // HAS one (borrowed attack spells carry family 0 and cannot lead), whether the added
+  // spells span more than one family, and the case where added spells exist but none
+  // carries a family at all — then no element can open the list and the copy must say so.
+  function atkElemDerive(id) {
+    const added = addedSpellIds(id);
+    if (!added.length) return null;
+    let elem = 0, lead = 0, mixed = false;
+    for (const gid of added) {
+      const e = spellElemOf(gid);
+      if (!e) continue;
+      if (!elem) { elem = e; lead = gid; }
+      else if (e !== elem) mixed = true;
+    }
+    return { elem, lead, mixed, any: true };
+  }
+  // Runes whose spell-list toggle is on this session. The element follows the added
+  // spells only for these — the raw Rune type / Element family selects stay fully
+  // manual, and a disc loaded already converted keeps its saved element until the
+  // toggle is cycled.
+  const ATKLIST_ON = new Set();
+  // Bring a toggled-on rune's element in line with its added spells. Returns a short
+  // note for the status line when the element moved (or cannot), else null.
+  function syncAtkElem(id) {
+    if (!ATKLIST_ON.has(id)) return null;
+    const rec = RUNE_TBL.off + id * RUNE_TBL.stride;
+    const eo = rec + RUNE_TBL.elem;
+    if (!inBlk(eo, 2) || r16(rec + RUNE_TBL.cat) !== 0) return null;
+    const d = atkElemDerive(id);
+    const stockElem = origW(eo, 2);
+    const want = d && d.elem ? d.elem : stockElem;
+    if (r16(eo) !== want) {
+      writeW(eo, 2, want); reg(eo, 2, "elem", itemName(id), "Element family");
+      if (d && d.elem) return `Element family set to ${elemName(want)}, following the first added spell (${spellSlotName(d.lead)})${d.mixed ? " — the added spells span families, and the first one wins" : ""}.`;
+      return "Element family back to stock — no added spells left, so the rune behaves stock.";
+    }
+    if (d && !d.elem) return "The added spells carry no element family, so the element stays 0 and the list may still not open — add a spell that has a family.";
+    return null;
+  }
   function runeListHTML(r) {
     const rec = RUNE_TBL.off + r.id * RUNE_TBL.stride;
     const stockCat = inBlk(rec + RUNE_TBL.cat, 2) ? origW(rec + RUNE_TBL.cat, 2) : r.cat;
@@ -9035,15 +9110,22 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         <input type="checkbox" class="rlist" data-id="${r.id}">
         <span><b>Offer every filled spell slot in battle</b> — stock, this rune's type collapses
         its list to slot 1 alone, however many slots are filled. Ticking this sets
-        <i>Rune type</i> above to “Magic / support”, which is the whole change: proven from the
-        engine's binding code and byte-verified, <b>not yet played</b>. Slot 1 then casts as a
-        normal spell — chant, and the per-slot MP gate — instead of firing as a free attack.</span></label></div>`;
+        <i>Rune type</i> above to “Magic / support” <b>and</b> sets <i>Element family</i> to the
+        family of the first added spell that has one: <b>both</b> halves are needed, and the
+        recipe is <b>tested in play</b> (Chris's Phoenix, given Fire spells: the list opened and
+        Flaming Arrows was picked and cast, chant and MP charge and all). Type alone is not
+        enough — played that way, the pane showed the spells but choosing the rune still fired
+        slot 1. Slot 1 then casts as a normal spell — chant, and the per-slot MP gate —
+        instead of firing as a free attack.</span></label></div>`;
     if (r.cat === 0 && (r.group === "attack" || runeCollapses(stockCat, r.elem))) return `<div class="runemeta"><label class="ckrow tight" style="flex:1 1 100%;margin:0">
         <input type="checkbox" class="rlist" data-id="${r.id}" checked>
         <span><b>Offers every filled spell slot in battle</b> — <i>Rune type</i> above is set to
         “Magic / support”, so the battle menu lists this rune's slots and slot 1 casts as a
-        normal spell. Unticking puts the stock type back: slot 1 alone, fired as a free
-        attack-rune action.</span></label></div>`;
+        normal spell. While this is on, the <i>Element family</i> follows the first added spell
+        that has a family (if the added spells span families, the first one wins) — an
+        element-0 rune is treated as a single-action attack rune even with its type converted,
+        which is why the element has to move too. Unticking puts the stock type <b>and</b> the
+        stock element back: slot 1 alone, fired as a free attack-rune action.</span></label></div>`;
     if ((r.cat === 1 || r.cat === 2) && r.elem !== 0) return `<div class="runemeta"><div class="muted" style="flex:1 1 100%;font-size:12px">
         No spell-list control needed: this rune's element family (${r.elem}) takes its
         type-and-element word past the engine's special case, so it already offers every
@@ -9216,22 +9298,34 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           drawRunes(host);
         };
       }));
-    // The spell-list toggle: the same two bytes as Rune type above, wearing the consequence.
-    // Ticking writes category 0; unticking writes back the category this disc shipped with,
-    // read out of the pristine snapshot rather than assumed to be 2.
+    // The spell-list toggle: the recipe the play test proved, wearing the consequence.
+    // Ticking writes category 0 AND sets the element from the added spells (syncAtkElem);
+    // unticking writes back BOTH stock fields, read out of the pristine snapshot rather
+    // than assumed.
     qa("input.rlist", host).forEach((el) => {
-      const id = +el.dataset.id, off = RUNE_TBL.off + id * RUNE_TBL.stride + RUNE_TBL.cat;
+      const id = +el.dataset.id, rec = RUNE_TBL.off + id * RUNE_TBL.stride;
+      const off = rec + RUNE_TBL.cat, eo = rec + RUNE_TBL.elem;
       if (!inBlk(off, 2)) { el.disabled = true; return; }
       el.onchange = () => {
-        // Unticking restores the category the disc shipped with. Saving refreshes the
-        // snapshot, so a converted attack rune's snapshot may already read 0 — its stock
-        // category is 2 by family, which is the value to put back.
-        const stock = origW(off, 2);
-        writeW(off, 2, el.checked ? 0 : (stock === 1 || stock === 2 ? stock : 2));
-        reg(off, 2, "num", itemName(id), "Rune type");
-        setStatus(el.checked
-          ? `${itemName(id)} now lists every filled spell slot in battle (Rune type set to Magic / support). Proven from the engine's binding code; not yet played — and slot 1 now casts as a normal spell. Review, then Save.`
-          : `${itemName(id)} is a special-attack rune again — slot 1 only, fired as a free action. Review, then Save.`, "ok");
+        // Unticking restores the fields the disc shipped with. Saving refreshes the
+        // snapshot, so a converted attack rune's snapshot may already read converted —
+        // its stock category is 2 by family and its stock element 0, which are the
+        // values to put back when the snapshot no longer holds them.
+        const stock = origW(off, 2), stockElem = origW(eo, 2);
+        if (el.checked) {
+          ATKLIST_ON.add(id);
+          writeW(off, 2, 0);
+          reg(off, 2, "num", itemName(id), "Rune type");
+          const note = syncAtkElem(id);
+          setStatus(`${itemName(id)} now lists every filled spell slot in battle — Rune type set to Magic / support and the element set with it (the recipe tested in play on Phoenix). ${note ? note + " " : ""}Slot 1 now casts as a normal spell. Review, then Save.`, "ok");
+        } else {
+          ATKLIST_ON.delete(id);
+          writeW(off, 2, stock === 1 || stock === 2 ? stock : 2);
+          reg(off, 2, "num", itemName(id), "Rune type");
+          writeW(eo, 2, runeCollapses(stock === 1 || stock === 2 ? stock : 2, stockElem) ? stockElem : 0);
+          reg(eo, 2, "elem", itemName(id), "Element family");
+          setStatus(`${itemName(id)} is a special-attack rune again — stock type and element restored, slot 1 only, fired as a free action. Review, then Save.`, "ok");
+        }
         drawRunes(host);
       };
     });
