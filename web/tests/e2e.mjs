@@ -12,7 +12,7 @@ import { fileURLToPath } from "url";
 import { chromiumPath, chromiumNote } from "./chromium-path.mjs";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP, ATK_LIST,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
@@ -5217,6 +5217,39 @@ if (ON) {
   await page.context().close();
 }
 
+head("Test tab — attack-rune spell lists (the global NOP)");
+if (ON) {
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector('#testTabs [data-t="atklist"]', { timeout: 3000 });
+  await page.click('#testTabs [data-t="atklist"]');
+  await page.waitForSelector("#alSel", { timeout: 3000 });
+  check("the control opens on Stock — the fixture plants all four compares",
+    (await page.inputValue("#alSel")) === "0");
+  await page.selectOption("#alSel", "1"); await page.waitForTimeout(150);
+  const r = await save(page);
+  check("all four compares are NOP-ed in the saved disc",
+    ATK_LIST.every((c) => r.u32(c.off) === 0),
+    ATK_LIST.map((c) => r.u32(c.off).toString(16)).join(", "));
+  // The switchboard is the audit with switches, so a staged NOP has to show up there as a
+  // row that can be switched back off — that is what keeps the patch bisectable.
+  await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="patches"]'); await page.waitForTimeout(200);
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll("#testView tbody tr")]
+      .filter((tr) => /runeSpell(Count|At)/.test(tr.textContent)).length);
+  check("the switchboard lists the four staged NOPs", rows === 4, String(rows));
+  await page.click('#testTabs [data-t="atklist"]');
+  await page.waitForSelector("#alSel", { timeout: 3000 });
+  check("...and the control now reads Lists on", (await page.inputValue("#alSel")) === "1");
+  await page.selectOption("#alSel", "0"); await page.waitForTimeout(150);
+  const r2 = await save(page);
+  check("setting it back restores all four stock words",
+    ATK_LIST.every((c) => r2.u32(c.off) === c.stock),
+    ATK_LIST.map((c) => r2.u32(c.off).toString(16)).join(", "));
+  await page.context().close();
+}
 
 // ---- Changes tab: what is already on the disc ----------------------------------------------
 // The one thing this tab does that nothing else can: report a change nobody staged this

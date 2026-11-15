@@ -262,6 +262,17 @@ export const HORSE_CLAMP = [
   { off: 0x1471A8, stock: 0x2C420002, alt: 0x2C420100 },
   { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
 ];
+// Attack-rune spell lists (iso.js ATKLIST): the four compares in the rune→spell binding
+// accessors that the Test tab can NOP. Planted stock because two controls read them: the
+// Changes tab's code audit (an unplanted zero would have the fixture report four code
+// patches it does not carry) and the Test tab's control, which reads a zero as "already
+// NOP-ed" and would offer the patch as already on.
+export const ATK_LIST = [
+  { off: 0x123EF4, stock: 0x10620011 },
+  { off: 0x123EFC, stock: 0x10620010 },
+  { off: 0x124024, stock: 0x1062000A },
+  { off: 0x12402C, stock: 0x50620009 },
+];
 // Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
 // the two rounding sweeteners, and the Adrenaline Power pair-sum.
 export const MECH = {
@@ -528,6 +539,7 @@ export function buildSynthIso() {
   for (const [roster, v] of Object.entries(HORSE_STOCK)) w16(horseAddr(+roster), v);
   for (const d of Object.values(MECH)) w32(d.off, d.stock);
   for (const d of HORSE_CLAMP) w32(d.off, d.stock);
+  for (const d of ATK_LIST) w32(d.off, d.stock);
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));

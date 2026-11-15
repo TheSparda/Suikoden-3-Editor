@@ -5838,13 +5838,37 @@
       : MOUNTS.horse.VALID;
   }
 
+  // ---- attack-rune spell lists: NOP the binding compares (Test tab) -----------
+  // The global form of the Runes tab's per-rune spell-list control. runeSpellCount
+  // (VA 0x16DC6C0) and runeSpellAt (VA 0x16DC7E0) each hold two compares against the
+  // (category << 16) | element constants 0x00010000 / 0x00020000; NOP all four and no
+  // rune's binding collapses, while every rune KEEPS its category at execution time —
+  // slot 1 stays a free attack-rune action, and the added spells travel down that same
+  // attack-rune path, where how it treats a spell with a chant time or an element is
+  // untested. Both compares in BOTH functions must go: leave one standing and its case
+  // still collapses. All four stock words byte-verified on a pristine SLUS-20387.
+  const ATKLIST = [
+    { off: 0x123EF4, stock: 0x10620011, what: "runeSpellCount — the category-1 compare (beq, count forced to 1)" },
+    { off: 0x123EFC, stock: 0x10620010, what: "runeSpellCount — the category-2 compare (beq, count forced to 1)" },
+    { off: 0x124024, stock: 0x1062000A, what: "runeSpellAt — the category-1 compare (beq, slot 1 returned)" },
+    { off: 0x12402C, stock: 0x50620009, what: "runeSpellAt — the category-2 compare (beql, slot 1 returned)" },
+  ];
+  const ATKLIST_NOP = 0x00000000;
+  function atkListState() {
+    if (ATKLIST.some((c) => !inBlk(c.off, 4))) return "absent";
+    const cur = ATKLIST.map((c) => readW(c.off, 4) >>> 0);
+    if (cur.every((v, i) => v === ATKLIST[i].stock)) return "stock";
+    if (cur.every((v) => v === ATKLIST_NOP)) return "on";
+    return "unknown";          // partially applied, or not this disc's code
+  }
+
   // ---- Test: experiments that are not known to work ---------------------------
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "patches";       // the switchboard first: it is the tab's diagnostic entry point
   const TESTS = [["patches", "Non-stock code"], ["avatar", "Field character"],
-    ["horse", "Assigned horse"], ["herb", "Mount button"]];
+    ["horse", "Assigned horse"], ["herb", "Mount button"], ["atklist", "Attack-rune lists"]];
   function drawTest(host) {
     // The Field-character warning is about ONE subtab's patch, so it only belongs above that
     // subtab — on the switchboard it would read as a warning about switching patches OFF.
@@ -5867,6 +5891,7 @@
     else if (TESTVIEW === "avatar") drawAvatar(q("#testView", host));
     else if (TESTVIEW === "horse") drawHorseClamp(q("#testView", host));
     else if (TESTVIEW === "herb") drawHerb(q("#testView", host));
+    else if (TESTVIEW === "atklist") drawAtkList(q("#testView", host));
   }
 
   // ---- Non-stock code: one checkbox per patched site -------------------------
@@ -6160,6 +6185,65 @@
     q("#hcSel", host).onchange = (e) => {
       const wide = e.target.value === "1";
       MOUNTS.horseClamp.sites.forEach((c) => writeW(c.off, 4, wide ? c.alt : c.stock));
+      drawView();
+    };
+  }
+
+  // ---- Attack-rune spell lists: the global form --------------------------------
+  function drawAtkList(host) {
+    const st = atkListState();
+    if (st === "absent" || st === "unknown") {
+      host.innerHTML = `<div class="warnbox">The binding compares aren't where this build expects
+        them, or are only partly NOP-ed — no edit offered. Expected four branch words at
+        ${ATKLIST.map((c) => "0x" + c.off.toString(16).toUpperCase()).join(", ")}, each either
+        its stock compare or a nop.</div>`;
+      return;
+    }
+    const on = st === "on";
+    const rows = ATKLIST.map((c) => {
+      const cur = readW(c.off, 4) >>> 0;
+      return `<tr><td class="sl">0x${c.off.toString(16).toUpperCase()}</td>
+        <td><code>${cur.toString(16).padStart(8, "0")}</code></td>
+        <td>${esc2(c.what)}</td>
+        <td>${cur === c.stock ? '<span class="dim">stock</span>' : '<span class="tag acc2">nop</span>'}</td></tr>`;
+    }).join("");
+    host.innerHTML = `
+      <div class="card" style="margin:0 0 12px">
+        <div class="bag-h">Attack-rune spell lists — all of them at once <span class="u">patches game code · not played</span></div>
+        <div class="muted" style="margin:0 0 8px" data-sum="NOP the two compares in each of the engine's rune-spell binding functions and every special-attack rune lists all its filled slots at once, keeping its type at execution time.">Everything that reads which
+          spells a rune grants goes through two small functions, and each of them collapses the
+          answer to <b>one spell — slot 1</b> — for a rune whose type-and-element word is exactly
+          the special-attack one. That is why filling a special-attack rune's free slots changes
+          nothing in battle. This replaces the two compares in each function with a
+          <code>nop</code>, so no rune's binding collapses and <b>every</b> special-attack rune
+          lists all its filled slots at once.</div>
+        <div class="muted" style="margin:0 0 8px" data-sum="The per-rune form of the same fix is the spell-list control on the Runes tab; this global form differs by keeping each rune's type at execution time, so added spells travel down the attack-rune path.">The <b>Runes</b> tab carries the per-rune form of
+          the same fix — its spell-list control sets one rune's type to “Magic / support”. The
+          difference matters: this global form leaves every rune's type alone, so slot 1 stays a
+          <b>free attack-rune action</b> — but the added spells then execute down that same
+          attack-rune path, and how it treats a spell with a chant time or an element of its own
+          is <b>untested</b>. The per-slot MP gate applies either way, so a low-level character
+          may still find the later slots greyed.</div>
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Untested in play — the mechanism is proven from the disassembly and all four words are byte-verified, but no added spell has yet been cast this way in a running game."><b>Untested in play.</b> The mechanism is
+          proven from the disassembly and all four words are byte-verified against a pristine
+          disc, but nobody has yet cast an added spell this way in a running game. Both compares
+          in <b>both</b> functions are NOP-ed together — leaving one standing would keep its
+          case collapsed — and setting this back to Stock restores all four words exactly.</div>
+        <label class="field" style="max-width:460px">
+          <span>Special-attack rune spell lists</span>
+          <select id="alSel">
+            <option value="0"${on ? "" : " selected"}>Stock — slot 1 only, as the game ships</option>
+            <option value="1"${on ? " selected" : ""}>Lists on — every filled slot, for every attack rune</option>
+          </select></label>
+        <table class="invtbl" style="margin-top:10px"><thead><tr><th>Offset</th><th>Word</th><th>What</th><th>State</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+    q("#alSel", host).onchange = (e) => {
+      const want = e.target.value === "1";
+      ATKLIST.forEach((c) => {
+        writeW(c.off, 4, want ? ATKLIST_NOP : c.stock);
+        reg(c.off, 4, "word", "Attack-rune spell lists", c.what);
+      });
       drawView();
     };
   }
@@ -10310,6 +10394,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         const nm = (REF.names && REF.names.list2 && REF.names.list2[String(id)]) || `roster ${id}`;
         imm(off, MOUNTS.horse.STOCK[id] || 0, "Mounts", `assigned horse · ${nm}`, horseRisk);
       } }
+    ATKLIST.forEach((c) => word(c.off, c.stock, "Attack-rune spell lists", c.what,
+      "rewritten engine code: with these compares NOP-ed, every special-attack rune lists all its filled spell slots — and the added spells execute down the attack-rune path, where their chant and element behaviour is untested"));
     word(MOUNTS.mech.pool.off, MOUNTS.mech.pool.stock, "Mounts", MOUNTS.mech.pool.label);
     word(MOUNTS.mech.adren.off, MOUNTS.mech.adren.stock, "Mounts", MOUNTS.mech.adren.label);
     word(MOUNTS.mech.roundRider.off, MOUNTS.mech.roundRider.word, "Mounts", MOUNTS.mech.roundRider.label);

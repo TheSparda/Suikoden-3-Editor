@@ -277,7 +277,9 @@ confirmed in play; battle movement lives in packed asset data and isn't covered;
 boxes when you play as someone the game didn't plan for, with the setup written out step by
 step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
-whitelist, plus the retired scene-actor fallback kept as a written-up dead end; see below),
+whitelist, the **attack-rune spell lists** (the global form of the Runes tab's spell-list
+control: NOP the binding compares so every special-attack rune lists its filled slots at
+once), plus the retired scene-actor fallback kept as a written-up dead end; see below),
 **Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
