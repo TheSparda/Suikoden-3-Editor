@@ -1,0 +1,6918 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CheatTable CheatEngineTableVersion="26">
+  <CheatEntries>
+	<CheatEntry>
+	  <ID>1</ID>
+	  <Description>"Activate Trainer (Be Sure to View Main Menu Where You See Your Money First, Then Activate Trainer, Then View Again)"</Description>
+	  <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+lua_aobscan_last_2("GetBasePointersAOB",process,"0F 88 05 00 00 00 E9 * * * * 8B 0D * * * * 48 63 5C 0D 00 8B 05 * * * * 89 05 * * * * 48 89 1D * * * * 8B 05 * * * * 83 C0 02 89 05 * * * * 2B 05 * * * * 0F 88 * * * * E9 * * * * 48 8B 1D * * * *",0x100000000)
+
+local CurrentSaveSymbolList = {
+"InfiniteItem",
+"InfiniteGP",
+"InfiniteHP",
+"InfiniteRuneUse",
+"QuickLevelGain",
+"SetSPAllParty",
+"SetAllSkillsToSS",
+"SetAllPDFToMax",
+"SetAllMDFToMax",
+"GPMultiplier",
+"MAGICMultiplier",
+"CharSPMultiplier"
+}
+
+-- First, make sure Save Symbol List global variable is empty
+for i=#SaveSymbolList,1,-1 do
+	table.remove(SaveSymbolList,i)
+end
+
+for j=1,#CurrentSaveSymbolList do
+	-- Insert our custom symbol list for this trainer into the global variable
+	table.insert(SaveSymbolList,CurrentSaveSymbolList[j])
+end
+
+{$asm}
+
+alloc(newmem,2048)
+
+///
+alloc(newmem2,1024,GetBasePointersAOB)
+
+alloc(newmem3,1024)
+
+alloc(newmem4,1024)
+
+///
+label(return2)
+
+///
+label(FirstPartyCurrentHPOffset)
+registersymbol(FirstPartyCurrentHPOffset)
+label(PotchOffsetOffset)
+registersymbol(PotchOffsetOffset)
+label(FirstPartyItemOneQtyOffset)
+registersymbol(FirstPartyItemOneQtyOffset)
+label(FirstPartyExpOffset)
+registersymbol(FirstPartyExpOffset)
+label(iPartySlot)
+registersymbol(iPartySlot)
+label(FirstPartyEXPPtr)
+registersymbol(FirstPartyEXPPtr)
+label(FirstPartyItemOneQtyPtr)
+registersymbol(FirstPartyItemOneQtyPtr)
+label(FirstPartyEXPPtrOffset)
+registersymbol(FirstPartyEXPPtrOffset)
+label(FirstPartyItemOneQtyPtrOffset)
+registersymbol(FirstPartyItemOneQtyPtrOffset)
+
+label(CharacterInfoOffset)
+registersymbol(CharacterInfoOffset)
+label(CharacterInfoNumPartyMembers)
+registersymbol(CharacterInfoNumPartyMembers)
+label(InfiniteItem)
+registersymbol(InfiniteItem)
+label(QuickLevelGain)
+registersymbol(QuickLevelGain)
+label(SetSPAllParty)
+registersymbol(SetSPAllParty)
+label(InfiniteRuneUse)
+registersymbol(InfiniteRuneUse)
+label(SetAllSkillsToSS)
+registersymbol(SetAllSkillsToSS)
+label(SetAllPDFToMax)
+registersymbol(SetAllPDFToMax)
+label(SetAllMDFToMax)
+registersymbol(SetAllMDFToMax)
+label(SetAllAffinitiesToSAllChars)
+registersymbol(SetAllAffinitiesToSAllChars)
+
+///
+label(BattleInfoOffset)
+registersymbol(BattleInfoOffset)
+label(BattleInfoNumPartyMembers)
+registersymbol(BattleInfoNumPartyMembers)
+label(InfiniteHP)
+registersymbol(InfiniteHP)
+
+///
+label(SavedGP)
+registersymbol(SavedGP)
+label(GPInitialized)
+registersymbol(GPInitialized)
+label(GPMultiplier)
+registersymbol(GPMultiplier)
+label(InfiniteGP)
+registersymbol(InfiniteGP)
+
+///
+label(OurBasePtr)
+registersymbol(OurBasePtr)
+label(bInitializedPointers)
+registersymbol(bInitializedPointers)
+
+///
+label(MAGICInitialized)
+registersymbol(MAGICInitialized)
+label(MAGICMultiplier)
+registersymbol(MAGICMultiplier)
+label(SavedMAGIC)
+registersymbol(SavedMAGIC)
+
+///
+label(CharSPInitialized)
+registersymbol(CharSPInitialized)
+label(CharSPMultiplier)
+registersymbol(CharSPMultiplier)
+label(SavedCharSP)
+registersymbol(SavedCharSP)
+
+///
+newmem:
+FirstPartyExpOffset:
+dq 196E790
+FirstPartyItemOneQtyOffset:
+dq 196E802
+PotchOffsetOffset:
+dq 196E5F0
+FirstPartyCurrentHPOffset:
+dq 195BA38
+
+///
+iPartySlot:
+dq 0
+FirstPartyEXPPtr:
+dq 0
+FirstPartyItemOneQtyPtr:
+dq 0
+FirstPartyEXPPtrOffset:
+dq 196E790
+FirstPartyItemOneQtyPtrOffset:
+dq 196E802
+
+///
+CharacterInfoOffset:
+dq 8C
+CharacterInfoNumPartyMembers:
+dq #75
+InfiniteItem:
+dq 1
+QuickLevelGain:
+dq 0
+SetSPAllParty:
+dq 0
+InfiniteRuneUse:
+dq 1
+SetAllSkillsToSS:
+dq 0
+SetAllPDFToMax:
+dq 0
+SetAllMDFToMax:
+dq 0
+SetAllAffinitiesToSAllChars:
+dq 0
+
+BattleInfoOffset:
+dq 158
+BattleInfoNumPartyMembers:
+dq 6
+InfiniteHP:
+dq 0
+
+///
+GPMultiplier:
+dq #10
+InfiniteGP:
+dq 0
+GPInitialized:
+dq 0
+SavedGP:
+dq 0
+
+///
+OurBasePtr:
+dq 0
+bInitializedPointers:
+dq 0
+
+newmem2:
+  mov [R15Save2],r15
+  cmp rcx,196E5F0
+  jne MyCleanUp2
+  mov r15,OurBasePtr
+  mov [r15],rbp
+  jmp MyCleanUp2
+  
+MyCleanUp2:
+  mov r15,[R15Save2]
+  jmp originalcode2
+  
+originalcode2:
+  movsxd rbx,dword ptr [rbp+rcx+00]
+  jmp return2
+
+R15Save2:
+dq 0
+
+newmem3:
+MAGICInitialized:
+dq 0
+MAGICMultiplier:
+dq (float)2.0
+SavedMAGIC:
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+
+newmem4:
+CharSPInitialized:
+dq 0
+CharSPMultiplier:
+dq (float)2.0
+SavedCharSP:
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+
+GetBasePointersAOB+11:
+  jmp newmem2
+  return2:
+  
+[DISABLE]
+
+unregistersymbol(FirstPartyEXPOffset)
+unregistersymbol(FirstPartyItemOneQtyOffset)
+unregistersymbol(PotchOffsetOffset)
+unregistersymbol(FirstPartyCurrentHPOffset)
+
+///
+unregistersymbol(iPartySlot)
+unregistersymbol(FirstPartyEXPPtr)
+unregistersymbol(FirstPartyItemOneQtyPtr)
+unregistersymbol(FirstPartyEXPPtrOffset)
+unregistersymbol(FirstPartyItemOneQtyPtrOffset)
+
+///
+unregistersymbol(InjectionPointAOB)
+unregistersymbol(CharacterInfoOffset)
+unregistersymbol(CharacterInfoNumPartyMembers)
+unregistersymbol(InfiniteItem)
+unregistersymbol(QuickLevelGain)
+unregistersymbol(SetSPAllParty)
+unregistersymbol(InfiniteRuneUse)
+unregistersymbol(SetAllSkillsToSS)
+unregistersymbol(SetAllPDFToMax)
+unregistersymbol(SetAllMDFToMax)
+unregistersymbol(SetAllAffinitiesToSAllChars)
+
+///
+unregistersymbol(BattleInfoOffset)
+unregistersymbol(BattleInfoNumPartyMembers)
+unregistersymbol(InfiniteHP)
+
+///
+unregistersymbol(SavedGP)
+unregistersymbol(GPMultiplier)
+unregistersymbol(GPInitialized)
+unregistersymbol(InfiniteGP)
+
+///
+unregistersymbol(GetBasePointersAOB)
+unregistersymbol(OurBasePtr)
+unregistersymbol(bInitializedPointers)
+
+GetBasePointersAOB+11:
+  db 48 63 5C 0D 00
+
+///
+unregistersymbol(MAGICInitialized)
+unregistersymbol(MAGICMultiplier)
+unregistersymbol(SavedMAGIC)
+
+///
+unregistersymbol(CharSPInitialized)
+unregistersymbol(CharSPMultiplier)
+unregistersymbol(SavedCharSP)
+  
+///
+dealloc(newmem)
+dealloc(newmem2)
+dealloc(newmem3)
+dealloc(newmem4)
+</AssemblerScript>
+	  <Hotkeys>
+		<Hotkey>
+		  <Action>Activate</Action>
+		  <Keys>
+			<Key>112</Key>
+		  </Keys>
+		  <ID>0</ID>
+		</Hotkey>
+	  </Hotkeys>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>2</ID>
+	  <Description>"Activate Trainer 2"</Description>
+	  <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+WriteInteger(getAddressSafe("bInitializedPointers"),0)
+
+tMainPointerTimer = createTimer(nil, false)
+tMainPointerTimer.OnTimer = function(fMainPointerTimer)
+
+	local OurBasePtr = ReadPointer(getAddressSafe("OurBasePtr"))
+	local bInitializedPointers = ReadInteger(getAddressSafe("bInitializedPointers"))
+
+	if (OurBasePtr ~= nil) then
+		if (OurBasePtr ~= 0) then		
+			local FirstPartyExpOffset = ReadPointer(getAddressSafe("FirstPartyExpOffset"))
+			local FirstPartyExp = FirstPartyExpOffset + OurBasePtr
+			registerSymbol("FirstPartyExp",FirstPartyExp)
+			
+			local FirstPartyItemOneQtyOffset = ReadPointer(getAddressSafe("FirstPartyItemOneQtyOffset"))
+			local FirstPartyItemOneQty = FirstPartyItemOneQtyOffset + OurBasePtr
+			registerSymbol("FirstPartyItemOneQty",FirstPartyItemOneQty)
+			
+			local PotchOffsetOffset = ReadPointer(getAddressSafe("PotchOffsetOffset"))
+			local PotchOffset = PotchOffsetOffset + OurBasePtr
+			registerSymbol("PotchOffset",PotchOffset)
+
+			local FirstPartyCurrentHPOffset = ReadPointer(getAddressSafe("FirstPartyCurrentHPOffset"))
+			local FirstPartyCurrentHP = FirstPartyCurrentHPOffset + OurBasePtr
+			registerSymbol("FirstPartyCurrentHP",FirstPartyCurrentHP)
+			
+			local FirstPartyEXPPtrOffset = ReadPointer(getAddressSafe("FirstPartyEXPPtrOffset"))
+			local FirstPartyEXPPtr = FirstPartyEXPPtrOffset + OurBasePtr
+			WritePointer(getAddressSafe("FirstPartyEXPPtr"),FirstPartyEXPPtr)
+
+			local FirstPartyItemOneQtyPtrOffset = ReadPointer(getAddressSafe("FirstPartyItemOneQtyPtrOffset"))
+			local FirstPartyItemOneQtyPtr = FirstPartyItemOneQtyPtrOffset + OurBasePtr
+			WritePointer(getAddressSafe("FirstPartyItemOneQtyPtr"),FirstPartyItemOneQtyPtr)
+
+			WriteInteger(getAddressSafe("bInitializedPointers"),1)
+		end
+	end
+	
+	if (bInitializedPointers == 1) then
+		tMainPointerTimer.destroy()
+	end
+end
+
+tMainPointerTimer.Interval = 100
+tMainPointerTimer.Enabled = true
+
+{$asm}
+
+[DISABLE]
+{$lua}
+
+tMainPointerTimer.destroy()
+
+{$asm}
+
+unregistersymbol(FirstPartyEXP)
+unregistersymbol(FirstPartyItemOneQty)
+unregistersymbol(PotchOffset)
+unregistersymbol(FirstPartyCurrentHP)
+
+</AssemblerScript>
+	  <Hotkeys>
+		<Hotkey>
+		  <Action>Activate</Action>
+		  <Keys>
+			<Key>112</Key>
+		  </Keys>
+		  <ID>0</ID>
+		</Hotkey>
+	  </Hotkeys>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>3</ID>
+	  <Description>"Activate Trainer 3"</Description>
+	  <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+tMainTimer = createTimer(nil, false)
+tMainTimer.OnTimer = function(fMainTimer)
+
+	local OurProcess = getAddressSafe(process)
+	local ourindex = 0
+	local FirstPartyItemOneQty = getAddressSafe("FirstPartyItemOneQty")
+	local FirstPartyExp = getAddressSafe("FirstPartyExp")
+	local CharacterInfoOffset = ReadInteger(getAddressSafe("CharacterInfoOffset"))
+	local CharacterInfoNumPartyMembers = ReadInteger(getAddressSafe("CharacterInfoNumPartyMembers"))
+	local BattleInfoOffset = ReadInteger(getAddressSafe("BattleInfoOffset"))
+	local FirstPartyCurrentHP = getAddressSafe("FirstPartyCurrentHP")
+	local BattleInfoNumPartyMembers = ReadInteger(getAddressSafe("BattleInfoNumPartyMembers"))
+	
+	if (FirstPartyItemOneQty ~= nil) then
+		if (FirstPartyItemOneQty ~= 0) then
+			-- First, Do Character Options
+			while (ourindex &lt; CharacterInfoNumPartyMembers) do
+				local InfiniteItem = ReadInteger(getAddressSafe("InfiniteItem"))
+				
+				if (InfiniteItem == 1) then
+					local Item1Qty = ReadBytes(FirstPartyItemOneQty + 0x00)
+					if (Item1Qty ~= 0) then
+						if (ReadBytes(FirstPartyItemOneQty) ~= 9) then
+							WriteBytes(FirstPartyItemOneQty,9)
+						end
+					end
+
+					local Item2Qty = ReadBytes(FirstPartyItemOneQty + 0x08)
+					if (Item2Qty ~= 0) then
+						if (ReadBytes(FirstPartyItemOneQty+0x08) ~= 9) then
+							WriteBytes(FirstPartyItemOneQty+0x08,9)
+						end
+					end
+
+					local Item3Qty = ReadBytes(FirstPartyItemOneQty + 0x10)
+					if (Item3Qty ~= 0) then
+						if (ReadBytes(FirstPartyItemOneQty+0x10) ~= 9) then
+							WriteBytes(FirstPartyItemOneQty+0x10,9)
+						end
+					end
+				end
+				
+				local QuickLevelGain = ReadInteger(getAddressSafe("QuickLevelGain"))
+				
+				if (QuickLevelGain == 1) then
+					if (ReadSmallInteger(FirstPartyExp - 0x04) ~= 999) then
+						WriteSmallInteger(FirstPartyExp - 0x04,999)
+					end
+				end
+				
+				local SetSPAllParty = ReadInteger(getAddressSafe("SetSPAllParty"))
+				
+				if (SetSPAllParty == 1) then
+					if (ReadSmallInteger(FirstPartyExp + 0x00) ~= 5000) then
+						WriteSmallInteger(FirstPartyExp + 0x00,5000)
+					end
+				end
+				
+				local InfiniteRuneUse = ReadInteger(getAddressSafe("InfiniteRuneUse"))
+				
+				if (InfiniteRuneUse == 1) then
+					local MaxRuneUse = ReadInteger(FirstPartyExp + 0x38)
+					if (ReadInteger(FirstPartyExp + 0x34) ~= MaxRuneUse) then
+						WriteInteger(FirstPartyExp + 0x34,MaxRuneUse)
+					end
+				end
+				
+				local SetAllSkillsToSS = ReadInteger(getAddressSafe("SetAllSkillsToSS"))
+				
+				if (SetAllSkillsToSS == 1) then
+					local ourindex5 = 0
+					while (ourindex5 &lt; 8) do
+						if (ReadBytes(FirstPartyExp + 0xC + (ourindex5 * 0x02)) ~= 0) then
+							if (ReadBytes(FirstPartyExp + 0xD + (ourindex5 * 0x02)) ~= 8) then
+								WriteBytes(FirstPartyExp + 0xD + (ourindex5 * 0x02),8)
+							end
+						end
+						
+						ourindex5 = ourindex5 + 1
+					end
+				end
+				
+				local SetAllPDFToMax = ReadInteger(getAddressSafe("SetAllPDFToMax"))
+				
+				if (SetAllPDFToMax == 1) then
+					if (ReadSmallInteger(FirstPartyExp + 0xE) ~= 999) then
+						WriteSmallInteger(FirstPartyExp + 0x24,999)
+					end
+				end
+				
+				local SetAllMDFToMax = ReadInteger(getAddressSafe("SetAllMDFToMax"))
+				
+				if (SetAllMDFToMax == 1) then
+					if (ReadSmallInteger(FirstPartyExp + 0x10) ~= 999) then
+						WriteSmallInteger(FirstPartyExp + 0x26,999)
+					end
+				end
+								
+				ourindex = ourindex + 1
+				FirstPartyExp = FirstPartyExp + CharacterInfoOffset
+				FirstPartyItemOneQty = FirstPartyItemOneQty + CharacterInfoOffset
+			end
+			
+			ourindex = 0
+			
+		end
+	end
+	
+end
+
+tMainTimer.Interval = 100
+tMainTimer.Enabled = true
+
+{$asm}
+
+[DISABLE]
+{$lua}
+
+tMainTimer.destroy()
+
+{$asm}
+</AssemblerScript>
+	  <Hotkeys>
+		<Hotkey>
+		  <Action>Activate</Action>
+		  <Keys>
+			<Key>112</Key>
+		  </Keys>
+		  <ID>0</ID>
+		</Hotkey>
+	  </Hotkeys>
+	</CheatEntry>
+    <CheatEntry>
+      <ID>10</ID>
+      <Description>"Save Current Trainer Values"</Description>
+      <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+--- Call Function To Save Trainer Values
+SaveTrainerValues()
+
+{$asm}
+
+[DISABLE]
+
+</AssemblerScript>
+	  <Hotkeys>
+		<Hotkey>
+		  <Action>Toggle Activation</Action>
+		  <Keys>
+			<Key>113</Key>
+		  </Keys>
+		  <ID>0</ID>
+		</Hotkey>
+	  </Hotkeys>
+	</CheatEntry>
+    <CheatEntry>
+      <ID>11</ID>
+      <Description>"Load Current Trainer Values"</Description>
+      <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+--- Call Function To Load Trainer Values
+LoadTrainerValues()
+
+{$asm}
+
+[DISABLE]
+
+</AssemblerScript>
+	  <Hotkeys>
+		<Hotkey>
+		  <Action>Toggle Activation</Action>
+		  <Keys>
+			<Key>114</Key>
+		  </Keys>
+		  <ID>0</ID>
+		</Hotkey>
+	  </Hotkeys>
+	</CheatEntry>
+    <CheatEntry>
+      <ID>12</ID>
+      <Description>"Change Slot Config Description"</Description>
+      <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+--- Call Function To Change Slot Description
+ChangeSlotDescription()
+
+{$asm}
+
+[DISABLE]
+
+</AssemblerScript>
+	  <Hotkeys>
+		<Hotkey>
+		  <Action>Toggle Activation</Action>
+		  <Keys>
+			<Key>115</Key>
+		  </Keys>
+		  <ID>0</ID>
+		</Hotkey>
+	  </Hotkeys>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>200</ID>
+	  <Description>"Cash (Money) Multiplier / Infinite Cash (Money) (Enable After Loading Save/Starting New Game, Not At Title Menu)"</Description>
+	  <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+tGPMult = createTimer(nil, false)
+tGPMult.OnTimer = function(fGPMult)
+
+  local PotchOffset = getAddressSafe("PotchOffset")
+  local GPMult = ReadQword(getAddress(getAddress("GPMultiplier")))
+  local GPInitialized = ReadQword(getAddress("GPInitialized"))
+  local GPSaved = getAddress("SavedGP")
+  local InfGP = ReadQword(getAddress("InfiniteGP"))
+  
+  if (PotchOffset ~= nil) then
+	if (PotchOffset ~= 0) then
+
+	  if (GPInitialized == 0) then
+		 WriteInteger(getAddress("GPInitialized"),1)
+		 WriteInteger(GPSaved,ReadInteger(PotchOffset))
+	  else
+		local GPDifference = ReadInteger(PotchOffset) - ReadInteger(GPSaved)
+		if (GPDifference &lt;= 0) then
+		  if (InfGP == 1) then
+			WriteInteger(PotchOffset,ReadInteger(GPSaved))
+		  else
+			WriteInteger(GPSaved,ReadInteger(PotchOffset))
+		  end
+		else
+		  local GPMultiplied = GPDifference * GPMult
+		  local NewGP = ReadInteger(GPSaved) + GPMultiplied
+		  WriteInteger(PotchOffset,NewGP)
+		  WriteInteger(GPSaved,NewGP)
+		end
+	  end		  
+
+	end
+  end
+
+end
+tGPMult.Interval = 250
+tGPMult.Enabled = true
+
+{$asm}
+
+[DISABLE]
+{$lua}
+
+tGPMult.Destroy()
+WriteInteger(getAddress("GPInitialized"),0)
+
+{$asm}
+</AssemblerScript>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>201</ID>
+	  <Description>"Infinite Cash (Money)"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>InfiniteGP</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>202</ID>
+	  <Description>"Cash (Money) Multiplier"</Description>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>GPMultiplier</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>225</ID>
+	  <Description>"Enable MAGIC Stat Multiplier (Enable After Loading Save/Starting New Game, Not At Title Menu)"</Description>
+	  <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+WriteInteger(getAddressSafe("MAGICInitialized"),0)
+
+tMAGICMult = createTimer(nil, false)
+tMAGICMult.OnTimer = function(fMAGICMult)
+
+  local MAGICMult = ReadFloat(getAddressSafe("MAGICMultiplier"))
+  local MAGICInitialized = ReadInteger(getAddressSafe("MAGICInitialized"))
+  local MAGICSaved = getAddressSafe("SavedMAGIC")
+  local CharacterInfoNumPartyMembers = ReadInteger(getAddressSafe("CharacterInfoNumPartyMembers"))
+  local CharacterInfoOffset = ReadInteger(getAddressSafe("CharacterInfoOffset"))
+  local CurrentPartyEXPPtr = getAddressSafe("FirstPartyEXP")
+  --local OurBasePtr = ReadPointer(getAddressSafe("OurBasePtr"))
+  
+  if (CurrentPartyEXPPtr ~= nil) then
+	if (CurrentPartyEXPPtr ~= 0) then
+
+	  if (MAGICInitialized == 0) then
+		WriteInteger(getAddress("MAGICInitialized"),1)
+		local ourindex = 0
+		 
+		while (ourindex &lt; CharacterInfoNumPartyMembers) do
+			local CurrentMAGIC = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex * 0x8C) + 0x20)
+			if (CurrentMAGIC &lt; 0) then
+				CurrentMAGIC = 32767 + CurrentMAGIC + 1
+			end			
+			WriteSmallInteger(MAGICSaved + (ourindex * 0x02),CurrentMAGIC)
+			
+			ourindex = ourindex + 1
+		end
+	  else
+		local ourindex2 = 0
+		 
+		while (ourindex2 &lt; CharacterInfoNumPartyMembers) do
+			local CurrentMAGIC = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x20)
+			if (CurrentMAGIC &lt; 0) then
+				CurrentMAGIC = 32767 + CurrentMAGIC + 1
+			end
+			local CurrentSavedMAGIC = ReadSmallInteger(MAGICSaved + (ourindex2 * 0x02))
+			if (CurrentSavedMAGIC &lt; 0) then
+				CurrentSavedMAGIC = 32767 + CurrentSavedMAGIC + 1
+			end
+			
+			if (CurrentMAGIC ~= CurrentSavedMAGIC) then
+				local DoneUpdating = 0
+				local OldMAGIC = CurrentMAGIC
+				
+				while (DoneUpdating == 0) do
+					sleep(50)
+					local CurrentMAGIC2 = ReadBytes(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x20)
+					if (CurrentMAGIC2 == OldMAGIC) then
+						DoneUpdating = 1
+					else
+						OldMAGIC = CurrentMAGIC2
+					end
+				end
+			end
+
+			-- Get Last Value After Everything Is Done
+			CurrentMAGIC = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x20)
+			if (CurrentMAGIC &lt; 0) then
+				CurrentMAGIC = 32767 + CurrentMAGIC + 1
+			end
+			
+			local MAGICDifference = CurrentMAGIC - CurrentSavedMAGIC
+			if (MAGICDifference &gt; 0) then
+				--print(string.format("MAGICDifference = %d, CurrentSavedMAGIC = %d",MAGICDifference,CurrentSavedMAGIC))
+				local MAGICMultiplied1 = MAGICDifference * MAGICMult
+				local MAGICMultiplied = math.ceil(MAGICMultiplied1)
+				local NewMAGIC = CurrentSavedMAGIC + MAGICMultiplied
+				if (NewMAGIC &gt; 999) then
+					NewMAGIC = 999
+				end
+				WriteSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x20,NewMAGIC)
+				WriteSmallInteger(MAGICSaved + (ourindex2 * 0x02),NewMAGIC)
+			end
+			
+			ourindex2 = ourindex2 + 1
+		end
+	  end		  
+
+	end
+  end
+
+end
+tMAGICMult.Interval = 100
+tMAGICMult.Enabled = true
+
+{$asm}
+
+[DISABLE]
+{$lua}
+
+tMAGICMult.destroy()
+
+{$asm}
+
+</AssemblerScript>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>226</ID>
+	  <Description>"Due to how the game calculates MAGIC stats such as Rune Use/How Many Runes Available"</Description>
+	  <VariableType>Float</VariableType>
+	  <Address>MAGICMultiplier</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>226</ID>
+	  <Description>"It is best not to use an instant level 99 code with the multiplier"</Description>
+	  <VariableType>Float</VariableType>
+	  <Address>MAGICMultiplier</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>226</ID>
+	  <Description>"The game will update things on next level up with the new MAGIC stat"</Description>
+	  <VariableType>Float</VariableType>
+	  <Address>MAGICMultiplier</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>226</ID>
+	  <Description>"MAGIC Stat Increase Multiplier"</Description>
+	  <VariableType>Float</VariableType>
+	  <Address>MAGICMultiplier</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>230</ID>
+	  <Description>"Enable Char SP Multiplier (Enable After Loading Save/Starting New Game, Not At Title Menu)"</Description>
+	  <Options moHideChildren="1"/>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+{$lua}
+
+WriteInteger(getAddressSafe("CharSPInitialized"),0)
+
+tCharSPMult = createTimer(nil, false)
+tCharSPMult.OnTimer = function(fCharSPMult)
+
+  local CharSPMult = ReadFloat(getAddressSafe("CharSPMultiplier"))
+  local CharSPInitialized = ReadInteger(getAddressSafe("CharSPInitialized"))
+  local CharSPSaved = getAddressSafe("SavedCharSP")
+  local CharacterInfoNumPartyMembers = ReadInteger(getAddressSafe("CharacterInfoNumPartyMembers"))
+  local CharacterInfoOffset = ReadInteger(getAddressSafe("CharacterInfoOffset"))
+  local CurrentPartyEXPPtr = getAddressSafe("FirstPartyEXP")
+  --local OurBasePtr = ReadPointer(getAddressSafe("OurBasePtr"))
+  
+  if (CurrentPartyEXPPtr ~= nil) then
+	if (CurrentPartyEXPPtr ~= 0) then
+
+	  if (CharSPInitialized == 0) then
+		WriteInteger(getAddress("CharSPInitialized"),1)
+		local ourindex = 0
+		 
+		while (ourindex &lt; CharacterInfoNumPartyMembers) do
+			local CurrentCharSP = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex * 0x8C) + 0x00)
+			if (CurrentCharSP &lt; 0) then
+				CurrentCharSP = 32767 + CurrentCharSP + 1
+			end			
+			WriteSmallInteger(CharSPSaved + (ourindex * 0x02),CurrentCharSP)
+			
+			ourindex = ourindex + 1
+		end
+	  else
+		local ourindex2 = 0
+		 
+		while (ourindex2 &lt; CharacterInfoNumPartyMembers) do
+			local CurrentCharSP = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x00)
+			if (CurrentCharSP &lt; 0) then
+				CurrentCharSP = 32767 + CurrentCharSP + 1
+			end
+			local CurrentSavedCharSP = ReadSmallInteger(CharSPSaved + (ourindex2 * 0x02))
+			if (CurrentSavedCharSP &lt; 0) then
+				CurrentSavedCharSP = 32767 + CurrentSavedCharSP + 1
+			end
+			
+			if (CurrentCharSP ~= CurrentSavedCharSP) then
+				local DoneUpdating = 0
+				local OldCharSP = CurrentCharSP
+				
+				while (DoneUpdating == 0) do
+					sleep(50)
+					local CurrentCharSP2 = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x00)
+					if (CurrentCharSP2 == OldCharSP) then
+						DoneUpdating = 1
+					else
+						OldCharSP = CurrentCharSP2
+					end
+				end
+			end
+
+			-- Get Last Value After Everything Is Done
+			CurrentCharSP = ReadSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x00)
+			if (CurrentCharSP &lt; 0) then
+				CurrentCharSP = 32767 + CurrentCharSP + 1
+			end
+			
+			local CharSPDifference = CurrentCharSP - CurrentSavedCharSP
+			if (CharSPDifference &gt; 0) then
+				--print(string.format("CharSPDifference = %d, CurrentSavedCharSP = %d",CharSPDifference,CurrentSavedCharSP))
+				local CharSPMultiplied1 = CharSPDifference * CharSPMult
+				local CharSPMultiplied = math.ceil(CharSPMultiplied1)
+				local NewCharSP = CurrentSavedCharSP + CharSPMultiplied
+				if (NewCharSP &gt; 9999) then
+					NewCharSP = 9999
+				end
+				WriteSmallInteger(CurrentPartyEXPPtr + (ourindex2 * 0x8C) + 0x00,NewCharSP)
+				WriteSmallInteger(CharSPSaved + (ourindex2 * 0x02),NewCharSP)
+			else
+				if (CharSPDifference &lt; 0) then
+					WriteSmallInteger(CharSPSaved + (ourindex2 * 0x02),CurrentCharSP)
+				end
+			end
+			
+			ourindex2 = ourindex2 + 1
+		end
+	  end		  
+
+	end
+  end
+
+end
+tCharSPMult.Interval = 100
+tCharSPMult.Enabled = true
+
+{$asm}
+
+[DISABLE]
+{$lua}
+
+tCharSPMult.destroy()
+
+{$asm}
+
+</AssemblerScript>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>231</ID>
+	  <Description>"Char SP Increase Multiplier"</Description>
+	  <VariableType>Float</VariableType>
+	  <Address>MAGICMultiplier</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>320</ID>
+	  <Description>"Infinite Equipped Item"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>InfiniteItem</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>322</ID>
+	  <Description>"Infinite Rune Use (Battle and Out of Battle)"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>InfiniteRuneUse</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>323</ID>
+	  <Description>"Quick Level Gain (Set XP to 999)"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>QuickLevelGain</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>324</ID>
+	  <Description>"Set SP All Party To 5000"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>SetSPAllParty</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>325</ID>
+	  <Description>"Set Skills To SS (All Party Members)"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>SetAllSkillsToSS</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>326</ID>
+	  <Description>"Set All Characters PDF To Max"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>SetAllPDFToMax</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>327</ID>
+	  <Description>"Set All Characters MDF To Max"</Description>
+	  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0:Off
+1:On
+</DropDownList>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>SetAllMDFToMax</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>301</ID>
+	  <Description>"Infinite HP (In-Battle)"</Description>
+	  <VariableType>Auto Assembler Script</VariableType>
+	  <AssemblerScript>[ENABLE]
+
+aobscanregion(InfiniteHPNormalBattlesAOB,[OurBasePtr]+C0300,[OurBasePtr]+C0328,00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00)
+registersymbol(InfiniteHPNormalBattlesAOB)
+
+aobscanregion(InfiniteHPNormalBattlesAOB2,[OurBasePtr]+17FD16C,[OurBasePtr]+17FD17C,5A 71 5F 0C 0C 00 A0 AF)
+registersymbol(InfiniteHPNormalBattlesAOB2)
+
+InfiniteHPNormalBattlesAOB:
+  db 2D A8 E0 03 28 71 5F 0C 0F 27 01 34 04 00 40 10 00 00 00 00 2A 00 45 90
+
+InfiniteHPNormalBattlesAOB+1C:
+  db 0A A0 05 00
+
+InfiniteHPNormalBattlesAOB+20:
+  db 5A 71 5F 08 2D F8 A0 02
+
+InfiniteHPNormalBattlesAOB2:
+  db C0 00 03 0C
+  
+[DISABLE]
+
+InfiniteHPNormalBattlesAOB:
+  db 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+InfiniteHPNormalBattlesAOB2:
+  db 5A 71 5F 0C
+
+unregistersymbol(InfiniteHPNormalBattlesAOB)
+unregistersymbol(InfiniteHPNormalBattlesAOB2)
+</AssemblerScript>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>410</ID>
+	  <Description>"Cash (Money)"</Description>
+	  <VariableType>4 Bytes</VariableType>
+	  <Address>PotchOffset</Address>
+	</CheatEntry>
+	<CheatEntry>
+	  <ID>500</ID>
+	  <Description>"[Character Editor]"</Description>
+	  <Options moHideChildren="1"/>
+	  <GroupHeader>1</GroupHeader>
+	  <CheatEntries>
+		<CheatEntry>
+		  <ID>510</ID>
+		  <Description>"Character"</Description>
+		  <DropDownList DescriptionOnly="1" DisplayValueAsItem="1">0834:Ace
+0578:Aila
+166C:Alanis
+238C:Augustine
+143C:Ayame
+120C:Bazba
+094C:Beecham
+189C:Belle
+0A64:Borus
+1068:Bright
+0F50:Cecile
+008C:Chris
+0C94:Duke
+10F4:Dupa
+2648:Edge
+0DAC:Elaine
+2878:Emily
+2760:Estella
+1324:Franz
+0230:Fred
+03D4:Fubar
+0FDC:Futch
+1E14:GadgetZ
+0D20:Gau
+0118:Geddoe
+1ACC:Guillaume
+21E8:Hallec
+0000:Hugo
+0B7C:Jacques
+1D88:Jimba
+0C08:Joker
+1A40:Juan
+2274:Kenji
+19B4:Koroku
+2418:Landis
+08C0:Leo
+0690:Lilly
+1EA0:Luc
+01A4:Lucia
+04EC:Lulu
+1928:Mel
+15E0:Melvil
+1BE4:Mua
+1810:Nash
+2044:Nei
+0E38:Nicolas
+09D8:Percival
+1B58:Piccolo
+0AF0:Queen
+071C:Reed
+1784:Rhett
+02BC:Rico
+27EC:Rody
+0604:Roland
+13B0:Ruby
+14C8:Salome
+07A8:Samus
+24A4:Sanae Y
+1FB8:Sarah
+1298:Sasarai
+0460:Sgt. Joe
+215C:Shabon
+2530:Sharon
+1180:Shiba
+0EC4:Thomas
+20D0:Toppo
+2300:Twaikin
+25BC:Viki 2
+0348:Viki 1
+26D4:Wan Fu
+1554:Watari
+16F8:Wilder
+1F2C:Yuber
+1C70:Yuiri
+1CFC:Yumi
+</DropDownList>
+		  <ShowAsHex>1</ShowAsHex>
+		  <VariableType>2 Bytes</VariableType>
+		  <Address>iPartySlot</Address>
+		  <CheatEntries>
+			<CheatEntry>
+			  <ID>520</ID>
+			  <Description>"Experience"</Description>
+			  <VariableType>2 Bytes</VariableType>
+			  <Address>FirstPartyExpPtr</Address>
+			  <Offsets>
+				<Offset>[iPartySlot]-4</Offset>
+			  </Offsets>
+			</CheatEntry>
+			<CheatEntry>
+			  <ID>521</ID>
+			  <Description>"SP"</Description>
+			  <VariableType>2 Bytes</VariableType>
+			  <Address>FirstPartyExpPtr</Address>
+			  <Offsets>
+				<Offset>[iPartySlot]+0</Offset>
+			  </Offsets>
+			</CheatEntry>
+			<CheatEntry>
+			  <ID>1510</ID>
+			  <Description>"[Character Attributes]"</Description>
+			  <Options moHideChildren="1"/>
+			  <GroupHeader>1</GroupHeader>
+			  <CheatEntries>
+				<CheatEntry>
+				  <ID>1515</ID>
+				  <Description>"Cur HP"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+2C</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1516</ID>
+				  <Description>"Max HP"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+2E</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1520</ID>
+				  <Description>"PWR"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+1C</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1530</ID>
+				  <Description>"SKL"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+1E</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1540</ID>
+				  <Description>"MAG"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+20</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1550</ID>
+				  <Description>"RPL"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+22</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1560</ID>
+				  <Description>"PDF"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+24</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1570</ID>
+				  <Description>"MDF"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+26</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1580</ID>
+				  <Description>"SPD"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+28</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>1590</ID>
+				  <Description>"LUK"</Description>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyExpPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+2A</Offset>
+				  </Offsets>
+				</CheatEntry>
+			  </CheatEntries>
+			</CheatEntry>
+			<CheatEntry>
+			  <ID>1400</ID>
+			  <Description>"[Equipped Items] (Save and Load Game To See Changes)"</Description>
+			  <Options moHideChildren="1"/>
+			  <GroupHeader>1</GroupHeader>
+			  <CheatEntries>
+				<CheatEntry>
+				  <ID>522</ID>
+				  <Description>"Equipped Helm"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-1A</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>523</ID>
+				  <Description>"Equipped Armor"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-12</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>524</ID>
+				  <Description>"Equipped Shield"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-A</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>524</ID>
+				  <Description>"Equipped Misc 1"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-2</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>525</ID>
+				  <Description>"Equipped Misc 1 Quantity"</Description>
+				  <VariableType>Byte</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>526</ID>
+				  <Description>"Equipped Misc 2"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+6</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>527</ID>
+				  <Description>"Equipped Misc 2 Quantity"</Description>
+				  <VariableType>Byte</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+8</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>528</ID>
+				  <Description>"Equipped Misc 3"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+E</Offset>
+					</Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>529</ID>
+				  <Description>"Equipped Misc 3 Quantity"</Description>
+				  <VariableType>Byte</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]+10</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>530</ID>
+				  <Description>"Head Rune"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-32</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>531</ID>
+				  <Description>"Right Hand Rune"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-2A</Offset>
+				  </Offsets>
+				</CheatEntry>
+				<CheatEntry>
+				  <ID>532</ID>
+				  <Description>"Left Hand Rune"</Description>
+				  <DropDownList DisplayValueAsItem="1">0000:Nothing
+0001:Medicine D
+0002:Medicine C
+0003:Medicine B
+0004:Medicine A
+0005:Mega Medicine D
+0006:Mega Medicine C
+0007:Mega Medicine B
+0008:Mega Medicine A
+0009:Antitoxin
+000A:Throat Drops
+000B:Stone Of Power
+000C:Stone Of Skill
+000D:Stone Of Magic
+000E:Stone Of Evasion
+000F:Stone Of Mag-Def
+0010:Stone Of Speed
+0011:Stone Of Luck
+0012:Flaming Arrows
+0013:Dancing Flames
+0014:Blazing Wall
+0016:Thunder Runner
+0017:Berserk Blow
+0018:Soaring Bolt
+001A:Wind Of Sleep
+001E:Kindness Drops
+0022:Clay Guardian
+0023:Vengeful Child
+0026:Egg Roll
+0027:Thick Egg Roll
+0028:Scrambled Eggs
+0029:EggsSunnySideUp
+002A:Mayo Egg
+002B:Crab Rice Bowl
+002C:Nukazuke Pickles
+002D:Carrot Cake
+002E:Pickled Cucumber
+002F:Pickled Cabbage
+0030:Super Pickles
+0031:Kimchi
+0032:Tomato Soup
+0033:Tomato Juice
+0034:Cherry Tomato
+0035:Tomato Miso Soup
+0036:Tomato Salad
+0037:Ripe Tomato
+0038:Pork Bun
+0039:Peach Bun
+003A:Salty Bun
+003B:Mapo Bun
+003C:Takoyaki
+003D:Pizza Bun
+003E:ButterSautedClam
+003F:Clam Chowder
+0040:Baked Scallops
+0041:Steamed Clams
+0042:Mayo Shell Fish
+0043:Spicy Clam Soup
+0044:Fried Noodles
+0045:Kid's Meal
+0046:Veggie Noodles
+0047:Thin Noodles
+0048:Okonomiyaki
+0049:Yakisoba
+004A:Skewered Chicken
+004B:Minced Chicken
+004C:ChickenCartilage
+004D:Teriyaki Chicken
+004E:Chicken Salad
+004F:Karaya Chicken
+0050:Ice Cream
+0051:Shaved Ice
+0052:Tomato Ice Cream
+0053:IceCreamTempura
+0054:Fried Ice Cream
+0055:Grenade Ice
+0056:Beef &amp; Potatoes
+0057:Soy Locusts
+0058:Mashed Potatoes
+0059:Sukiyaki
+005A:Surprise Stew
+005B:Spicy Pot Dish
+005C:Cake
+005D:Shortcake
+005E:Butter Cake
+005F:Black Cake
+0060:Cheesecake
+0061:Fire Cake
+0062:Grilled Fish
+0063:Taiyaki
+0064:PreservdMackerel
+0065:Dried Fish
+0066:Muniere
+0067:RedHotGrilldFish
+0068:Gratin
+0069:Apple Gratin
+006A:Salty Gratin
+006B:Crispy Gratin
+006C:Creamed Gratin
+006D:Hot Gratin
+006E:Lunch Box
+006F:Ladies' Lunch
+0070:Rice Meal
+0071:Sashimi Meal
+0072:Fried-Prawn Meal
+0073:Chili Prawn Meal
+0074:Hashed Beef&amp;Rice
+0075:Royal Tot Meal
+0076:Salted Beef
+0077:Peppered Beef
+0078:Mayo Beef
+0079:Curry Rice
+007A:Fried Rice
+007B:Shrimp Pilaf
+007C:Rice With Beans
+007D:Mushroom Rice
+007E:Heavy Pilaf
+007F:Paella
+0080:Ramen
+0081:Cold Ramen
+0082:Salty Ramen
+0083:Soy Sauce Ramen
+0084:Gourmet Ramen
+0085:Spicy Ramen
+0086:Tofu Hot Pot
+0087:Almond Tofu
+0088:Mixed Hot Pot
+0089:Shabu-Shabu
+008A:Dark Hot Pot
+008B:HotBeefTripeStew
+008C:Full Course
+008D:Elf's Course
+008E:Kobold's Course
+008F:Zexen's Course
+0090:Lizard's Course
+0091:Karayan Special
+0092:Special Stew
+0093:Maple Syrup
+0094:Adult Stew
+0095:Clear Soup
+0096:Mild Stew
+0097:Spicy Stew
+0098:Chinese Banquet
+0099:Candy House
+009A:Salty Creation
+009B:Tea Ceremony Set
+009C:Salad Platter
+009D:Flaming Ocean SP
+009E:Sacrificial Jizo
+009F:Dragon Incense
+00A0:Escape Scroll
+00A1:Worn-Out Casque
+00A2:Old Casque
+00A3:Damaged Casque
+00A4:New Casque
+00A5:Fine Casque
+00A6:Blessed Casque
+00A7:Guardian Casque
+00A8:Premier Casque
+00A9:Pale Moon Casque
+00AA:Custom Casque
+00AB:Flame Casque
+00AC:Worn-Out Helm
+00AD:Mole Helm
+00AE:Old Helm
+00AF:Damaged Helm
+00B0:New Helm
+00B1:Fine Helm
+00B2:Blessed Helm
+00B3:Premier Helm
+00B4:Custom Helm
+00B5:Horned Helm
+00B6:Bandana
+00B7:Pointed Hat
+00B8:Tulip Hat
+00B9:Feather Band
+00BA:Silver Hat
+00BB:Feathered Hat
+00BC:Wizard Hat
+00BD:Prosperity Hat
+00BE:Crown Of Destiny
+00BF:Chief's Hat
+00C0:Wind Hat
+00C1:Worn-Out Armor
+00C2:Mole Armor
+00C3:Old Armor
+00C4:Old Flame Armor
+00C5:Damaged Armor
+00C6:New Armor
+00C7:Flame Armor
+00C8:Fine Armor
+00C9:Blood Armor
+00CA:Blessed Armor
+00CB:Armor Of Rage
+00CC:Premier Armor
+00CD:Custom Armor
+00CE:Windspun Armor
+00CF:Wrn-OutChainMail
+00D0:Old Chain Mail
+00D1:OldByakkoChnMl
+00D2:DamagedChainMail
+00D3:New Chain Mail
+00D4:Byakko Chain Mail
+00D5:Earth Chain Mail
+00D6:Fine Chain Mail
+00D7:GuardianChnMl
+00D8:BlessedChainMail
+00D9:TrueByakkoChnMl
+00DA:PremierChainMail
+00DB:CustomChainMail
+00DC:Dragon Scale
+00DD:Patched Leather
+00DE:Old Leather
+00DF:OldLgtngLeather
+00E0:Damaged Leather
+00E1:New Leather
+00E2:Lightning Leather
+00E3:Fine Leather
+00E4:Master Garb
+00E5:Blessed Leather
+00E6:ThndrboltLeather
+00E7:Pale Moon Leather
+00E8:Premier Leather
+00E9:Custom Leather
+00EA:TrueThndrbltLthr
+00EB:Worn-Out Robe
+00EC:Old Robe
+00ED:Old Silver Robe
+00EE:Damaged Robe
+00EF:New Robe
+00F0:Silver Robe
+00F1:Fine Robe
+00F2:Robe Of Destiny
+00F3:Blessed Robe
+00F4:Silver White Robe
+00F5:Robe Of Mist
+00F6:Premier Robe
+00F7:Custom Robe
+00F8:Dream Robe
+00F9:Worn-Out Tunic
+00FA:Old Tunic
+00FB:OldTurtleTunic
+00FC:Damaged Tunic
+00FD:New Tunic
+00FE:Turtle Tunic
+00FF:Fine Tunic
+0100:Ninja Suit
+0101:Blessed Tunic
+0102:BlckWarriorTunic
+0103:TunicOfProsprty
+0104:Premier Tunic
+0105:Custom Tunic
+0106:Taikyoku Tunic
+0107:Wooden Shield
+0108:Iron Shield
+0109:Mole Shield
+010A:Kite Shield
+010B:Mangosh
+010C:Guardian Shield
+010D:Silver Shield
+010E:Chaos Shield
+010F:Earth Shield
+0110:Wooden Shoes
+0111:Sandals
+0112:Boots
+0113:Leather Pumps
+0114:Winged Boots
+0115:Iron Boots
+0116:Iron Heel Shoes
+0117:Evasion Ring
+0118:Resistance Ring
+0119:Counter Ring
+011A:Fire Magic Ring
+011B:Water Magic Ring
+011C:LgtngMagicRing
+011D:Wind Magic Ring
+011E:Earth Magic Ring
+011F:Prosperity Ring
+0120:Chain Attack Ring
+0121:Reflection Ring
+0122:Gloves
+0123:Mole Gloves
+0124:Gauntlet
+0125:Power Gloves
+0126:Gloves Of Destiny
+0127:Engraved Gauntlet
+0128:Iron Fist
+0129:Star Pierce
+012A:Sun Badge
+012B:Belt Of Strength
+012C:Feather Earrings
+012D:Fish Badge
+012E:Water Amulet
+012F:Gold Emblem
+0130:Wind Amulet
+0131:Lightning Amulet
+0132:PaleMoonNecklace
+0133:Flame Amulet
+0134:Blue Ribbon
+0135:Yellow Scarf
+0136:Lion God Ring
+0137:Silver Beak
+0138:Gold Beak
+0139:BladeTailOrnmt
+013A:DragonTailOrnmt
+013B:Rose Brooch
+013C:WhiteRoseBrooch
+013D:Fire
+013E:Rage
+013F:True Fire
+0140:Sword Of Rage
+0141:Lightning
+0142:Thunder
+0143:True Lightning
+0144:Sword Of Thunder
+0145:Wind
+0146:Cyclone
+0147:True Wind
+0148:Sword Of Cyclone
+0149:Water
+014A:Flowing
+014B:True Water
+014C:Earth
+014D:Mother Earth
+014E:True Earth
+014F:Blinking
+0150:Shield
+0151:Pale Gate
+0152:Jongleur
+0153:Phoenix
+0154:Shining Wind
+0155:Double Tusk
+0156:Eight-Devil
+0157:Ripple
+0158:Boronda Hawk
+0159:Isshin
+015A:War Horse
+015B:Mallet
+015C:Shining Wing
+015D:Watari Special
+015E:Gadget
+015F:Comet
+0160:Devil's Doll
+0161:Shrike
+0162:Spreading Flame
+0163:Wrath
+0164:Red Rose
+0165:Sickle-Weasel
+0166:Full Moon
+0167:Viper
+0168:Titan
+0169:Unicorn
+016A:Goss
+016B:Lion
+016C:Great Hawk
+016D:Kite
+01B9:Champion's
+01BA:Killer
+01BB:Counter
+01BC:Gale
+01BD:Sunbeam
+01BE:Wall
+01BF:Haziness
+01C0:Drain
+01C1:Barrier
+01C2:Balance
+01C3:Fire Sealing
+01C4:Skunk
+01C5:Firefly
+01C6:Medicine
+01C7:Double-Strike
+01C8:Wizard
+01C9:Warrior
+01CA:Waking
+01CB:Alertness
+01CC:Fury
+01CD:Violence
+01CE:Hunter
+01CF:Dragon Statue S
+01D0:Goddess Statue S
+01D1:Knight Statue S
+01D2:Hex Doll S
+01D3:Goddess Statue
+01D4:Knight Statue
+01D5:Peeing Boy
+01D6:Hex Doll
+01D7:Painting: Sunset
+01D8:Painting: Ruins
+01D9:Painting: Knight
+01DA:Painting: Lady
+01DB:Graffiti
+01DC:Scroll Picture
+01DD:Painting: SkyOwl
+01DE:Calerian Urn
+01DF:Wu-Ts'ai Urn
+01E0:Karayan Urn
+01E1:Celadon Urn
+01E2:Failure Urn
+01E3:Gold Urn
+01E4:Wht. Porc. Vase
+01E5:Gentian Vase
+01E6:Potted Cactus
+01E7:Pine Bonsai
+01E8:Plant Vase
+01E9:Rose Vase
+01EA:Plum Bonsai
+01EB:Mini-Cactus
+01EC:Sugar
+01ED:Salt
+01EE:Soy Sauce
+01EF:Mayonnaise
+01F0:Red Pepper
+01F1:Candle
+01F2:Fur
+01F3:Flute
+01F4:Wooden Amulet
+01F5:Native Clothing
+01F6:Holly Berry
+01F7:Wine
+01F8:Deer Antler
+01F9:Book
+01FA:Musk
+01FB:Crystal Ball
+01FC:Pearls
+01FD:Ancient Text
+01FE:Gold Bar
+01FF:Asian Herbs
+0200:Tomato
+0201:Melon
+0202:Grape
+0203:Iron Hammer
+0204:Copper Hammer
+0205:Silver Hammer
+0206:Golden Hammer
+0207:Herb Seeds
+0208:Tomator Seeds
+0209:Melon Seeds
+020A:Grape Seeds
+020B:Medal Set #1
+020C:Medal Set #2
+020D:Medal Set #3
+020E:Medal Set #4
+020F:Medal Set #5
+0210:Recipe #1
+0211:Recipe #2
+0212:Recipe #3
+0213:Recipe #4
+0214:Recipe #5
+0215:Recipe #6
+0216:Recipe #7
+0217:Recipe #8
+0218:Recipe #9
+0219:Recipe #10
+021A:Recipe #11
+021B:Recipe #12
+021C:Recipe #13
+021D:Recipe #14
+021E:Recipe #15
+021F:Recipe #16
+0220:Recipe #17
+0221:Recipe #18
+0222:Recipe #19
+0223:Recipe #20
+0238:Old Book Vol. 1
+0239:Old Book Vol. 2
+023A:Old Book Vol. 3
+023B:Old Book Vol. 4
+023C:Old Book Vol. 5
+023D:Old Book Vol. 6
+023E:Old Book Vol. 7
+023F:Old Book Vol. 8
+0240:Old Book Vol. 9
+0241:Old Book Vol. 10
+0242:Old Book Vol. 11
+0243:Old Book Vol. 12
+0244:Script #1
+0245:Script #2
+0246:Script #3
+0247:Script #4
+0248:Script #5
+0249:Script #6
+024A:Yellow Kennel
+024B:Arabian Kennel
+024C:Blue Kennel
+024D:Orange Kennel
+024E:Castle Kennel
+024F:Beautiful Kennel
+0250:Devil Beads
+0251:Kuzzler Beads
+0252:Moonlight Beads
+0253:Ol. Tree Beads
+0254:Mil Bath Beads
+0255:Toy Duckling
+0256:Toy Duck
+0257:Banshak Sake Set
+0258:Rose Petals
+0259:Citrus
+025A:Toy Boat
+025B:Unchecked Ticket
+025C:Winning Ticket
+025D:Losing Ticket
+025E:Blinking Mirror
+025F:Letter To Zexen
+0260:Pentacle
+0261:LetterTo Knghts
+0262:Bundle
+0263:Screw
+0264:Letter Fragment
+</DropDownList>
+				  <ShowAsHex>1</ShowAsHex>
+				  <VariableType>2 Bytes</VariableType>
+				  <Address>FirstPartyItemOneQtyPtr</Address>
+				  <Offsets>
+					<Offset>[iPartySlot]-22</Offset>
+				  </Offsets>
+				</CheatEntry>
+			  </CheatEntries>
+			</CheatEntry>
+		  </CheatEntries>
+		</CheatEntry>
+	  </CheatEntries>
+	</CheatEntry>
+  </CheatEntries>
+<LuaScript>
+PROCESS_NAME = 'pcsx2-qt.exe'
+--------
+-------- Auto Attach
+--------
+local autoAttachTimer = nil ---- variable to hold timer object
+local autoAttachTimerInterval = 1 ---- Timer intervals are in milliseconds
+local autoAttachTimerTicks = 0 ---- variable to count number of times the timer has run
+local autoAttachTimerTickMax = 0 ---- Set to zero to disable ticks max
+local function autoAttachTimer_tick(timer) ---- Timer tick call back
+        ---- Destroy timer if max ticks is reached
+	if autoAttachTimerTickMax > 0 and autoAttachTimerTicks >= autoAttachTimerTickMax then
+		timer.destroy()
+	end
+        ---- Check if process is running
+	if getProcessIDFromProcessName(PROCESS_NAME) ~= nil then
+		timer.destroy() ---- Destroy timer
+		openProcess(PROCESS_NAME) ---- Open the process
+		pause()
+		local EnumChildWindowsPtr = getAddressSafe("EnumChildWindows")
+		WriteBytes(EnumChildWindowsPtr,0xC3)
+		unpause()
+	end
+	autoAttachTimerTicks = autoAttachTimerTicks + 1 ---- Increase ticks
+end
+autoAttachTimer = createTimer(getMainForm()) ---- Create timer with the main form as it's parent
+autoAttachTimer.Interval = autoAttachTimerInterval ---- Set timer interval
+autoAttachTimer.OnTimer = autoAttachTimer_tick ---- Set timer tick call back
+
+function lua_aobscan(name,module,bytes,index)
+  index = index - 1
+  if(module == "") then
+    local resultSet = AOBScan(bytes)
+      if(resultSet == nil) then
+        unregisterSymbol(name)
+        print(name.." not found")
+      else
+        unregisterSymbol(name)
+        registerSymbol(name,resultSet[index])
+        resultSet.destroy()
+      end
+  else
+    if(getModuleSize(module) == nil) then
+      print("Module "..module.." not found")
+    else
+      local memScanner = createMemScan()
+      local memFoundList = createFoundList(memScanner)
+      memScanner.firstScan(
+        soExactValue,vtByteArray,rtRounded,bytes,nil,
+        getAddress(module),(getAddress(module)+getModuleSize(module)),"",
+        fsmNotAligned,"",true,false,false,false)
+      memScanner.waitTillDone()
+      memFoundList.initialize()
+        if(memFoundList.Count == 0) then
+          unregisterSymbol(name)
+          print(name.." in module "..module.." not found")
+        else
+          unregisterSymbol(name)
+          registerSymbol(name,memFoundList.Address[index])
+        end
+      memScanner.destroy()
+      memFoundList.destroy()
+    end
+  end
+end
+
+function lua_aobscan_2(name,module,bytes,index,overridemodulesize)
+  index = index - 1
+  if(module == "") then
+    local resultSet = AOBScan(bytes)
+      if(resultSet == nil) then
+        unregisterSymbol(name)
+        print(name.." not found")
+      else
+        unregisterSymbol(name)
+        registerSymbol(name,resultSet[index])
+        resultSet.destroy()
+      end
+  else
+    if(getModuleSize(module) == nil) then
+      print("Module "..module.." not found")
+    else
+      local memScanner = createMemScan()
+      local memFoundList = createFoundList(memScanner)
+      memScanner.firstScan(
+        soExactValue,vtByteArray,rtRounded,bytes,nil,
+        getAddress(module),(getAddress(module)+overridemodulesize),"",
+        fsmNotAligned,"",true,false,false,false)
+      memScanner.waitTillDone()
+      memFoundList.initialize()
+        if(memFoundList.Count == 0) then
+          unregisterSymbol(name)
+          print(name.." in module "..module.." not found")
+        else
+          unregisterSymbol(name)
+          registerSymbol(name,memFoundList.Address[index])
+        end
+      memScanner.destroy()
+      memFoundList.destroy()
+    end
+  end
+end
+
+function lua_aobscan_last(name,module,bytes)
+  if(module == "") then
+    local resultSet = AOBScan(bytes)
+      if(resultSet == nil) then
+        unregisterSymbol(name)
+        print(name.." not found")
+      else
+        unregisterSymbol(name)
+        registerSymbol(name,resultSet[#resultSet])
+        resultSet.destroy()
+      end
+  else
+    if(getModuleSize(module) == nil) then
+      print("Module "..module.." not found")
+    else
+      local memScanner = createMemScan()
+      local memFoundList = createFoundList(memScanner)
+      memScanner.firstScan(
+        soExactValue,vtByteArray,rtRounded,bytes,nil,
+        getAddress(module),(getAddress(module)+getModuleSize(module)),"",
+        fsmNotAligned,"",true,false,false,false)
+      memScanner.waitTillDone()
+      memFoundList.initialize()
+        if(memFoundList.Count == 0) then
+          unregisterSymbol(name)
+          print(name.." in module "..module.." not found")
+        else
+          unregisterSymbol(name)
+          registerSymbol(name,memFoundList.Address[memFoundList.Count-1])
+        end
+      memScanner.destroy()
+      memFoundList.destroy()
+    end
+  end
+end
+
+function lua_aobscan_last_2(name,module,bytes,overridemodulesize)
+  if(module == "") then
+    local resultSet = AOBScan(bytes)
+      if(resultSet == nil) then
+        unregisterSymbol(name)
+        print(name.." not found")
+      else
+        unregisterSymbol(name)
+        registerSymbol(name,resultSet[#resultSet])
+        resultSet.destroy()
+      end
+  else
+    if(getModuleSize(module) == nil) then
+      print("Module "..module.." not found")
+    else
+      local memScanner = createMemScan()
+      local memFoundList = createFoundList(memScanner)
+      memScanner.firstScan(
+        soExactValue,vtByteArray,rtRounded,bytes,nil,
+        getAddress(module),(getAddress(module)+overridemodulesize),"",
+        fsmNotAligned,"",true,false,false,false)
+      memScanner.waitTillDone()
+      memFoundList.initialize()
+        if(memFoundList.Count == 0) then
+          unregisterSymbol(name)
+          print(name.." in module "..module.." not found")
+        else
+          unregisterSymbol(name)
+          registerSymbol(name,memFoundList.Address[memFoundList.Count-1])
+        end
+      memScanner.destroy()
+      memFoundList.destroy()
+    end
+  end
+end
+
+-- Function By DrummerIX to find the address of an AOB that matches a particular name
+-- as there are times when CE shows a name, but you cannot go to that address by using
+-- the name by default, so we use this as a workaround
+-- It expects a name to register the found address, a module name (can be blank), the bytes to search, and the name to match
+function lua_aobscan_find_method(name,module,bytes,method_name)
+  if(module == "") then
+    local resultSet = AOBScan(bytes)
+      if(resultSet == nil) then
+        unregisterSymbol(name)
+        print(name.." not found")
+      else
+	    -- Go Through Results Looking For method_name
+		for i=0,resultSet.Count-1 do
+			local CurrentAddress = resultSet[i]
+			local CurrentName = getNameFromAddress(CurrentAddress)
+			if CurrentName ~= nil then
+				if CurrentName == method_name then
+					unregisterSymbol(name)
+					registerSymbol(name,CurrentAddress)
+				end
+			end
+		end
+		resultSet.destroy()	
+      end
+  else
+    if(getModuleSize(module) == nil) then
+      print("Module "..module.." not found")
+    else
+      local memScanner = createMemScan()
+      local memFoundList = createFoundList(memScanner)
+      memScanner.firstScan(
+        soExactValue,vtByteArray,rtRounded,bytes,nil,
+        getAddress(module),(getAddress(module)+getModuleSize(module)),"",
+        fsmNotAligned,"",true,false,false,false)
+      memScanner.waitTillDone()
+      memFoundList.initialize()
+        if(memFoundList.Count == 0) then
+          unregisterSymbol(name)
+          print(name.." in module "..module.." not found")
+        else
+		  -- Go Through Results Looking For method_name
+		  for i=0,memFoundList.Count-1 do
+			local CurrentName = getNameFromAddress(memFoundList.Address[i])
+			if CurrentName ~= nil then
+				if CurrentName == method_name then
+				  unregisterSymbol(name)
+				  registerSymbol(name,memFoundList.Address[i])
+				end
+			end
+		  end
+        end
+      memScanner.destroy()
+      memFoundList.destroy()
+    end
+  end
+end
+
+-- code by FreeER
+function getFields(param)
+  -- simplified 'classname' or 'namespace:classname' input
+  -- obviously you could just change the code to pass findClass's result
+  --local namespace,classname = param:match('(%w+):?(%w*)')
+  -- DrummerIX modified the Regex for match to account for periods in classnames (we want everything before : and then everything after :)
+  local namespace,classname = param:match('([%w%d%.]*):?([%w%d%.]*)')
+  
+  if not classname or classname == '' then namespace, classname = '', namespace end
+  local class=mono_findClass(namespace, classname)
+  local fields=mono_class_enumFields(class)
+  local result = {}
+  for _, field in ipairs(fields) do
+    local keyfieldname = field.name:gsub("&lt;","_"):gsub("&gt;","_")
+	--print(namespace,classname,keyfieldname)
+    result[keyfieldname] = field.offset
+  end
+  return result
+end
+
+-- Functions By Panraven for mono finding method by signature
+function reEscape(s)
+  local escPatChars = [[().%+-*?[^]]
+  s = s:gsub('.',function(c) if escPatChars:find(c,1,true) then return '%'..c end end)
+  return s
+end
+
+function findMethodAddrBySignature(namespace,classname,methodname,signature,check)
+  local meth = findMethodBySignature(namespace,classname,methodname,signature,check)
+  if meth~=nil and meth>0 then
+    return mono_compile_method(meth)
+  end
+end
+
+function findMethodBySignature(namespace,classname,methodname,signature,check)
+  assert(type(signature)=='string',"invalid signature")
+  signature="^"..reEscape(signature:gsub(";",","))
+  local class = mono_findClass(namespace,classname)
+  if type(class)~='number' or class==0 then return nil end
+  local methods=mono_class_enumMethods(class)
+  if type(methods)~='table' or #methods &lt; 1 then return nil end
+  if check then  print('check:'..methodname..": &lt;"..signature.."&gt; vs ") end
+  for i=1,#methods do
+   if methodname == methods[i].name then
+     local sign = mono_method_getSignature(methods[i].method)
+     if check then  print("  &gt;&gt; &lt;"..sign..'&gt;') end
+     if sign:match(signature) then
+       return methods[i].method
+     end
+   end
+  end
+end
+
+-- Test
+function tohex(n)return string.format('%X',n or 0)end 
+
+-- test
+--print('--') -- test to show/print all signature of a given function name
+--print(tohex(findMethodAddrBySignature('Assembly-CSharp','CommissionFactory','GenerateCommissionsFrequently','?',true)))
+--print('--') -- test to match a specific (third) signature of a function name
+--print(tohex(findMethodAddrBySignature('Assembly-CSharp','CommissionFactory','GenerateCommissionsFrequently','bool$',true)))
+-- the last '$' is lua match end-of-string, wthout this, the match MAY succeed on fourth one.
+-- all other character should be compare as is, including upper/lower cases.
+
+-----------------------------------------------------------------------------------------------
+--- Things below here deal with the Save and Load of Trainer Values
+-----------------------------------------------------------------------------------------------
+--- Global List Variables For Use In Save and Load Trainer State
+SaveSymbolList = {}
+
+PerformActivateList = {}
+
+CurrentlyActivatingList = {}
+
+CurrentSlotDescriptions = {}
+
+DoNotSaveDescriptions = {
+"Save Current Trainer Values",
+"Load Current Trainer Values",
+"Change Slot Config Description"
+}
+
+-- Global Variable For Our SubFolder To Store Configs In
+sConfigSubFolder = "\\CheatEvolution\\"
+
+--- Global Variables To Deal With Our Handler Function
+bPerformSaveTrainerValues = 0
+bPerformLoadTrainerValues = 0
+bPerformActivateTrainerCheats = 0
+bFinishedActivateTrainerCheats = 1
+
+bUnableToCreateFolder = 0
+
+--- Global Variable Dealing With Save Config Slot #
+iSaveConfigSlot = 1
+iMaxSaveConfigSlots = 10
+
+function LoadTrainerValues()
+
+	-- First We Ask What Slot They Want To Load
+	local mySL = CreateStringList()
+	for i,j in ipairs(CurrentSlotDescriptions) do
+		mySL.add(j)
+	end		
+
+	local result = showSelectionList('Load Trainer Values', 'Which Config Slot', mySL, false)
+
+	mySL.destroy()
+	
+	if result ~= nil then
+		if result ~= -1 then
+			iSaveConfigSlot = result + 1
+			bPerformLoadTrainerValues = 1
+			bPerformActivateTrainerCheats = 1
+			bFinishedActivateTrainerCheats = 0
+		end
+	end
+
+end
+
+function SaveTrainerValues()
+
+	-- First We Ask What Slot They Want To Load
+	local mySL = CreateStringList()
+	for i,j in ipairs(CurrentSlotDescriptions) do
+		mySL.add(j)
+	end		
+	
+	local result = showSelectionList('Save Trainer Values', 'Which Config Slot', mySL, false)
+	
+	mySL.destroy()
+	
+	if result ~= nil then
+		if result ~= -1 then
+			iSaveConfigSlot = result + 1
+			bPerformSaveTrainerValues = 1
+		end
+	end
+
+end
+	
+function WriteOutCurrentSlotDescriptions()
+
+	local baseFileName = nil
+
+	if (process ~= nil) then
+		if (string.find(string.reverse(process),"[.]") ~= nil) then
+			baseFileName = string.sub(process,1,string.len(string.reverse(process))-string.find(string.reverse(process),"[.]"))	
+		end
+	end
+
+	if (baseFileName ~= nil) then
+	
+		local ourFolder = CheckOurSaveStateFolder()
+		local filename = ourFolder .. baseFileName .. '_Slots.txt'
+	
+		local file = assert(io.open(filename, "w"))
+		for i=1,#CurrentSlotDescriptions do
+			file:write(CurrentSlotDescriptions[i] .. '\n')
+		end
+		file:close()
+	end
+
+end
+
+function ChangeSlotDescription()
+
+	-- First We Ask What Slot They Want To Load
+	local mySL = CreateStringList()
+	for i,j in ipairs(CurrentSlotDescriptions) do
+		mySL.add(j)
+	end		
+
+	local result = showSelectionList('Change Slot Description', 'Which Config Slot', mySL, false)
+	
+	mySL.destroy()
+	
+	if result ~= nil then
+		if result ~= -1 then
+			local myPrompt = 'Current Description for [Slot ' .. string.format("%d",result+1) .. '] is ' .. CurrentSlotDescriptions[result+1]
+			myPrompt = myPrompt .. '\n\nWhat do you want to change it to?'
+			
+			local newDesc = inputQuery('Change Slot Description',myPrompt,CurrentSlotDescriptions[result+1])
+			
+			if newDesc ~= nil then
+				CurrentSlotDescriptions[result+1] = newDesc
+				-- Write Out Our Changes
+				WriteOutCurrentSlotDescriptions()
+			end
+		end
+	end
+	
+	-- Deactivate This Memory Record
+	ActivateCheatRecord("Change Slot Config Description")
+	
+end
+
+function InitializeConfigSlotDescriptions()
+
+	local baseFileName = nil
+
+	if (process ~= nil) then
+		if (string.find(string.reverse(process),"[.]") ~= nil) then
+			baseFileName = string.sub(process,1,string.len(string.reverse(process))-string.find(string.reverse(process),"[.]"))	
+		end
+	end
+
+	if (baseFileName ~= nil) then
+		for i=#CurrentSlotDescriptions,1,-1 do
+			table.remove(CurrentSlotDescriptions,i)
+		end
+		
+		local ourFolder = CheckOurSaveStateFolder()
+		local filename = ourFolder .. baseFileName .. '_Slots.txt'
+		
+		if not exists(filename) and (bUnableToCreateFolder == 0) then
+			-- Create Default Slot Descriptions
+			local file = assert(io.open(filename, "w"))
+			for i=1,iMaxSaveConfigSlots do
+				if i == 1 then
+					file:write("Default\n")
+					table.insert(CurrentSlotDescriptions,"Default")
+				else
+					file:write("Slot " .. string.format("%d",i) .. "\n")
+					table.insert(CurrentSlotDescriptions,"Slot " .. string.format("%d",i))
+				end
+			end
+			file:close()
+		else
+			if (bUnableToCreateFolder == 0) then
+				-- Read In Current Slot Descriptions
+				local file = assert(io.open(filename, "r"))
+				for line in file:lines() do
+					table.insert(CurrentSlotDescriptions,line)
+				end
+			end
+		end
+	end
+
+end
+
+-- Functions Found On Internet For Dealing With CSV files
+function string:split(sSeparator, nMax, bRegexp)
+    if sSeparator == '' then
+        sSeparator = ','
+    end
+
+    if nMax and nMax &lt; 1 then
+        nMax = nil
+    end
+
+    local aRecord = {}
+
+    if self:len() > 0 then
+        local bPlain = not bRegexp
+        nMax = nMax or -1
+
+        local nField, nStart = 1, 1
+        local nFirst,nLast = self:find(sSeparator, nStart, bPlain)
+        while nFirst and nMax ~= 0 do
+            aRecord[nField] = self:sub(nStart, nFirst-1)
+            nField = nField+1
+            nStart = nLast+1
+            nFirst,nLast = self:find(sSeparator, nStart, bPlain)
+            nMax = nMax-1
+        end
+        aRecord[nField] = self:sub(nStart)
+    end
+
+    return aRecord
+end
+
+---------------------------------------------------------------------
+function read_csv(path, sep, tonum, null)
+    tonum = tonum or true
+    sep = sep or ','
+    null = null or ''
+    local csvFile = {}
+    local file = assert(io.open(path, "r"))
+    for line in file:lines() do
+        fields = line:split(sep)
+        if tonum then -- convert numeric fields to numbers
+            for i=1,#fields do
+                local field = fields[i]
+                if field == '' then
+                    field = null
+                end
+                fields[i] = tonumber(field) or field
+            end
+        end
+        table.insert(csvFile, fields)
+    end
+    file:close()
+    return csvFile
+end
+
+---------------------------------------------------------------------
+function write_csv(path, data, sep)
+    sep = sep or ','
+    local file = assert(io.open(path, "w"))
+    for i=1,#data do
+        for j=1,#data[i] do
+            if j>1 then file:write(sep) end
+            file:write(data[i][j])
+        end
+        file:write('\n')
+    end
+    file:close()
+end
+
+----- Function Written By DrummerIX for creating our table to write to CSV
+--------------------------------------------------------------------------
+--- It expects a list of symbols to enumerate and get the current value of as a Qword
+function create_symbol_table(list_of_symbols)
+
+  local csvTable = {}
+  for k,v in ipairs(list_of_symbols) do
+	local SymbolPtr = getAddressSafe(v)
+		
+	if (SymbolPtr ~= nil) then
+		if (SymbolPtr ~= 0) then
+           if (ReadBytes(SymbolPtr) ~= nil) then
+			  local line = v
+
+			  for i=0,7 do
+				  local CurrentByte = ReadBytes(SymbolPtr+i)
+
+				  line = line .. "," .. string.format("%d",CurrentByte)
+			  end
+			
+              local fields = line:split(",")
+              for i=1,#fields do
+                  local field = fields[i]
+                  if field == '' then
+                      field = null
+                  end
+                  fields[i] = tonumber(field) or field
+              end
+			  table.insert(csvTable, fields)
+            end
+		end
+	end
+  end
+
+  return csvTable
+end
+
+----- Function Written By DrummerIX for writing our table to current memory
+--------------------------------------------------------------------------
+--- It expects a table either from reading a CSV or create_symbol_table function
+--- to enumerate and write value of as a Qword
+function write_symbol_table(table_of_symbols)
+
+	for i=1,#table_of_symbols do
+		local SymbolPtr = getAddressSafe(table_of_symbols[i][1])
+		
+		if (SymbolPtr ~= nil) then
+			if (SymbolPtr ~= 0) then
+				for j=2,9 do
+					WriteBytes(SymbolPtr + (j-2),table_of_symbols[i][j])
+				end
+			end
+		end
+	end
+
+end
+
+--- Function by panraven dealing with enumerating current symbols
+--- This is helper function because we sometimes don't need every symbol saved and loaded_csv_table
+--- So this gets all symbols and you manually remove those you don't need
+function printUserDefinedSymbols()
+  local mv,sf = getMemoryViewForm()
+  if not mv.frmSymbolhandler then
+    local mvHidden
+    if not mv.Visible then mvHidden=true,mv.Show() end
+    mv.miuserdefinedsymbols:OnClick()
+    if mvHidden then mv.hide()end
+    sf = mv.frmSymbolhandler
+    sf.Hide()
+  else
+    sf = mv.frmSymbolhandler
+  end
+  if sf ~= nil then
+    local symbol
+    for i = 0, sf.Listview1.Items.Count - 1 do
+      symbol = sf.Listview1.Items.Item[i].Caption
+      print('"' .. symbol .. '",')
+    end
+  end
+end 
+
+--- Function Written By DrummerIX for help in activating cheat records in the trainer app
+--- It requires that hotkeys be defined for the cheats
+--- It expects the name of the record to activate
+function ActivateCheatRecord(mr_desc)
+
+	local al = getAddressList()
+
+	local mr = al.getMemoryRecordByDescription(mr_desc)
+	
+	if (mr ~= nil) then
+		for i = 0,mr.HotkeyCount-1 do
+			for j = 1,#mr.Hotkey[i].Keys do
+				keyDown(mr.Hotkey[i].Keys[j])
+			end
+		end
+
+		sleep(5)
+		
+		for i = 0,mr.HotkeyCount-1 do
+			for j = 1,#mr.Hotkey[i].Keys do
+				keyUp(mr.Hotkey[i].Keys[j])
+			end
+		end
+		
+		sleep(5)
+	end
+	
+end
+
+function ToggleActivateCheatRecord(mr_desc)
+
+	local al = getAddressList()
+
+	local mr = al.getMemoryRecordByDescription(mr_desc)
+	
+	if (mr ~= nil) then
+		if mr.Active == true then
+			mr.Active = false
+		else
+			mr.Active = true
+		end
+	end
+	
+end
+
+function CheckCheatRecordActive(mr_desc)
+
+	local al = getAddressList()
+
+	local mr = al.getMemoryRecordByDescription(mr_desc)
+	
+	if (mr ~= nil) then
+		return mr.Active
+	else
+		return false
+	end
+	
+end
+
+function create_active_cheat_list_table()
+
+	local al = getAddressList()
+	
+	local csvTable = {}
+
+	for i = 0,al.Count-1 do
+		if (al.MemoryRecord[i].Active) then
+		   if not (string.find(al.MemoryRecord[i].Description,"Activate Trainer")) then
+				local SaveThisRecord = true
+				for j=1,#DoNotSaveDescriptions do
+					if al.MemoryRecord[i].Description == DoNotSaveDescriptions[j] then
+						SaveThisRecord = false
+					end
+				end
+				if SaveThisRecord then
+					line = al.MemoryRecord[i].Description
+					  
+					local fields = line:split(",")
+					for i=1,#fields do
+						local field = fields[i]
+						if field == '' then
+							field = null
+						end
+						fields[i] = tonumber(field) or field
+					end
+					table.insert(csvTable, fields)  
+				end
+		   end
+		end
+	end
+
+	return csvTable
+end
+
+--- Code from Internet to deal with checking if folder exists
+function exists(file)
+   local ok, err, code = os.rename(file, file)
+   if not ok then
+      if code == 13 then
+         -- Permission denied, but it exists
+         return true
+      end
+   end
+   return ok, err
+end
+
+function isdir(path)
+   -- "/" works on both Unix and Windows
+   return exists(path.."/")
+end
+
+-- Our function to create our save state folder
+function CheckOurSaveStateFolder()
+	local myFolder = os.getenv("USERPROFILE")
+	
+	local ourPath = myFolder .. sConfigSubFolder
+	
+	if (bUnableToCreateFolder == 0) then
+		if not (isdir(myFolder .. sConfigSubFolder)) then
+		   os.execute('mkdir ' .. ourPath)
+		end
+		
+		if not (isdir(myFolder .. sConfigSubFolder)) then
+		   bUnableToCreateFolder = 1
+		   
+		   local MyMessage = string.format("Save and Load Trainer Values will not function\n until you manually create the following folder\n" .. myFolder .. sConfigSubFolder)
+		   showMessage(MyMessage)
+		end		
+	end
+	
+	return ourPath
+end
+-----------------------------------------------------------------
+
+function onMemRecPostExecute(memoryrecord, newState, succeeded)
+
+	for i=1,#PerformActivateList do
+		if memoryrecord.Description == PerformActivateList[i] then
+			table.remove(PerformActivateList,i)
+		end
+	end
+	
+	for j=1,#CurrentlyActivatingList do
+		if memoryrecord.Description == CurrentlyActivatingList[j] then
+			table.remove(CurrentlyActivatingList,j)
+		end
+	end
+
+end
+
+function StartSaveLoadTrainerValuesHandler()
+
+	if (tTrainerValues ~= nil) then
+		tTrainerValues.destroy()
+	end
+	
+	tTrainerValues = createTimer(nil, false)
+	tTrainerValues.OnTimer = function(fTrainerValues)
+	
+		-- Check If CurrentSlotDescriptions Is Empty and Initialize If So
+		if #CurrentSlotDescriptions == 0 then
+			InitializeConfigSlotDescriptions()
+		end
+		
+		local baseFileName = nil
+		
+		if (process ~= nil) then
+			if (string.find(string.reverse(process),"[.]") ~= nil) then
+				baseFileName = string.sub(process,1,string.len(string.reverse(process))-string.find(string.reverse(process),"[.]"))	
+			end
+		end
+		
+		if (baseFileName ~= nil) then
+			-- First, we check for saving values
+			if (bPerformSaveTrainerValues == 1) then
+				bPerformSaveTrainerValues = 0
+				
+				-- First, we save symbols
+				local current_csv_table = create_symbol_table(SaveSymbolList)
+
+				local ourFolder = CheckOurSaveStateFolder()
+				local filename = ourFolder .. baseFileName .. '_Symbols_' .. string.format("%d",iSaveConfigSlot) .. '.txt'
+
+				write_csv(filename,current_csv_table,",")
+				
+				-- Finally, we save current active cheat list
+				local current_active_csv_table = create_active_cheat_list_table()
+				
+				local filename2 = ourFolder .. baseFileName .. '_Active_' .. string.format("%d",iSaveConfigSlot) .. '.txt'
+				
+				write_csv(filename2,current_active_csv_table,",")
+			else
+				if CheckCheatRecordActive("Save Current Trainer Values") then
+					ActivateCheatRecord("Save Current Trainer Values")
+				end	
+			end
+
+			-- Next, we check for loading symbol values which can only be done after loading and activating cheats
+			if (bFinishedActivateTrainerCheats == 1) then
+				if (bPerformLoadTrainerValues == 1) then
+					bPerformLoadTrainerValues = 0
+					
+					local ourFolder = CheckOurSaveStateFolder()
+					local filename = ourFolder .. baseFileName .. '_Symbols_' .. string.format("%d",iSaveConfigSlot) .. '.txt'
+					
+					if exists(filename) then
+						local loaded_csv_table = read_csv(filename,",",true,null)
+
+						if (loaded_csv_table ~= nil) then
+							write_symbol_table(loaded_csv_table)
+						end
+					end
+				end
+			end
+
+			-- Next, we check for loading and activating cheats
+			if (bFinishedActivateTrainerCheats == 0) then
+				if (bPerformActivateTrainerCheats == 1) then
+					bPerformActivateTrainerCheats = 0
+
+					local ourFolder = CheckOurSaveStateFolder()
+					local filename = ourFolder .. baseFileName .. '_Active_' .. string.format("%d",iSaveConfigSlot) .. '.txt'
+					
+					if exists(filename) then
+						local loaded_csv_table = read_csv(filename,",",true,null)
+
+						if (loaded_csv_table ~= nil) then
+							-- First, make sure list is empty
+							for i=#PerformActivateList,1,-1 do
+								table.remove(PerformActivateList,i)
+							end
+							
+							for i=1,#loaded_csv_table do
+								local CurrentDesc = ""
+								for j=1,#loaded_csv_table[i] do
+									if (j &gt; 1) then
+										CurrentDesc = CurrentDesc .. "," .. loaded_csv_table[i][j]
+									else
+										CurrentDesc = CurrentDesc .. loaded_csv_table[i][j]
+									end									
+								end
+								
+								table.insert(PerformActivateList,CurrentDesc)
+							end
+						end	
+					end
+				end
+			end				
+
+			-- Finally, Loop Through The Current PerformActivateList and attempt to activate the cheat
+			if (bFinishedActivateTrainerCheats == 0) then
+				if (#PerformActivateList == 0) then
+					bFinishedActivateTrainerCheats = 1
+				else
+					for i=1,#PerformActivateList do				
+						if not CheckCheatRecordActive(PerformActivateList[i]) then
+							--if #CurrentlyActivatingList == 0 then
+								ToggleActivateCheatRecord(PerformActivateList[i])
+								--table.insert(CurrentlyActivatingList,PerformActivateList[i])
+							--end
+						else
+							table.remove(PerformActivateList,i)
+						end
+					end					
+				end
+			else
+				if CheckCheatRecordActive("Load Current Trainer Values") then
+					ActivateCheatRecord("Load Current Trainer Values")
+				end	
+			end
+			
+		end
+		
+	end
+	tTrainerValues.Interval = 500
+	tTrainerValues.Enabled = true
+
+end
+
+-- Actually Call Our Save and Load Handler function to start up the timer
+StartSaveLoadTrainerValuesHandler()
+
+------------------------------------------------------------------------------------------
+</LuaScript>  
+</CheatTable>

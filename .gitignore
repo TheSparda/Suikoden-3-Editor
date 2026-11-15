@@ -37,10 +37,10 @@ Editor/Suikoden3Editor_decompiled.cs
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
-Saves/
+# Saves/  (tracked as test content)
 
 # local cheat/reference files — not distributed
-Cheat files/
+# Cheat files/  (tracked as test content)
 Guides/
 
 # web test deps
