@@ -273,6 +273,15 @@ export const ATK_LIST = [
   { off: 0x124024, stock: 0x1062000A },
   { off: 0x12402C, stock: 0x50620009 },
 ];
+// Unlimited rune casts (iso.js MPCAST_T1 / MPCAST_T2): the charge-consumption call the
+// Test tab can NOP, and the recompute pair it can force to 9. Planted stock for the same
+// two reasons as ATK_LIST above — the code audit reads them, and the controls read a
+// zero at the tier-1 site as "already NOP-ed".
+export const MP_CAST = [
+  { off: 0x0E1BB8, stock: 0x0C5B228A, patch: 0x00000000 },
+  { off: 0x1106BC, stock: 0x326700FF, patch: 0x24070009 },
+  { off: 0x1106C8, stock: 0x02743823, patch: 0x24070009 },
+];
 // Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
 // the two rounding sweeteners, and the Adrenaline Power pair-sum.
 export const MECH = {
@@ -540,6 +549,7 @@ export function buildSynthIso() {
   for (const d of Object.values(MECH)) w32(d.off, d.stock);
   for (const d of HORSE_CLAMP) w32(d.off, d.stock);
   for (const d of ATK_LIST) w32(d.off, d.stock);
+  for (const d of MP_CAST) w32(d.off, d.stock);
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));

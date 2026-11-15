@@ -12,7 +12,7 @@ import { fileURLToPath } from "url";
 import { chromiumPath, chromiumNote } from "./chromium-path.mjs";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
-  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP, ATK_LIST,
+  MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP, ATK_LIST, MP_CAST,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
@@ -5289,6 +5289,54 @@ if (ON) {
   check("setting it back restores all four stock words",
     ATK_LIST.every((c) => r2.u32(c.off) === c.stock),
     ATK_LIST.map((c) => r2.u32(c.off).toString(16)).join(", "));
+  await page.context().close();
+}
+
+head("Test tab — unlimited rune casts (the charge patches)");
+if (ON) {
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="test"]');
+  await page.waitForSelector('#testTabs [data-t="mpcast"]', { timeout: 3000 });
+  await page.click('#testTabs [data-t="mpcast"]');
+  await page.waitForSelector("#mpT1Sel", { timeout: 3000 });
+  check("tier 1 opens on Stock — the fixture plants the consumption call",
+    (await page.inputValue("#mpT1Sel")) === "0");
+  check("tier 2 opens on Stock — the fixture plants the recompute pair",
+    (await page.inputValue("#mpT2Sel")) === "0");
+  // Tier 1 alone: the consumption call goes, the recompute pair does not move.
+  await page.selectOption("#mpT1Sel", "1"); await page.waitForTimeout(150);
+  const r = await save(page);
+  check("tier 1 NOPs the consumption call", r.u32(MP_CAST[0].off) === MP_CAST[0].patch,
+    r.u32(MP_CAST[0].off).toString(16));
+  check("...and tier 2's pair is untouched",
+    r.u32(MP_CAST[1].off) === MP_CAST[1].stock && r.u32(MP_CAST[2].off) === MP_CAST[2].stock);
+  // The audit carries the switch, so the staged word shows on the switchboard.
+  await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="patches"]'); await page.waitForTimeout(200);
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll("#testView tbody tr")]
+      .filter((tr) => /charge-consumption call/.test(tr.textContent)).length);
+  check("the switchboard lists the staged tier-1 word", rows === 1, String(rows));
+  await page.click('#testTabs [data-t="mpcast"]');
+  await page.waitForSelector("#mpT2Sel", { timeout: 3000 });
+  check("...and tier 1 now reads Free casts", (await page.inputValue("#mpT1Sel")) === "1");
+  // Tier 2 moves its pair together or not at all.
+  await page.selectOption("#mpT2Sel", "1"); await page.waitForTimeout(150);
+  const r2 = await save(page);
+  check("tier 2 writes both words of the recompute pair",
+    r2.u32(MP_CAST[1].off) === MP_CAST[1].patch && r2.u32(MP_CAST[2].off) === MP_CAST[2].patch,
+    MP_CAST.slice(1).map((c) => r2.u32(c.off).toString(16)).join(", "));
+  check("...and tier 1 stays on", r2.u32(MP_CAST[0].off) === MP_CAST[0].patch);
+  await page.click('#isoTabs [data-v="test"]');
+  await page.click('#testTabs [data-t="mpcast"]');
+  await page.waitForSelector("#mpT1Sel", { timeout: 3000 });
+  await page.selectOption("#mpT1Sel", "0"); await page.selectOption("#mpT2Sel", "0");
+  await page.waitForTimeout(150);
+  const r3 = await save(page);
+  check("setting both tiers back restores all three stock words",
+    MP_CAST.every((c) => r3.u32(c.off) === c.stock),
+    MP_CAST.map((c) => r3.u32(c.off).toString(16)).join(", "));
   await page.context().close();
 }
 

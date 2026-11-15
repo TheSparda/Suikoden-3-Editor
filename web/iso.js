@@ -5862,13 +5862,54 @@
     return "unknown";          // partially applied, or not this disc's code
   }
 
+  // ---- unlimited rune casts: stop the charge drain (Test tab) ------------------
+  // A rune's spell charges live in the character record as two byte arrays — current
+  // at +0x38, maximum at +0x3C, one per spell level — and every access goes through
+  // one accessor family. A full census of that family (lab MP_CHARGES.md) found
+  // exactly ONE consumption call in the game: the spell resolver takes one charge of
+  // the cast spell's level as its first act. NOP that call and casts never drain,
+  // while availability keeps its stock meaning — a level is castable exactly when it
+  // is unlocked (maximum > 0), so un-earned levels stay locked and the displayed
+  // counts simply stop dropping. Field casts route through the same resolver and
+  // become free too.
+  //
+  // Tier 2 rewrites the charge recompute instead: the derived-stat recompute sets
+  // each level's maximum from a threshold count and tops the current charges up by
+  // the same delta. Force both arguments to 9 — the engine's own ceiling count —
+  // and every recompute pins every level to 9/9, unlocking levels a character has
+  // not earned. The two words are a pair: either alone is a no-op or a half-measure,
+  // so they are only ever written and restored together. It applies to every
+  // character record the recompute touches, enemy casters included — the recompute
+  // has no player-only branch.
+  //
+  // What is deliberately NOT patched: the accessor's own store and subtract. Every
+  // mode of the accessor — refill, set, recompute — funnels through that one store,
+  // so patching inside it would break rests and setup, not just consumption.
+  // All three stock words byte-verified on a pristine SLUS-20387; neither tier has
+  // been played.
+  const MPCAST_T1 = [
+    { off: 0x0E1BB8, stock: 0x0C5B228A, patch: 0x00000000, what: "spell resolver — the charge-consumption call (jal to the charge accessor, becomes a nop)" },
+  ];
+  const MPCAST_T2 = [
+    { off: 0x1106BC, stock: 0x326700FF, patch: 0x24070009, what: "charge recompute — the set-maximum count (andi, becomes addiu 9)" },
+    { off: 0x1106C8, stock: 0x02743823, patch: 0x24070009, what: "charge recompute — the current-charge top-up (subu, becomes addiu 9)" },
+  ];
+  function mpCastState(words) {
+    if (words.some((c) => !inBlk(c.off, 4))) return "absent";
+    const cur = words.map((c) => readW(c.off, 4) >>> 0);
+    if (cur.every((v, i) => v === words[i].stock)) return "stock";
+    if (cur.every((v, i) => v === words[i].patch)) return "on";
+    return "unknown";          // partially applied, or not this disc's code
+  }
+
   // ---- Test: experiments that are not known to work ---------------------------
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
   // authored per protagonist; Koroku, Yuber and Lucia have all been seen to softlock one.
   let TESTVIEW = "patches";       // the switchboard first: it is the tab's diagnostic entry point
   const TESTS = [["patches", "Non-stock code"], ["avatar", "Field character"],
-    ["horse", "Assigned horse"], ["herb", "Mount button"], ["atklist", "Attack-rune lists"]];
+    ["horse", "Assigned horse"], ["herb", "Mount button"], ["atklist", "Attack-rune lists"],
+    ["mpcast", "Unlimited rune casts"]];
   function drawTest(host) {
     // The Field-character warning is about ONE subtab's patch, so it only belongs above that
     // subtab — on the switchboard it would read as a warning about switching patches OFF.
@@ -5892,6 +5933,7 @@
     else if (TESTVIEW === "horse") drawHorseClamp(q("#testView", host));
     else if (TESTVIEW === "herb") drawHerb(q("#testView", host));
     else if (TESTVIEW === "atklist") drawAtkList(q("#testView", host));
+    else if (TESTVIEW === "mpcast") drawMpCast(q("#testView", host));
   }
 
   // ---- Non-stock code: one checkbox per patched site -------------------------
@@ -6251,6 +6293,95 @@
       });
       drawView();
     };
+  }
+
+  // ---- Unlimited rune casts -----------------------------------------------------
+  // Two independent tiers over the charge system (see MPCAST_T1 / MPCAST_T2 above).
+  // Each tier renders its own card with its own state: a tier whose words are neither
+  // all stock nor all patched offers no edit, because tier 2's pair is only ever
+  // written whole.
+  function drawMpCast(host) {
+    const tierCard = (words, st, cfg) => {
+      if (st === "absent" || st === "unknown") {
+        return `<div class="warnbox" style="margin:0 0 12px">${cfg.title}: the words aren't
+          where this build expects them, or are only partly patched — no edit offered.
+          Expected ${words.map((c) => "0x" + c.off.toString(16).toUpperCase()).join(", ")},
+          each either its stock word or its patched word.</div>`;
+      }
+      const on = st === "on";
+      const rows = words.map((c) => {
+        const cur = readW(c.off, 4) >>> 0;
+        return `<tr><td class="sl">0x${c.off.toString(16).toUpperCase()}</td>
+          <td><code>${cur.toString(16).padStart(8, "0")}</code></td>
+          <td>${esc2(c.what)}</td>
+          <td>${cur === c.stock ? '<span class="dim">stock</span>' : '<span class="tag acc2">patched</span>'}</td></tr>`;
+      }).join("");
+      return `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">${cfg.title} <span class="u">patches game code · not played</span></div>
+        <div class="muted" style="margin:0 0 8px" data-sum="${cfg.sum}">${cfg.body}</div>
+        <label class="field" style="max-width:460px">
+          <span>${cfg.label}</span>
+          <select id="${cfg.sel}">
+            <option value="0"${on ? "" : " selected"}>${cfg.off}</option>
+            <option value="1"${on ? " selected" : ""}>${cfg.on}</option>
+          </select></label>
+        <table class="invtbl" style="margin-top:10px"><thead><tr><th>Offset</th><th>Word</th><th>What</th><th>State</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+    };
+    host.innerHTML =
+      tierCard(MPCAST_T1, mpCastState(MPCAST_T1), {
+        title: "Tier 1 — casts never drain charges",
+        sel: "mpT1Sel", label: "Charge consumption",
+        off: "Stock — casting spends a charge, as the game ships",
+        on: "Free casts — charges never drain",
+        sum: "NOP the game's one charge-consumption call and casts stop spending charges; unlocked levels cast forever, locked levels stay locked.",
+        body: `Every cast in the game — battle or field — resolves through one routine, and its
+          first act is to take one charge of the cast spell's level from the caster. A census of
+          the charge accessors found that call exactly <b>once</b>. Replacing it with a
+          <code>nop</code> leaves everything else about casting untouched: the availability
+          checks still read the real counts, so a level a character has <b>unlocked</b> can be
+          cast forever and a level they have not stays locked — that gate is the maximum, not
+          the drain. The counts on the menus simply stop dropping.`,
+      }) +
+      tierCard(MPCAST_T2, mpCastState(MPCAST_T2), {
+        title: "Tier 2 — 9 charges at every level",
+        sel: "mpT2Sel", label: "Charge recompute",
+        off: "Stock — charges are earned from a derived stat, as the game ships",
+        on: "9 everywhere — every level holds 9 charges",
+        body: `Charges are not stored per rune; they are <b>derived</b> — a recompute counts how
+          many stat thresholds a character passes per spell level, sets that as the maximum,
+          and tops the current charges up by the same amount. These two words force both
+          numbers to <b>9</b>, the engine's own ceiling count, so every recompute (character
+          setup, level-up, the rest-adjacent paths) pins every level to 9/9 — including levels
+          the stock game would not have unlocked yet. The words are a <b>pair</b>: either alone
+          is a no-op or leaves a character short until their next rest, so they are only ever
+          written and restored together. This applies to <b>every</b> character record the
+          recompute touches, <b>enemy casters included</b> — there is no player-only branch.
+          On its own it refills to 9 but casts still drain; with tier 1 as well, the 9s are
+          permanent.`,
+        sum: "Force the charge recompute to grant 9 charges at every level — unlocking un-earned levels, for enemy casters too. The two words are a pair and move together.",
+      }) +
+      `<div class="warnbox" style="margin:0 0 8px" data-sum="Both tiers are statically verified and untested in play; the charge accessor's own internals are deliberately left alone."><b>Untested in play.</b> Both tiers are
+        proven statically — the consumption census is exhaustive and every word is byte-verified
+        against a pristine disc — but no cast has yet been made under either in a running game.
+        The charge accessor's own store and subtract are deliberately <b>not</b> patched: refill,
+        setup and consumption all funnel through them, so a patch inside the accessor would
+        break rests and character setup along with the drain.</div>`;
+    const wire = (sel, words) => {
+      const el = q(sel, host);
+      if (!el) return;
+      el.onchange = (e) => {
+        const want = e.target.value === "1";
+        words.forEach((c) => {
+          writeW(c.off, 4, want ? c.patch : c.stock);
+          reg(c.off, 4, "word", "Unlimited rune casts", c.what);
+        });
+        drawView();
+      };
+    };
+    wire("#mpT1Sel", MPCAST_T1);
+    wire("#mpT2Sel", MPCAST_T2);
   }
 
   // ---- Field character --------------------------------------------------------
@@ -10515,6 +10646,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       } }
     ATKLIST.forEach((c) => word(c.off, c.stock, "Attack-rune spell lists", c.what,
       "rewritten engine code: with these compares NOP-ed, every special-attack rune lists all its filled spell slots — and the added spells execute down the attack-rune path, where their chant and element behaviour is untested"));
+    MPCAST_T1.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,
+      "rewritten engine code: with the consumption call NOP-ed, casts never spend rune charges — unlocked levels cast forever, locked levels stay locked, and enemy casters with character records stop draining too"));
+    MPCAST_T2.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,
+      "rewritten engine code: the charge recompute grants 9 charges at every level for every character record it touches, enemy casters included; the pair is only ever written together"));
     word(MOUNTS.mech.pool.off, MOUNTS.mech.pool.stock, "Mounts", MOUNTS.mech.pool.label);
     word(MOUNTS.mech.adren.off, MOUNTS.mech.adren.stock, "Mounts", MOUNTS.mech.adren.label);
     word(MOUNTS.mech.roundRider.off, MOUNTS.mech.roundRider.word, "Mounts", MOUNTS.mech.roundRider.label);
