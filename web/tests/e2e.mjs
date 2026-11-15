@@ -5203,6 +5203,47 @@ if (ON) {
   await page.uncheck(tog); await page.waitForTimeout(150);
   const r2 = await save(page);
   check("unticking restores the stock category 2", r2.u16(catOff) === 2, String(r2.u16(catOff)));
+  check("...and the stock element 0 beside it", r2.u16(elemOff) === 0, String(r2.u16(elemOff)));
+
+  // The element half of the recipe (played 2026-11-15: category alone left Phoenix
+  // firing slot 1; the element is what opens the list). The fixture's spells carry
+  // families of their own: spell 1 (Flaming Arrows) is family 1, spell 3 (Blazing
+  // Wall) family 7 — so which spell leads is readable off the saved bytes.
+  const pickTwin = async (k, v) => {
+    const sel = `#isoView select.rspell[data-id="${twin.id}"][data-k="${k}"]`;
+    await page.focus(sel); await page.waitForTimeout(60);
+    await page.selectOption(sel, v); await page.waitForTimeout(150);
+  };
+  const reopen = async () => {
+    await page.click('#isoTabs [data-v="runes"]');
+    await page.fill("#isoSearch", twin.name.toLowerCase()); await page.waitForTimeout(150);
+  };
+  // Two added spells of different families, THEN the toggle: the element follows the
+  // first added spell in slot order.
+  await pickTwin(1, "3"); await pickTwin(2, "1");
+  await page.check(tog); await page.waitForTimeout(150);
+  const e1 = await save(page);
+  check("ticking with added spells writes category 0", e1.u16(catOff) === 0, String(e1.u16(catOff)));
+  check("...and sets the element from the first added spell (family 7)",
+    e1.u16(elemOff) === 7, String(e1.u16(elemOff)));
+  // Removing the lead added spell hands the lead to the next one — across a save,
+  // which is why the baseline is captured at tick time rather than re-read.
+  await reopen(); await pickTwin(1, "0");
+  const e2 = await save(page);
+  check("emptying the lead slot moves the element to the next added spell (family 1)",
+    e2.u16(elemOff) === 1, String(e2.u16(elemOff)));
+  // Removing the last added spell returns the element to stock while the toggle is on.
+  await reopen(); await pickTwin(2, "0");
+  const e3 = await save(page);
+  check("with no added spells left the element returns to stock 0",
+    e3.u16(elemOff) === 0, String(e3.u16(elemOff)));
+  check("...and the rune is still converted", e3.u16(catOff) === 0, String(e3.u16(catOff)));
+  // Unticking after all that restores both stock fields.
+  await reopen(); await page.uncheck(tog); await page.waitForTimeout(150);
+  const e4 = await save(page);
+  check("unticking restores stock category and element together",
+    e4.u16(catOff) === 2 && e4.u16(elemOff) === 0, `${e4.u16(catOff)}/${e4.u16(elemOff)}`);
+  await reopen();
   // Element 1 takes the same rune out of the special case entirely (Devil's Doll and
   // Spreading Flame ship this way): the toggle is replaced by the already-lists note.
   await page.click('#isoTabs [data-v="runes"]');

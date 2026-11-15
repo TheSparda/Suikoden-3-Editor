@@ -181,13 +181,22 @@ nothing: a Kite given four spells still fires slot 1 the instant it is chosen, w
 The mechanism behind that is now proven from the disassembly: the two engine functions
 everything reads a rune's spells through report one spell — slot 1, for every index — whenever
 the record's type-and-element word is exactly the special-attack one, so the battle menu is
-handed a one-entry list. The row's **spell-list control** is the way out: it sets **Rune type**
-to “Magic / support”, the general path lists every filled slot, and slot 1 then casts as a
-normal spell (chant and per-slot MP gate) instead of firing as a free attack — proven,
-byte-verified, and not yet played. Two of the 27 never collapsed: *Devil's Doll* and
+handed a one-entry list. The row's **spell-list control** is the way out, and it is **tested
+in play** (2026-11-15, PCSX2: Chris's Phoenix given Fire spells — the list opened, Flaming
+Arrows was picked and cast, chant and MP charge consumed). It sets **Rune type** to
+“Magic / support” **and** the rune's **element family** to the family of the first added
+spell that has one — both halves are needed: played with the type alone, the rune pane
+showed the added spells but choosing the rune still fired slot 1, because the battle menu
+treats an element-0 rune as a single-action attack rune whatever the binding serves. While
+the control is on, the element keeps following the added spells (first one wins when they
+span families); unticking restores the stock type and the stock element together. Slot 1
+then casts as a normal spell (chant and per-slot MP gate) instead of firing as a free
+attack. Two of the 27 never collapsed: *Devil's Doll* and
 *Spreading Flame* carry element family 1, miss the special case, and already list. The Test
 tab carries the global form (NOP the two compares in each accessor; every attack rune lists
-at once, keeping its type at execution time). Each filled slot is also a
+at once, keeping its type at execution time) — that global form is still untested in play,
+and because it touches no rune's element it likely still hits the element-0 gate the
+per-rune test found; its card says so. Each filled slot is also a
 **link straight into the Spells tab with that record open**,
 which stays the one place a spell's own power / cast / element / target / status is edited —
 and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
@@ -196,9 +205,9 @@ slots empty: what they do is engine code, not a spell — and the **Passives** t
 code is reached. Two caveats, both written into the tab:
 there is no character-level table gating a rune's later spells — a spell's level is its slot
 number, and the gate is a per-character per-slot byte kept with the unit (the per-level MP
-resource), so there is nothing in this record to edit for it; and an attack rune surfacing
-more than one spell, while mechanism-proven, is untested on hardware — try a reassigned rune
-in game before building a run around it. Names and menu text
+resource), so there is nothing in this record to edit for it; and while the spell-list
+recipe is now tested on Phoenix, only that one rune has been played — try another
+reassigned rune in game before building a run around it. Names and menu text
 are rewritten in place, so each is capped to the slot
 the disc already reserves for it, and both are **mirrored across every copy**: the 20 attack
 runes and 7 magic scrolls store their description twice, and 43 names are stored twice as well —

@@ -113,6 +113,55 @@ check("Kite (365) collapses stock: category 2, element 0, slots 78/0/0/0",
 check("every collapsing rune ships exactly one filled slot (the collapse hides nothing stock)",
   collapsed.every((r) => r.slots.filter(Boolean).length === 1));
 
+// ---- 3. the element half of the recipe -------------------------------------------------------
+// The 2026-11-15 play test (lab PCSX2_TESTS.md) corrected the recipe: category 0 alone
+// leaves the rune firing slot 1, because the battle menu treats an element-0 rune as
+// single-action; the toggle therefore also writes the element u16 at rec+0x14, derived
+// from the first added spell's own element byte (spell record +0x24, low byte). These
+// checks pin the derivation's inputs on the real disc: Phoenix — the played example —
+// and the exact spells it borrowed.
+const spLine = /const SPELL = \{([^}]*)\};/.exec(iso);
+if (!spLine) { console.log("  ✗ could not find SPELL in web/iso.js"); process.exit(1); }
+const spNum = (k) => { const m = new RegExp(`${k}: (0x[0-9A-Fa-f]+|\\d+)`).exec(spLine[1]); return m ? parseInt(m[1]) : NaN; };
+const SP = { off: spNum("off"), stride: spNum("stride"), elem: spNum("elem"), count: spNum("count") };
+check("iso.js SPELL geometry is the research geometry (off 0x3EC2A0, stride 0x20, elem +0x24, 94 rows)",
+  SP.off === 0x3EC2A0 && SP.stride === 0x20 && SP.elem === 0x24 && SP.count === 94,
+  `off ${hx(SP.off)} stride ${hx(SP.stride, 2)}`);
+const spellElem = (row) => readAt(SP.off + row * SP.stride + SP.elem, 1)[0];
+const va2off = (va) => va - 0x165D000 + 0xA4800;
+const spellName = (row) => {
+  const np = u32(readAt(SP.off + row * SP.stride + 0x08, 4), 0);
+  const b = readAt(va2off(np), 32);
+  return b.subarray(0, b.indexOf(0)).toString("latin1");
+};
+
+const phoenix = rows.find((x) => x.id === 339);
+check("Phoenix (339): the element u16 offset is 0x3ED9EC, the category's neighbour",
+  RT.off + 339 * RT.stride + RT.elem === 0x3ED9EC, hx(RT.off + 339 * RT.stride + RT.elem));
+check("Phoenix (339) collapses stock: category 2, element 0, slots 52/0/0/0",
+  !!phoenix && phoenix.cat === 2 && phoenix.elem === 0 && phoenix.slots.join() === "52,0,0,0",
+  phoenix ? `cat ${phoenix.cat} elem ${phoenix.elem} slots ${phoenix.slots.join("/")}` : "row missing");
+check("Kite (365): the element u16 offset is 0x3EDD2C",
+  RT.off + 365 * RT.stride + RT.elem === 0x3EDD2C, hx(RT.off + 365 * RT.stride + RT.elem));
+
+// The spells the play test borrowed for Phoenix, by row (slot value = row + 1): all
+// Fire, family 1 — the value the toggle derives when they lead the added spells.
+for (const [row, name] of [[0, "Flaming Arrows"], [1, "Dancing Flames"], [2, "Blazing Wall"]]) {
+  check(`spell row ${row} is ${name} with element family 1 (Fire)`,
+    spellName(row) === name && spellElem(row) === 1,
+    `${spellName(row)} / elem ${spellElem(row)}`);
+}
+check("spell row 51 is Phoenix itself, element family 0 — a borrowed attack cannot lead",
+  spellName(51) === "Phoenix" && spellElem(51) === 0,
+  `${spellName(51)} / elem ${spellElem(51)}`);
+// Rune families and spell families are one numbering: the Fire rune's own element byte
+// is the same 1 its spells carry, and Wind's is 3.
+for (const [id, name, elem] of [[317, "Fire", 1], [325, "Wind", 3]]) {
+  const r = rows.find((x) => x.id === id);
+  check(`${name} rune (${id}) carries element ${elem} — the family its spells use`,
+    !!r && r.elem === elem, r ? `elem ${r.elem}` : "row missing");
+}
+
 fs.closeSync(fd);
 console.log(fails ? `\nFAILED (${fails})` : "\nAll attack-rune checks passed against the real disc.");
 process.exit(fails ? 1 : 0);

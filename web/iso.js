@@ -6224,11 +6224,16 @@
           attack-rune path, and how it treats a spell with a chant time or an element of its own
           is <b>untested</b>. The per-slot MP gate applies either way, so a low-level character
           may still find the later slots greyed.</div>
-        <div class="warnbox" style="margin:0 0 8px" data-sum="Untested in play — the mechanism is proven from the disassembly and all four words are byte-verified, but no added spell has yet been cast this way in a running game."><b>Untested in play.</b> The mechanism is
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Untested in play — and the per-rune play test found a second, element gate this patch does not touch, so these NOPs alone likely still do not open the list for element-0 runes."><b>Untested in play.</b> The mechanism is
           proven from the disassembly and all four words are byte-verified against a pristine
           disc, but nobody has yet cast an added spell this way in a running game. Both compares
           in <b>both</b> functions are NOP-ed together — leaving one standing would keep its
-          case collapsed — and setting this back to Stock restores all four words exactly.</div>
+          case collapsed — and setting this back to Stock restores all four words exactly.
+          One more caution, from the per-rune form's play test: the battle menu ALSO treats an
+          element-0 rune as a single-action attack rune even when the binding serves every
+          slot, and this patch does not touch any rune's element — so for the 25 element-0
+          attack runes these NOPs alone likely still do not open the list. The Runes tab's
+          per-rune control, which sets the element with the type, is the form tested in play.</div>
         <label class="field" style="max-width:460px">
           <span>Special-attack rune spell lists</span>
           <select id="alSel">
@@ -9048,14 +9053,17 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
   };
   // The spells this rune has been GIVEN — current slots minus the stock ones, counted
   // with multiplicity so handing a rune a second copy of its own attack still counts
-  // as native. Slot order preserved: the first added spell leads.
+  // as native. Slot order preserved: the first added spell leads. "Stock" is the
+  // baseline captured when the toggle was ticked (ATKLIST_BASE), falling back to the
+  // pristine snapshot: saving refreshes that snapshot, so after a save the snapshot
+  // alone would call yesterday's added spells native.
   function addedSpellIds(id) {
     const rec = RUNE_TBL.off + id * RUNE_TBL.stride;
-    const stock = [];
-    for (let k = 0; k < RUNE_TBL.slotCount; k++) {
+    const base = ATKLIST_BASE.get(id);
+    const stock = base ? base.slots.slice() : [0, 1, 2, 3].map((k) => {
       const o = rec + RUNE_TBL.spells + k * 2;
-      stock.push(inBlk(o, 2) ? o16(o) : 0);
-    }
+      return inBlk(o, 2) ? o16(o) : 0;
+    });
     const out = [];
     for (const gid of runeSpellIds(id)) {
       if (!gid) continue;
@@ -9080,11 +9088,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     }
     return { elem, lead, mixed, any: true };
   }
-  // Runes whose spell-list toggle is on this session. The element follows the added
-  // spells only for these — the raw Rune type / Element family selects stay fully
-  // manual, and a disc loaded already converted keeps its saved element until the
-  // toggle is cycled.
+  // Runes whose spell-list toggle is on this session, with the stock baseline (slots
+  // + element) captured at tick time. The element follows the added spells only for
+  // these — the raw Rune type / Element family selects stay fully manual, and a disc
+  // loaded already converted keeps its saved element until the toggle is cycled.
   const ATKLIST_ON = new Set();
+  const ATKLIST_BASE = new Map();
   // Bring a toggled-on rune's element in line with its added spells. Returns a short
   // note for the status line when the element moved (or cannot), else null.
   function syncAtkElem(id) {
@@ -9093,7 +9102,8 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     const eo = rec + RUNE_TBL.elem;
     if (!inBlk(eo, 2) || r16(rec + RUNE_TBL.cat) !== 0) return null;
     const d = atkElemDerive(id);
-    const stockElem = origW(eo, 2);
+    const base = ATKLIST_BASE.get(id);
+    const stockElem = base ? base.elem : origW(eo, 2);
     const want = d && d.elem ? d.elem : stockElem;
     if (r16(eo) !== want) {
       writeW(eo, 2, want); reg(eo, 2, "elem", itemName(id), "Element family");
@@ -9167,10 +9177,14 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         The two engine functions everything reads a rune's spells through report <b>one spell — slot 1,
         for every index</b> — whenever the record's type-and-element word is exactly the special-attack
         one, so the battle menu is handed a one-entry list and has nothing more to offer. The
-        <b>spell-list control</b> on the row is the way out: it sets <i>Rune type</i> to
-        “Magic / support”, the accessors take their general path, and every filled slot is offered.
-        The mechanism is proven from the disassembly and the bytes are verified; it is <b>not yet
-        played</b>, and it is not free — the type is also the flag that makes an attack rune a free
+        <b>spell-list control</b> on the row is the way out, and it is <b>tested in play</b>
+        (2026-11-15, Chris's Phoenix given Fire spells): it sets <i>Rune type</i> to
+        “Magic / support” <b>and</b> the <i>Element family</i> to the first added spell's family.
+        Both halves are needed — the type alone was played first, and while the rune pane then
+        showed the added spells, choosing the rune still fired slot 1: an element-0 rune is
+        treated as a single-action attack rune at the menu whatever the binding serves. With
+        the element set, the list opened and the borrowed spell was picked and cast. It is not
+        free — the type is also the flag that makes an attack rune a free
         action, so slot 1 stops being one and casts as a normal spell instead, chant and per-slot
         MP gate included. Two of the 27 never collapsed at all: <b>Devil's Doll</b> and
         <b>Spreading Flame</b> carry element family 1, their word misses the special case, and
@@ -9276,9 +9290,13 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         const gid = clampInt(+el.value || 0, 0, 0xFFFF);
         writeW(off, 2, gid);
         reg(off, 2, "spellid", itemName(id), `Spell slot ${k + 1}`);
-        setStatus(gid
-          ? `${itemName(id)} slot ${k + 1} now grants ${spellSlotName(gid)}. Review, then Save.`
-          : `${itemName(id)} slot ${k + 1} emptied. Review, then Save.`, "ok");
+        // While the spell-list toggle is on for this rune, its element follows the
+        // added spells — a slot change is exactly when that can move.
+        const note = syncAtkElem(id);
+        setStatus((gid
+          ? `${itemName(id)} slot ${k + 1} now grants ${spellSlotName(gid)}.`
+          : `${itemName(id)} slot ${k + 1} emptied.`) + (note ? ` ${note}` : "") + " Review, then Save.",
+          note && /may still not open/.test(note) ? "warn" : "ok");
         drawRunes(host);
       };
     });
@@ -9293,7 +9311,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
           writeW(off, 2, clampInt(+el.value || 0, 0, 0xFFFF));
           reg(off, 2, "num", itemName(id), label);
           setStatus(sel === "select.rcat" && +el.value === 0
-            ? `${itemName(id)} is now a magic/support rune — every filled spell slot will be offered in battle (mechanism proven; not yet played), and slot 1 casts as a normal spell. Review, then Save.`
+            ? `${itemName(id)} is now a magic/support rune, and slot 1 casts as a normal spell. Note the type alone is not the whole recipe: played with element still 0, the rune still fired slot 1 — the spell-list control below sets the element with the type, which is the form tested in play. Review, then Save.`
             : `${itemName(id)}: ${label.toLowerCase()} changed. Review, then Save.`, "ok");
           drawRunes(host);
         };
@@ -9313,16 +9331,23 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         // values to put back when the snapshot no longer holds them.
         const stock = origW(off, 2), stockElem = origW(eo, 2);
         if (el.checked) {
+          // Capture the stock baseline before anything moves: after a save the
+          // snapshot stops holding it, and the element derivation keys off it.
+          ATKLIST_BASE.set(id, {
+            slots: [0, 1, 2, 3].map((k) => origW(rec + RUNE_TBL.spells + k * 2, 2)),
+            elem: stockElem,
+          });
           ATKLIST_ON.add(id);
           writeW(off, 2, 0);
           reg(off, 2, "num", itemName(id), "Rune type");
           const note = syncAtkElem(id);
           setStatus(`${itemName(id)} now lists every filled spell slot in battle — Rune type set to Magic / support and the element set with it (the recipe tested in play on Phoenix). ${note ? note + " " : ""}Slot 1 now casts as a normal spell. Review, then Save.`, "ok");
         } else {
-          ATKLIST_ON.delete(id);
+          const base = ATKLIST_BASE.get(id);
+          ATKLIST_ON.delete(id); ATKLIST_BASE.delete(id);
           writeW(off, 2, stock === 1 || stock === 2 ? stock : 2);
           reg(off, 2, "num", itemName(id), "Rune type");
-          writeW(eo, 2, runeCollapses(stock === 1 || stock === 2 ? stock : 2, stockElem) ? stockElem : 0);
+          writeW(eo, 2, base ? base.elem : (runeCollapses(stock === 1 || stock === 2 ? stock : 2, stockElem) ? stockElem : 0));
           reg(eo, 2, "elem", itemName(id), "Element family");
           setStatus(`${itemName(id)} is a special-attack rune again — stock type and element restored, slot 1 only, fired as a free action. Review, then Save.`, "ok");
         }
