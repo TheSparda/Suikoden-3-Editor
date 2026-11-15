@@ -168,6 +168,16 @@ would corrupt those too — which is why *Luc* isn't offered: "Lucia", "Luck"),
 one-click presets: *Set to guide caps*, *Max all*, *Clear* — plus **bulk scaling**, which
 multiplies every character's growth rate at once and carries the idempotent *Tougher / Hard /
 Brutal* difficulty presets, optionally scoped to whatever the filter box is showing),
+**Skill effects** (what each of the 43 skills is worth at each grade — the per-rank effect
+bytes the game itself reads, from the table in the boot ELF **located 2026-11-15** by
+matching the guide's per-rank series against the disc and tracing the engine's own reader.
+Up to two series of eight bytes per skill, one per grade E through S, labelled with the
+guide's effect names; where the disc and the guide disagree the row says so — three series
+are stored as *100 minus* the guide's number, Damage's D grade differs by one, Rune Sage's
+first series matches nothing the guide prints, and Repel carries a second series the guide
+never lists. The record's category and flag bytes are not offered: their meanings are
+unconfirmed. Byte-verified against the guide's 63 series, 58 of them verbatim; **not yet
+tested in play**),
 **Support**, **Weapons** (ATK
 across all 16 sharpen levels), **Shops**,
 **Runes** (every rune in the game: **rename** it, rewrite the **menu text** the game shows
@@ -288,7 +298,12 @@ step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
 whitelist, the **attack-rune spell lists** (the global form of the Runes tab's spell-list
 control: NOP the binding compares so every special-attack rune lists its filled slots at
-once), plus the retired scene-actor fallback kept as a written-up dead end; see below),
+once), the **unlimited rune casts** switch (two tiers over the charge system, from a census
+that found exactly one charge-consumption call in the game: NOP it so casts never drain —
+unlocked levels cast forever, locked levels stay locked — or force the charge recompute to
+grant 9 charges at every level, un-earned levels and enemy casters included; statically
+verified, untested in play), plus the retired scene-actor fallback kept as a written-up
+dead end; see below),
 **Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
 heal share — and **which set grants which effect**, since each bonus is a hard-coded check on
@@ -659,7 +674,10 @@ carrying, and undoable with Restore stock values.
 Lv-99 growth ranges in Growth, "rune slot opens at Lv N" on the equipment slots, rune/food
 effect descriptions in the item pickers, and full per-rank skill effects. All of it is
 cross-checked against the Suikosource guides (and the fields were re-verified against a real
-disc — see `Editor/Suikoden3_ISO_offsets.md`).
+disc — see `Editor/Suikoden3_ISO_offsets.md`). One of those overlays has since graduated:
+the per-rank skill effects turned out to be a table in the boot ELF (located 2026-11-15),
+so they are no longer guide-only data — the ISO editor's **Skill effects** view edits the
+disc's own bytes, and the guide's copy remains as the labels and the cross-check.
 
 **Undo/redo.** Every edit is undoable (toolbar ↶/↷ or Ctrl/Cmd+Z / Shift+Z), on top of the
 existing per-field **↺** restore and **Revert all**.

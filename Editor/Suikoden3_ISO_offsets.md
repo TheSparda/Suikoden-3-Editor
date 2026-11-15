@@ -383,37 +383,83 @@ What this does and does not settle:
   and Shield (id 336) are category 0 and each ship with slot 4 free.** Fill one. If a 4th
   spell appears there, the slots are live and the problem is category-specific.
 
-### The consumer is NOT in the boot ELF
-Worth recording, because it is why three sessions of ELF hunting found nothing. The rune
-table is referenced from exactly **one** site in PT_LOAD — `0x16DBD44`, inside `itemRecord`
-(`0x16DBCD8`), which is a pure address calculator: five id bands, `jr $ra` in each.
+*Superseded 2026-11-15: the mechanism is now proven and the recipe played — category is
+only half of it; the element has to move too. See the correction section directly below.*
 
-| id band | stride | base vaddr |
-|---|---|---|
-| 0x001-0x0A0 | 0x24 | 0x19A14BC (weapons) |
-| 0x0A1-0x13C | 0x44 | 0x1990E84 (gear) |
-| **0x13D-0x1CE** | **0x20** | **0x19A3778 (runes)** |
-| 0x1CF-0x202 | 0x14 | 0x19A734C |
-| 0x203+ | 0x10 | 0x199EE80 |
+### The consumer IS in the boot ELF (correction, 2026-11-15)
+The section this replaces concluded the consumer was not in the boot ELF and sent the
+hunt to the battle overlays. That was wrong, and it is worth recording why: the table
+base is referenced from exactly **one** site in PT_LOAD — `0x16DBD44`, inside
+`itemRecord` (`0x16DBCD8`), a pure address calculator (five id bands, `jr $ra` in each;
+the rune band is ids `0x13D-0x1CE`, stride `0x20`, base vaddr `0x19A3778`) — and the
+hunt looked for readers of the fields among the accessors around it, which gate on the
+weapon band. The actual binding accessors sit a little further away and were found in
+the 2026-11-15 disassembly pass (RE lab: `SPECIAL_ATTACK_RUNES.md`):
 
-Every field accessor around it (`0x16DC160`, `0x16DC1C0`, `0x16DC210`, `0x16DC300` …) gates
-on `id-1 < 0xA0` or a similar small range — i.e. they read the **weapon** band, not the rune
-band. Nothing in PT_LOAD reads a rune record's +0x14/+0x16/+0x18. The battle menu that
-consumes them lives in a **battle overlay**, the same class of code that hid the Fortune rune
-and the potch-per-wearer pair (see "battle overlay inside ETC.BIN", K = 0x4103A640). Anyone
-picking this up should start there, not in the ELF.
+- `runeSpellCount` (VA `0x16DC6C0`) and `runeSpellAt` (VA `0x16DC7E0`) read the rune
+  record's **+0x14 word** — `(category << 16) | element` — and its **+0x18 slots**.
+  When that word is exactly `0x00010000` or `0x00020000` (category 1 or 2, element 0),
+  both collapse the answer to **one spell, slot 1, for every index**, so the battle
+  menu's list builder is handed a one-entry list. That — not an overlay, and not a
+  level gate — is the whole mechanism behind the 2026-09-06 Kite result above.
+- 25 of the 27 category-2 runes sit on the collapsing word. *Devil's Doll* (352) and
+  *Spreading Flame* (354) carry element 1, miss the special case, and already list.
+- The global form (editor v1.153.0, Test tab): NOP the two compares in each accessor
+  (ISO `0x123EF4`, `0x123EFC`, `0x124024`, `0x12402C`).
 
-### What is still NOT known
-- **Unlock levels.** Which character level gates a rune's 2nd/3rd/4th spell is not in
-  this record and has not been located. `0x42EE90` was tentatively called an unlock-level
-  table on 2026-08-09; re-reading it, rows 1-3 and 17-21 are `(1, 20, 60, 99)` but rows
-  4-16 and 22-37 are rising curves up to 950, and its keying is unconfirmed. Treat it as
-  unidentified. It is a live alternative explanation for the Kite result above: if slots 2-4
-  are level-gated and the gate row for an attack rune is unreachable, the symptom is identical.
-- **Whether flipping category actually opens the menu.** Untested.
+**Played 2026-11-15** (RE lab: `PCSX2_TESTS.md`, Chris/Phoenix): flipping category
+alone is **not** sufficient — the rune pane then shows the added spells, but choosing
+the rune still fires slot 1, because the battle menu's confirm path treats an
+**element-0** rune as a single-action attack rune. The complete recipe is category
+`2 -> 0`, slots filled, **and** element set nonzero (the editor's spell-list control
+sets it from the first added spell's family). With all three, the list opened and the
+borrowed spell was selected and cast, chant and MP charge consumed. Slot 1 then casts
+as a normal spell rather than firing as a free attack-rune action.
+
+### Unlock levels (resolved 2026-11-15)
+There is **no unlock-level table**. A spell's level is its slot number (positional),
+and whether a character may cast from a slot is gated by the per-level **charge**
+bytes kept with the character record: **current charges at +0x38, maximum at +0x3C**
+(correcting the earlier one-array model — the +0x3C array is the maximum, and
+availability for ordinary spells reads +0x38). Charges are derived by the recompute
+`FUN_016C8CC0` as a threshold count over a derived stat; `FUN_0169B9C0` is only a
+first-castable-slot query, not the setup. The `0x42EE90` candidate table is
+**unreferenced by the ELF** and is not a level gate. Full detail, including the
+single consumption call site (ISO `0x0E1BB8`) behind the Test tab's *Unlimited rune
+casts* switch: RE lab `MP_CHARGES.md`.
 
 Confirmed NOT possible from the spell table: visual/animation reskin (link fields
 correlate with behavior/kind, not graphics assets; visuals live in separate asset files).
+
+## Skill effects table (located 2026-11-15, in the boot ELF)
+The per-rank values behind the guide's skill-effects tables — what skill X is worth at
+grade E/D/C/B/B+/A/A+/S — are a table in the boot ELF, found by fingerprinting the
+guide's distinctive series against the disc and confirmed from the consuming code
+(RE lab: `SKILL_EFFECTS.md`). Until this pass the editor carried those numbers as
+guide-only reference; they are now editable (web editor **Skill effects** view).
+
+| | |
+|---|---|
+| ISO offset | `0x3F0858` (VA `0x19A9058`, ELF file `0x34D058`) |
+| Records | 43 (skill ids 1-43), stride `0x1C`, ends ISO `0x3F0D14` |
+| +0x00 / +0x04 | name / description string pointers |
+| +0x08 | category byte (values 1-6; grouping observed, semantics unconfirmed) |
+| +0x0B | flag byte (`0x80` on 12 records; semantics unconfirmed) |
+| +0x0C | **series A**: 8 bytes, one per grade in E, D, C, B, B+, A, A+, S order |
+| +0x14 | **series B**: 8 bytes, same order |
+
+Consumer: the record accessor at VA `0x170FE18` accepts ids 1-47 and forms its base
+as table-minus-one-record (`0x19A903C + id * 0x1C`); `skillEffectAt` (VA `0x170FFC8`)
+validates series < 2 and rank 1-8 and returns the byte at `rec + 0x0C + series*8 +
+(rank-1)`, with 58 call sites in battle/unit code. Verification against the guide's
+63 series: **58 verbatim** (guide sign folded; grades the guide leaves unprinted read
+as the 0 the disc stores), **3 stored as 100 - value** (Magic Resistance, Focus,
+Chanting Volume — all series A), **1 differing at one grade** (Damage, D: disc 4,
+guide 5), **1 unmatched** (Rune Sage A — a real on-disc series whose quantity is
+unconfirmed). Repel's series B has no guide counterpart. The three fingerprint series
+each occur exactly once in the entire ISO image, so no second copy exists in the
+sub-file corpus or ETC.BIN. SP costs are **not** in these records, and the per-skill
+rank caps remain the separate list-2 bytes the Growth view edits.
 
 ## Cross-platform GUI: s3editor.py (web app, 2026-08-09)
 Stdlib-only local web app (no pip installs). Reuses all s3patch logic.
