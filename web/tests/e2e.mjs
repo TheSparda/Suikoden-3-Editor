@@ -13,6 +13,7 @@ import { chromiumPath, chromiumNote } from "./chromium-path.mjs";
 import { execFileSync } from "child_process";
 import { buildSynthIso, ELF_BASE, ELF_END, ELF_VADDR, SPELL, UNITE, FOOD, ENEMY, GEAR, RUNE_TBL, TABLES, SHOPS, shopRec, PRICE_LADDER, VERSION_OFF, VERSION_VAL, SETS, ENC_SITES, ENC_STOCK,
   MOUNT_PAIRS, mountWord, HORSE_STOCK, horseAddr, MECH, HORSE_CLAMP, ATK_LIST, MP_CAST,
+  SKILLFX, SKILLFX_PLANT,
   ENEMY_TEST_PACKS, ENEMY_REC_A, ENEMY_AUX_A, ENEMY_REC_B, ENEMY_AUX_B,
   ZONE_SLOTS_A, ZONE_PARTY_A, ZONE_MEM_A, ZONE_SLOTS_B, ZONE_PARTY_B, ZONE_MEM_B,
   WAR_TEST_UNITS, WAR_REC_A, WAR_REC_B, WAR_LEAD_A, WAR_LEAD_B,
@@ -5071,6 +5072,54 @@ if (ON) {
   await page.waitForTimeout(120);
   const afterBlank = await page.evaluate(() => document.querySelector("#isoView input.rname")?.value);
   check("an empty name is refused", afterBlank === NEW, String(afterBlank));
+  await page.context().close();
+}
+
+// ---- Skill effects view: the per-rank table the game reads ----------------------------------
+// SKILLFX in the boot ELF: 43 records x 0x1C, two series of eight grade bytes (E..S).
+// The fixture plants Swing (two series) and Damage (one) with their real stock values.
+head("Skill effects view — per-rank values, byte-exact edit");
+if (ON) {
+  const page = await newPage();
+  await loadIso(page);
+  await page.click('#isoTabs [data-v="skillsfx"]');
+  const swing = SKILLFX_PLANT[0], dmg = SKILLFX_PLANT[1];
+  const recOf = (id) => SKILLFX.off + (id - 1) * SKILLFX.stride;
+  const rowOf = (id) => `#isoView details.char[data-id="${id}"]`;
+  const sumOf = (id) => page.textContent(`${rowOf(id)} .gr-sum`);
+  check("all 43 skills are listed", (await page.$$("#isoView details.char")).length === 43);
+  check("Swing's collapsed row shows both stock series",
+    (await sumOf(1)).includes("5·10·17·25·36·50·70·100") && (await sumOf(1)).includes("3·5·7·10·15·20·35·50"),
+    await sumOf(1));
+  check("Damage's collapsed row shows one series — its B ships as zeros",
+    (await sumOf(3)).includes("3·4·7·10·15·20·35·50") && !(await sumOf(3)).includes("· B"), await sumOf(3));
+  check("the view stages nothing on open", await nothingStaged(page));
+
+  await openRec(page, rowOf(1));
+  const aS = `${rowOf(1)} input.fnum[data-off="${recOf(1) + SKILLFX.a + 7}"]`;
+  const bE = `${rowOf(1)} input.fnum[data-off="${recOf(1) + SKILLFX.b}"]`;
+  check("series A opens on the planted bytes (E 5, S 100)",
+    (await page.inputValue(`${rowOf(1)} input.fnum[data-off="${recOf(1) + SKILLFX.a}"]`)) === "5"
+    && (await page.inputValue(aS)) === "100");
+  check("series B opens on the planted bytes (E 3, S 50)",
+    (await page.inputValue(bE)) === "3"
+    && (await page.inputValue(`${rowOf(1)} input.fnum[data-off="${recOf(1) + SKILLFX.b + 7}"]`)) === "50");
+  // Damage carries the census note (its D byte disagrees with the guide) and no B inputs.
+  await openRec(page, rowOf(3));
+  const dmgBody = await page.textContent(`${rowOf(3)} .char-body`);
+  check("Damage's row carries the disc-vs-guide note", /D-grade byte is 4; the guide prints 5/.test(dmgBody), dmgBody.slice(0, 120));
+  check("...and offers no series-B inputs, just the no-second-series line",
+    (await page.$$(`${rowOf(3)} input.fnum`)).length === 8 && /No second series/.test(dmgBody));
+
+  // The edit: Swing's series-A S byte, 100 -> 99. One byte, neighbours untouched.
+  await page.fill(aS, "99"); await page.dispatchEvent(aS, "change"); await page.waitForTimeout(80);
+  check("the summary follows the edit", (await sumOf(1)).includes("70·99"), await sumOf(1));
+  const r = await save(page);
+  check("the write lands on series A's S byte", r.u8(recOf(1) + SKILLFX.a + 7) === 99,
+    String(r.u8(recOf(1) + SKILLFX.a + 7)));
+  check("...and its neighbours are untouched",
+    r.u8(recOf(1) + SKILLFX.a + 6) === 70 && r.u8(recOf(1) + SKILLFX.b) === 3
+    && r.u8(recOf(3) + SKILLFX.a + 1) === 4);
   await page.context().close();
 }
 

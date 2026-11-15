@@ -273,6 +273,15 @@ export const ATK_LIST = [
   { off: 0x124024, stock: 0x1062000A },
   { off: 0x12402C, stock: 0x50620009 },
 ];
+// Skill effects (iso.js SKILLFX): the per-rank effect table the Skill effects view
+// edits. Two records planted with their real stock series — Swing (id 1, two series)
+// and Damage (id 3, one series; its B stays zero, as shipped) — so the view's decode
+// and a byte-exact write have the real values to bite on.
+export const SKILLFX = { off: 0x3F0858, stride: 0x1C, a: 0x0C, b: 0x14 };
+export const SKILLFX_PLANT = [
+  { id: 1, a: [5, 10, 17, 25, 36, 50, 70, 100], b: [3, 5, 7, 10, 15, 20, 35, 50] },
+  { id: 3, a: [3, 4, 7, 10, 15, 20, 35, 50], b: [0, 0, 0, 0, 0, 0, 0, 0] },
+];
 // Unlimited rune casts (iso.js MPCAST_T1 / MPCAST_T2): the charge-consumption call the
 // Test tab can NOP, and the recompute pair it can force to 9. Planted stock for the same
 // two reasons as ATK_LIST above — the code audit reads them, and the controls read a
@@ -550,6 +559,11 @@ export function buildSynthIso() {
   for (const d of HORSE_CLAMP) w32(d.off, d.stock);
   for (const d of ATK_LIST) w32(d.off, d.stock);
   for (const d of MP_CAST) w32(d.off, d.stock);
+  for (const p of SKILLFX_PLANT) {
+    const rec = SKILLFX.off + (p.id - 1) * SKILLFX.stride;
+    p.a.forEach((v, g) => { bytes[rec + SKILLFX.a + g] = v; });
+    p.b.forEach((v, g) => { bytes[rec + SKILLFX.b + g] = v; });
+  }
   MOUNT_PAIRS.forEach((p) => {
     p.riderSites.forEach((o) => w32(o, mountWord(p.rider)));
     w32(p.mountSite, mountWord(p.mount));

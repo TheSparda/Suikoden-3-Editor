@@ -3344,7 +3344,7 @@
   }
 
   // ---- top-level render ------------------------------------------------------
-  const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["support", "Support"], ["weapons", "Weapons"],
+  const VIEWS = [["chars", "Characters"], ["growth", "Growth"], ["skillsfx", "Skill effects"], ["support", "Support"], ["weapons", "Weapons"],
     ["shops", "Shops"], ["runes", "Runes"], ["passives", "Passives"], ["spells", "Spells"], ["unites", "Unites"], ["mounts", "Mounts"], ["story", "Story content"], ["gear", "Gear"], ["sets", "Sets"], ["food", "Food"],
     ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
@@ -3422,6 +3422,7 @@
     const hints = {
       chars: "Character starting stats (list 1): starting skills, ranks, equipped runes and gear \u2014 plus, on each character\u2019s own card, PASSIVE RUNES FORCED ON: the 22 support runes whose passive the engine can be made to grant this character alone, with no rune and no rune slot spent. Ticking one sets that character\u2019s bit in the rune\u2019s table and nobody else\u2019s; unticking every rune on every character removes the helper byte-for-byte. A rune\u2019s STRENGTH is on the Runes tab, and the four party-wide effects are on the Passives tab.",
       growth: "Per-character stat-growth rates, fixed skills, skill caps and starting level (list 2) — plus two bulk cards at the top of the tab: multiply every character's growth rate at once, with the Tougher / Hard / Brutal difficulty presets, and set the whole roster's 43 skill maximums (everyone to S, or just unlock the skills a character can't get). This is where the old Balance tab went; the spell and unite halves of those presets are now on the Spells and Unites tabs.",
+      skillsfx: "What each of the 43 skills is worth at each grade — the per-rank effect bytes the game itself reads, from the table in the boot ELF located 2026-11-15 by matching the guide's per-rank series against the disc and tracing the engine's own reader (skill, series, grade in; one byte out). Each skill carries up to two series of eight bytes, one per grade E, D, C, B, B+, A, A+, S; the labels are the guide's effect names, and where the disc and the guide disagree — three series are stored as 100 minus the guide's number, one grade of one series differs, one series matches nothing the guide prints — the row says so rather than letting the label speak for the bytes. Only the two series are editable: the record's category and flag bytes have no confirmed meaning, so they are not offered as fields. Who can reach which grade is the Growth tab's caps; SP costs are not in these records. Byte-verified against the guide's 63 series (58 exact); not yet tested in play.",
       support: "Support-character skill sets (list 3), 8 skill ids each.",
       weapons: "Weapon ATK sharpen curves (list 4): base attack at sharpen levels 1–16.",
       shops: "Every shop counter on the disc, by town: what the item, armour and rune shops sell at each of their four story stages, and the four rare finds each one can roll. Town names are matched to the Suikosource guides; the price ladder and item1 group are the two shared tables that sit alongside them.",
@@ -3450,6 +3451,7 @@
     const hintSums = {
       chars: "Starting skills, ranks, equipped runes and gear \u2014 plus forcing a support rune\u2019s passive on for this character alone, with no rune and no rune slot spent.",
       growth: "Per-character growth rates, fixed skills, skill caps and starting level, plus bulk difficulty scaling and bulk skill caps.",
+      skillsfx: "What each skill is worth at each grade (E to S) — the disc's own per-rank effect bytes the engine reads, not just the guide's copy of them.",
       shops: "Every shop counter on the disc, by town — what each shop sells at each of its four story stages.",
       spells: "The spell / rune-effect table: power, cast, element, target, area and status. Each of those fields says what its value means beside the rest of the table.",
       runes: "Every rune in the game: rename it, rewrite its menu text, and choose which of the four spell slots it grants.",
@@ -3503,6 +3505,7 @@
     const y = window.scrollY;
     if (VIEW === "chars") { drawCharsView(host); }
     else if (VIEW === "growth") drawGrowth(host);
+    else if (VIEW === "skillsfx") drawSkillFx(host);
     else if (VIEW === "support") drawRecords(host, "list3", REF.names.list3, LIST3_FIELDS, false);
     else if (VIEW === "weapons") drawRecords(host, "list4", REF.names.list4, LIST4_FIELDS, false);
     else if (VIEW === "shops") drawShops(host);
@@ -4013,6 +4016,85 @@
       else { const g = caps[String(k + 1)]; v = g != null && MAX_BY_GRADE[g] != null ? MAX_BY_GRADE[g] : 0; }
       writeW(off, 1, v); reg(off, 1, "max", lbl, "Max: " + skillName(k + 1));
     }
+  }
+
+  // ---- skill effects (the per-rank values the game itself reads) ---------------
+  // Located 2026-11-15 by fingerprinting the guide's per-rank series against the disc
+  // (lab SKILL_EFFECTS.md): 43 records of 0x1C bytes in the boot ELF at ISO 0x3F0858.
+  // The engine reads them through skillEffectAt (VA 0x170FFC8), which validates
+  // series < 2 and rank 1..8 and returns the byte at rec + 0x0C + series*8 + (rank-1);
+  // the record accessor (VA 0x170FE18) accepts ids 1..47 and forms its base as
+  // table - one record, so the geometry is proven from code, not just from the match.
+  // Series index = grade in E, D, C, B, B+, A, A+, S order. Verification against the
+  // guide's 63 series: 58 exact, 3 stored as 100 - the guide value, 1 differing at a
+  // single grade, 1 unmatched — the exceptions are named per-row in SKILLFX_NOTES.
+  // Only the two series are exposed: the record's category byte (+0x08, values 1..6)
+  // and flag byte (+0x0B) have groupings but no confirmed semantics, so they are not
+  // offered as fields. Nothing here has been tested in play.
+  const SKILLFX = { off: 0x3F0858, count: 43, stride: 0x1C, a: 0x0C, b: 0x14 };
+  const SKILLFX_GRADES = ["E", "D", "C", "B", "B+", "A", "A+", "S"];
+  const SKILLFX_NOTES = {
+    3: { a: "The disc's D-grade byte is 4; the guide prints 5. The disc is what the game reads." },
+    22: { a: "Stored as 100 minus the guide's Damage Reduced (%): the byte falls as the protection rises." },
+    23: { a: "Stored as 100 minus the guide's Cancellation Rate (%)." },
+    24: { a: "Stored as 100 minus the guide's Cancellation Rate (%)." },
+    36: { a: "The guide calls this Cast Time (%) with smaller numbers (1 to 10). The disc's series is real — the engine reads it — but what quantity it measures is unconfirmed." },
+    10: { b: "No guide counterpart: the guide lists one effect for Repel. The series is on the disc and the engine can read it; what it drives is unconfirmed." },
+  };
+  const skillFxLabel = (id, which) => {
+    const fx = ((REF.skillRef && REF.skillRef[String(id)]) || {}).effects || [];
+    const e = fx[which === "a" ? 0 : 1];
+    return e ? e.label : (which === "a" ? "Series A" : "Series B");
+  };
+  // A second series is worth eight inputs only when something says it exists: the
+  // guide lists a second effect, a note names one, or the disc's bytes are nonzero.
+  // The 22 single-effect skills ship series B as all zeros.
+  const skillFxHasB = (rec, id) => {
+    const fx = ((REF.skillRef && REF.skillRef[String(id)]) || {}).effects || [];
+    if (fx.length > 1 || (SKILLFX_NOTES[id] && SKILLFX_NOTES[id].b)) return true;
+    for (let g = 0; g < 8; g++) if (r8(rec + SKILLFX.b + g)) return true;
+    return false;
+  };
+  const skillFxSummary = (r) => {
+    const ser = (baseOff) => SKILLFX_GRADES.map((_, g) => r8(r.rec + baseOff + g)).join("·");
+    return `A ${ser(SKILLFX.a)}` + (skillFxHasB(r.rec, r.id) ? ` · B ${ser(SKILLFX.b)}` : "");
+  };
+  function drawSkillFx(host) {
+    const rows = [];
+    for (let id = 1; id <= SKILLFX.count; id++) {
+      const nm = skillName(id); if (!nm) continue;
+      if (SEARCH && !nm.toLowerCase().includes(SEARCH) && String(id) !== SEARCH) continue;
+      rows.push({ id, label: nm, rec: SKILLFX.off + (id - 1) * SKILLFX.stride });
+    }
+    if (!rows.length) { host.innerHTML = `<div class="muted">no matches</div>`; return; }
+    host.innerHTML = rows.map((r) =>
+      `<details class="char" data-rec="${r.rec}" data-id="${r.id}"><summary>
+         <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span><span class="muted">#${r.id}</span>
+         <span class="lv gr-sum">${skillFxSummary(r)}</span></summary>
+         <div class="char-body"></div></details>`).join("");
+    qa("details.char", host).forEach((d) => {
+      const rec = +d.dataset.rec, id = +d.dataset.id, lbl = d.querySelector(".nm").textContent;
+      const refreshSum = () => { const s = d.querySelector(".gr-sum"); if (s) s.textContent = skillFxSummary({ id, rec }); };
+      const build = () => {
+        const body = d.querySelector(".char-body");
+        const series = (which, baseOff) => {
+          const label = skillFxLabel(id, which);
+          const note = (SKILLFX_NOTES[id] || {})[which];
+          const fields = SKILLFX_GRADES.map((g, gi) =>
+            fieldHTML(rec + baseOff + gi, 1, "num", `${label} · ${g}`)).join("");
+          return `<h4>${esc2(label)} <span class="u">per grade, E to S</span></h4>
+            ${note ? `<div class="fnote" style="margin:0 0 6px">${esc2(note)}</div>` : ""}
+            <div class="grid">${fields}</div>`;
+        };
+        body.innerHTML = series("a", SKILLFX.a) +
+          (skillFxHasB(rec, id) ? series("b", SKILLFX.b)
+            : `<div class="muted" style="margin-top:8px">No second series: this skill's
+               series-B bytes are all zero on the disc, and the guide lists one effect.</div>`);
+        wireFields(body, rec, lbl);
+        body.addEventListener("change", refreshSum);
+      };
+      d.addEventListener("toggle", () => { if (d.open && !d.dataset.built) { build(); d.dataset.built = "1"; } });
+    });
   }
 
   // ---- shops -----------------------------------------------------------------
@@ -6318,7 +6400,7 @@
       }).join("");
       return `<div class="card" style="margin:0 0 12px">
         <div class="bag-h">${cfg.title} <span class="u">patches game code · not played</span></div>
-        <div class="muted" style="margin:0 0 8px" data-sum="${cfg.sum}">${cfg.body}</div>
+        ${cfg.intro}
         <label class="field" style="max-width:460px">
           <span>${cfg.label}</span>
           <select id="${cfg.sel}">
@@ -6335,21 +6417,20 @@
         sel: "mpT1Sel", label: "Charge consumption",
         off: "Stock — casting spends a charge, as the game ships",
         on: "Free casts — charges never drain",
-        sum: "NOP the game's one charge-consumption call and casts stop spending charges; unlocked levels cast forever, locked levels stay locked.",
-        body: `Every cast in the game — battle or field — resolves through one routine, and its
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="NOP the game's one charge-consumption call and casts stop spending charges; unlocked levels cast forever, locked levels stay locked.">Every cast in the game — battle or field — resolves through one routine, and its
           first act is to take one charge of the cast spell's level from the caster. A census of
           the charge accessors found that call exactly <b>once</b>. Replacing it with a
           <code>nop</code> leaves everything else about casting untouched: the availability
           checks still read the real counts, so a level a character has <b>unlocked</b> can be
           cast forever and a level they have not stays locked — that gate is the maximum, not
-          the drain. The counts on the menus simply stop dropping.`,
+          the drain. The counts on the menus simply stop dropping.</div>`,
       }) +
       tierCard(MPCAST_T2, mpCastState(MPCAST_T2), {
         title: "Tier 2 — 9 charges at every level",
         sel: "mpT2Sel", label: "Charge recompute",
         off: "Stock — charges are earned from a derived stat, as the game ships",
         on: "9 everywhere — every level holds 9 charges",
-        body: `Charges are not stored per rune; they are <b>derived</b> — a recompute counts how
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="Force the charge recompute to grant 9 charges at every level — unlocking un-earned levels, for enemy casters too. The two words are a pair and move together.">Charges are not stored per rune; they are <b>derived</b> — a recompute counts how
           many stat thresholds a character passes per spell level, sets that as the maximum,
           and tops the current charges up by the same amount. These two words force both
           numbers to <b>9</b>, the engine's own ceiling count, so every recompute (character
@@ -6359,8 +6440,7 @@
           written and restored together. This applies to <b>every</b> character record the
           recompute touches, <b>enemy casters included</b> — there is no player-only branch.
           On its own it refills to 9 but casts still drain; with tier 1 as well, the 9s are
-          permanent.`,
-        sum: "Force the charge recompute to grant 9 charges at every level — unlocking un-earned levels, for enemy casters too. The two words are a pair and move together.",
+          permanent.</div>`,
       }) +
       `<div class="warnbox" style="margin:0 0 8px" data-sum="Both tiers are statically verified and untested in play; the charge accessor's own internals are deliberately left alone."><b>Untested in play.</b> Both tiers are
         proven statically — the consumption census is exhaustive and every word is byte-verified
