@@ -48,6 +48,11 @@ def build_synth():
     struct.pack_into("<H", b, base + s3save.OFF_MAXHP, 181)
     struct.pack_into("<H", b, base + s3save.OFF_EXP, 500)
     struct.pack_into("<H", b, base + s3save.STAT_OFFSETS["PWR"], 58)
+    # rune spell charges: MAG 47 derives MAX [4,1,0,0] from the threshold table;
+    # CUR sits one charge below MAX at spell level 1, as a save made after a cast does
+    struct.pack_into("<H", b, base + s3save.STAT_OFFSETS["MAG"], 47)
+    b[base + s3save.OFF_CUR_CHARGES:base + s3save.OFF_CUR_CHARGES + 4] = bytes([3, 1, 0, 0])
+    b[base + s3save.OFF_MAX_CHARGES:base + s3save.OFF_MAX_CHARGES + 4] = bytes([4, 1, 0, 0])
     b[base + s3save.OFF_SKILLS + 0] = 6                              # skill slot 0 id
     b[base + s3save.OFF_SKILLS + 1] = 3                              # skill slot 0 rank
     # roster 1 (Chris) with its own id, so an offset/roster shift shows up as a mismatch
@@ -108,6 +113,12 @@ def main():
     check("curHP decoded", hugo["curHP"] == 100)
     check("maxHP decoded", hugo["maxHP"] == 181)
     check("PWR stat decoded", hugo["stats"]["PWR"] == 58)
+    check("rune charges decoded (CUR at +0x38, MAX at +0x3C)",
+          hugo["charges"]["cur"] == [3, 1, 0, 0] and hugo["charges"]["max"] == [4, 1, 0, 0],
+          str(hugo["charges"]))
+    check("stored MAX charges match the MAG threshold derivation",
+          hugo["charges"]["maxPredicted"] == hugo["charges"]["max"],
+          str(hugo["charges"]["maxPredicted"]))
     check("skill slot 0 decoded", hugo["skills"][0]["id"] == 6 and hugo["skills"][0]["rank"] == 3)
     check("roster 0 recruited, roster 1 not",
           hugo["recruited"] and not next(c for c in s["characters"] if c["rosterIndex"] == 1)["recruited"])
@@ -131,6 +142,8 @@ def main():
             [(o, o + 2) for o in s3save.STAT_OFFSETS.values()] + \
             [(o, o + 2) for _, o in s3save.EQUIP_SLOTS] + \
             [(s3save.OFF_ID, s3save.OFF_ID + 1),
+             (s3save.OFF_CUR_CHARGES, s3save.OFF_CUR_CHARGES + s3save.CHARGE_LEVELS),
+             (s3save.OFF_MAX_CHARGES, s3save.OFF_MAX_CHARGES + s3save.CHARGE_LEVELS),
              (s3save.OFF_SKILLS, s3save.OFF_SKILLS + s3save.SKILL_SLOTS * 2)]
     spans.sort()
     check("no writable character field overlaps another",
@@ -154,6 +167,10 @@ def main():
     struct.pack_into("<H", swapped, s3save.CHAR_BASE + s3save.OFF_CURHP, 9999)
     check("current HP above max HP is reported",
           any("current HP" in w for w in s3save.decode_save(bytes(swapped))["problems"]))
+    overc = bytearray(open(path, "rb").read())
+    overc[s3save.CHAR_BASE + s3save.OFF_CUR_CHARGES] = 9     # CUR 9 against a MAX of 4
+    check("current charges above max charges are reported",
+          any("rune charges" in w for w in s3save.decode_save(bytes(overc))["problems"]))
     # The save title states the chapter protagonist's level, so a save carries its own
     # answer for the field this issue got wrong.
     stale = s3save.decode_save(open(path, "rb").read(), {"level": 77})
@@ -272,6 +289,30 @@ def main():
           s3save.party_name(s2["party"][1]) == "Luc", s3save.party_name(s2["party"][1]))
     check("recruit persisted (recruited + recruiter)", r1["recruited"] and r1["recruiter"] == "Chris")
     check("checksum invariant holds after write", sum_words(open(path, "rb").read()) == 0)
+
+    # --- rune charges write semantics ---------------------------------------------------
+    # CUR is clamped to the stored MAX, exactly like the game's own set (mode 2 of
+    # FUN_016C8988): asking for 99 level-2 charges against a MAX of 1 lands on 1.
+    s3save.write_save_edits(path, s["folder"],
+                            {0: {"charges": {"cur": {0: 0, 1: 99}}}},
+                            make_backup=False)
+    hugo3 = next(c for c in s3save.read_all_s3_saves(path)[0]["characters"]
+                 if c["rosterIndex"] == 0)
+    check("charge edit persisted and CUR clamped to MAX",
+          hugo3["charges"]["cur"] == [0, 1, 0, 0], str(hugo3["charges"]))
+    # MAX can be set through the same shape (the game re-derives it from MAG at the
+    # next recompute, but the stored byte is what a loaded save reads until then),
+    # and a CUR set in the same batch clamps against the NEW max.
+    s3save.write_save_edits(path, s["folder"],
+                            {0: {"charges": {"max": {2: 5}, "cur": {2: 3}}}},
+                            make_backup=False)
+    hugo4 = next(c for c in s3save.read_all_s3_saves(path)[0]["characters"]
+                 if c["rosterIndex"] == 0)
+    check("MAX charge edit persisted, CUR set under the new MAX",
+          hugo4["charges"]["max"][2] == 5 and hugo4["charges"]["cur"][2] == 3,
+          str(hugo4["charges"]))
+    check("checksum invariant holds after charge writes",
+          sum_words(open(path, "rb").read()) == 0)
 
     # --- multi-team: a character can carry several protagonists' team bits (0x3C) at once ---
     s3save.write_save_edits(path, s["folder"], {}, make_backup=False,
