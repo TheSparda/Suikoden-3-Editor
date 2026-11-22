@@ -1026,7 +1026,7 @@ function charCard(c) {
           <span class="muted">none = shared</span></span></div>
       <h4>Core</h4><div class="grid">${core}</div>
       <h4>Rune charges</h4><div class="grid">${charges}</div>
-      <div class="fnote">Current charges per spell level. The max is set by MAG and refills at an inn; a spent charge stays spent in the save until then.</div>
+      <div class="muted">Current charges per spell level. The max is set by MAG and refills at an inn; a spent charge stays spent in the save until then.</div>
       <h4>Stats</h4><div class="grid">${statCells}</div>
       <h4>Equipment</h4><div class="grid eq">${equip}</div>
       <h4>Skills</h4><div class="grid sk">${skills}</div>
