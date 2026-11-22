@@ -660,6 +660,13 @@ function drawSlot() {
         <input type="file" id="importJsonFile" accept=".json,application/json" hidden>
         <span class="muted" style="font-size:12px;flex:1;min-width:180px">A human-readable snapshot of this save — edit or share it, then re-import to stage the changes for Apply.</span>
       </div>
+      <h3 class="sec">Loadout <span class="muted" style="font-size:11px;font-weight:400">CSV</span></h3>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <button id="exportCsv">⬇ Export loadout CSV</button>
+        <button id="importCsv">⬆ Import loadout CSV…</button>
+        <input type="file" id="importCsvFile" accept=".csv,text/csv" hidden>
+        <span class="muted" style="font-size:12px;flex:1;min-width:180px">One row per equipment slot for every character, with character and item names next to their ids. Edit it in a spreadsheet, then re-import: a file with any bad row is rejected whole and stages nothing, and a clean file stages its changes for review before Apply.</span>
+      </div>
     </div>
     <div class="card">
       <div class="subtabs">
@@ -726,6 +733,9 @@ function drawSlot() {
   $("#exportJson").onclick = exportSaveJSON;
   $("#importJson").onclick = () => $("#importJsonFile").click();
   $("#importJsonFile").onchange = (e) => { const f = e.target.files[0]; if (f) importSaveJSON(f); e.target.value = ""; };
+  $("#exportCsv").onclick = exportLoadoutCSV;
+  $("#importCsv").onclick = () => $("#importCsvFile").click();
+  $("#importCsvFile").onchange = (e) => { const f = e.target.files[0]; if (f) importLoadoutCSV(f); e.target.value = ""; };
   $$("[data-sub]").forEach((b) => (b.onclick = () => { SUB = b.dataset.sub; SEARCH = ""; $("#sq").value = ""; showSub(); }));
   $("#sq").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); showSub(); };
   $("#saveBtn").onclick = () => applyEdits("download");
@@ -2241,6 +2251,42 @@ async function importSaveJSON(file) {
   const okLabel = mode === "file" ? `Apply import & save to ${origName}`
     : mode === "saveas" ? "Apply import & choose destination…" : "Apply import & download";
   setStatus(`Imported ${diff.length} change(s) — review to apply.`, "");
+  openConfirm(diff, () => doApply(mode), okLabel);
+}
+
+// ---- Loadout CSV round-trip --------------------------------------------------
+// One row per equipment slot per character (see loadout-core.js for the format spec
+// and the validation rules). Export reads the loaded save; import validates the whole
+// file first, then stages the result into EDITS like a character-card edit, so the
+// review modal and Apply remain the only path that writes anything.
+function exportLoadoutCSV() {
+  const s = saves[curSlot];
+  const csv = LoadoutCore.toCsv(s.characters, { itemById: ITEM_BY_ID });
+  const base = (origName || "save").replace(/\.[^.]+$/, "");
+  downloadBytes(new TextEncoder().encode(csv), `${base}.${s.folder || "slot"}.loadout.csv`);
+  const chars = s.characters.filter((c) => c.hasData || c.recruited).length;
+  setStatus(`Exported loadouts for ${chars} characters to CSV.`, "ok");
+}
+
+async function importLoadoutCSV(file) {
+  let text;
+  try { text = await file.text(); }
+  catch (e) { return setStatus("Loadout import failed: could not read that file.", "err"); }
+  const s = saves[curSlot];
+  const r = LoadoutCore.parseLoadout(text, { characters: s.characters, itemById: ITEM_BY_ID });
+  if (!r.ok) {
+    const shown = r.errors.slice(0, 5).map((e) => `row ${e.row}: ${e.message}`).join("; ");
+    const more = r.errors.length > 5 ? ` (+${r.errors.length - 5} more)` : "";
+    return setStatus(`Loadout import rejected, nothing staged. ${r.errors.length} error(s): ${shown}${more}`, "err");
+  }
+  LoadoutCore.stageInto(r, EDITS);
+  const diff = buildDiff();
+  if (!diff.length) return setStatus("Loadout import: the CSV already matches this save, no changes.", "warn");
+  const mode = (SUPPORTS_FS && fileHandle) ? "file" : SUPPORTS_SAVE_PICKER ? "saveas" : "download";
+  const okLabel = mode === "file" ? `Apply import & save to ${origName}`
+    : mode === "saveas" ? "Apply import & choose destination…" : "Apply import & download";
+  setStatus(`Imported loadout: ${diff.length} change(s) from ${r.rows} rows, review to apply.`, "");
+  refreshHealthBadge();
   openConfirm(diff, () => doApply(mode), okLabel);
 }
 

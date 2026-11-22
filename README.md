@@ -60,7 +60,11 @@ Editable per save:
   playtime, story phase and Suikoden I/II carryover detection — plus a
   **JSON snapshot** (⬇ Export / ⬆ Import) of the whole save: a human-readable file you can
   edit or share and re-import, which stages the differences through the normal review-and-Apply
-  path rather than writing anything directly.
+  path rather than writing anything directly. The same section also exports and imports a
+  **loadout CSV**: one row per equipment slot for every character (character name and record
+  id, slot, item name and id in decimal and hex), ready for a spreadsheet. Import validates
+  the whole file strictly and rejects it whole on any bad row, staging nothing; a clean file
+  stages its gear changes through the same review-and-Apply path.
 - **Characters** — level, weapon (sharpen) level, current/max HP, EXP, all 7 stats, equipped runes + armour
   (category-filtered, name-resolved pickers), 8 skill slots (id + **rank tier E…S**), and
   per-character recruitment (recruited toggle + "recruited by"). Fields carry the same
