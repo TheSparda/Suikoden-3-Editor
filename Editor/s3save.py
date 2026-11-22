@@ -4,8 +4,10 @@ Suikoden III PS2 memory-card save reader (read-only, stdlib only).
 
 This is the save-editing counterpart to s3patch.py (which edits the ISO). It does
 NOT touch the ISO and does NOT require one. It opens an 8 MB PS2 memory-card image
-(*.ps2 / *.mcd), walks the PS2MFS filesystem, finds the Suikoden III USA save
-folders (BASLUS-20387...), and decodes each save's `gamedata` payload.
+(*.ps2 / *.mcd), walks the PS2MFS filesystem, finds the Suikoden III save
+folders (USA BASLUS-20387..., plus PAL BESLES-52000... on a detection-only basis:
+PAL support is untested, no PAL fixture available), and decodes each save's
+`gamedata` payload.
 
 Layout facts (validated 2026-08-10 against 4 real saves + the herrvillain save-offset
 map; character-record and inventory offsets re-derived 2026-08-30 from a 28-save corpus
@@ -31,6 +33,41 @@ import struct, os, glob, shutil, unicodedata
 
 MAGIC = b"Sony PS2 Memory Card Format"
 S3_PREFIX = "BASLUS-20387"     # USA Suikoden III save-folder prefix on the memcard
+# PAL detection (untested, no PAL fixture available): BESLES-52000 is the believed
+# PAL folder prefix, but it was NOT verified from any save file bytes. A byte level
+# hunt over every memcard image and single save export in this repo (2026-11-22)
+# found BASLUS-20387 everywhere and no BESLES-52000 or SLES-52000 anywhere; the only
+# SLES code present at all was SLES-54644, a different game. So this constant is
+# explicitly UNVERIFIED and is used for detection only: a folder is accepted when
+# its prefix matches AND the payload then validates through the same shared layout
+# code as a USA save (a gamedata payload of exactly GAMEDATA_SIZE where the format
+# carries one). No PAL specific payload offsets exist anywhere in this module; the
+# payload layout code stays shared, so if the PAL layout differs, validation
+# warnings in decode_save are the safety net, not silent acceptance.
+S3_PREFIX_PAL_UNVERIFIED = "BESLES-52000"
+S3_PREFIXES = (S3_PREFIX, S3_PREFIX_PAL_UNVERIFIED)
+
+def s3_folder_prefix(folder):
+    """The known S3 folder prefix `folder` starts with, or None."""
+    for pre in S3_PREFIXES:
+        if folder and folder.startswith(pre):
+            return pre
+    return None
+
+def is_s3_folder(folder):
+    """True when `folder` carries a known S3 save folder prefix (USA, or PAL on the
+    untested detection basis described at S3_PREFIX_PAL_UNVERIFIED)."""
+    return s3_folder_prefix(folder) is not None
+
+def s3_region(folder):
+    """Region label for a save folder: 'US', 'PAL (untested, no PAL fixture
+    available)', or '' for an unrecognised folder."""
+    pre = s3_folder_prefix(folder)
+    if pre == S3_PREFIX:
+        return "US"
+    if pre == S3_PREFIX_PAL_UNVERIFIED:
+        return "PAL (untested, no PAL fixture available)"
+    return ""
 
 # --- PS2 memory-card ECC (Hamming) — verbatim from mymc (Ross Ridge, public domain).
 # Validated against every non-erased data page of a real card (0 mismatches). Each
@@ -1074,10 +1111,12 @@ class MemCard:
         return self._listdir(self.rootdir_cluster, root_len)
 
     def find_s3_saves(self):
-        """Return [{folder, cluster, length}] for each Suikoden III USA save folder."""
+        """Return [{folder, cluster, length}] for each Suikoden III save folder.
+        PAL folders are matched on the untested detection basis only (see
+        S3_PREFIX_PAL_UNVERIFIED)."""
         out = []
         for e in self.root_entries():
-            if e["is_dir"] and e["name"].startswith(S3_PREFIX):
+            if e["is_dir"] and is_s3_folder(e["name"]):
                 out.append({"folder": e["name"], "cluster": e["cluster"],
                             "length": e["length"]})
         return out
@@ -1143,7 +1182,8 @@ class MemCard:
 
 def slot_label(folder):
     """'BASLUS-20387sui3_u01' -> 'Slot 1'. Falls back to the raw folder name."""
-    tail = folder[len(S3_PREFIX):]
+    pre = s3_folder_prefix(folder) or S3_PREFIX
+    tail = folder[len(pre):]
     if tail.startswith("sui3_u") and tail[6:].isdigit():
         return f"Slot {int(tail[6:])}"
     return tail or folder
@@ -1937,6 +1977,7 @@ def read_all_s3_saves(path):
         meta = _title_from_icon_sys(ic)
         dec = decode_save(gd, meta)
         dec["folder"] = s["folder"]
+        dec["region"] = s3_region(s["folder"])
         dec["label"] = slot_label(s["folder"])
         dec["meta"] = meta
         saves.append(dec)
@@ -1946,7 +1987,7 @@ def read_all_s3_saves(path):
 def _read_psu_saves(path):
     with open(path, "rb") as f:
         psu = PsuSave(f.read())
-    if not psu.folder.startswith(S3_PREFIX):
+    if not is_s3_folder(psu.folder):
         return []
     gd = psu.read_file("gamedata")
     if not gd or len(gd) < GAMEDATA_SIZE:
@@ -1954,6 +1995,7 @@ def _read_psu_saves(path):
     meta = _title_from_icon_sys(psu.read_file("icon.sys"))
     dec = decode_save(gd, meta)
     dec["folder"] = psu.folder
+    dec["region"] = s3_region(psu.folder)
     dec["label"] = slot_label(psu.folder)
     dec["meta"] = meta
     return [dec]
@@ -1966,6 +2008,7 @@ def _read_gamedata_save(path):
         return []
     dec = decode_save(gd)
     dec["folder"] = os.path.basename(path)   # raw payload has no folder name
+    dec["region"] = ""
     dec["label"] = slot_label(dec["folder"])
     dec["meta"] = {}
     return [dec]
@@ -1981,11 +2024,12 @@ def _read_individual_save(path, fmt):
     _, gd = _find_gamedata(files)
     if not gd:
         return []
-    if not folder or not folder.startswith(S3_PREFIX):
-        return []                             # not a Suikoden III (USA) save
+    if not folder or not is_s3_folder(folder):
+        return []                             # not a Suikoden III save
     meta = _title_from_icon_sys(files.get("icon.sys"))
     dec = decode_save(gd, meta)
     dec["folder"] = folder
+    dec["region"] = s3_region(folder)
     dec["label"] = slot_label(folder)
     dec["meta"] = meta
     return [dec]
@@ -2064,7 +2108,7 @@ def scan_memcards(roots):
                         continue
                     with open(full, "rb") as fh:
                         blob = fh.read()
-                    has_s3 = S3_PREFIX.encode() in blob
+                    has_s3 = any(pre.encode() in blob for pre in S3_PREFIXES)
                 except OSError:
                     continue
                 found.append({"path": full, "name": fn, "size": sz, "kind": "card",
@@ -2101,7 +2145,7 @@ def scan_individual_saves(roots):
                         with open(full, "rb") as fh:
                             head = fh.read(_DIRENT)
                         name = head[0x40:0x40 + 448].split(b"\x00")[0].decode("latin1", "replace")
-                        kind = "psu"; has_s3 = name.startswith(S3_PREFIX)
+                        kind = "psu"; has_s3 = is_s3_folder(name)
                     except OSError:
                         continue
                 elif low.endswith((".cbs", ".sps", ".xps", ".psv")):
@@ -2118,7 +2162,7 @@ def scan_individual_saves(roots):
                         else:
                             continue
                         _, gd = _find_gamedata(files)
-                        has_s3 = bool(gd) and folder.startswith(S3_PREFIX)
+                        has_s3 = bool(gd) and is_s3_folder(folder)
                     except Exception:
                         continue
                 elif sz == GAMEDATA_SIZE:

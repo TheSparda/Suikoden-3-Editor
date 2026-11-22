@@ -694,6 +694,57 @@ def main():
           not s3save.decode_trinity(dark)["povs"][0]["lit"])
     check("the checksum invariant survives a Trinity edit", sum_words(stage) == 0)
 
+    # --- PAL detection only (untested, no PAL fixture available) -------------------
+    # This section covers DETECTION ONLY. No real PAL save exists in the repo (byte
+    # level hunt, 2026-11-22: every memcard and export holds BASLUS-20387, none holds
+    # BESLES-52000 or SLES-52000), so the fixture below is a synthetic copy of the US
+    # synthetic payload with the folder product code string swapped. It proves the
+    # folder is accepted and labelled, and that the shared payload layout decodes it.
+    # It does NOT prove a real PAL payload has the same layout.
+    print("PAL detection (detection only, untested, no PAL fixture available):")
+    check("the PAL prefix constant is the unverified one",
+          s3save.S3_PREFIX_PAL_UNVERIFIED == "BESLES-52000")
+    check("a USA folder is detected as US",
+          s3save.is_s3_folder("BASLUS-20387sui3_u01") and
+          s3save.s3_region("BASLUS-20387sui3_u01") == "US")
+    check("a PAL folder is detected and labelled untested",
+          s3save.is_s3_folder("BESLES-52000sui3_u01") and
+          "untested" in s3save.s3_region("BESLES-52000sui3_u01"))
+    check("an unrelated folder is not detected",
+          not s3save.is_s3_folder("BASLUS-20347sui3_u01") and
+          not s3save.is_s3_folder("BESLES-54644VP2"))
+    check("slot_label strips the PAL prefix, not the USA one",
+          s3save.slot_label("BESLES-52000sui3_u02") == "Slot 2" and
+          s3save.slot_label("BASLUS-20387sui3_u02") == "Slot 2")
+
+    def build_psu(folder, gamedata):
+        # Minimal .psu: folder dirent, '.' and '..' dirents, one gamedata file.
+        def dirent(mode, length, name):
+            d = bytearray(512)
+            struct.pack_into("<HHL", d, 0, mode, 0, length)
+            d[0x40:0x40 + len(name)] = name.encode("latin1")
+            return bytes(d)
+        out = dirent(0x0020, 3, folder) + dirent(0x0020, 0, ".") + dirent(0x0020, 0, "..")
+        out += dirent(0x8000, len(gamedata), "gamedata") + gamedata
+        out += bytes((-len(out)) % 1024)
+        return out
+
+    psu_path = os.path.join(tmp, "pal-detection.psu")
+    with open(psu_path, "wb") as f:
+        f.write(build_psu("BESLES-52000sui3_u01", build_synth()))
+    pal_saves = s3save.read_all_s3_saves(psu_path)
+    check("a synthetic PAL folder psu is accepted by detection (detection only)",
+          len(pal_saves) == 1, str(len(pal_saves)))
+    if pal_saves:
+        check("the synthetic PAL save is labelled PAL and untested",
+              pal_saves[0]["region"].startswith("PAL") and
+              "untested" in pal_saves[0]["region"], pal_saves[0].get("region", ""))
+        check("the synthetic PAL save keeps its slot label",
+              pal_saves[0]["label"] == "Slot 1", pal_saves[0].get("label", ""))
+    scan = s3save.scan_individual_saves([tmp])
+    check("the scanner flags the synthetic PAL psu as an S3 save",
+          any(e["path"] == psu_path and e["hasS3"] for e in scan), str(scan))
+
     print("Memory-card ECC helper:")
     zero = s3save.ecc_page(bytes(512))
     check("ecc_page returns 16 bytes", len(zero) == 16)

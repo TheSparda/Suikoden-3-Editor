@@ -385,7 +385,7 @@ async function handleFile(file, handle) {
     json = py.runPython(`load_saves(${JSON.stringify(SAVE_PATH)})`);
   } catch (e) { return setDropMsg("Failed to read save: " + e.message, true); }
   saves = JSON.parse(json);
-  if (!saves.length) { $("#editor").innerHTML = ""; return setDropMsg("No Suikoden III (USA) save found in that file.", true); }
+  if (!saves.length) { $("#editor").innerHTML = ""; return setDropMsg("No Suikoden III save found in that file. PAL saves are detected on an untested basis (untested, no PAL fixture available).", true); }
   curSlot = 0;
   setDropMsg("Python engine ready — load a save file.", false);   // clear any prior "no save found" error
   rememberSave(origName, bytes, fileHandle);   // persist for one-tap reopen next visit
