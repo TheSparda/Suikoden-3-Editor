@@ -306,7 +306,13 @@ once), the **unlimited rune casts** switch (two tiers over the charge system, fr
 that found exactly one charge-consumption call in the game: NOP it so casts never drain —
 unlocked levels cast forever, locked levels stay locked — or force the charge recompute to
 grant 9 charges at every level, un-earned levels and enemy casters included; statically
-verified, untested in play), plus the retired scene-actor fallback kept as a written-up
+verified, untested in play), the **training and forge** switches (free skill training: NOP
+the SP accessor's only two subtract calls and the training menus' affordability branches;
+free sharpening: NOP the sharpen executor's one potch-subtract call and the three confirm
+variants' affordability branches; and a blacksmith level-cap removal: NOP the at-cap
+branches so any smith sharpens to 16; the deduction sites are proven by exhaustive
+censuses, the gates and the cap removal are labelled inference in the tab, and none of it
+is tested in play), plus the retired scene-actor fallback kept as a written-up
 dead end; see below),
 **Gear** (name, DEF, price, description, 5 effect slots), **Sets** (armor-set composition, the
 set-bonus constants patched straight into the game code — potch multiplier, counter chance,
