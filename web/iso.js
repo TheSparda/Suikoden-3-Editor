@@ -5984,6 +5984,49 @@
     return "unknown";          // partially applied, or not this disc's code
   }
 
+  // ---- free training and sharpening: stop the currency drains (Test tab) --------
+  // Skill training charges SP through the SP accessor's subtract mode. A census of
+  // that accessor found exactly two subtract call sites in the whole executable, one
+  // in each of the two training menus (lab SKILL_TRAINING.md); NOP both and a rank-up
+  // stops deducting. The same two menus gate their confirm on the character actually
+  // holding the SP, so NOP those two affordability branches as well and training
+  // stops requiring SP at all. S3 training has no success roll (the transaction is
+  // deterministic end to end), so there is no "always succeeds" patch to offer. The
+  // deduction sites are proven by the exhaustive census; the affordability branches
+  // are traced in the same menus but their callback wiring is inference. All four
+  // words move together, byte-verified on a pristine SLUS-20387; not played yet.
+  const QOL_TRAIN = [
+    { off: 0x19DB98, stock: 0x0C5B242C, patch: 0x00000000, what: "training menu, site 1 of 2: the SP-subtract call (jal to the SP accessor, becomes a nop)" },
+    { off: 0x19ED70, stock: 0x0C5B242C, patch: 0x00000000, what: "training menu, site 2 of 2: the SP-subtract call (jal to the SP accessor, becomes a nop)" },
+    { off: 0x19D2DC, stock: 0x54400013, patch: 0x00000000, what: "training menu, site 1 of 2: the can-afford branch (bnel, becomes a nop)" },
+    { off: 0x19EAFC, stock: 0x1440000D, patch: 0x00000000, what: "training menu, site 2 of 2: the can-afford branch (bne, becomes a nop)" },
+  ];
+  // Sharpening prices come from a flat table indexed by weapon level, read through
+  // the shared price dispatcher. The sharpen executor holds the game's one
+  // potch-subtract call inside a function that also does that price lookup and sets
+  // the new weapon level; NOP it and no potch is taken. Three confirm variants gate
+  // on the purse first, so NOP their affordability branches too and sharpening stops
+  // requiring potch. The sites are proven; that the three variants are all of them
+  // is inference. All four words move together, byte-verified; not played yet.
+  const QOL_FORGE = [
+    { off: 0x1920A4, stock: 0x0C5BFFE8, patch: 0x00000000, what: "sharpen executor: the potch-subtract call (jal to the potch accessor, becomes a nop)" },
+    { off: 0x1918C0, stock: 0x14400011, patch: 0x00000000, what: "sharpen confirm, site 1 of 3: the can-afford branch (bne, becomes a nop)" },
+    { off: 0x192C2C, stock: 0x5440000E, patch: 0x00000000, what: "sharpen confirm, site 2 of 3: the can-afford branch (bnel, becomes a nop)" },
+    { off: 0x191E34, stock: 0x14400010, patch: 0x00000000, what: "sharpen confirm, site 3 of 3: the can-afford branch (bne, becomes a nop)" },
+  ];
+  // Each smith's level cap reaches the confirm handlers as a value in the menu
+  // context, and two of the three confirm variants compare the weapon's level
+  // against it and refuse at the cap; the third variant has no cap check at all.
+  // NOP the two at-cap branches and any smith sharpens to the game's own maximum.
+  // The cap value's writer was not traced, so the effect is inference; it is safe
+  // by construction because the price table's level-16 entry is 0 and the
+  // weapon-level setter clamps at 16, so nothing can price or level past the stock
+  // maximum. Both words move together, byte-verified; not played yet.
+  const QOL_SMITHCAP = [
+    { off: 0x191898, stock: 0x10400028, patch: 0x00000000, what: "sharpen confirm, site 1 of 2: the at-cap branch (beq, becomes a nop)" },
+    { off: 0x192C04, stock: 0x10400025, patch: 0x00000000, what: "sharpen confirm, site 2 of 2: the at-cap branch (beq, becomes a nop)" },
+  ];
+
   // ---- Test: experiments that are not known to work ---------------------------
   // Kept behind its own tab, and out of the Save Editor's picker, because the honest status
   // is "the patch does what it says and the game may still hang". Scripted scenes are
@@ -5991,7 +6034,7 @@
   let TESTVIEW = "patches";       // the switchboard first: it is the tab's diagnostic entry point
   const TESTS = [["patches", "Non-stock code"], ["avatar", "Field character"],
     ["horse", "Assigned horse"], ["herb", "Mount button"], ["atklist", "Attack-rune lists"],
-    ["mpcast", "Unlimited rune casts"]];
+    ["mpcast", "Unlimited rune casts"], ["qol", "Training and forge"]];
   function drawTest(host) {
     // The Field-character warning is about ONE subtab's patch, so it only belongs above that
     // subtab — on the switchboard it would read as a warning about switching patches OFF.
@@ -6016,6 +6059,7 @@
     else if (TESTVIEW === "herb") drawHerb(q("#testView", host));
     else if (TESTVIEW === "atklist") drawAtkList(q("#testView", host));
     else if (TESTVIEW === "mpcast") drawMpCast(q("#testView", host));
+    else if (TESTVIEW === "qol") drawQol(q("#testView", host));
   }
 
   // ---- Non-stock code: one checkbox per patched site -------------------------
@@ -6462,6 +6506,102 @@
     };
     wire("#mpT1Sel", MPCAST_T1);
     wire("#mpT2Sel", MPCAST_T2);
+  }
+
+  // ---- Training and forge -------------------------------------------------------
+  // Three independent switches over the SP and potch economies (see QOL_TRAIN,
+  // QOL_FORGE and QOL_SMITHCAP above). Each renders its own card with its own
+  // state, and each switch's words are only ever written and restored whole.
+  function drawQol(host) {
+    const card = (words, st, cfg) => {
+      if (st === "absent" || st === "unknown") {
+        return `<div class="warnbox" style="margin:0 0 12px">${cfg.title}: the words aren't
+          where this build expects them, or are only partly patched, so no edit is offered.
+          Expected ${words.map((c) => "0x" + c.off.toString(16).toUpperCase()).join(", ")},
+          each either its stock word or its patched word.</div>`;
+      }
+      const on = st === "on";
+      const rows = words.map((c) => {
+        const cur = readW(c.off, 4) >>> 0;
+        return `<tr><td class="sl">0x${c.off.toString(16).toUpperCase()}</td>
+          <td><code>${cur.toString(16).padStart(8, "0")}</code></td>
+          <td>${esc2(c.what)}</td>
+          <td>${cur === c.stock ? '<span class="dim">stock</span>' : '<span class="tag acc2">patched</span>'}</td></tr>`;
+      }).join("");
+      return `<div class="card" style="margin:0 0 12px">
+        <div class="bag-h">${cfg.title} <span class="u">patches game code · not played</span></div>
+        ${cfg.intro}
+        <label class="field" style="max-width:460px">
+          <span>${cfg.label}</span>
+          <select id="${cfg.sel}">
+            <option value="0"${on ? "" : " selected"}>${cfg.off}</option>
+            <option value="1"${on ? " selected" : ""}>${cfg.on}</option>
+          </select></label>
+        <table class="invtbl" style="margin-top:10px"><thead><tr><th>Offset</th><th>Word</th><th>What</th><th>State</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+    };
+    host.innerHTML =
+      card(QOL_TRAIN, mpCastState(QOL_TRAIN), {
+        title: "Free skill training",
+        sel: "qolTrainSel", label: "Skill training SP",
+        off: "Stock: rank-ups cost SP, as the game ships",
+        on: "Free: rank-ups cost no SP and need none",
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="NOP the game's only two SP-subtract calls and the two affordability branches in the same menus, and skill training stops costing or requiring SP.">Raising a skill rank charges SP through one accessor, and a census of that
+          accessor found exactly <b>two</b> subtract calls in the whole game, one in each
+          training menu. This switch NOPs both, so a rank-up stops deducting, and also NOPs
+          the two affordability branches those menus check first, so training stops
+          requiring SP either. Training here has <b>no success roll</b> to patch: the
+          rank-up is deterministic, so free is the whole story. The deduction sites are
+          proven by the exhaustive census; the affordability branches sit in the same
+          menus but their wiring is inference.</div>`,
+      }) +
+      card(QOL_FORGE, mpCastState(QOL_FORGE), {
+        title: "Free sharpening",
+        sel: "qolForgeSel", label: "Sharpening potch",
+        off: "Stock: sharpening costs potch, as the game ships",
+        on: "Free: sharpening costs no potch and needs none",
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="NOP the sharpen executor's one potch-subtract call and the affordability branches in the three confirm variants, and sharpening stops costing potch.">Sharpen prices come from a flat table indexed by weapon level. The executor
+          that applies a sharpen holds the game's <b>one</b> potch-subtract call inside a
+          function that also reads that table and sets the new level. This switch NOPs it,
+          plus the affordability branches in all <b>three</b> confirm variants, so
+          sharpening takes no potch and needs none. The sites are proven; that the three
+          confirm variants are all of them is inference.</div>`,
+      }) +
+      card(QOL_SMITHCAP, mpCastState(QOL_SMITHCAP), {
+        title: "Blacksmith level cap",
+        sel: "qolCapSel", label: "Smith level cap",
+        off: "Stock: each smith caps sharpening, as the game ships",
+        on: "Removed: every smith sharpens to 16",
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="NOP the at-cap branches in the two confirm variants that check the smith's cap, and any smith sharpens to the game's own maximum of 16.">Each smith's cap reaches the confirm code as a value in the menu context. Two
+          of the three confirm variants compare the weapon's level against it and refuse
+          at the cap (the third never checks); this switch NOPs those two branches, so
+          any smith sharpens up to the game's own maximum of <b>16</b>. The cap value's
+          writer was not traced, so the effect is inference, but it cannot overshoot: the
+          price table's level-16 entry is 0 and the weapon-level setter clamps at 16.</div>`,
+      }) +
+      `<div class="warnbox" style="margin:0 0 8px" data-sum="All three switches are statically verified and untested in play; the SP and potch accessors' own internals are deliberately left alone."><b>Untested in play.</b> Every word
+        above is byte-verified against a pristine disc and the patch sites are traced in
+        the lab writeup (SKILL_TRAINING.md). The training and sharpening deduction sites
+        are proven by exhaustive censuses of their accessors; the affordability gates and
+        the cap removal carry inference labels where the tracing stops. The SP and potch
+        accessors' own internals are deliberately <b>not</b> patched: every other system
+        that moves those currencies funnels through them.</div>`;
+    const wire = (sel, words, group) => {
+      const el = q(sel, host);
+      if (!el) return;
+      el.onchange = (e) => {
+        const want = e.target.value === "1";
+        words.forEach((c) => {
+          writeW(c.off, 4, want ? c.patch : c.stock);
+          reg(c.off, 4, "word", group, c.what);
+        });
+        drawView();
+      };
+    };
+    wire("#qolTrainSel", QOL_TRAIN, "Free skill training");
+    wire("#qolForgeSel", QOL_FORGE, "Free sharpening");
+    wire("#qolCapSel", QOL_SMITHCAP, "Blacksmith level cap");
   }
 
   // ---- Field character --------------------------------------------------------
@@ -10730,6 +10870,12 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       "rewritten engine code: with the consumption call NOP-ed, casts never spend rune charges — unlocked levels cast forever, locked levels stay locked, and enemy casters with character records stop draining too"));
     MPCAST_T2.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,
       "rewritten engine code: the charge recompute grants 9 charges at every level for every character record it touches, enemy casters included; the pair is only ever written together"));
+    QOL_TRAIN.forEach((c) => word(c.off, c.stock, "Free skill training", c.what,
+      "rewritten engine code: with the two SP-subtract calls NOP-ed, skill rank-ups stop deducting SP, and with the two affordability branches NOP-ed they stop requiring it; the deduction census is exhaustive, the gate wiring is inference, and the switch is untested in play"));
+    QOL_FORGE.forEach((c) => word(c.off, c.stock, "Free sharpening", c.what,
+      "rewritten engine code: with the potch-subtract call NOP-ed, sharpening takes no potch, and with the three confirm affordability branches NOP-ed it needs none; the sites are proven, the three-variant census is inference, and the switch is untested in play"));
+    QOL_SMITHCAP.forEach((c) => word(c.off, c.stock, "Blacksmith level cap", c.what,
+      "rewritten engine code: with the at-cap branches NOP-ed, any smith sharpens to the game's maximum of 16; the cap value's writer is untraced, so the effect is inference, and the switch is untested in play"));
     word(MOUNTS.mech.pool.off, MOUNTS.mech.pool.stock, "Mounts", MOUNTS.mech.pool.label);
     word(MOUNTS.mech.adren.off, MOUNTS.mech.adren.stock, "Mounts", MOUNTS.mech.adren.label);
     word(MOUNTS.mech.roundRider.off, MOUNTS.mech.roundRider.word, "Mounts", MOUNTS.mech.roundRider.label);
