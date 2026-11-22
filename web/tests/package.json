@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node validate.mjs && node recruit-logic.mjs && node rename-core.mjs && node guide-core.mjs && node health-core.mjs && node text-core.mjs && node save-roundtrip.mjs && node save-charges.mjs && node field-avatar.mjs && node party-fix.mjs && node vcdiff.mjs && node desc-merge.mjs && node changes-core.mjs && node loadout-core.mjs && node stock-restore.mjs && node svag-core.mjs && node blurb-core.mjs && node spell-target-real-iso.mjs && node spell-radius-real-iso.mjs && node atk-runes-real-iso.mjs && node mp-charges-real-iso.mjs && node skill-effects-real-iso.mjs && node qol-patches-real-iso.mjs",
+    "test": "node validate.mjs && node boot-manifest.mjs && node recruit-logic.mjs && node rename-core.mjs && node guide-core.mjs && node health-core.mjs && node text-core.mjs && node save-roundtrip.mjs && node save-charges.mjs && node field-avatar.mjs && node party-fix.mjs && node vcdiff.mjs && node desc-merge.mjs && node changes-core.mjs && node loadout-core.mjs && node stock-restore.mjs && node svag-core.mjs && node blurb-core.mjs && node spell-target-real-iso.mjs && node spell-radius-real-iso.mjs && node atk-runes-real-iso.mjs && node mp-charges-real-iso.mjs && node skill-effects-real-iso.mjs && node qol-patches-real-iso.mjs",
     "test:loop": "E2E_TIER=fast E2E_WORKERS=6 node shard.mjs",
     "test:gate": "npm test && node shard.mjs && node stream-save.mjs",
     "test:e2e": "node shard.mjs && node stream-save.mjs",
@@ -12,8 +12,9 @@
     "test:budget": "node budget.mjs",
     "test:overlay": "node iso-load-overlay.mjs && node boot-gate.mjs",
     "test:realiso": "node overlay-switches-real-iso.mjs && node spell-target-real-iso.mjs && node spell-radius-real-iso.mjs && node atk-runes-real-iso.mjs && node mp-charges-real-iso.mjs && node skill-effects-real-iso.mjs && node qol-patches-real-iso.mjs",
-    "test:boot": "node boot-gate.mjs",
-    "test:stream": "node stream-save.mjs"
+    "test:boot": "node boot-gate.mjs && node boot-manifest.mjs",
+    "test:stream": "node stream-save.mjs",
+    "test:manifest": "node boot-manifest.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.62.1"

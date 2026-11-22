@@ -58,26 +58,108 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ---- Pyodide bootstrap -----------------------------------------------------
+// The boot manifest: every file the save editor fetches into Pyodide, in load order.
+// This list is the single source of truth for loading AND for the boot self-check below,
+// so the check can never drift from what the loader actually fetches. `required: false`
+// entries are the old grabOpt ones: rune/food descriptions (runes and food have no
+// equipment desc-record) and rich per-rank skill effects, pre-extracted from the ISO and
+// the guides so the save editor (no ISO) can show them too. A missing optional file falls
+// back to "{}" and must never fail the boot check.
+// `symbols` names the functions the rest of this file calls on the module; the check
+// verifies they are really there, which is what catches a truncated or wrong file that
+// still returned HTTP 200.
+const BOOT_MANIFEST = [
+  { url: "../Editor/s3save.py", dest: "s3save.py", required: true,
+    symbols: ["read_all_s3_saves", "write_save_edits", "party_reference",
+              "carryover_reference", "trinity_reference"] },
+  { url: "../Editor/Suikoden3_item_ids.txt", dest: "items.txt", required: true },
+  { url: "../Editor/Suikoden3_skill_ids.txt", dest: "skills.txt", required: true },
+  { url: "../Editor/s3_names.json", dest: "names.json", required: true },
+  { url: "../Editor/s3_item_desc.json", dest: "itemdesc.json", required: true },
+  { url: "../Editor/s3_skill_desc.json", dest: "skilldesc.json", required: true },
+  { url: "../Editor/s3_rune_food_desc.json", dest: "itemdescextra.json", required: false },
+  { url: "../Editor/s3_skill_ref.json", dest: "skillref.json", required: false },
+];
+if (typeof window !== "undefined") window.S3_BOOT_MANIFEST = BOOT_MANIFEST;
+
+// One plain sentence the user can act on, shared by every manifest failure. No em dashes.
+const BOOT_FIX_HINT = "Please hard refresh the page (Ctrl+Shift+R, or Cmd+Shift+R on a Mac). " +
+  "If it keeps happening, please report it and include this message.";
+function bootManifestError(problems) {
+  const e = new Error("Boot check failed. These files did not load properly: " +
+    problems.join(", ") + ". " + BOOT_FIX_HINT);
+  e.name = "BootManifestError";
+  return e;
+}
+
+// Verify, against BOOT_MANIFEST itself, that everything the loader promised is really in
+// Pyodide: each required file came back non-empty, landed in the FS, and (for the Python
+// module) still carries the functions this file calls. Optional files are recorded, never
+// failed. Returns { ok, checked, optionalMissing }; throws a BootManifestError naming the
+// offending file(s) on any required failure.
+function verifyBootManifest(py, loaded) {
+  const problems = [];
+  const checked = [], optionalMissing = [];
+  for (const entry of BOOT_MANIFEST) {
+    const rec = loaded.get(entry.dest);
+    if (!entry.required) { if (!rec || !rec.ok) optionalMissing.push(entry.dest); continue; }
+    checked.push(entry.dest);
+    if (!rec || !rec.ok) { problems.push(entry.dest + " (could not be fetched)"); continue; }
+    if (!rec.text) { problems.push(entry.dest + " (came back empty)"); continue; }
+    if (py.FS && typeof py.FS.readFile === "function") {
+      try {
+        const back = py.FS.readFile(entry.dest);
+        if (!back || !back.length) problems.push(entry.dest + " (missing after load)");
+      } catch (err) { problems.push(entry.dest + " (missing after load)"); }
+    }
+    for (const sym of entry.symbols || []) {
+      if (!new RegExp("def " + sym + "\\b").test(rec.text))
+        problems.push(entry.dest + " (missing " + sym + ")");
+    }
+  }
+  // Live symbol check inside Python, when the runtime can answer. A stubbed runtime in
+  // tests may return nothing for this snippet; only a real answer can fail the check.
+  if (!problems.length) {
+    try {
+      const syms = BOOT_MANIFEST.flatMap((e) => (e.symbols || []).map((s) => [e.dest, s]));
+      if (syms.length) {
+        const out = py.runPython(
+          "import json, s3save  # S3_BOOT_CHECK\n" +
+          "json.dumps([s for s in " + JSON.stringify(syms.map(([, s]) => s)) +
+          " if not hasattr(s3save, s)])");
+        if (typeof out === "string") {
+          const missing = JSON.parse(out);
+          for (const s of missing) problems.push("s3save.py (missing " + s + ")");
+        }
+      }
+    } catch (err) { problems.push("s3save.py (could not be imported)"); }
+  }
+  const result = { ok: !problems.length, checked, optionalMissing };
+  if (typeof window !== "undefined") window.S3_BOOT_CHECK = result;
+  if (problems.length) throw bootManifestError(problems);
+  return result;
+}
+
 async function bootPyodide() {
   bootProgress(10, "Downloading Python runtime…", "rt");
   const py = await loadPyodide();
   bootProgress(55, "Loading save module…", "mod");
-  const grab = async (url) => {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`fetch ${url} (${r.status})`);
-    return r;
-  };
-  py.FS.writeFile("s3save.py", await (await grab("../Editor/s3save.py")).text());
-  py.FS.writeFile("items.txt", await (await grab("../Editor/Suikoden3_item_ids.txt")).text());
-  py.FS.writeFile("skills.txt", await (await grab("../Editor/Suikoden3_skill_ids.txt")).text());
-  py.FS.writeFile("names.json", await (await grab("../Editor/s3_names.json")).text());
-  py.FS.writeFile("itemdesc.json", await (await grab("../Editor/s3_item_desc.json")).text());
-  py.FS.writeFile("skilldesc.json", await (await grab("../Editor/s3_skill_desc.json")).text());
-  // Rune/food descriptions (runes+food have no equipment desc-record) + rich per-rank skill
-  // effects — pre-extracted from the ISO / guides so the save editor (no ISO) can show them too.
-  const grabOpt = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : "{}"; } catch (e) { return "{}"; } };
-  py.FS.writeFile("itemdescextra.json", await grabOpt("../Editor/s3_rune_food_desc.json"));
-  py.FS.writeFile("skillref.json", await grabOpt("../Editor/s3_skill_ref.json"));
+  // Fetch everything the manifest promises. Required failures are collected rather than
+  // thrown one at a time, so the error panel can name every broken file at once.
+  const loaded = new Map();
+  for (const entry of BOOT_MANIFEST) {
+    let text = null, ok = false;
+    try {
+      const r = await fetch(entry.url);
+      if (r.ok) { text = await r.text(); ok = true; }
+    } catch (err) { /* recorded below via ok=false */ }
+    if (!ok && !entry.required) text = "{}";   // optional fallback, as before
+    if (text !== null) py.FS.writeFile(entry.dest, text);
+    loaded.set(entry.dest, { ok, text: text || "" });
+  }
+  // Self-check before any of the Python below runs: a file that did not load properly
+  // gets a named error in the boot gate instead of a blank page or a cryptic traceback.
+  verifyBootManifest(py, loaded);
   bootProgress(80, "Parsing reference tables…", "ref");
 
   py.runPython(`
