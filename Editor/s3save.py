@@ -17,7 +17,8 @@ for github issue #5 — see Editor/Suikoden3_ISO_offsets.md):
     Champion record sits one block earlier and is not a party member).
     Per record: +0x00 u16 EXP progress in level, +0x0C u8 char id, +0x0D u8 weapon
     (sharpen) level, +0x10 skills, +0x20.. u16 stat block, +0x30 u16 current HP,
-    +0x32 u16 max HP, +0x40 u8 LEVEL, +0x44.. equipment.
+    +0x32 u16 max HP, +0x38 4 x u8 current rune spell charges, +0x3C 4 x u8 max
+    rune spell charges, +0x40 u8 LEVEL, +0x44.. equipment.
   - Inventory: eight 30-entry bags at 0x7060 + n*0xF0; what they mean depends on the
     story phase (see inv_regions). Entry = u16 item id | 0x8000 "on display", u16 count
     (stackables only), 4 bytes of per-item state.
@@ -86,6 +87,10 @@ SKILL_SLOTS = 8
 OFF_STATS   = 0x20            # u16 stat block, see STAT_OFFSETS (0x28 is NOT a stat)
 OFF_CURHP   = 0x30            # u16 current HP
 OFF_MAXHP   = 0x32            # u16 max HP
+OFF_CUR_CHARGES = 0x38        # 4 x u8 CURRENT rune spell charges, one per spell level
+OFF_MAX_CHARGES = 0x3C        # 4 x u8 MAX rune spell charges, one per spell level
+CHARGE_LEVELS = 4
+CHARGE_MAX  = 9               # the engine's own ceiling count (threshold table maximum)
 OFF_LEVEL   = 0x40            # u8 character level, 1..99
 EXP_MAX     = 999             # level-up fires at 1000; 990 is the highest value observed
 WEAPONLV_MAX = 16             # herrvillain doc: weapon level 1-16
@@ -118,6 +123,42 @@ LEVEL_MAX   = 99
 #   fights, resets on level-up, and never reaches 1000 (max observed 990 at every level
 #   band) — i.e. progress inside the current level out of 1000, not a total.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Rune spell charges (MP), found 2026-11-22 - see
+# ~/workspace/ps2-re/games/suikoden3/SAVE_CHARGES.md for the full evidence.
+#
+# The save character record is the runtime character record (table VA 0x196560C,
+# stride 0x8C) serialised verbatim: the charge arrays the runtime accessors use
+# (FUN_016C8988 CUR at rec+0x38, FUN_016C8A80 MAX at rec+0x3C) sit at the same
+# offsets in the save block, in the previously undocumented gap between max HP
+# (+0x32) and level (+0x40). Verified over 2850 character records in 38 real
+# saves: every one of the eight bytes is in 0..9, CUR <= MAX in all 11400 slots,
+# 122 slots hold CUR < MAX (spent charges persist across a save, so CUR is
+# serialised state, not a value re-derived on load), and the stored MAX matches
+# the MAG threshold derivation below in 2850/2850 records at every level.
+#
+# MAX derivation: the derived-stat recompute (FUN_016C8CC0) counts MAG against
+# the threshold table at VA 0x1969C40 (see MP_CHARGES.md). Expressed as MAG
+# breakpoints (a charge is held at each breakpoint the character's MAG has
+# reached), the corpus-fitted tables are:
+CHARGE_BREAKPOINTS = {
+    1: [15, 15, 30, 45, 60, 75, 95, 115, 135],
+    2: [30, 55, 75, 100, 125, 150, 175, 200, 220],
+    3: [60, 100, 140, 175, 200, 220, 240],
+    4: [101, 160, 200, 225, 250],
+}
+# Levels 2-4 are exactly "gate + 1, then each threshold + 1" from the
+# MP_CHARGES.md table. Level 1 fits the same shape only with its gate read as
+# 14 (breakpoints 15 and 15), not the 0 printed there: a MAG of 14 or less
+# holds no level-1 charge in any real save, and MAG 15 already holds two.
+# The stored MAX byte is authoritative either way; this table is a cross-check.
+
+def predicted_max_charges(mag):
+    """The MAX charge array the recompute would derive for this MAG stat,
+    one entry per spell level. Fits every record in the 38-save corpus."""
+    return [sum(1 for t in CHARGE_BREAKPOINTS[lvl] if mag >= t)
+            for lvl in range(1, CHARGE_LEVELS + 1)]
+
 # stat order confirmed against herrvillain per-character RAM codes (relative spacing)
 STAT_NAMES   = ["PWR", "SKL", "MAG", "REP", "MDF", "SPD", "LUK"]
 STAT_OFFSETS = {"PWR": 0x20, "SKL": 0x22, "MAG": 0x24, "REP": 0x26,
@@ -1179,6 +1220,9 @@ def decode_character(gamedata, roster_index):
         "weaponLv": rec[OFF_WEAPONLV],
         "curHP": struct.unpack_from("<H", rec, OFF_CURHP)[0],
         "maxHP": struct.unpack_from("<H", rec, OFF_MAXHP)[0],
+        "charges": {"cur": list(rec[OFF_CUR_CHARGES:OFF_CUR_CHARGES + CHARGE_LEVELS]),
+                    "max": list(rec[OFF_MAX_CHARGES:OFF_MAX_CHARGES + CHARGE_LEVELS]),
+                    "maxPredicted": predicted_max_charges(stats["MAG"])},
         "expToNext": struct.unpack_from("<H", rec, OFF_EXP)[0],
         "stats": stats,
         "equip": equip,
@@ -1299,6 +1343,14 @@ def validate_save(gamedata, chars, inventory, meta=None):
         err("%d character(s) decode with current HP above max HP (first: %s %d/%d) — "
                     "the HP offsets look wrong" % (len(over), over[0]["name"],
                                                    over[0]["curHP"], over[0]["maxHP"]))
+    bad_ch = [c for c in chars if c["hasData"] and c.get("charges") and
+              (any(v > CHARGE_MAX for v in c["charges"]["cur"] + c["charges"]["max"]) or
+               any(cv > mv for cv, mv in zip(c["charges"]["cur"], c["charges"]["max"])))]
+    if bad_ch:
+        err("%d character(s) decode with rune charges outside 0..%d or current above "
+                    "max (first: %s cur %s max %s) - the charge offsets look wrong" % (
+                        len(bad_ch), CHARGE_MAX, bad_ch[0]["name"],
+                        bad_ch[0]["charges"]["cur"], bad_ch[0]["charges"]["max"]))
     bad_lv = [c for c in chars if c["level"] > LEVEL_MAX or c["weaponLv"] > WEAPONLV_MAX]
     if bad_lv:
         err("%d character(s) decode outside the level/weapon-level caps (first: %s "
@@ -1397,7 +1449,8 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
                             carryover=None, leader=None, party_mount_edits=None,
                             trinity=None):
     """edits: {rosterIndex: {field: value, "stats": {STAT: value},
-                             "skills": {slot: {"id": id, "rank": rank}}}}.
+                             "skills": {slot: {"id": id, "rank": rank}},
+                             "charges": {"cur": {slot: value}, "max": {slot: value}}}}.
     inv_edits: {slot: {"id": id, "qty": qty}} for inventory slots.
     name_edits: {nameKey: "new text"} for the editable name fields.
     party_edits: {partySlot(0..5): charId} for the active-party composition.
@@ -1465,6 +1518,32 @@ def apply_edits_to_gamedata(gamedata, edits, inv_edits=None, name_edits=None,
                     if ename in EQUIP_OFF:
                         struct.pack_into("<H", b, base + EQUIP_OFF[ename], _clamp(eval_, 2))
                         changed += 1
+            elif k == "charges":
+                # {"cur": {slot: value}, "max": {slot: value}} — either side optional;
+                # slots are spell levels 0..3, and a list works in place of the dict.
+                # MAX goes first (clamped 0..9; the MAX accessor's set is unclamped),
+                # then CUR is clamped to the resulting MAX, which is exactly the CUR
+                # accessor's mode-2 set semantics (CUR = min(value, MAX)). The game
+                # recomputes MAX from MAG at level-up and similar events, so a hand-set
+                # MAX lasts only until the next recompute; CUR is the durable state.
+                def _charge_slots(side):
+                    raw = (v or {}).get(side) or {}
+                    if isinstance(raw, (list, tuple)):
+                        return {i: val for i, val in enumerate(raw) if val is not None}
+                    return {int(sk): val for sk, val in raw.items()}
+                for slot, val in _charge_slots("max").items():
+                    if 0 <= slot < CHARGE_LEVELS:
+                        so = base + OFF_MAX_CHARGES + slot
+                        nv = _clamp(val, 1, CHARGE_MAX)
+                        if b[so] != nv:
+                            b[so] = nv; changed += 1
+                for slot, val in _charge_slots("cur").items():
+                    if 0 <= slot < CHARGE_LEVELS:
+                        so = base + OFF_CUR_CHARGES + slot
+                        nv = min(_clamp(val, 1, CHARGE_MAX),
+                                 b[base + OFF_MAX_CHARGES + slot])
+                        if b[so] != nv:
+                            b[so] = nv; changed += 1
             elif k == "skills":
                 for slot, sk in (v or {}).items():
                     slot = int(slot)

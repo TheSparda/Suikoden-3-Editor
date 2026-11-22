@@ -900,6 +900,16 @@ function charCard(c) {
                 ["Max HP", "maxHP"], ["EXP in level", "expToNext"]]
     .map(([lbl, k]) => `<label class="field"><span>${lbl}</span>${num(k, c[k])}` +
       `${fnote(CORE_NOTE[k] ? CORE_NOTE[k]() : "")}${fhint(CORE_HINT[k] || "")}</label>`).join("");
+  // Rune spell charges: the save serialises the runtime record's charge arrays
+  // (CUR at record+0x38, MAX at +0x3C - see s3save.OFF_CUR_CHARGES). Only CUR is
+  // editable: the game's own set clamps CUR to MAX, and MAX is re-derived from
+  // MAG by the recompute, so the input's ceiling is the stored MAX itself.
+  const charges = (c.charges?.cur || []).map((v, i) => {
+    const mx = (c.charges?.max || [])[i] || 0;
+    return `<label class="field"><span>Spell level ${i + 1}</span>
+      <span class="row" style="gap:6px;align-items:center"><input type="number" min="0" max="${mx}" value="${v}" data-ri="${c.rosterIndex}" data-charge="${i}" data-def="${v}" title="0–${mx}" style="flex:1">
+      <span class="muted">/ ${mx}</span></span></label>`;
+  }).join("");
   const equip = EQ.map(([key, lbl]) => {
     const cur = c.equip[key] || 0;
     return `<label class="field"><span>${lbl}</span>
@@ -915,7 +925,7 @@ function charCard(c) {
       <span class="chev">▸</span><span class="nm">${esc(c.name)}</span>
       <span class="muted">#${c.rosterIndex}</span>
       <span class="pill${c.recruited ? " on" : ""}">${c.recruited ? "recruited" : "not recruited"}</span>
-      <span class="lv">Lv ${c.level} · WLv ${c.weaponLv} · HP ${c.curHP}/${c.maxHP}</span></summary>
+      <span class="lv">Lv ${c.level} · WLv ${c.weaponLv} · HP ${c.curHP}/${c.maxHP}${(c.charges?.max || []).some((m) => m > 0) ? ` · Charges ${(c.charges.cur || []).map((v, i) => `${v}/${c.charges.max[i]}`).join(" ")}` : ""}</span></summary>
     <div class="char-body" data-roster="${c.rosterIndex}">
       <div class="row" style="gap:16px;margin-top:4px">
         <label class="ckrow" style="min-height:38px"><input type="checkbox" data-recruit="${c.rosterIndex}" ${c.recruited ? "checked" : ""}> recruited</label>
@@ -923,6 +933,8 @@ function charCard(c) {
           ${RECRUITERS.map((h) => `<label class="tmbox" title="${h}"><input type="checkbox" data-recteam="${c.rosterIndex}" value="${h}" ${(c.recruiters || []).includes(h) ? "checked" : ""}>${h[0]}</label>`).join("")}
           <span class="muted">none = shared</span></span></div>
       <h4>Core</h4><div class="grid">${core}</div>
+      <h4>Rune charges</h4><div class="grid">${charges}</div>
+      <div class="fnote">Current charges per spell level. The max is set by MAG and refills at an inn; a spent charge stays spent in the save until then.</div>
       <h4>Stats</h4><div class="grid">${statCells}</div>
       <h4>Equipment</h4><div class="grid eq">${equip}</div>
       <h4>Skills</h4><div class="grid sk">${skills}</div>
@@ -935,7 +947,12 @@ function wireChar(c) {
   $$("input[data-ri]", body).forEach((inp) => (inp.onchange = () => {
     const ri = +inp.dataset.ri, v = +inp.value;
     EDITS[ri] = EDITS[ri] || {};
-    if (inp.dataset.stat) { (EDITS[ri].stats = EDITS[ri].stats || {})[inp.dataset.stat] = v; }
+    if (inp.dataset.charge !== undefined) {
+      (EDITS[ri].charges = EDITS[ri].charges || {}).cur =
+        (EDITS[ri].charges.cur || {});
+      EDITS[ri].charges.cur[inp.dataset.charge] = v;
+    }
+    else if (inp.dataset.stat) { (EDITS[ri].stats = EDITS[ri].stats || {})[inp.dataset.stat] = v; }
     else EDITS[ri][inp.dataset.k] = v;
     inp.classList.toggle("dirty", inp.value !== inp.dataset.def);
   }));
@@ -1967,6 +1984,7 @@ function buildDiff() {
     const c = byRi[ri] || byRi[+ri] || {}; const who = c.name || `#${ri}`;
     Object.entries(f).forEach(([k, v]) => {
       if (k === "stats") Object.entries(v).forEach(([st, nv]) => { if (nv !== c.stats?.[st]) rows.push({ g: who, t: `${st}: ${c.stats?.[st]} → ${nv}` }); });
+      else if (k === "charges") Object.entries(v.cur || {}).forEach(([slot, nv]) => { if (nv !== c.charges?.cur?.[+slot]) rows.push({ g: who, t: `Spell level ${+slot + 1} charges: ${c.charges?.cur?.[+slot]} → ${nv}` }); });
       else if (k === "equip") Object.entries(v).forEach(([slot, nv]) => { if (nv !== (c.equip?.[slot] || 0)) rows.push({ g: who, t: `${slot}: ${itemLabel(c.equip?.[slot] || 0)} → ${itemLabel(nv)}` }); });
       else if (k === "skills") Object.entries(v).forEach(([slot, sk]) => {
         const cur = (c.skills || [])[+slot] || {};
@@ -2131,6 +2149,7 @@ function exportSaveJSON() {
     const skills = (c.skills || []).filter((sk) => sk.id).map((sk) => ({ slot: sk.slot, id: sk.id, rank: sk.rank, name: SKILL_BY_ID[sk.id]?.name || ("#" + sk.id) }));
     return { rosterIndex: c.rosterIndex, name: c.name, recruited: !!c.recruited, teams: (c.recruiters || []),
       level: c.level, weaponLv: c.weaponLv, curHP: c.curHP, maxHP: c.maxHP, expToNext: c.expToNext,
+      charges: c.charges ? { cur: [...c.charges.cur], max: [...c.charges.max] } : undefined,
       stats: Object.assign({}, c.stats), equip, skills };
   });
   const names = {}; (s.names || []).forEach((n) => (names[n.key] = n.value));
@@ -2197,6 +2216,7 @@ async function importSaveJSON(file) {
     if (typeof ri !== "number" || !(ri in byRi)) return;   // skip unknown/guest roster slots
     const e = (EDITS[ri] = EDITS[ri] || {});
     ["level", "weaponLv", "curHP", "maxHP", "expToNext"].forEach((k) => { if (typeof jc[k] === "number") { e[k] = jc[k]; staged++; } });
+    if (Array.isArray(jc.charges?.cur)) { e.charges = { cur: {} }; jc.charges.cur.forEach((val, slot) => { if (typeof val === "number") e.charges.cur[slot] = val; }); staged++; }
     if (jc.stats && typeof jc.stats === "object") { e.stats = e.stats || {}; Object.entries(jc.stats).forEach(([st, val]) => { if (typeof val === "number") e.stats[st] = val; }); staged++; }
     if (jc.equip && typeof jc.equip === "object") { e.equip = e.equip || {}; EQ.forEach(([k]) => { if (k in jc.equip) e.equip[k] = idOf(jc.equip[k]); }); staged++; }
     if (Array.isArray(jc.skills)) { e.skills = e.skills || {}; jc.skills.forEach((sk) => { if (sk && typeof sk.slot === "number") e.skills[sk.slot] = { id: idOf(sk.id), rank: sk.rank | 0 }; }); staged++; }
