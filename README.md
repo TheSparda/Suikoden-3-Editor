@@ -38,6 +38,12 @@ than two ports that can drift.
   stuck.
 - **Your data stays put.** No server, no upload. Saves and ISOs are read and written on your
   device only.
+- **Boot check.** The save editor loads its files through a single boot manifest
+  and checks that list after loading: every required file arrived non-empty, is
+  present in the in-browser filesystem, and still carries the functions the
+  editor calls. If a required file fails the check, the editor names the broken
+  file and shows hard-refresh guidance instead of a blank page. Optional files
+  never fail the check.
 
 ### Save Editor
 
@@ -54,6 +60,13 @@ Open a save with **Choose file…** or drag it in — no ISO needed. Supported c
 
 Multi-save memory cards show a **slot switcher**. Every write recomputes the save's
 **checksum** (and card **ECC**) automatically, so the result is byte-compatible with the game.
+
+**Regions:** USA saves (`BASLUS-20387`) are the supported, tested case. PAL save
+folders (`BESLES-52000`) are also detected, on a detection-only basis: PAL support
+is **untested, with no PAL fixture available**, the payload layout code is shared
+with the USA path, and the normal payload validation is the safety net if the PAL
+layout turns out to differ.
+
 Editable per save:
 
 - **Overview** — names (Flame Champion, castle, Suikoden I/II hero & country), gold, chapter,
@@ -72,6 +85,11 @@ Editable per save:
   range, Max HP the HP row, Level the level that character joins at, each rune slot whether
   it's innate or **opens at Lv N**, and each skill slot that character's **maximum grade**
   (or a note that they can't learn it at all).
+- **Rune charges**: each character's current rune spell charges, one per spell
+  level (1 to 4), with the maximum shown alongside. Edits are clamped to that
+  character's maximum, the way the game itself clamps them. The layout was
+  verified over 2,850 character records in 38 real saves, including spent
+  charges (current below max) persisting in the save.
 - **Field character** — who you run around the map as, with the whole mechanism written out
   on the tab: what the leader byte does, why the pick has to sit in party slot 1, and why the
   character being stood in for has to leave the party. Picking someone stages both.
