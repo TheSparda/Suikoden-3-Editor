@@ -4959,7 +4959,10 @@ if (ON) { const page = await newPage({ width: 320, height: 480 });
 // fire the browser's swipe-back -- leaving the editor with staged edits and landing wherever
 // the user came from. Reported in the wild as "clicking ISO Editor sometimes opens the repo".
 head("Sideways overscroll can't navigate away from the editor");
-if (ON) { const page = await newPage();
+// Since v1.156.0 the sideways strip only exists below the desktop breakpoint — on a wide
+// screen the same chips live in the rail and scroll vertically — so this runs at phone
+// width, which is also where a two-finger swipe-back can actually happen.
+if (ON) { const page = await newPage({ width: 390, height: 844 });
   await loadIso(page);
   const r = await page.evaluate(() => {
     const t = document.querySelector("#isoTabs"), de = document.documentElement;
@@ -4991,11 +4994,13 @@ if (ON) {
   const tabs = await page.$$eval("#isoTabs [data-v]", (b) => b.map((x) => x.dataset.v));
   check("Runes is a top-level tab", tabs.includes("runes"));
   // Runes -> Passives -> Spells: the rune's text, then its engine-side effect, then the spells
-  // it grants. Passives was slotted in between in v1.105.0, so this is an ordering check, not
-  // an adjacency one.
-  check("it sits between Shops and Passives, with Spells after that",
-    tabs[tabs.indexOf("runes") - 1] === "shops" && tabs[tabs.indexOf("runes") + 1] === "passives"
-      && tabs[tabs.indexOf("runes") + 2] === "spells", tabs.slice(0, 9).join(","));
+  // it grants. Since v1.156.0 the strip is grouped (Roster / World / Combat / System, see
+  // docs/TWO_PANE_WORKSPACE.md), so Runes sits in Combat rather than straight after Shops —
+  // but still directly before Passives and Spells. The full order is asserted so a regroup
+  // is a deliberate edit here, never a silent drift.
+  check("it sits in the Combat group, before Passives and Spells",
+    tabs.join(",") === "chars,growth,skillsfx,support,shops,gear,sets,food,text,weapons,runes,passives,spells,unites,mounts,enemies,war,encounter,movement,story,test,changes,ref",
+    tabs.join(","));
   await page.click('#isoTabs [data-v="runes"]');
   await page.fill("#isoSearch", mapping.twin.rune.name.toLowerCase());
   await page.waitForTimeout(120);

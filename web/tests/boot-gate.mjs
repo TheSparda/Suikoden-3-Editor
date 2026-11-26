@@ -98,7 +98,7 @@ console.log("boot gate blocks the save loader while the engine loads:");
   // …and the scoping half: everything Python does not gate must still take a click.
   for (const [what, sel] of [["the ISO Editor tab", '.mtab[data-mode="iso"]'],
                              ["the Save Editor tab", '.mtab[data-mode="save"]'],
-                             ["the theme buttons", 'footer .tb[data-theme="parchment"]']]) {
+                             ["the theme buttons", '.themesw .tb[data-theme="parchment"]']]) {
     const hit = await hitAt(page, sel);
     check(`${what} is not covered`, hit !== "gate" && hit !== "missing", String(hit));
   }
