@@ -89,19 +89,22 @@ Editable per save:
   level (1 to 4), with the maximum shown alongside. Edits are clamped to that
   character's maximum, the way the game itself clamps them. The layout was
   verified over 2,850 character records in 38 real saves, including spent
-  charges (current below max) persisting in the save.
+  charges (current below max) persisting in the save. Play-verified
+  (2026-11-27): charges edited here are the charges the game offers and
+  spends in battle, exactly as written.
 - **Field character** — who you run around the map as, with the whole mechanism written out
   on the tab: what the leader byte does, why the pick has to sit in party slot 1, and why the
   character being stood in for has to leave the party. Picking someone stages both.
 - **Trinity Sight** — the chapter-select screen: which of the six **points of view** are
   offered (Hugo, Chris, Geddoe, Thomas, Koroku, Luc) and which **chapter** each one is up to,
   plus a row for the merged chapters 4-5. These are the three things the game's own menu
-  builder reads — the flame mask at `0x34` and the progress counters at `0x3B0` — so the
-  panel edits them directly and shows each row's byte. Each character gets only their real
-  chapters (three for Hugo/Chris/Geddoe, two for Thomas, one each for Koroku and Luc), and a
-  save sitting mid-chapter keeps its own stage as a selectable value so opening the panel
-  can't rewind anyone. **Not play-tested** — lighting Luc's flame before the game is cleared
-  may not lead anywhere the game is ready for, so keep a backup.
+  builder reads: the flame mask at `0x34` and the progress counters at `0x3B0`. Each
+  character gets only their real chapters (three for Hugo/Chris/Geddoe, two for Thomas, one
+  each for Koroku and Luc), and a save sitting mid-chapter keeps its own stage as a
+  selectable value so opening the panel can't rewind anyone. **Play-tested (2026-11-27):
+  the panel reads saves accurately, but its edits do not take effect.** The game rebuilds
+  the flames and counters from story progress when the Trinity Site is reached, so
+  lighting a flame here does not unlock that point of view. Treat the panel as a readout.
   ([`TRINITY_SIGHT_RESEARCH.md`](docs/TRINITY_SIGHT_RESEARCH.md))
 - **Recruit** — per-character recruitment: tick *recruited* and pick the pre-merge team
   (Hugo / Chris / Geddoe / Thomas / shared). Meant for **optional** recruits: **story
@@ -226,9 +229,11 @@ then casts as a normal spell (chant and per-slot MP gate) instead of firing as a
 attack. Two of the 27 never collapsed: *Devil's Doll* and
 *Spreading Flame* carry element family 1, miss the special case, and already list. The Test
 tab carries the global form (NOP the two compares in each accessor; every attack rune lists
-at once, keeping its type at execution time) — that global form is still untested in play,
-and because it touches no rune's element it likely still hits the element-0 gate the
-per-rune test found; its card says so. Each filled slot is also a
+at once, keeping its type at execution time). That global form is now play-tested
+(2026-11-26/27): the added spells do display in the battle rune list with their charges,
+but choosing the rune still fires slot 1 at once and the added spells could not be
+selected or cast, because it touches no rune's element and still hits the element-0 gate
+the per-rune test found; its card says so. Each filled slot is also a
 **link straight into the Spells tab with that record open**,
 which stays the one place a spell's own power / cast / element / target / status is edited —
 and it is the only route from an attack rune to its numbers, since Kite and Phoenix carry no
@@ -320,11 +325,12 @@ step; see below),
 **Test** (experimental patches that are not known to work — currently the **Field character**
 whitelist, the **attack-rune spell lists** (the global form of the Runes tab's spell-list
 control: NOP the binding compares so every special-attack rune lists its filled slots at
-once), the **unlimited rune casts** switch (two tiers over the charge system, from a census
-that found exactly one charge-consumption call in the game: NOP it so casts never drain —
-unlocked levels cast forever, locked levels stay locked — or force the charge recompute to
-grant 9 charges at every level, un-earned levels and enemy casters included; statically
-verified, untested in play), the **training and forge** switches (free skill training: NOP
+once), the **unlimited rune casts** switch (two tiers over the charge system: tier 1 NOPs all
+five charge-consumption calls, the field resolver plus the four battle spend sites that
+reach the charge accessor through a unit-fetch thunk, so casts never drain; unlocked
+levels cast forever, locked levels stay locked. Tier 2 forces the charge recompute to
+grant 9 charges at every level, un-earned levels and enemy casters included; in play
+its 9s landed at level-up only. Tier 1 is play-verified, 2026-11-27), the **training and forge** switches (free skill training: NOP
 the SP accessor's only two subtract calls and the training menus' affordability branches;
 free sharpening: NOP the sharpen executor's one potch-subtract call and the three confirm
 variants' affordability branches; and a blacksmith level-cap removal: NOP the at-cap

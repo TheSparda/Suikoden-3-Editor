@@ -610,8 +610,9 @@ function drawSlot() {
   // Three pieces of save state, and they are the three the game's own menu builder reads:
   // the six-bit flame mask at 0x34, and one progress counter per point of view in the bank
   // at 0x3B0 (s3save: TRINITY_POVS / STAGE_BASE — the disassembly is in the comment there).
-  // Not yet play-tested, which the panel says out loud rather than implying confidence the
-  // research does not have.
+  // Play-tested 2026-11-27: the builder reads them, but the game rebuilds both from story
+  // progress when the Trinity Site is reached, so edits here do not take effect. The panel
+  // says so out loud; its readback of existing saves is accurate.
   const tr = s.trinity || { povs: [], main: {} };
   const TR = REF.trinity || { povs: [], main: { chapters: [], labels: {} } };
   const trRef = (k) => TR.povs.find((p) => p.key === k) || { chapters: [] };
@@ -724,11 +725,15 @@ function drawSlot() {
           <b>flame mask</b> (flag byte <code>0x${hx(TR.flagOffset || 0, 2)}</code>, one bit per point of view) and one
           <b>progress counter</b> each (the eight-slot bank at <code>0x${hx(TR.stageOffset || 0, 3)}</code>). Each point of
           view has its own scale, so the dropdowns offer the stage values real saves hold at
-          the start of each of that character's chapters — Chris has three, Thomas two,
+          the start of each of that character's chapters: Chris has three, Thomas two,
           Koroku and Luc one each. Chapters 4-5 belong to the merged story on its own row;
           the game keeps Hugo/Chris/Geddoe in step with it from the merge onwards.
-          <b>Not play-tested yet:</b> lighting a flame out of order (Luc's before the game is
-          cleared) may not lead anywhere the game is ready for — keep a backup save.
+          <b>Play-tested (2026-11-27): these edits do not take effect.</b> The values above
+          are read back from your save accurately, and an edited save loads with them intact.
+          But when the game reaches the Trinity Site it rebuilds the flames and the counters
+          from your story progress, overwriting whatever was written here. Lighting a flame
+          does not unlock that point of view. The panel stays useful as a readout of where
+          each point of view stands; treat the controls as read-only in practice.
         </div>
       </details>
       <h3 class="sec">Gold</h3>

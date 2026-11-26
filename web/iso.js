@@ -6087,11 +6087,14 @@
   // The global form of the Runes tab's per-rune spell-list control. runeSpellCount
   // (VA 0x16DC6C0) and runeSpellAt (VA 0x16DC7E0) each hold two compares against the
   // (category << 16) | element constants 0x00010000 / 0x00020000; NOP all four and no
-  // rune's binding collapses, while every rune KEEPS its category at execution time —
+  // rune's binding collapses, while every rune KEEPS its category at execution time:
   // slot 1 stays a free attack-rune action, and the added spells travel down that same
-  // attack-rune path, where how it treats a spell with a chant time or an element is
-  // untested. Both compares in BOTH functions must go: leave one standing and its case
-  // still collapses. All four stock words byte-verified on a pristine SLUS-20387.
+  // attack-rune path. Play-tested 2026-11-26/27: the added spells display in the
+  // battle rune list but cannot be selected or cast, because the battle menu treats
+  // an element-0 rune as a single-action attack rune whatever the binding serves
+  // (lab FIXES_2026-11-27.md). Both compares in BOTH functions must go: leave one
+  // standing and its case still collapses. All four stock words byte-verified on a
+  // pristine SLUS-20387.
   const ATKLIST = [
     { off: 0x123EF4, stock: 0x10620011, what: "runeSpellCount — the category-1 compare (beq, count forced to 1)" },
     { off: 0x123EFC, stock: 0x10620010, what: "runeSpellCount — the category-2 compare (beq, count forced to 1)" },
@@ -6108,32 +6111,43 @@
   }
 
   // ---- unlimited rune casts: stop the charge drain (Test tab) ------------------
-  // A rune's spell charges live in the character record as two byte arrays — current
-  // at +0x38, maximum at +0x3C, one per spell level — and every access goes through
-  // one accessor family. A full census of that family (lab MP_CHARGES.md) found
-  // exactly ONE consumption call in the game: the spell resolver takes one charge of
-  // the cast spell's level as its first act. NOP that call and casts never drain,
-  // while availability keeps its stock meaning — a level is castable exactly when it
-  // is unlocked (maximum > 0), so un-earned levels stay locked and the displayed
-  // counts simply stop dropping. Field casts route through the same resolver and
-  // become free too.
+  // A rune's spell charges live in the character record as two byte arrays: current
+  // at +0x38, maximum at +0x3C, one per spell level, and every access goes through
+  // one accessor family. The first census of that family (lab MP_CHARGES.md) found
+  // the field resolver's consumption call, and the 2026-11-27 play test proved that
+  // was not the whole story: battle casts still drained. The completed census (lab
+  // FIXES_2026-11-27.md) found why. Battle execution never calls the accessor
+  // directly; it goes through a thunk that fetches the acting battle unit and
+  // forwards the caller's mode, and exactly four of the thunk's callers spend a
+  // charge: the ordinary battle cast, the unite/combo cast, and spell 81's
+  // dual-level cost (two calls, one per level). NOP all four plus the resolver's
+  // call and casts never drain, while availability keeps its stock meaning: a level
+  // is castable exactly when it is unlocked (maximum > 0), so un-earned levels stay
+  // locked and the displayed counts simply stop dropping.
   //
   // Tier 2 rewrites the charge recompute instead: the derived-stat recompute sets
   // each level's maximum from a threshold count and tops the current charges up by
-  // the same delta. Force both arguments to 9 — the engine's own ceiling count —
-  // and every recompute pins every level to 9/9, unlocking levels a character has
-  // not earned. The two words are a pair: either alone is a no-op or a half-measure,
+  // the same delta. Force both arguments to 9, the engine's own ceiling count, and
+  // every recompute pins every level to 9/9, unlocking levels a character has not
+  // earned. The two words are a pair: either alone is a no-op or a half-measure,
   // so they are only ever written and restored together. It applies to every
-  // character record the recompute touches, enemy casters included — the recompute
-  // has no player-only branch.
+  // character record the recompute touches, enemy casters included; the recompute
+  // has no player-only branch. In play the 9s landed at level-up; loading a save,
+  // entering a battle and the results screen did not recompute.
   //
   // What is deliberately NOT patched: the accessor's own store and subtract. Every
-  // mode of the accessor — refill, set, recompute — funnels through that one store,
+  // mode of the accessor (refill, set, recompute) funnels through that one store,
   // so patching inside it would break rests and setup, not just consumption.
-  // All three stock words byte-verified on a pristine SLUS-20387; neither tier has
-  // been played.
+  // All seven stock words byte-verified on a pristine SLUS-20387. Tier 1 is
+  // play-verified (2026-11-27: three cast rounds, charges pinned, battle completed
+  // normally); tier 2's level-up behaviour is from the same day's play test, and
+  // the tier 1 + tier 2 combination rests on those two results together.
   const MPCAST_T1 = [
     { off: 0x0E1BB8, stock: 0x0C5B228A, patch: 0x00000000, what: "spell resolver — the charge-consumption call (jal to the charge accessor, becomes a nop)" },
+    { off: 0x262EB8, stock: 0x0C606E20, patch: 0x00000000, what: "battle cast — the charge-consumption call (jal to the unit-fetch thunk, becomes a nop)" },
+    { off: 0x269074, stock: 0x0C606E20, patch: 0x00000000, what: "unite/combo cast — the charge-consumption call (jal to the unit-fetch thunk, becomes a nop)" },
+    { off: 0x262064, stock: 0x0C606E20, patch: 0x00000000, what: "spell 81 dual-level cost, level 1 — the charge-consumption call (jal to the unit-fetch thunk, becomes a nop)" },
+    { off: 0x262078, stock: 0x0C606E20, patch: 0x00000000, what: "spell 81 dual-level cost, level 2 — the charge-consumption call (jal to the unit-fetch thunk, becomes a nop)" },
   ];
   const MPCAST_T2 = [
     { off: 0x1106BC, stock: 0x326700FF, patch: 0x24070009, what: "charge recompute — the set-maximum count (andi, becomes addiu 9)" },
@@ -6540,31 +6554,32 @@
     }).join("");
     host.innerHTML = `
       <div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Attack-rune spell lists — all of them at once <span class="u">patches game code · not played</span></div>
+        <div class="bag-h">Attack-rune spell lists — all of them at once <span class="u">patches game code · played: does not open the list</span></div>
         <div class="muted" style="margin:0 0 8px" data-sum="NOP the two compares in each of the engine's rune-spell binding functions and every special-attack rune lists all its filled slots at once, keeping its type at execution time.">Everything that reads which
           spells a rune grants goes through two small functions, and each of them collapses the
-          answer to <b>one spell — slot 1</b> — for a rune whose type-and-element word is exactly
+          answer to <b>one spell, slot 1</b>, for a rune whose type-and-element word is exactly
           the special-attack one. That is why filling a special-attack rune's free slots changes
           nothing in battle. This replaces the two compares in each function with a
           <code>nop</code>, so no rune's binding collapses and <b>every</b> special-attack rune
           lists all its filled slots at once.</div>
         <div class="muted" style="margin:0 0 8px" data-sum="The per-rune form of the same fix is the spell-list control on the Runes tab; this global form differs by keeping each rune's type at execution time, so added spells travel down the attack-rune path.">The <b>Runes</b> tab carries the per-rune form of
-          the same fix — its spell-list control sets one rune's type to “Magic / support”. The
+          the same fix: its spell-list control sets one rune's type to “Magic / support”. The
           difference matters: this global form leaves every rune's type alone, so slot 1 stays a
-          <b>free attack-rune action</b> — but the added spells then execute down that same
-          attack-rune path, and how it treats a spell with a chant time or an element of its own
-          is <b>untested</b>. The per-slot MP gate applies either way, so a low-level character
+          <b>free attack-rune action</b>, and the added spells then execute down that same
+          attack-rune path. The per-slot MP gate applies either way, so a low-level character
           may still find the later slots greyed.</div>
-        <div class="warnbox" style="margin:0 0 8px" data-sum="Untested in play — and the per-rune play test found a second, element gate this patch does not touch, so these NOPs alone likely still do not open the list for element-0 runes."><b>Untested in play.</b> The mechanism is
-          proven from the disassembly and all four words are byte-verified against a pristine
-          disc, but nobody has yet cast an added spell this way in a running game. Both compares
-          in <b>both</b> functions are NOP-ed together — leaving one standing would keep its
-          case collapsed — and setting this back to Stock restores all four words exactly.
-          One more caution, from the per-rune form's play test: the battle menu ALSO treats an
-          element-0 rune as a single-action attack rune even when the binding serves every
-          slot, and this patch does not touch any rune's element — so for the 25 element-0
-          attack runes these NOPs alone likely still do not open the list. The Runes tab's
-          per-rune control, which sets the element with the type, is the form tested in play.</div>
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Play-tested 2026-11-26/27: added spells display in the battle rune list, but choosing the rune still fires slot 1 at once and they could not be selected or cast. The element-0 gate blocks them."><b>Play-tested: it does not open the list.</b> In a running game
+          (2026-11-26 and 2026-11-27, PCSX2) the added spells <b>do</b> appear in the battle
+          rune list with their charges, so the binding half works. But choosing the rune still
+          fires slot 1 at once, and the added spells could not be selected or cast. The blocker
+          is the battle menu's second gate, the one the per-rune play test found: a rune with
+          element 0 is treated as a single-action attack rune whatever the binding serves, and
+          this patch does not touch any rune's element. A follow-up patch that masked the
+          category for every consumer of the type-and-element word changed nothing either;
+          the gate reads the element, not the category. Both compares in <b>both</b> functions
+          are NOP-ed together (leaving one standing would keep its case collapsed), and
+          setting this back to Stock restores all four words exactly. The Runes tab's
+          per-rune control, which sets the element with the type, is the form that works.</div>
         <label class="field" style="max-width:460px">
           <span>Special-attack rune spell lists</span>
           <select id="alSel">
@@ -6606,7 +6621,7 @@
           <td>${cur === c.stock ? '<span class="dim">stock</span>' : '<span class="tag acc2">patched</span>'}</td></tr>`;
       }).join("");
       return `<div class="card" style="margin:0 0 12px">
-        <div class="bag-h">${cfg.title} <span class="u">patches game code · not played</span></div>
+        <div class="bag-h">${cfg.title} <span class="u">patches game code · ${cfg.note}</span></div>
         ${cfg.intro}
         <label class="field" style="max-width:460px">
           <span>${cfg.label}</span>
@@ -6621,40 +6636,47 @@
     host.innerHTML =
       tierCard(MPCAST_T1, mpCastState(MPCAST_T1), {
         title: "Tier 1 — casts never drain charges",
+        note: "play-verified",
         sel: "mpT1Sel", label: "Charge consumption",
         off: "Stock — casting spends a charge, as the game ships",
         on: "Free casts — charges never drain",
-        intro: `<div class="muted" style="margin:0 0 8px" data-sum="NOP the game's one charge-consumption call and casts stop spending charges; unlocked levels cast forever, locked levels stay locked.">Every cast in the game — battle or field — resolves through one routine, and its
-          first act is to take one charge of the cast spell's level from the caster. A census of
-          the charge accessors found that call exactly <b>once</b>. Replacing it with a
-          <code>nop</code> leaves everything else about casting untouched: the availability
-          checks still read the real counts, so a level a character has <b>unlocked</b> can be
-          cast forever and a level they have not stays locked — that gate is the maximum, not
-          the drain. The counts on the menus simply stop dropping.</div>`,
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="NOP the five charge-consumption calls (field resolver plus four battle spend sites) and casts stop spending charges; unlocked levels cast forever, locked levels stay locked.">Casts spend their charge in <b>five</b> places. Field and scripted casts
+          resolve through one routine whose first act is to take a charge of the cast spell's
+          level. Battle casts spend through a thunk that fetches the acting unit: the ordinary
+          battle cast, the unite/combo cast, and spell 81's dual-level cost (one call per
+          level). This tier replaces all five calls with a <code>nop</code> and leaves
+          everything else about casting untouched: the availability checks still read the real
+          counts, so a level a character has <b>unlocked</b> can be cast forever and a level
+          they have not stays locked. That gate is the maximum, not the drain. The counts on
+          the menus simply stop dropping.</div>`,
       }) +
       tierCard(MPCAST_T2, mpCastState(MPCAST_T2), {
         title: "Tier 2 — 9 charges at every level",
+        note: "played: applies at level-up",
         sel: "mpT2Sel", label: "Charge recompute",
         off: "Stock — charges are earned from a derived stat, as the game ships",
         on: "9 everywhere — every level holds 9 charges",
-        intro: `<div class="muted" style="margin:0 0 8px" data-sum="Force the charge recompute to grant 9 charges at every level — unlocking un-earned levels, for enemy casters too. The two words are a pair and move together.">Charges are not stored per rune; they are <b>derived</b> — a recompute counts how
+        intro: `<div class="muted" style="margin:0 0 8px" data-sum="Force the charge recompute to grant 9 charges at every level, unlocking un-earned levels, for enemy casters too. The two words are a pair and move together. In play the 9s landed at level-up only.">Charges are not stored per rune; they are <b>derived</b>. A recompute counts how
           many stat thresholds a character passes per spell level, sets that as the maximum,
           and tops the current charges up by the same amount. These two words force both
-          numbers to <b>9</b>, the engine's own ceiling count, so every recompute (character
-          setup, level-up, the rest-adjacent paths) pins every level to 9/9 — including levels
-          the stock game would not have unlocked yet. The words are a <b>pair</b>: either alone
-          is a no-op or leaves a character short until their next rest, so they are only ever
-          written and restored together. This applies to <b>every</b> character record the
-          recompute touches, <b>enemy casters included</b> — there is no player-only branch.
-          On its own it refills to 9 but casts still drain; with tier 1 as well, the 9s are
-          permanent.</div>`,
+          numbers to <b>9</b>, the engine's own ceiling count, so every recompute pins every
+          level to 9/9, including levels the stock game would not have unlocked yet. The words
+          are a <b>pair</b>: either alone is a no-op or leaves a character short until their
+          next rest, so they are only ever written and restored together. This applies to
+          <b>every</b> character record the recompute touches, <b>enemy casters included</b>;
+          there is no player-only branch. Play testing (2026-11-27) found the recompute runs
+          at <b>level-up</b>: loading a save, entering a battle and the results screen did not
+          recompute, so a character keeps their saved charges until they level. On its own it
+          refills to 9 at level-up but casts still drain; with tier 1 as well, the 9s no
+          longer drain in battle.</div>`,
       }) +
-      `<div class="warnbox" style="margin:0 0 8px" data-sum="Both tiers are statically verified and untested in play; the charge accessor's own internals are deliberately left alone."><b>Untested in play.</b> Both tiers are
-        proven statically — the consumption census is exhaustive and every word is byte-verified
-        against a pristine disc — but no cast has yet been made under either in a running game.
-        The charge accessor's own store and subtract are deliberately <b>not</b> patched: refill,
-        setup and consumption all funnel through them, so a patch inside the accessor would
-        break rests and character setup along with the drain.</div>`;
+      `<div class="warnbox" style="margin:0 0 8px" data-sum="Tier 1 is play-verified (2026-11-27: three cast rounds with charges pinned, battle completed normally). Tier 2's 9s apply at level-up. The charge accessor's own internals are deliberately left alone."><b>Play-verified for tier 1</b> (2026-11-27, PCSX2): with the battle spend
+        call NOP-ed, three consecutive cast rounds left the caster's charges untouched and the
+        battle completed normally; the stock control cast drained as usual. Tier 2's pair was
+        played the same day and its 9 charges landed at level-up only. The charge accessor's
+        own store and subtract are deliberately <b>not</b> patched: refill, setup and
+        consumption all funnel through them, so a patch inside the accessor would break rests
+        and character setup along with the drain.</div>`;
     const wire = (sel, words) => {
       const el = q(sel, host);
       if (!el) return;
@@ -11028,9 +11050,9 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         imm(off, MOUNTS.horse.STOCK[id] || 0, "Mounts", `assigned horse · ${nm}`, horseRisk);
       } }
     ATKLIST.forEach((c) => word(c.off, c.stock, "Attack-rune spell lists", c.what,
-      "rewritten engine code: with these compares NOP-ed, every special-attack rune lists all its filled spell slots — and the added spells execute down the attack-rune path, where their chant and element behaviour is untested"));
+      "rewritten engine code: with these compares NOP-ed, every special-attack rune lists all its filled spell slots. Play-tested 2026-11-26/27: the added spells display in the battle rune list with their charges, but choosing the rune still fires slot 1 at once and the added spells could not be selected or cast; the menu's element-0 gate is not touched by this patch. The Runes tab's per-rune spell-list control is the working form"));
     MPCAST_T1.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,
-      "rewritten engine code: with the consumption call NOP-ed, casts never spend rune charges — unlocked levels cast forever, locked levels stay locked, and enemy casters with character records stop draining too"));
+      "rewritten engine code: with the five consumption calls NOP-ed (the field resolver plus the four battle spend sites), casts never spend rune charges: unlocked levels cast forever, locked levels stay locked, and enemy casters with character records stop draining too. Play-verified 2026-11-27"));
     MPCAST_T2.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,
       "rewritten engine code: the charge recompute grants 9 charges at every level for every character record it touches, enemy casters included; the pair is only ever written together"));
     QOL_TRAIN.forEach((c) => word(c.off, c.stock, "Free skill training", c.what,

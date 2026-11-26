@@ -282,15 +282,23 @@ export const SKILLFX_PLANT = [
   { id: 1, a: [5, 10, 17, 25, 36, 50, 70, 100], b: [3, 5, 7, 10, 15, 20, 35, 50] },
   { id: 3, a: [3, 4, 7, 10, 15, 20, 35, 50], b: [0, 0, 0, 0, 0, 0, 0, 0] },
 ];
-// Unlimited rune casts (iso.js MPCAST_T1 / MPCAST_T2): the charge-consumption call the
-// Test tab can NOP, and the recompute pair it can force to 9. Planted stock for the same
-// two reasons as ATK_LIST above — the code audit reads them, and the controls read a
-// zero at the tier-1 site as "already NOP-ed".
-export const MP_CAST = [
+// Unlimited rune casts (iso.js MPCAST_T1 / MPCAST_T2): the five charge-consumption
+// calls tier 1 can NOP (the field resolver plus the four battle spend sites through
+// the unit-fetch thunk), and the recompute pair tier 2 can force to 9. Planted stock
+// for the same two reasons as ATK_LIST above — the code audit reads them, and the
+// controls read a zero at a tier-1 site as "already NOP-ed".
+export const MP_CAST_T1 = [
   { off: 0x0E1BB8, stock: 0x0C5B228A, patch: 0x00000000 },
+  { off: 0x262EB8, stock: 0x0C606E20, patch: 0x00000000 },
+  { off: 0x269074, stock: 0x0C606E20, patch: 0x00000000 },
+  { off: 0x262064, stock: 0x0C606E20, patch: 0x00000000 },
+  { off: 0x262078, stock: 0x0C606E20, patch: 0x00000000 },
+];
+export const MP_CAST_T2 = [
   { off: 0x1106BC, stock: 0x326700FF, patch: 0x24070009 },
   { off: 0x1106C8, stock: 0x02743823, patch: 0x24070009 },
 ];
+export const MP_CAST = [...MP_CAST_T1, ...MP_CAST_T2];
 // Mounted-pair mechanics: whole instructions the Mounts tab rewrites. HP pooling gate,
 // the two rounding sweeteners, and the Adrenaline Power pair-sum.
 export const MECH = {

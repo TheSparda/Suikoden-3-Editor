@@ -1,7 +1,8 @@
 # Trinity Sight System — what the chapter-select screen reads out of a save
 
 **Status:** offsets and semantics proved from the game's own code plus a 69-save corpus.
-**Editing them has not been play-tested** — see [§6](#6-what-is-not-proven).
+**Editing them was play-tested 2026-11-27 and does not take effect** (the game rebuilds
+the sight state from story progress at the Trinity Site) — see [§6](#6-what-is-not-proven).
 
 Suikoden III's Trinity Sight is the between-chapters screen with the flames on it: pick a
 point of view, get that character's next chapter. Six flames — Hugo, Chris, Geddoe, then
@@ -132,9 +133,18 @@ and the Trinity block in `web/tests/e2e.mjs` (UI → review list → write paylo
 
 ## 6. What is **not** proven
 
-- **No play test.** Nothing here has been verified in-game. In particular, lighting Luc's
-  flame on a save that has not cleared the game may lead somewhere the game is not ready
-  for — his chapter expects post-clear state. Keep a backup.
+- **Play-tested 2026-11-27; the unlock does not work, and now we know why.** An edited
+  save loads with the edited flame bits and stage counters intact, and they stay intact
+  in RAM while the game runs elsewhere (verified in the field at Vinay del Zexay). But a
+  save made at the Trinity Site, loaded into the site's own map, had its edits reverted
+  in RAM before any interaction: the game rebuilds the sight state from per-point-of-view
+  story progress when the Trinity Site is reached. The derivation input is the script
+  engine's event and scenario state for each chapter (a corpus diff across the 20-save
+  guide playthrough found no single field or small set that tracks a flame; Thomas's
+  unlock coincides with the whole Geddoe chapter-1 event record changing), so it cannot
+  be synthesized safely by hand: the same flags drive NPCs, battles, shops and script
+  branches. The panel's readback of existing saves is accurate against the corpus; its
+  writes are what the game discards. Full writeup: lab FIXES_2026-11-27.md.
 - **The chapter-select value is inferred.** Every observed stage comes from a *mid-chapter*
   save, since that is when people save. That chapter N's opening stage is the value which
   makes the screen offer chapter N is the obvious reading, not a demonstrated one.
