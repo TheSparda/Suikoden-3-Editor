@@ -1,27 +1,34 @@
-/* ===== Suikoden III themes (originally matched to the retired desktop editor) =====
-   Default (:root) is "Dark crimson & gold"; body.theme-parchment is the light
-   parchment look. Same palette + typography as the desktop app. */
+/* ===== Suikoden III themes: Ember (dark) and Manuscript (light) =====
+   Palettes sampled from the game's own art (fire-theme research): the ember
+   ramp (ember core / blood / flame / rim gold / halo) on the status screen's
+   stone for Ember; the title screen's pale wash and the war-battle dialogue
+   panels for Manuscript, selection in the duel bar's olive-gold. Roles never
+   mix: ember = selection and power, teal = information, crimson = error.
+   The stored theme values stay "crimson" / "parchment" so existing users
+   keep their choice; only the labels and the colors changed. */
 :root{
-  --bg:#17110d; --panel:#211812; --panel2:#2d2018; --headbg:linear-gradient(180deg,#2a1e14,#211812);
-  --ink:#efe4d0; --mut:#a6947a; --line:#3c2c1e;
-  --acc:#c39a3f; --acc2:#e0bd63; --accink:#1c1206;   /* antique gold */
-  --crimson:#a5282a;
-  --input-bg:#140e09; --thead-bg:#281c13;
-  --ok:#7fa653; --err:#e05d4d; --toastink:#f3ecda;
-  --warn:#e0a92c; --warnbd:#8a6a1c; --changed-bg:#2a2010;
+  --bg:#211d1a; --panel:#292521; --panel2:#332e28; --headbg:linear-gradient(180deg,#2e2a24,#26221e);
+  --ink:#efe9dc; --mut:#a79e90; --line:#4a443b;
+  --acc:#d2652a; --acc2:#e3a567; --accink:#2a1005;   /* flame orange, rim gold */
+  --crimson:#a6220a; --teal:#5baea5;
+  --input-bg:#1b1916; --thead-bg:#2e2a24;
+  --ok:#5baea5; --err:#e87a63; --toastink:#f3ecda;
+  --warn:#e0a92c; --warnbd:#8a6a1c; --changed-bg:#33241a;
+  --sel:linear-gradient(90deg,#8f1d07,#a6220a 55%,#b43a12); --sel-ink:#f6e7c1; --sel-edge:#e3a567;
   --titlefont:"Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
-  --focusring:rgba(195,154,63,.28);
+  --focusring:rgba(210,101,42,.38);
   --shadow:0 2px 10px rgba(0,0,0,.38); --radius:12px;
 }
 html.theme-parchment{
-  --bg:#cdbb95; --panel:#f3ead3; --panel2:#e8dabb; --headbg:linear-gradient(180deg,#f6eed8,#efe4c8);
-  --ink:#3a2a17; --mut:#7c6845; --line:#c3ac80;
-  --acc:#9c2b26; --acc2:#b83f39; --accink:#f6ecd6;   /* crimson buttons, cream text */
-  --crimson:#8f2420;
-  --input-bg:#fcf6e7; --thead-bg:#e3d3ac;
-  --err:#8f2420;
-  --warn:#8a5a10; --warnbd:#b98a2e; --changed-bg:#f3e5bf;
-  --focusring:rgba(156,43,38,.25);
+  --bg:#e9e4d2; --panel:#f6efdd; --panel2:#efe5c9; --headbg:linear-gradient(180deg,#f8f2e0,#f3ead2);
+  --ink:#3a2a17; --mut:#77643f; --line:#c4b28a;
+  --acc:#958353; --acc2:#744210; --accink:#2e2410;   /* duel olive-gold, dialogue brown */
+  --crimson:#a6220a; --teal:#2d5469;
+  --input-bg:#fcf8ec; --thead-bg:#e9dcb8;
+  --ok:#2d5469; --err:#9e1f08;
+  --warn:#8a5a10; --warnbd:#b98a2e; --changed-bg:#f1e3b4;
+  --sel:linear-gradient(90deg,#594b29,#6b5a2e 55%,#77653a); --sel-ink:#fbf3d9; --sel-edge:#d8c491;
+  --focusring:rgba(149,131,83,.35);
   --shadow:0 2px 8px rgba(90,60,20,.22);
 }
 * { box-sizing:border-box; }
@@ -834,3 +841,28 @@ html.theme-parchment .boot-ov.art::before { opacity:.3; filter:brightness(.94) s
 .boot-acts button { background:transparent; border-color:#b49b62; color:#4a3520; }
 .boot-acts button:hover { border-color:#a6220a; }
 .boot-detail { color:#77644a; }
+
+/* ================= fire theme: selection, glow, role colors =================
+   Selected and primary surfaces take the gradient (blood to flame on Ember,
+   deep to lit olive-gold on Manuscript) with the rim color as a lit top edge.
+   Text on them stays solid ink. Gradients live on fills and rules only. */
+button.primary, button.chip.on, .modebar .mtab.on, .themesw .tb.on {
+  background:var(--sel); border-color:transparent; color:var(--sel-ink);
+  box-shadow:inset 0 1px 0 var(--sel-edge); }
+button.primary:hover:not(:disabled) { filter:brightness(1.07); border-color:transparent; }
+/* The save button glows warm gold while unsaved changes exist, and settles
+   after a save. Gold, never red: it must not read as an error. */
+#isoSaveBtn { transition:box-shadow .35s ease; }
+#isoSaveBtn.hot { box-shadow:inset 0 1px 0 var(--sel-edge), 0 0 16px 3px rgba(227,165,103,.5); }
+html.theme-parchment #isoSaveBtn.hot { box-shadow:inset 0 1px 0 var(--sel-edge), 0 0 16px 3px rgba(149,131,83,.45); }
+/* Information speaks teal: links, and (via --ok) loaded / verified status. */
+.linklike { color:var(--teal); }
+footer .credit a { color:var(--teal); }
+/* Error TEXT is --err in both themes; blood red remains a fill and border. */
+.hz-c.error { color:var(--err); }
+.hz-item.sev-error .hz-sev { color:var(--err); }
+.mcf.bad { color:var(--err); }
+/* Manuscript cards are dialogue panels: cream fill, a dark brown header bar
+   with the section name in light serif. */
+html.theme-parchment .card h2 { background:#4a3520; color:#f6efdd;
+  margin:-16px -16px 12px; padding:9px 16px; border-radius:11px 11px 0 0; }

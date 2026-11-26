@@ -3484,6 +3484,7 @@
     // promised "save to ISO" while the header card said it saves a copy to downloads.
     const base = saveMode() === "stream" ? "Apply & save patched ISO" : "Apply & save to ISO";
     btn.textContent = anyChanges() ? base + " ●" : base;
+    btn.classList.toggle("hot", anyChanges());   // the save button's gold glow (T1.3)
     // Per-view staged-edit counts on the nav chips: the rail tree on desktop, and the
     // strip's dirty markers on small screens where the rail is hidden.
     const counts = {};

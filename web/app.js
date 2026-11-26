@@ -2648,7 +2648,7 @@ async function forceUpdate() {
 
 window.addEventListener("DOMContentLoaded", () => {
   // First visit (no saved choice): follow the system — a light-preferring device gets
-  // Parchment, a dark-preferring one Crimson & Gold. After that the saved choice wins.
+  // Manuscript, a dark-preferring one Ember. After that the saved choice wins.
   let theme = "crimson";
   try { theme = localStorage.getItem("s3theme")
     || (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "parchment" : "crimson"); } catch (e) {}
