@@ -2179,7 +2179,7 @@
     for (const o of copies) {
       writeBytes(o, padded);
       FIELD_REG[o] = { group, label: copies.length > 1 ? `${label} (copy ${copies.indexOf(o) + 1} of ${copies.length})` : label,
-        off: o, width: padded.length, kind: "text" };
+        off: o, width: padded.length, kind: "text", view: VIEW };
     }
     return copies.length;
   }
@@ -2324,7 +2324,9 @@
 
   // ---- edit application ------------------------------------------------------
   // Register a field's location so the review/save diff can label it, then apply.
-  function reg(off, width, kind, group, label) { FIELD_REG[off] = { group, label, off, width, kind }; }
+  // `view` records the tab the edit was made from, so buildReview can attribute the row
+  // and the nav chips can carry a per-view staged-edit count (docs/TWO_PANE_WORKSPACE.md).
+  function reg(off, width, kind, group, label) { FIELD_REG[off] = { group, label, off, width, kind, view: VIEW }; }
   function isDirty(off, width) {
     for (let i = 0; i < width; i++) if (BUF[off - ELF_BASE + i] !== ORIG[off - ELF_BASE + i]) return true;
     return false;
@@ -2353,6 +2355,10 @@
       btn.title = `Restore original (${ov})`;
       btn.setAttribute("aria-label", `Restore original value (${ov})`);
     }
+    // Keep the closed-row "edited" marker (drawRecords) honest while the record is open:
+    // it follows whether anything inside the row is currently marked dirty.
+    const det = el.closest && el.closest("details.char");
+    if (det) { const m = det.querySelector(".edmark"); if (m) m.hidden = !det.querySelector(".dirty"); }
     scheduleBadge();
   }
   // Like markField, but only the bits in `mask` of a u32 field count as "this control's".
@@ -2873,7 +2879,7 @@
       if (m.kind === "bytes") { ov = chgHexOf(ORIG, m.off, m.width); nv = chgHexOf(BUF, m.off, m.width); }
       else if (m.kind === "text") { ov = `"${strFrom(ORIG, m.off, m.width)}"`; nv = `"${strFrom(BUF, m.off, m.width)}"`; }
       else { ov = fmtVal(m.kind, origW(m.off, m.width)); nv = fmtVal(m.kind, readW(m.off, m.width)); }
-      if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}` });
+      if (ov !== nv) rows.push({ g: m.group, v: m.view, t: `${m.label}: ${ov} → ${nv}` });
     }
     // Aux windows (potch overlay pair): decode the multiplier for a readable review row.
     if (auxHasPotch() && auxDirty()) {
@@ -2881,20 +2887,20 @@
       const oldM = decodePotch(auxO32(w0 + AUX_MULT), auxO32(w0 + AUX_MULT + 4));
       const newM = decodePotch(auxR32(w0 + AUX_MULT), auxR32(w0 + AUX_MULT + 4));
       if (oldM !== newM)
-        rows.push({ g: "Armor sets", t: `Potch multiplier per set wearer: ${oldM ? "×" + oldM : "?"} → ${newM ? "×" + newM : "?"} (both overlay copies)` });
+        rows.push({ g: "Armor sets", v: "sets", t: `Potch multiplier per set wearer: ${oldM ? "×" + oldM : "?"} → ${newM ? "×" + newM : "?"} (both overlay copies)` });
       const oldMask = auxO32(w0 + AUX_MASK) & 0xFFFF, newMask = auxR32(w0 + AUX_MASK) & 0xFFFF;
       if (oldMask !== newMask)
-        rows.push({ g: "Armor sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
+        rows.push({ g: "Armor sets", v: "sets", t: `Potch bonus applies to: ${maskSetNames(oldMask)} → ${maskSetNames(newMask)}` });
       // Fortune shares this window (it is the same battle-results function), and its offsets are
       // outside the ELF block, so FIELD_REG can't carry it — decode the row here like the two above.
       const oldF = auxO32(w0 + AUX_FORTUNE) & 0xFFFF, newF = auxR32(w0 + AUX_FORTUNE) & 0xFFFF;
       if (oldF !== newF)
-        rows.push({ g: "Rune power", t: `Fortune — EXP multiplier: ×${oldF} → ×${newF} (both overlay copies)` });
+        rows.push({ g: "Rune power", v: "passives", t: `Fortune — EXP multiplier: ×${oldF} → ×${newF} (both overlay copies)` });
       // ...and the same for the two overlay switches, which are two words each rather than one.
       for (const sw of AUXSW) {
         if (!auxSwDirty(sw)) continue;
         const st = auxSwState(sw);
-        rows.push({ g: sw.group, t: `${sw.review}: ${st === "on"
+        rows.push({ g: sw.group, v: sw.key === "prosperity" ? "sets" : "passives", t: `${sw.review}: ${st === "on"
           ? "forced to yes for the whole party"
           : st === "off" ? "back to the game's own call" : "changed"} (both overlay copies)` });
       }
@@ -2909,7 +2915,7 @@
       if (m.room) roomCovered += m.offs.length * m.w;
       else enemyCovered += m.offs.length * m.w;
       const ov = m.fmt(eOrig(m.offs, m.w)), nv = m.fmt(eRead(m.offs, m.w));
-      if (ov !== nv) rows.push({ g: m.group, t: `${m.label}: ${ov} → ${nv}${m.offs.length > 1 ? ` (×${m.offs.length} copies)` : ""}` });
+      if (ov !== nv) rows.push({ g: m.group, v: m.room ? "encounter" : "enemies", t: `${m.label}: ${ov} → ${nv}${m.offs.length > 1 ? ` (×${m.offs.length} copies)` : ""}` });
     }
     // Bulk enemy multipliers touch thousands of bytes without per-field registration —
     // summarize whatever enemy dirt the labeled rows don't account for.
@@ -2919,7 +2925,7 @@
       return a + n;
     }, 0);
     if (enemyDirty > enemyCovered)
-      rows.push({ g: "Enemies", t: `${enemyDirty - enemyCovered} more enemy byte(s) changed (bulk multipliers), all pack copies included` });
+      rows.push({ g: "Enemies", v: "enemies", t: `${enemyDirty - enemyCovered} more enemy byte(s) changed (bulk multipliers), all pack copies included` });
     // Same for the Encounter view's whole-area presets, which rewrite every room record
     // in an area without registering each one.
     const roomDirty = AUX.reduce((acc, w) => {
@@ -2928,13 +2934,13 @@
       return acc + n;
     }, 0);
     if (roomDirty > roomCovered)
-      rows.push({ g: "Encounters", t: `${roomDirty - roomCovered} more room byte(s) changed (per-area rate presets)` });
+      rows.push({ g: "Encounters", v: "encounter", t: `${roomDirty - roomCovered} more room byte(s) changed (per-area rate presets)` });
     // Bulk growth scaling (the Growth tab's card) rewrites up to 80 x 8 bytes at once, and its
     // bulk skill-cap card up to 80 x 43 — far too many to name one by one — so both land here as
     // a count. The spell and unite power scales are small enough to register per record, so
     // those DO appear by name above.
     const totalDirty = diffRuns().reduce((a, r) => a + (r[1] - r[0]), 0);
-    if (totalDirty > covered) rows.push({ g: "Bulk / other", t: `${totalDirty - covered} more byte(s) changed (e.g. bulk growth or skill-cap presets)` });
+    if (totalDirty > covered) rows.push({ g: "Bulk / other", v: "growth", t: `${totalDirty - covered} more byte(s) changed (e.g. bulk growth or skill-cap presets)` });
     return rows;
   }
   let recipeExported = false, saveNudged = false;
@@ -3349,38 +3355,76 @@
     ["movement", "Movement"], ["encounter", "Encounter"], ["enemies", "Enemies"], ["war", "War"],
     ["text", "Text"], ["ref", "Reference"], ["test", "Test"], ["changes", "Changes"]];
 
+  // The 23 views in four groups, for the rail tree (desktop) and the chip strip (small
+  // screens): one nav markup serves both, the group wrappers collapse away in strip mode.
+  const VIEW_GROUPS = [["Roster", ["chars", "growth", "skillsfx", "support"]],
+    ["World", ["shops", "gear", "sets", "food", "text"]],
+    ["Combat", ["weapons", "runes", "passives", "spells", "unites", "mounts", "enemies", "war", "encounter", "movement"]],
+    ["System", ["story", "test", "changes", "ref"]]];
+
+  // ---- two-pane chrome: one nav strip and one action bar, two homes -------------
+  // On desktop the SAME #isoTabs and #isoBar nodes live in the left rail; below the
+  // breakpoint they live in the card, exactly where they always did. They are moved, never
+  // copied, so handlers, ids and state survive the move (docs/TWO_PANE_WORKSPACE.md).
+  const DESKTOP_MQ = typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(min-width:1024px)") : null;
+  function placeChrome() {
+    const tabs = q("#isoTabs"), bar = q("#isoBar"); if (!tabs || !bar) return;
+    const desk = !!(DESKTOP_MQ && DESKTOP_MQ.matches);
+    const navDest = q(desk ? "#railNavSlot" : "#navSlot"), barDest = q(desk ? "#railBarSlot" : "#barSlot");
+    if (navDest && tabs.parentElement !== navDest) navDest.appendChild(tabs);
+    if (barDest && bar.parentElement !== barDest) barDest.appendChild(bar);
+  }
+  if (DESKTOP_MQ) {
+    if (DESKTOP_MQ.addEventListener) DESKTOP_MQ.addEventListener("change", placeChrome);
+    else if (DESKTOP_MQ.addListener) DESKTOP_MQ.addListener(placeChrome);
+  }
+
   function renderEditor(size) {
     const root = q("#isoRoot");
     const sm = saveMode();
     const saveLabel = sm === "stream" ? "Apply &amp; save patched ISO" : "Apply &amp; save to ISO";
     const saveNote = sm === "stream" ? ` · <span class="muted">saves a patched copy to downloads</span>`
       : sm === "none" ? ` · <span style="color:var(--warn)">read-only here — export a recipe</span>` : "";
+    const labelOf = Object.fromEntries(VIEWS);
     root.innerHTML = `
-      <div class="card">
-        <div class="row" style="justify-content:space-between">
-          <div><b class="acc2">${esc2(isoName)}</b>
-            <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span>${saveNote}</div>
-          <button id="isoClose" class="chip mini">Close</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="subtabs" id="isoTabs">${VIEWS.map(([k, l]) =>
-          `<button class="chip${k === VIEW ? " on" : ""}" data-v="${k}">${l}</button>`).join("")}</div>
-        <input class="search" id="isoSearch" placeholder="filter…">
-        <div class="muted" id="isoHint" style="margin:2px 0 10px"></div>
-        <div id="isoView"></div>
-        <div class="toolbar">
-          <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
-          <span class="pill" id="isoDirty" hidden></span>
-          <button id="isoUndoBtn" title="Undo (Ctrl/Cmd+Z)" disabled>↶ Undo</button>
-          <button id="isoRedoBtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ Redo</button>
-          <button id="isoRecipeBtn">Export recipe…</button>
-          <button id="isoXdeltaBtn" title="Standard VCDIFF patch (no checksum — apply ONLY to a pristine USA SLUS-20387 ISO): xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
-          <label class="file" style="margin:0"><button type="button" id="isoImportBtn"
-            title="Apply a mod: an .s3mod recipe from this editor, or a standard .xdelta (VCDIFF) patch — built with xdelta3 -S none">Apply patch…</button>
-            <input type="file" id="isoRecipeFile" accept=".s3mod,.json,.xdelta,.vcdiff,.xd"></label>
-          <button id="isoResetBtn">Revert all</button>
-          <span class="status" id="isoStatus"></span>
+      <div class="iso-shell">
+        <aside class="iso-rail">
+          <div class="slot" id="railNavSlot"></div>
+          <div class="rail-session">
+            <div class="rail-disc"><b class="acc2">${esc2(isoName)}</b>
+              <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span></div>
+            <div class="slot" id="railBarSlot"></div>
+          </div>
+        </aside>
+        <div class="iso-main">
+          <div class="card">
+            <div><b class="acc2">${esc2(isoName)}</b>
+              <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span>${saveNote}</div>
+          </div>
+          <div class="card">
+            <div class="slot" id="navSlot"><div class="subtabs" id="isoTabs">${VIEW_GROUPS.map(([g, keys]) =>
+              `<div class="navgroup"><div class="navgroup-h">${g}</div>${keys.map((k) =>
+                `<button class="chip${k === VIEW ? " on" : ""}" data-v="${k}">${labelOf[k]}<span class="vcount" hidden></span></button>`).join("")}</div>`).join("")}</div></div>
+            <input class="search" id="isoSearch" placeholder="filter…">
+            <div class="muted" id="isoHint" style="margin:2px 0 10px"></div>
+            <div id="isoView"></div>
+            <div class="slot" id="barSlot"><div class="toolbar" id="isoBar">
+              <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
+              <span class="pill" id="isoDirty" hidden></span>
+              <button id="isoUndoBtn" title="Undo (Ctrl/Cmd+Z)" disabled>↶ Undo</button>
+              <button id="isoRedoBtn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↷ Redo</button>
+              <button id="isoMoreBtn" class="morebtn" aria-expanded="false">More ▾</button>
+              <button id="isoRecipeBtn" class="opt">Export recipe…</button>
+              <button id="isoXdeltaBtn" class="opt" title="Standard VCDIFF patch (no checksum — apply ONLY to a pristine USA SLUS-20387 ISO): xdelta3 -d -s <pristine ISO> file.xdelta out.iso">Export .xdelta…</button>
+              <label class="file opt" style="margin:0"><button type="button" id="isoImportBtn"
+                title="Apply a mod: an .s3mod recipe from this editor, or a standard .xdelta (VCDIFF) patch — built with xdelta3 -S none">Apply patch…</button>
+                <input type="file" id="isoRecipeFile" accept=".s3mod,.json,.xdelta,.vcdiff,.xd"></label>
+              <button id="isoResetBtn" class="opt">Revert all</button>
+              <button id="isoClose" class="opt">Close</button>
+              <span class="status" id="isoStatus"></span>
+            </div></div>
+          </div>
         </div>
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
@@ -3402,6 +3446,14 @@
     q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); auxRevertAll(); dropDescCaches(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     q("#isoUndoBtn").onclick = undo;
     q("#isoRedoBtn").onclick = redo;
+    // Small screens only (CSS decides when it shows): folds the session-level actions
+    // (.opt) away so the sticky bar stays one short row on a handheld panel.
+    q("#isoMoreBtn").onclick = () => {
+      const open = q("#isoBar").classList.toggle("more");
+      q("#isoMoreBtn").setAttribute("aria-expanded", open ? "true" : "false");
+      q("#isoMoreBtn").textContent = open ? "Less ▴" : "More ▾";
+    };
+    placeChrome();
     updateUndoUI();
     drawView();
   }
@@ -3410,15 +3462,57 @@
   // bulk (Balance) edits that aren't tied to a single field. Also annotates the Save button.
   function updateDirtyBadge() {
     const badge = q("#isoDirty"), btn = q("#isoSaveBtn"); if (!badge || !btn) return;
-    const n = buildReview().length;
+    const rows = buildReview();
+    const n = rows.length;
     if (n > 0) { badge.hidden = false; badge.textContent = `${n} unsaved`; }
     else if (anyChanges()) { badge.hidden = false; badge.textContent = "unsaved changes"; }
     else { badge.hidden = true; }
-    btn.textContent = anyChanges() ? "Apply & save to ISO ●" : "Apply & save to ISO";
+    // One label per save mode, the same one renderEditor starts with. This line used to
+    // overwrite it with the in-place wording unconditionally, so in stream mode the button
+    // promised "save to ISO" while the header card said it saves a copy to downloads.
+    const base = saveMode() === "stream" ? "Apply & save patched ISO" : "Apply & save to ISO";
+    btn.textContent = anyChanges() ? base + " ●" : base;
+    // Per-view staged-edit counts on the nav chips: the rail tree on desktop, and the
+    // strip's dirty markers on small screens where the rail is hidden.
+    const counts = {};
+    for (const r of rows) if (r.v) counts[r.v] = (counts[r.v] || 0) + 1;
+    qa("#isoTabs [data-v]").forEach((b) => {
+      const c = b.querySelector(".vcount"); if (!c) return;
+      const n2 = counts[b.dataset.v] || 0;
+      c.textContent = n2 ? String(n2) : "";
+      c.hidden = !n2;
+    });
   }
 
   function drawView() {
     qa("#isoTabs [data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === VIEW));
+    // Keep the active chip in sight inside its own strip/rail. Rect maths against the
+    // container only: scrollIntoView would also drag the PAGE to the strip on every
+    // re-render (a per-field revert redraws), which is the opposite of keeping your place.
+    {
+      const t = q("#isoTabs"), act = q("#isoTabs [data-v].on");
+      if (t && act) {
+        const tr = t.getBoundingClientRect(), ar = act.getBoundingClientRect();
+        if (ar.left < tr.left) t.scrollLeft -= (tr.left - ar.left) + 8;
+        else if (ar.right > tr.right) t.scrollLeft += (ar.right - tr.right) + 8;
+        if (ar.top < tr.top) t.scrollTop -= (tr.top - ar.top) + 8;
+        else if (ar.bottom > tr.bottom) t.scrollTop += (ar.bottom - tr.bottom) + 8;
+      }
+    }
+    // The filter box only exists where a view reads it: Test and Changes never look at
+    // SEARCH, so the box hides there rather than pretending to filter; everywhere else it
+    // names what it filters.
+    {
+      const srch = q("#isoSearch");
+      if (srch) {
+        const noFilter = VIEW === "test" || VIEW === "changes";
+        srch.style.display = noFilter ? "none" : "";
+        if (!noFilter) {
+          const vl = (VIEWS.find(([k]) => k === VIEW) || [])[1];
+          if (vl) srch.placeholder = `filter ${vl.toLowerCase()}…`;
+        }
+      }
+    }
     const hints = {
       chars: "Character starting stats (list 1): starting skills, ranks, equipped runes and gear \u2014 plus, on each character\u2019s own card, PASSIVE RUNES FORCED ON: the 22 support runes whose passive the engine can be made to grant this character alone, with no rune and no rune slot spent. Ticking one sets that character\u2019s bit in the rune\u2019s table and nobody else\u2019s; unticking every rune on every character removes the helper byte-for-byte. A rune\u2019s STRENGTH is on the Runes tab, and the four party-wide effects are on the Passives tab.",
       growth: "Per-character stat-growth rates, fixed skills, skill caps and starting level (list 2) — plus two bulk cards at the top of the tab: multiply every character's growth rate at once, with the Tougher / Hard / Brutal difficulty presets, and set the whole roster's 43 skill maximums (everyone to S, or just unlock the skills a character can't get). This is where the old Balance tab went; the spell and unite halves of those presets are now on the Spells and Unites tabs.",
@@ -3659,13 +3753,22 @@
       rows.push({ i, label, base: base + i * stride });
     }
     if (!rows.length) { host.innerHTML = `<div class="muted">no matches</div>`; return; }
-    host.innerHTML = rows.map((r) =>
-      `<details class="char" data-rec="${r.base}"><summary>
+    host.innerHTML = rows.map((r) => {
+      // A closed row should still say something: Characters rows carry the starting level
+      // (the Growth record at the same index; both lists have 80 records) and every row
+      // carries an "edited" marker while its bytes differ from the loaded disc, so a
+      // record changed yesterday can be found without opening all 80.
+      const lv = listKey === "list1" && r.i < LIST_COUNT.list2
+        ? r8(TABLES.list2[0] + r.i * TABLES.list2[1] + 100) : null;
+      const edited = isDirty(r.base, Math.min(stride, nextBoundary(r.base) - r.base));
+      return `<details class="char" data-rec="${r.base}"><summary>
          <span class="chev">▸</span><span class="nm">${esc2(r.label)}</span>
-         <span class="muted">#${r.i}</span></summary>
+         <span class="muted">#${r.i}</span>${lv !== null ? `<span class="lv">Lv ${lv}</span>` : ""}
+         <span class="tag warn edmark${lv === null ? " solo" : ""}"${edited ? "" : " hidden"}>edited</span></summary>
          <div class="char-body"><div class="grid">${lazy ? "" : recFields(r.base, fields, r.label, listKey)}</div>
            <div class="cpBox">${lazy || listKey !== "list1" ? "" : charPassivesHTML(r.base)}</div></div>
-       </details>`).join("");
+       </details>`;
+    }).join("");
     qa("details.char", host).forEach((d) => {
       const rec = +d.dataset.rec, lbl = d.querySelector(".nm").textContent;
       if (lazy) d.addEventListener("toggle", () => {
@@ -6128,7 +6231,7 @@
     } else writeW(r.off, r.w, on ? r.patchVal : r.stockVal);
     FIELD_REG[r.off] = { group: on ? "Patch switched back on" : "Restored to stock",
       label: `${r.group} · ${r.label}`, off: r.off, width: pswLen(r),
-      kind: r.isBlock ? "bytes" : r.w === 4 ? "word" : "num" };
+      kind: r.isBlock ? "bytes" : r.w === 4 ? "word" : "num", view: VIEW };
     return true;
   }
 
@@ -10925,7 +11028,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
       writeBytes(a.off, a.block);
     } else writeW(a.off, a.w, a.stock);
     FIELD_REG[a.off] = { group: "Restored to stock", label: `${a.group} · ${a.label}`,
-      off: a.off, width: a.w, kind: a.block ? "bytes" : a.w === 4 ? "word" : "num" };
+      off: a.off, width: a.w, kind: a.block ? "bytes" : a.w === 4 ? "word" : "num", view: VIEW };
     return true;
   }
   // Call sites first, relocated block last — see chgStockRevertRow.
@@ -11387,7 +11490,7 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
     FIELD_REG[off] = {
       group: "Reverted to base disc",
       label: row.label || `0x${hex(off, 6)} (${len} byte${len === 1 ? "" : "s"})`,
-      off, width: len,
+      off, width: len, view: VIEW,
       kind: row.kind === "text" ? "text" : scalar && row.kind !== "hex" ? row.kind : "bytes",
     };
   }
