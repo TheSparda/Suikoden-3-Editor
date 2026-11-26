@@ -2654,6 +2654,10 @@ window.addEventListener("DOMContentLoaded", () => {
     || (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "parchment" : "crimson"); } catch (e) {}
   applyTheme(theme);
   $$(".themesw .tb").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
+  // The boot backdrop (key art) is decorative and lazy: only request it once the page
+  // has painted and the engine download is under way, never on the critical path.
+  const bov = $("#bootOv");
+  if (bov) requestAnimationFrame(() => bov.classList.add("art"));
 
   const drop = $("#drop"), fileInput = $("#file"), pickBtn = $("#pickBtn");
   // Prefer the FS Access picker (keeps a writable handle for save-in-place); else <input>.

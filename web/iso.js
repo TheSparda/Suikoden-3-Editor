@@ -3362,6 +3362,17 @@
     ["Combat", ["weapons", "runes", "passives", "spells", "unites", "mounts", "enemies", "war", "encounter", "movement"]],
     ["System", ["story", "test", "changes", "ref"]]];
 
+  // Monochrome rail-group glyphs from game motifs (original SVG): a flame for the
+  // roster of bearers, a castle for the world, crossed blades for combat, a rune
+  // ring for system. currentColor, so they follow the theme and the view temperature.
+  const gico = (paths) => `<svg class="gico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+  const GICONS = {
+    Roster: gico(`<path d="M12 2.8c.9 3.2-4 5.6-4 9.2a4 4 0 0 0 8 0c0-3.6-4.9-6-4-9.2z"/><path d="M12 12.6c.5 1.2-1.2 1.9-1.2 3a1.2 1.2 0 0 0 2.4 0c0-1.1-1.7-1.8-1.2-3z"/>`),
+    World: gico(`<path d="M4.5 21V10.8h2.7V7.4h3.1v3.4h3.4V7.4h3.1v3.4h2.7V21z"/><path d="M10.4 21v-3.2a1.6 1.6 0 0 1 3.2 0V21"/>`),
+    Combat: gico(`<path d="M5.5 3.5L16 14M18.5 3.5L8 14"/><path d="M13.9 15.1l3.3 3.3M10.1 15.1l-3.3 3.3"/><circle cx="18.4" cy="19.6" r="1.05" fill="currentColor" stroke="none"/><circle cx="5.6" cy="19.6" r="1.05" fill="currentColor" stroke="none"/>`),
+    System: gico(`<circle cx="12" cy="12" r="7.4"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.6v2.3M12 19.1v2.3M2.6 12h2.3M19.1 12h2.3"/>`),
+  };
+
   // ---- two-pane chrome: one nav strip and one action bar, two homes -------------
   // On desktop the SAME #isoTabs and #isoBar nodes live in the left rail; below the
   // breakpoint they live in the card, exactly where they always did. They are moved, never
@@ -3390,6 +3401,7 @@
     root.innerHTML = `
       <div class="iso-shell">
         <aside class="iso-rail">
+          <div class="rail-head"><img class="crest" src="crest.webp" alt="" aria-hidden="true"><span class="rail-title">Disc editor</span></div>
           <div class="slot" id="railNavSlot"></div>
           <div class="rail-session">
             <div class="rail-disc"><b class="acc2">${esc2(isoName)}</b>
@@ -3404,7 +3416,7 @@
           </div>
           <div class="card">
             <div class="slot" id="navSlot"><div class="subtabs" id="isoTabs">${VIEW_GROUPS.map(([g, keys]) =>
-              `<div class="navgroup"><div class="navgroup-h">${g}</div>${keys.map((k) =>
+              `<div class="navgroup"><div class="navgroup-h">${GICONS[g] || ""}${g}</div>${keys.map((k) =>
                 `<button class="chip${k === VIEW ? " on" : ""}" data-v="${k}">${labelOf[k]}<span class="vcount" hidden></span></button>`).join("")}</div>`).join("")}</div></div>
             <input class="search" id="isoSearch" placeholder="filter…">
             <div class="muted" id="isoHint" style="margin:2px 0 10px"></div>
