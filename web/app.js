@@ -2547,12 +2547,29 @@ const bootGate = (() => {
     // Engine failed: keep the gate up (the loader under it can't do anything) but swap the
     // spinner for the reason and the two things that actually help — a retry and a cache nuke,
     // since a half-written service-worker cache is the usual culprit.
-    fail(msg) {
+    fail(msg, name) {
       const o = ov(); if (!o || closed) return;
       const m = o.querySelector("#bootMsg"), bar = o.querySelector(".bar"), acts = o.querySelector("#bootActs");
       const t = o.querySelector("#bootTitle");
       if (t) t.textContent = "The Python engine didn’t start";
-      if (m) { m.className = "boot-msg err"; m.textContent = "⚠ " + msg; }
+      // Plain words first: what happened and what to do. A BootManifestError is already
+      // that (it names the file and the fix), so it stays the message. Anything else is a
+      // raw JS error (an identifier like "loadPyodide is not defined" helps nobody at
+      // this point): the panel gets a plain sentence and the raw text is demoted to a
+      // small details line under it, still there for a bug report.
+      if (m) {
+        m.className = "boot-msg err";
+        if (name === "BootManifestError") m.textContent = "⚠ " + msg;
+        else {
+          m.textContent = "⚠ The engine could not be downloaded or started. "
+            + "A network hiccup or a stale cached copy is the usual cause: try Retry, or Clear cache & reload.";
+          if (msg) {
+            let det = o.querySelector("#bootDetail");
+            if (!det) { det = document.createElement("div"); det.id = "bootDetail"; det.className = "boot-detail"; m.after(det); }
+            det.textContent = msg;
+          }
+        }
+      }
       if (bar) bar.querySelector(".bar-fill").classList.add("err");
       // The step that was mid-flight is the one that failed — a spinning glyph next to
       // "didn't start" reads as still-working, which is the opposite of the truth.
@@ -2586,7 +2603,7 @@ function dirtyNow() { try { return typeof EDITS !== "undefined" && hasChanges();
 // Theme switcher — same two themes as the desktop editor, persisted in localStorage.
 function applyTheme(t) {
   document.documentElement.classList.toggle("theme-parchment", t === "parchment");
-  $$("footer .tb").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
+  $$(".themesw .tb").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = t === "parchment" ? "#cdbb95" : "#17110d";
   try { localStorage.setItem("s3theme", t); } catch (e) {}
@@ -2630,10 +2647,13 @@ async function forceUpdate() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  // First visit (no saved choice): follow the system — a light-preferring device gets
+  // Parchment, a dark-preferring one Crimson & Gold. After that the saved choice wins.
   let theme = "crimson";
-  try { theme = localStorage.getItem("s3theme") || "crimson"; } catch (e) {}
+  try { theme = localStorage.getItem("s3theme")
+    || (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "parchment" : "crimson"); } catch (e) {}
   applyTheme(theme);
-  $$("footer .tb").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
+  $$(".themesw .tb").forEach((b) => (b.onclick = () => applyTheme(b.dataset.theme)));
 
   const drop = $("#drop"), fileInput = $("#file"), pickBtn = $("#pickBtn");
   // Prefer the FS Access picker (keeps a writable handle for save-in-place); else <input>.
@@ -2676,8 +2696,8 @@ window.addEventListener("DOMContentLoaded", () => {
     pickBtn.disabled = false;
     bootGate.close();
   }).catch((e) => {
-    setDropMsg("Engine failed to start: " + e.message, true);
-    bootGate.fail(e.message);
+    setDropMsg("Engine failed to start. Reload to try again.", true);
+    bootGate.fail(e.message, e.name);
   });
   // After the engine is up: a save shared into the PWA wins; otherwise offer the last one.
   pyReady.then(async () => {

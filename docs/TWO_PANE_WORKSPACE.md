@@ -77,7 +77,9 @@ other actions. Tap targets and the tab strip keep their current sizes.
    while there are unsaved changes.
 2. Boot error: a failed engine start says so in plain words ("Engine failed to start.
    Reload to try again.") and the raw error is demoted to a small details line in the boot
-   gate, instead of being the message.
+   gate, instead of being the message. One exception, found while building: the boot
+   manifest check's own error already names the broken file and the fix in plain words,
+   so that one stays as the gate's message rather than being demoted.
 3. Status colours: .status.err uses a crimson (--err, brightened on the dark theme so it
    reads at 13px), and --ok is brightened on the dark theme. Gold stays for interactive
    and selected elements.
