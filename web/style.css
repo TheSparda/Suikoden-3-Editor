@@ -778,11 +778,30 @@ button.morebtn { display:none; }
    960x640, 480x320 at 2x DPR) the full bar wraps to three rows and eats the screen. Save,
    the dirty pill, Undo/Redo and a More toggle stay; the session-level actions (.opt:
    Export recipe, Export .xdelta, Apply patch, Revert all, Close) fold under More. */
+.barstrip { display:none; }
 @media (max-width:820px), (max-height:660px) and (max-width:1023px) {
   .toolbar .opt { display:none; }
   .toolbar.more .opt { display:revert; }
   .toolbar button.morebtn { display:inline-flex; align-items:center; justify-content:center; }
+  /* Collapsed by default (Kevin, on the Micro 2 shots: the bar "takes up too much
+     space"): the strip is the bar's whole footprint until revealed. It carries the
+     reveal button and a mirror of the unsaved-changes pill, so edit state is never
+     hidden with the bar. The bar itself becomes a fixed sheet above the strip that
+     slides up over the content (no layout push, so nothing jumps). */
+  .barstrip { display:flex; align-items:center; gap:10px; position:fixed; left:0; right:0;
+    bottom:0; z-index:39; background:var(--panel); border-top:1px solid var(--line);
+    box-shadow:0 -7px 16px -10px rgba(0,0,0,.55);
+    padding:6px 12px calc(6px + env(safe-area-inset-bottom)); }
+  .bar-reveal { display:inline-flex; align-items:center; min-height:40px; font-weight:600;
+    padding:8px 14px; }
+  #isoBar.sheet { position:fixed; left:0; right:0; bottom:53px; z-index:40; margin:0;
+    padding:12px; transform:translateY(112%); visibility:hidden;
+    transition:transform .22s ease, visibility 0s linear .22s; }
+  #isoBar.sheet.open { transform:none; visibility:visible; transition:transform .22s ease; }
+  /* scroll room so the fixed strip never covers the card's last row */
+  .iso-card { margin-bottom:56px; }
 }
+@media (prefers-reduced-motion: reduce) { #isoBar.sheet { transition:none; } }
 
 /* ================= fire theme: crest, fretwork, boot panel =================
    Art: the True Fire Rune crest (crest.webp, alpha prepared from the fan

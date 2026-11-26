@@ -3391,6 +3391,31 @@
     else if (DESKTOP_MQ.addListener) DESKTOP_MQ.addListener(placeChrome);
   }
 
+  // ---- small-screen action sheet ------------------------------------------------
+  // At the slim-bar breakpoints the bar starts COLLAPSED (Kevin, on the Micro 2
+  // screenshots: "the apply & patch should be collapsed by default... it takes up too
+  // much space"). A fixed strip at the bottom (#isoBarStrip, CSS shows it only in this
+  // range) carries the reveal button and the unsaved-changes pill; the bar itself
+  // becomes a fixed sheet that slides up over the content when revealed. The query
+  // string must stay identical to the CSS media query in style.css.
+  const SMALL_MQ = typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(max-width:820px), (max-height:660px) and (max-width:1023px)") : null;
+  function syncBarSheet() {
+    const bar = q("#isoBar"); if (!bar) return;
+    const small = !!(SMALL_MQ && SMALL_MQ.matches);
+    bar.classList.toggle("sheet", small);
+    if (!small) setSheetOpen(false);
+  }
+  function setSheetOpen(open) {
+    const bar = q("#isoBar"), btn = q("#isoBarReveal"); if (!bar) return;
+    bar.classList.toggle("open", !!open);
+    if (btn) { btn.setAttribute("aria-expanded", open ? "true" : "false"); btn.textContent = open ? "▾ Actions" : "▴ Actions"; }
+  }
+  if (SMALL_MQ) {
+    if (SMALL_MQ.addEventListener) SMALL_MQ.addEventListener("change", syncBarSheet);
+    else if (SMALL_MQ.addListener) SMALL_MQ.addListener(syncBarSheet);
+  }
+
   function renderEditor(size) {
     const root = q("#isoRoot");
     const sm = saveMode();
@@ -3422,7 +3447,10 @@
             <input class="search" id="isoSearch" placeholder="filter…">
             <div class="muted" id="isoHint" style="margin:2px 0 10px"></div>
             <div id="isoView"></div>
-            <div class="slot" id="barSlot"><div class="toolbar" id="isoBar">
+            <div class="slot" id="barSlot"><div class="barstrip" id="isoBarStrip">
+              <button id="isoBarReveal" class="bar-reveal" aria-expanded="false" aria-controls="isoBar">▴ Actions</button>
+              <span class="pill" id="isoStripDirty" hidden></span>
+            </div><div class="toolbar" id="isoBar">
               <button class="primary" id="isoSaveBtn"${sm === "none" ? " disabled" : ""}>${saveLabel}</button>
               <span class="pill" id="isoDirty" hidden></span>
               <button id="isoUndoBtn" title="Undo (Ctrl/Cmd+Z)" disabled>↶ Undo</button>
@@ -3442,11 +3470,13 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; resetTables(); renderLoader(); };
-    q("#isoSaveBtn").onclick = saveIso;
-    q("#isoRecipeBtn").onclick = exportRecipe;
-    q("#isoXdeltaBtn").onclick = exportXdelta;
-    q("#isoImportBtn").onclick = () => q("#isoRecipeFile").click();
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; setSheetOpen(false); BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; resetTables(); renderLoader(); };
+    // In sheet mode (small screens) taking a session action collapses the sheet again:
+    // the strip's pill still shows whether anything remains unsaved afterwards.
+    q("#isoSaveBtn").onclick = (e) => { setSheetOpen(false); saveIso(e); };
+    q("#isoRecipeBtn").onclick = (e) => { setSheetOpen(false); exportRecipe(e); };
+    q("#isoXdeltaBtn").onclick = (e) => { setSheetOpen(false); exportXdelta(e); };
+    q("#isoImportBtn").onclick = () => { setSheetOpen(false); q("#isoRecipeFile").click(); };
     // One import button, two formats — dispatch on the VCDIFF magic rather than the file
     // name, so a patch saved as "mod.bin" (or a recipe as ".txt") still lands in the right path.
     q("#isoRecipeFile").onchange = async (e) => {
@@ -3456,7 +3486,7 @@
       const isVcdiff = head[0] === 0xd6 && head[1] === 0xc3 && head[2] === 0xc4;
       if (isVcdiff) applyXdelta(f); else importRecipe(f);
     };
-    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); BUF.set(ORIG); auxRevertAll(); dropDescCaches(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
+    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); setSheetOpen(false); BUF.set(ORIG); auxRevertAll(); dropDescCaches(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     q("#isoUndoBtn").onclick = undo;
     q("#isoRedoBtn").onclick = redo;
     // Small screens only (CSS decides when it shows): folds the session-level actions
@@ -3466,7 +3496,9 @@
       q("#isoMoreBtn").setAttribute("aria-expanded", open ? "true" : "false");
       q("#isoMoreBtn").textContent = open ? "Less ▴" : "More ▾";
     };
+    q("#isoBarReveal").onclick = () => setSheetOpen(!q("#isoBar").classList.contains("open"));
     placeChrome();
+    syncBarSheet();
     updateUndoUI();
     drawView();
   }
@@ -3480,6 +3512,10 @@
     if (n > 0) { badge.hidden = false; badge.textContent = `${n} unsaved`; }
     else if (anyChanges()) { badge.hidden = false; badge.textContent = "unsaved changes"; }
     else { badge.hidden = true; }
+    // The collapsed small-screen strip carries its own pill (the bar's is hidden with
+    // the sheet), so edit state stays visible while the bar is collapsed.
+    const stripPill = q("#isoStripDirty");
+    if (stripPill) { stripPill.hidden = badge.hidden; stripPill.textContent = badge.textContent; }
     // One label per save mode, the same one renderEditor starts with. This line used to
     // overwrite it with the in-place wording unconditionally, so in stream mode the button
     // promised "save to ISO" while the header card said it saves a copy to downloads.

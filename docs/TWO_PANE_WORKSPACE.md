@@ -69,6 +69,14 @@ Apply patch, Revert all and Close move under More. Close therefore lives in the 
 from now on, not in the header card; on desktop it sits in the rail session panel with the
 other actions. Tap targets and the tab strip keep their current sizes.
 
+Addendum (Kevin, after seeing the Micro 2 screenshots): even the slimmed bar takes too
+much space on the handheld, so at the same breakpoints the bar now starts collapsed. A
+fixed strip at the bottom of the screen carries one Actions reveal button and a mirror of
+the unsaved-changes pill; the bar itself is a fixed sheet above that strip which slides
+up over the content when revealed, and collapses again when a session action (Save,
+exports, Apply patch, Revert all, Close) is taken. Nothing is persisted: collapsed is
+simply the default on every load at these sizes.
+
 ## Quick wins folded in
 
 1. Save-button label: updateDirtyBadge() no longer overwrites the mode-aware label.
