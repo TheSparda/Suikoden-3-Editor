@@ -376,11 +376,11 @@ td button.revert, .row button.revert { margin:0 0 0 6px; vertical-align:middle; 
    least as tall as the gate while it is in the DOM (the drop zone alone can be shorter), and
    evaporates when app.js removes it. */
 #loaderCard { position:relative; }
-#loaderCard:has(#bootOv) { min-height:330px; }
+#loaderCard:has(#bootOv) { min-height:362px; }
 /* On a phone the step notes wrap to two or three lines and the two chips stack, so the gate
    is ~150px taller than the drop zone it covers — without this it would scroll inside a card
    that has plenty of room to just be taller. boot-gate.mjs asserts it never clips. */
-@media (max-width:430px) { #loaderCard:has(#bootOv) { min-height:470px; } }
+@media (max-width:430px) { #loaderCard:has(#bootOv) { min-height:488px; } }
 .boot-ov { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
   padding:12px; overflow:auto; border-radius:inherit;
   background:color-mix(in srgb,var(--bg) 88%,transparent); opacity:1; transition:opacity .22s ease; }
@@ -800,11 +800,14 @@ header { position:relative; }
 header::after { content:""; position:absolute; left:0; right:0; bottom:-8px; height:9px;
   background:url("fret.svg") repeat-x left center/auto 9px; opacity:.38; pointer-events:none; }
 .navgroup-h .gico { width:15px; height:15px; vertical-align:-2px; margin-right:6px; }
-/* Manuscript crest: the same alpha shape as a dark silhouette in a thin ring,
-   the way the key art presents it. brightness(0) keeps the alpha, drops the color. */
-html.theme-parchment .crest { filter:brightness(0) opacity(.78); border:1.5px solid #8a6d3b;
+/* Manuscript crest: a prepared engraved silhouette (crest-sil.webp, the crest's
+   bright rim as line art in dialogue brown) in a thin ring, shown instead of the
+   glowing crest. The boot crest keeps the colored art: it pulses on the cream
+   dialogue panel in both themes. */
+.crest-sil { display:none; }
+html.theme-parchment .crest:not(.boot-crest) { display:none; }
+html.theme-parchment .crest.crest-sil { display:block; border:1.5px solid #8a6d3b;
   border-radius:50%; background:#f6efdd; padding:2px; box-sizing:border-box; }
-html.theme-parchment .boot-crest { filter:none; border:0; background:none; padding:0; }
 
 /* Boot screen: the key art dimmed behind a war-battle dialogue panel (cream,
    brown header bar), readable the same in both themes. */
@@ -820,8 +823,8 @@ html.theme-parchment .boot-ov.art::before { opacity:.3; filter:brightness(.94) s
   0%,100% { filter:drop-shadow(0 0 2px rgba(227,165,103,.25)); }
   50% { filter:drop-shadow(0 0 10px rgba(227,165,103,.8)); } }
 @media (prefers-reduced-motion: reduce) { .boot-crest { animation:none; } }
-.boot-card h2 { background:#4a3520; color:#f6efdd; margin:-20px -20px 12px;
-  padding:11px 20px 14px; border-radius:13px 13px 0 0; position:relative; }
+.boot-card h2 { background:#4a3520; color:#f6efdd; margin:2px -20px 12px;
+  padding:11px 20px 14px; border-radius:0; position:relative; }
 .boot-card h2::after { content:""; position:absolute; left:0; right:0; bottom:1px;
   height:7px; background:url("fret.svg") repeat-x left center/auto 7px;
   opacity:.55; filter:brightness(2.1); }
@@ -849,6 +852,10 @@ html.theme-parchment .boot-ov.art::before { opacity:.3; filter:brightness(.94) s
 button.primary, button.chip.on, .modebar .mtab.on, .themesw .tb.on {
   background:var(--sel); border-color:transparent; color:var(--sel-ink);
   box-shadow:inset 0 1px 0 var(--sel-edge); }
+/* The rail's own chip rule outranks the one above (id selector), so the selected
+   rail item restates the gradient at rail specificity. */
+.iso-rail #isoTabs .chip.on { background:var(--sel); color:var(--sel-ink);
+  border-color:transparent; box-shadow:inset 0 1px 0 var(--sel-edge); }
 button.primary:hover:not(:disabled) { filter:brightness(1.07); border-color:transparent; }
 /* The save button glows warm gold while unsaved changes exist, and settles
    after a save. Gold, never red: it must not read as an error. */

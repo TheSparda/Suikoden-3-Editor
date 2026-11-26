@@ -173,7 +173,12 @@ console.log("a failed boot reports itself instead of spinning:");
   const page = await open(DEAD_ENGINE);
   await page.waitForSelector("#bootRetry", { timeout: 5000 }).catch(() => {});
   check("gate stays up (the loader under it still cannot work)", !!(await page.$("#bootOv")));
-  check("the reason is shown", /boom: no runtime/.test(await page.textContent("#bootMsg")));
+  // Quick win 2 (UI review): the message is a plain sentence for users, and the raw
+  // error is demoted to the small details line. Both halves are the contract now.
+  check("the failure is explained in plain words",
+    /could not be downloaded or started/.test(await page.textContent("#bootMsg")));
+  check("the raw reason is shown in the details line",
+    /boom: no runtime/.test(await page.textContent("#bootDetail")));
   check("Retry is offered", !!(await page.$("#bootRetry")));
   check("Clear cache & reload is offered", !!(await page.$("#bootNuke")));
   check("the bar shows the error state",

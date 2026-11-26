@@ -3401,7 +3401,7 @@
     root.innerHTML = `
       <div class="iso-shell">
         <aside class="iso-rail">
-          <div class="rail-head"><img class="crest" src="crest.webp" alt="" aria-hidden="true"><span class="rail-title">Disc editor</span></div>
+          <div class="rail-head"><img class="crest" src="crest.webp" alt="" aria-hidden="true"><img class="crest crest-sil" src="crest-sil.webp" alt="" aria-hidden="true"><span class="rail-title">Disc editor</span></div>
           <div class="slot" id="railNavSlot"></div>
           <div class="rail-session">
             <div class="rail-disc"><b class="acc2">${esc2(isoName)}</b>

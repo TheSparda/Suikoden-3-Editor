@@ -8,7 +8,7 @@
 //     cache-first, so the ~10MB runtime downloads once and is instant thereafter.
 const CACHE = "s3editor-v176";
 const SHELL = [
-  "./", "./index.html", "./style.css", "./blurb-core.js", "./recruit-core.js", "./rename-core.js", "./guide-core.js", "./health-core.js", "./text-core.js", "./vcdiff.js", "./svag-core.js", "./changes-core.js", "./loadout-core.js", "./app.js", "./iso.js", "./crest.webp", "./fret.svg", "./manifest.webmanifest",
+  "./", "./index.html", "./style.css", "./blurb-core.js", "./recruit-core.js", "./rename-core.js", "./guide-core.js", "./health-core.js", "./text-core.js", "./vcdiff.js", "./svag-core.js", "./changes-core.js", "./loadout-core.js", "./app.js", "./iso.js", "./crest.webp", "./crest-sil.webp", "./fret.svg", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png",
 ];
 
