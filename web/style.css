@@ -866,3 +866,26 @@ footer .credit a { color:var(--teal); }
    with the section name in light serif. */
 html.theme-parchment .card h2 { background:#4a3520; color:#f6efdd;
   margin:-16px -16px 12px; padding:9px 16px; border-radius:11px 11px 0 0; }
+
+/* ================= fire theme: view temperature (T3.1) =================
+   One data-temp attribute on the content card, keyed to the rail groups.
+   Accents and borders only: no background or text/background pair changes. */
+.iso-card { position:relative; }
+#isoView summary .nm, #isoView .bag-h { transition:color .25s ease; }
+.iso-card[data-temp="combat"] summary .nm, .iso-card[data-temp="combat"] .bag-h { color:#eb7434; }
+.iso-card[data-temp="world"] summary .nm, .iso-card[data-temp="world"] .bag-h { color:#a9b494; }
+html.theme-parchment .iso-card[data-temp="combat"] summary .nm,
+html.theme-parchment .iso-card[data-temp="combat"] .bag-h { color:#9e3d10; }
+html.theme-parchment .iso-card[data-temp="world"] summary .nm,
+html.theme-parchment .iso-card[data-temp="world"] .bag-h { color:#66703f; }
+.iso-card[data-temp="runes"] details.char { border-color:#6b3418; }
+.iso-card[data-temp="combat"] details.char { border-color:#5e2a1a; }
+.iso-card[data-temp="world"] details.char { border-color:#4c4a38; }
+html.theme-parchment .iso-card[data-temp="runes"] details.char { border-color:#c9a86a; }
+html.theme-parchment .iso-card[data-temp="combat"] details.char { border-color:#c99a7a; }
+html.theme-parchment .iso-card[data-temp="world"] details.char { border-color:#b3b184; }
+/* The Runes view carries the crest as a faint watermark in its header corner. */
+.view-wm { position:absolute; top:6px; right:10px; width:120px; height:120px;
+  object-fit:contain; opacity:0; pointer-events:none; transition:opacity .3s ease; }
+.iso-card[data-temp="runes"] .view-wm { opacity:.07; }
+html.theme-parchment .iso-card[data-temp="runes"] .view-wm { opacity:.05; filter:brightness(0); }

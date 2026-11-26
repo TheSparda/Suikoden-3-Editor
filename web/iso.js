@@ -3414,7 +3414,8 @@
             <div><b class="acc2">${esc2(isoName)}</b>
               <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span>${saveNote}</div>
           </div>
-          <div class="card">
+          <div class="card iso-card">
+            <img class="view-wm" src="crest.webp" alt="" aria-hidden="true">
             <div class="slot" id="navSlot"><div class="subtabs" id="isoTabs">${VIEW_GROUPS.map(([g, keys]) =>
               `<div class="navgroup"><div class="navgroup-h">${GICONS[g] || ""}${g}</div>${keys.map((k) =>
                 `<button class="chip${k === VIEW ? " on" : ""}" data-v="${k}">${labelOf[k]}<span class="vcount" hidden></span></button>`).join("")}</div>`).join("")}</div></div>
@@ -3510,6 +3511,16 @@
         else if (ar.right > tr.right) t.scrollLeft += (ar.right - tr.right) + 8;
         if (ar.top < tr.top) t.scrollTop -= (tr.top - ar.top) + 8;
         else if (ar.bottom > tr.bottom) t.scrollTop += (ar.bottom - tr.bottom) + 8;
+      }
+    }
+    // View temperature (T3.1): one attribute on the content card, keyed to the rail
+    // groups. CSS shifts accents and borders only; backgrounds and text/background
+    // pairs never change per view.
+    {
+      const card = q("#isoView") && q("#isoView").closest(".card");
+      if (card) {
+        const g = (VIEW_GROUPS.find(([, keys]) => keys.includes(VIEW)) || ["System"])[0];
+        card.dataset.temp = VIEW === "runes" ? "runes" : g === "Combat" ? "combat" : g === "World" ? "world" : "stone";
       }
     }
     // The filter box only exists where a view reads it: Test and Changes never look at

@@ -2605,7 +2605,7 @@ function applyTheme(t) {
   document.documentElement.classList.toggle("theme-parchment", t === "parchment");
   $$(".themesw .tb").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = t === "parchment" ? "#cdbb95" : "#17110d";
+  if (meta) meta.content = t === "parchment" ? "#e9e4d2" : "#211d1a";
   try { localStorage.setItem("s3theme", t); } catch (e) {}
 }
 
