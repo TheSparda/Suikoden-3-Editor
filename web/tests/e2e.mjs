@@ -4478,13 +4478,15 @@ if (ON) { const page = await newPage();
   await page.click("#cfCancel");
   await page.context().close();
 }
-head("Trinity Sight — points of view & chapters (save editor, Pyodide stubbed)");
+head("Trinity Sight — points of view & chapters (save editor, read-only)");
 if (ON) { const page = await newPage();
   // The flame mask and the per-POV progress counters are whole-save state, so the stub
   // carries a decoded `trinity` block shaped like s3save.decode_trinity() plus the
-  // REF.trinity reference. Where those numbers COME from is save_roundtrip.py's job; what
-  // this proves is the wiring — that a flame tick and a chapter pick reach the write
-  // payload, and that a fold closed over them still admits they are there.
+  // REF.trinity reference. Where those numbers COME from is save_roundtrip.py's job.
+  // The panel is a readout since v1.159.0 (play-tested: the game rebuilds both from
+  // story progress, so the edits never took effect); what this proves is that the
+  // recorded state renders, that there is nothing left to edit, and that no route —
+  // panel, JSON import or write payload — carries a Trinity change any more.
   await page.addInitScript(`
     const POVS = [
       ['hugo','Hugo',0,1,1,true,3,1], ['chris','Chris',1,2,2,true,0,0],
@@ -4536,54 +4538,54 @@ if (ON) { const page = await newPage();
   check("...and names them, so the closed header answers the question on its own",
     /Hugo, Chris, Geddoe/.test(sum0), sum0);
   await openFold(page, "#trfold");
-  check("all six points of view render, in flame order",
-    (await page.locator("#trinity input[data-tflame]").count()) === 6);
+  check("all six points of view render, plus the merged story's row",
+    (await page.locator("#trinity .row").count()) === 7,
+    String(await page.locator("#trinity .row").count()));
   const trText = (await page.textContent("#trinity")).replace(/\s+/g, " ");
   check("each row is labelled by flame number and names its bit and counter address",
     /Flame 4 · Thomas/.test(trText) && /Flame 6 · Luc/.test(trText) && /0x3BA · flag 0x34 bit 4/.test(trText),
     trText.slice(0, 240));
-  check("a lit flame reads as ticked and a dark one does not",
-    (await page.isChecked('input[data-tflame="hugo"]')) && !(await page.isChecked('input[data-tflame="luc"]')));
-  check("the chapter dropdown offers only that character's own chapters",
-    (await page.locator('select[data-tstage="thomas"] option').count()) === 3 &&
-    (await page.locator('select[data-tstage="luc"] option').count()) === 2,
-    "thomas=" + (await page.locator('select[data-tstage="thomas"] option').count()));
-  check("the merged story gets its own row, with its own labels",
-    /Main story \(merged\)/.test(trText) &&
-    (await page.locator('select[data-tstage="main"] option').count()) === 4);
-  check("a POV's current stage is preselected as its chapter",
-    (await page.inputValue('select[data-tstage="hugo"]')) === "3");
+  check("there is nothing to edit: no flame checkboxes, no stage dropdowns",
+    (await page.locator("#trinity input, #trinity select").count()) === 0);
+  check("a lit flame reads lit and a dark one dark",
+    /Flame 1 · Hugo lit/.test(trText) && /Flame 6 · Luc dark/.test(trText), trText.slice(0, 240));
+  check("each POV's recorded stage is shown, named by its chapter",
+    /chapter 1 \(stage 3\)/.test(trText) && /not started \(stage 0\)/.test(trText), trText.slice(0, 300));
+  check("the merged story gets its own row",
+    /Main story \(merged\)/.test(trText) && /before the merge \(stage 0\)/.test(trText), trText.slice(0, 300));
+  const foldText = (await page.textContent("#trfold")).replace(/\s+/g, " ");
+  check("the panel explains itself: read-only, the game rebuilds availability",
+    /Read-only:/.test(foldText) && /rebuilds chapter availability from story progress/.test(foldText)
+      && /cannot unlock/.test(foldText), foldText.slice(0, 300));
 
-  // Light Luc's flame and put Chris at her chapter 2: two staged edits, one payload.
-  await page.check('input[data-tflame="luc"]'); await page.waitForTimeout(40);
-  await page.selectOption('select[data-tstage="chris"]', "5"); await page.waitForTimeout(40);
-  check("both controls mark themselves dirty",
-    (await page.locator('input[data-tflame="luc"]').evaluate((e) => e.classList.contains("dirty"))) &&
-    (await page.locator('select[data-tstage="chris"]').evaluate((e) => e.classList.contains("dirty"))));
-  check("the header counts them, so closing the fold cannot hide them",
-    /2 edit\(s\)/.test(await page.textContent("#trfoldsum")), await page.textContent("#trfoldsum"));
+  // No edit route remains: nothing is staged on load, and a JSON import carrying only
+  // Trinity changes (the exported block, hand-moved) stages nothing either.
+  check("nothing is staged — the readout changed nothing",
+    !(await page.evaluate(() => hasChanges())));
+  const impStatus = await page.evaluate(() => {
+    const p = { _format: "suikoden3-save",
+      trinitySight: { luc: { lit: true, stage: 1 }, chris: { lit: true, stage: 5 } } };
+    return importSaveJSON(new File([JSON.stringify(p)], "trinity.json", { type: "application/json" }))
+      .then(() => document.querySelector("#status")?.textContent);
+  });
+  check("a JSON import carrying only Trinity changes stages nothing",
+    /nothing recognized/.test(impStatus || ""), impStatus);
+  check("...and the panel still shows the save's own state afterwards",
+    !(await page.evaluate(() => hasChanges()))
+      && /3\/6 flames lit/.test(await page.textContent("#trfoldsum")));
+
+  // The write payload itself: stage an unrelated edit (gold) and inspect what Apply
+  // sends — no trinity key, and no Trinity rows in the review list.
+  await page.fill("#goldfld", "2000"); await page.waitForTimeout(40);
   await page.click("#saveBtn"); await page.waitForSelector("#cfOk", { timeout: 3000 });
   const review = (await page.textContent(".cf-list")).replace(/\s+/g, " ");
-  check("the review list spells out the flame in words, not a bit number",
-    /Luc's flame: dark → lit/.test(review), review.slice(0, 200));
-  check("...and the chapter move with both the chapter and the raw stage",
-    /Chris: not started \(stage 0\) → chapter 2 \(stage 5\)/.test(review), review.slice(0, 260));
+  check("the review list carries the gold change and no Trinity rows",
+    /1000 → 2000/.test(review) && !/Trinity/.test(review), review.slice(0, 200));
   await page.click("#cfOk");
   await until(page, () => (window.__payloads || []).length > 0);
   const sent = JSON.parse(JSON.parse(await page.evaluate(() => window.__payloads[0].split(", ").slice(2).join(", "))));
-  check("the write payload carries the flame and the counter",
-    sent.trinity && sent.trinity.lit.luc === true && sent.trinity.stage.chris === 5,
-    JSON.stringify(sent.trinity));
-  check("...and nothing the user did not touch",
-    Object.keys(sent.trinity.lit).length === 1 && Object.keys(sent.trinity.stage).length === 1,
-    JSON.stringify(sent.trinity));
-
-  // Putting a control back where the save had it is a no-op, not a second staged change.
-  await page.uncheck('input[data-tflame="luc"]'); await page.waitForTimeout(40);
-  await page.selectOption('select[data-tstage="chris"]', "0"); await page.waitForTimeout(40);
-  check("returning both to their saved values clears the staging",
-    await page.evaluate(() => !("luc" in TRIN.lit) && !("chris" in TRIN.stage)));
-  check("the header drops the count with them", !/edit\(s\)/.test(await page.textContent("#trfoldsum")));
+  check("the write payload has no trinity key at all",
+    !("trinity" in sent), JSON.stringify(Object.keys(sent)));
   await page.context().close();
 }
 
@@ -5316,7 +5318,7 @@ if (ON) {
   await page.context().close();
 }
 
-head("Test tab — attack-rune spell lists (the global NOP)");
+head("Test tab — attack-rune spell lists (the global NOP, disabled)");
 if (ON) {
   const page = await newPage();
   await loadIso(page);
@@ -5326,28 +5328,61 @@ if (ON) {
   await page.waitForSelector("#alSel", { timeout: 3000 });
   check("the control opens on Stock — the fixture plants all four compares",
     (await page.inputValue("#alSel")) === "0");
-  await page.selectOption("#alSel", "1"); await page.waitForTimeout(150);
-  const r = await save(page);
-  check("all four compares are NOP-ed in the saved disc",
-    ATK_LIST.every((c) => r.u32(c.off) === 0),
-    ATK_LIST.map((c) => r.u32(c.off).toString(16)).join(", "));
-  // The switchboard is the audit with switches, so a staged NOP has to show up there as a
-  // row that can be switched back off — that is what keeps the patch bisectable.
-  await page.click('#isoTabs [data-v="test"]');
+  // Play-tested in November 2026, the patch does not work as a standalone feature, so
+  // since v1.159.0 it is disabled: the switch cannot be turned on, and the card says why.
+  check("...and the switch is disabled — the patch cannot be turned on",
+    await page.isDisabled("#alSel"));
+  const card = (await page.textContent("#testView")).replace(/\s+/g, " ");
+  check("the card says it was play-tested, does not work, and points at the Runes tab",
+    /Disabled: play-tested in November 2026/.test(card) && /Runes/.test(card), card.slice(0, 220));
+  check("the state table still reads the disc: all four words stock",
+    await page.evaluate(() =>
+      [...document.querySelectorAll("#testView tbody tr")].filter((tr) => /stock/.test(tr.textContent)).length) === 4);
+  check("nothing is staged — the disabled control changed nothing",
+    await nothingStaged(page));
+  // The Changes audit no longer reports the patch, so the switchboard (the audit with
+  // switches) has no row that could switch it back on either.
   await page.click('#testTabs [data-t="patches"]'); await page.waitForTimeout(200);
   const rows = await page.evaluate(() =>
     [...document.querySelectorAll("#testView tbody tr")]
       .filter((tr) => /runeSpell(Count|At)/.test(tr.textContent)).length);
-  check("the switchboard lists the four staged NOPs", rows === 4, String(rows));
-  await page.click('#testTabs [data-t="atklist"]');
-  await page.waitForSelector("#alSel", { timeout: 3000 });
-  check("...and the control now reads Lists on", (await page.inputValue("#alSel")) === "1");
-  await page.selectOption("#alSel", "0"); await page.waitForTimeout(150);
-  const r2 = await save(page);
-  check("setting it back restores all four stock words",
+  check("the switchboard lists no attack-rune rows", rows === 0, String(rows));
+  await page.context().close();
+
+  // A recipe carrying the NOPs has those bytes held back; its other edits still land.
+  const page2 = await newPage(); await loadIso(page2);
+  const leHex = (w) => [w & 0xFF, (w >> 8) & 0xFF, (w >> 16) & 0xFF, (w >>> 24) & 0xFF]
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+  const recipe = JSON.stringify({ format: "s3mod", version: 1, game: "SLUS-20387", versionWord: VERSION_VAL,
+    patches: ATK_LIST.map((c) => ({ off: c.off, old: leHex(c.stock), new: "00000000" }))
+      .concat([{ off: SPELL.off + 0x1C, new: "2a000000" }]) });
+  const s = await uploadPatch(page2, new TextEncoder().encode(recipe), "atklist.s3mod");
+  check("the recipe import reports the held-back bytes",
+    /attack-rune lists patch were not applied/.test(s), s);
+  const r2 = await save(page2);
+  check("the recipe's NOPs never landed",
     ATK_LIST.every((c) => r2.u32(c.off) === c.stock),
     ATK_LIST.map((c) => r2.u32(c.off).toString(16)).join(", "));
-  await page.context().close();
+  check("...but its other edit did", r2.u32(SPELL.off + 0x1C) === 42);
+  await page2.context().close();
+
+  // The same hold-back on the .xdelta route.
+  if (xdelta3Available()) {
+    const page3 = await newPage(); await loadIso(page3);
+    const tgt = Uint8Array.from(bytes);
+    const dv = new DataView(tgt.buffer);
+    ATK_LIST.forEach((c) => dv.setUint32(c.off, 0, true));
+    dv.setUint32(SPELL.off + 0x1C, 42, true);
+    const s3 = await uploadPatch(page3, makeXdelta(bytes, tgt), "atklist.xdelta");
+    check("the xdelta import reports the held-back bytes",
+      /attack-rune lists patch were not applied/.test(s3), s3);
+    const r3 = await save(page3);
+    check("the xdelta's NOPs never landed",
+      ATK_LIST.every((c) => r3.u32(c.off) === c.stock),
+      ATK_LIST.map((c) => r3.u32(c.off).toString(16)).join(", "));
+    check("...but its other edit did", r3.u32(SPELL.off + 0x1C) === 42);
+    await page3.context().close();
+  }
 }
 
 head("Test tab — unlimited rune casts (the charge patches)");
