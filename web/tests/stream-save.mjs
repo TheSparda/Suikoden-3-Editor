@@ -96,6 +96,8 @@ await page.locator("#rnBox > summary").click();          // ...and ships collaps
 await page.waitForSelector('input.rename[data-orig="Hugo"]', { state: "visible", timeout: 10000 });
 await page.fill('input.rename[data-orig="Hugo"]', "Rex");   // shorter → space-padded to "Rex "
 
+// The rail session panel starts collapsed on desktop (v1.160.0): expand it first.
+await page.evaluate(() => { const b = document.querySelector("#railBarReveal"); if (b && b.getAttribute("aria-expanded") !== "true") b.click(); });
 await page.click("#isoSaveBtn");
 try { await page.waitForSelector("#bnSkip", { timeout: 1500 }); await page.click("#bnSkip"); } catch { /* nudge already shown */ }
 await page.waitForSelector("#cfOk", { timeout: 5000 });

@@ -240,6 +240,17 @@ async function dismissBoot(page) {
 async function gotoIsoTab(page) { await page.goto(base, { waitUntil: "domcontentloaded" }); await dismissBoot(page); await page.click('.mtab[data-mode="iso"]'); }
 async function loadIso(page) { await gotoIsoTab(page); await page.click("#isoPick"); await page.waitForSelector("#isoTabs", { timeout: 8000 }); }
 
+// The rail session panel starts collapsed on desktop (v1.160.0), so the session
+// buttons are not clickable until it is expanded — this is the click a user makes.
+// No-op below the desktop breakpoint (the reveal lives in the hidden rail there)
+// and when the panel is already open. Session actions fold the panel away again,
+// so callers re-run this before every session-button click.
+async function openSession(page) {
+  const btn = page.locator("#railBarReveal");
+  if (await btn.isVisible().catch(() => false)
+    && (await btn.getAttribute("aria-expanded")) !== "true") await btn.click();
+}
+
 // Reconstruct the final on-disk byte at an offset = the captured write if present, else the
 // original synth byte. (Saves only write CHANGED runs, so a field where just one byte moved
 // won't have its other bytes in the writes — fall back to the pristine image for those.)
@@ -364,6 +375,7 @@ async function uploadPatch(page, data, name) {
 // where what the review SAYS is part of the contract, not just the bytes it writes.
 async function saveAndReview(page) {
   await page.evaluate(() => { window.__writes = []; });
+  await openSession(page);
   await page.click("#isoSaveBtn");
   try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
   await page.waitForSelector("#cfOk", { timeout: 3000 });
@@ -376,6 +388,7 @@ async function saveAndReview(page) {
 
 async function save(page) {
   await page.evaluate(() => { window.__writes = []; });   // capture only THIS save's writes
+  await openSession(page);
   await page.click("#isoSaveBtn");
   // the backup nudge only appears on the FIRST save of a session
   try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
@@ -2284,6 +2297,7 @@ if (ON) { const page = await newPage();
   await page.click('#isoTabs [data-v="enemies"]');
   await page.waitForSelector("details.epack", { timeout: 5000 });
   const afterFirst = await sliceCount(page);
+  await openSession(page);
   await page.click("#isoClose");
   await page.waitForSelector("#isoPick", { timeout: 3000 });
   await page.click("#isoPick");
@@ -2416,6 +2430,7 @@ if (ON) { // The state a re-opened tuned ISO is in: the bytes on the disc are sc
   check("restore stock returns HP to 40", (await page.inputValue('input.en-num[data-f="hp"]')) === "40");
   check("restore stock returns PWR to 11", (await page.inputValue('input.en-num[data-f="stat0"]')) === "11");
   await page.evaluate(() => { window.__writes = []; });
+  await openSession(page);
   const r = readOn(tuned, await (async () => { await page.click("#isoSaveBtn");
     try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
     await page.waitForSelector("#cfOk", { timeout: 3000 }); await page.click("#cfOk");
@@ -2485,6 +2500,7 @@ if (ON) { const page = await newPage();
   await page.waitForSelector('input.en-num[data-f="lv"]', { timeout: 3000 });
   await page.fill('input.en-num[data-f="lv"]', "42"); await page.dispatchEvent('input.en-num[data-f="lv"]', "change");
   const dl = page.waitForEvent("download");
+  await openSession(page);
   await page.click("#isoRecipeBtn");
   const mod = JSON.parse(fs.readFileSync(await (await dl).path(), "utf8"));
   const a = mod.patches.find((p) => p.off === ENEMY_REC_A + 64), b = mod.patches.find((p) => p.off === ENEMY_REC_B + 64);
@@ -2983,6 +2999,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   check("the staged name survives a redraw", (await page.inputValue('input.rename[data-orig="Geddoe"]')) === "Gideon");
   await page.fill("#isoSearch", ""); await page.waitForTimeout(80);
   // this harness uses the FS-Access (in-place) path, where renames can't reach disc-wide copies
+  await openSession(page);
   await page.click("#isoSaveBtn");
   check("rename-only in-place save warns it needs streaming", await statusHas(page, /streaming/i));
   await page.context().close();
@@ -3000,6 +3017,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   // edit two, then Revert all
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "111"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   await page.fill('input.fd[data-kind="proc"] >> nth=0', "22"); await page.dispatchEvent('input.fd[data-kind="proc"] >> nth=0', "change");
+  await openSession(page);
   await page.click("#isoResetBtn");
   check("Revert all clears dirty badge", await nothingStaged(page));
   check("Revert all restores values", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "100");
@@ -3068,6 +3086,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   page.once("dialog", (d) => d.accept());
   await page.click("#gb-apply"); await page.waitForTimeout(150);
   check("accepting applies the scale over the hand edit", /PWR 4/.test(await sumOf(rec)), await sumOf(rec));
+  await openSession(page);
   await page.click("#isoResetBtn"); await page.waitForTimeout(120);
 
   // Filter scope: with the filter box in use, the card offers to scale only what it is showing.
@@ -3138,6 +3157,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.click("#sc-all"); await page.waitForTimeout(150);
   check("a roster-wide cap write warns before eating a hand-edited cap", /will be overwritten/.test(asked || ""), asked || "no dialog");
   check("dismissing leaves the hand edit intact", (await page.locator(maxSel).inputValue()) === "7");
+  await openSession(page);
   await page.click("#isoResetBtn"); await page.waitForTimeout(120);
 
   // Filter scope, same rule as the scaling card above it.
@@ -3189,6 +3209,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   check("with the rewrite toggle off the description is left alone",
     (await page.inputValue('details.char[data-i="0"] input.spdesc')) === "Deals 75DMG",
     await page.inputValue('details.char[data-i="0"] input.spdesc'));
+  await openSession(page);
   await page.click("#isoResetBtn"); await page.waitForTimeout(120);
 
   const upow0 = origU32(unPow);
@@ -3375,6 +3396,7 @@ if (ON) { // The rates on the "disc" are halved; the room index still carries th
   check("Stock restores the stock disc's rates", (await rateVals()) === "4,0,9,2", await rateVals());
   check("...which this file does NOT hold, so it is staged", await somethingStaged(page));
   await page.evaluate(() => { window.__writes = []; });
+  await openSession(page);
   await page.click("#isoSaveBtn");
   try { await page.waitForSelector("#bnSkip", { timeout: 700 }); await page.click("#bnSkip"); } catch { /* already nudged */ }
   await page.waitForSelector("#cfOk", { timeout: 3000 }); await page.click("#cfOk");
@@ -3901,8 +3923,10 @@ if (ON) { const page = await newPage(); await loadIso(page);
   check("a string can be found by its offset", (await row().count()) === 1);
   await row().fill("Short text"); await row().dispatchEvent("change"); await page.waitForTimeout(60);
   check("undo is enabled after a text edit", !(await page.locator("#isoUndoBtn").isDisabled()));
+  await openSession(page);
   await page.click("#isoUndoBtn"); await page.waitForTimeout(80);
   check("undo restores the original string", (await row().inputValue()) === T.value);
+  await openSession(page);
   await page.click("#isoRedoBtn"); await page.waitForTimeout(80);
   check("redo re-applies the edit", (await row().inputValue()) === "Short text");
   await page.locator(`input.txt[data-off="${T.off}"] ~ button.revert`).click(); await page.waitForTimeout(80);
@@ -3915,10 +3939,12 @@ head("Recipe export → reset → import round-trip");
 if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "321"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
+  await openSession(page);
   const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#isoRecipeBtn")]);
   const recipePath = path.join(TMP, "s3-test.s3mod"); await dl.saveAs(recipePath);
   const mod = JSON.parse(fs.readFileSync(recipePath, "utf8"));
   check("recipe has patches + version word", mod.patches.length > 0 && mod.versionWord === 0x40A69A01);
+  await openSession(page);
   await page.click("#isoResetBtn"); await page.waitForTimeout(60);
   check("reset cleared the edit", (await page.inputValue('input.fd[data-kind="heal"] >> nth=0')) === "100");
   await importFile(page, recipePath);
@@ -3954,8 +3980,10 @@ else if (ON) { const page = await newPage(); await loadIso(page);
 
   // An imported patch is an edit like any other: one undo step for the whole patch, before
   // saving (a save re-baselines ORIG, so this has to be checked while it's still staged).
+  await openSession(page);
   await page.click("#isoUndoBtn");
   check("undo reverts the whole applied patch in one step", await nothingStaged(page));
+  await openSession(page);
   await page.click("#isoRedoBtn");
   check("redo re-applies it", await somethingStaged(page));
 
@@ -4031,6 +4059,7 @@ if (ON) { const page = await newPage(); await loadIso(page);
   await page.click('#isoTabs [data-v="food"]');
   await page.fill('input.fd[data-kind="heal"] >> nth=0', "200"); await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
   const [dl] = await Promise.all([page.waitForEvent("download"), (async () => {
+    await openSession(page);
     await page.click("#isoSaveBtn"); await page.waitForSelector("#bnExport"); await page.click("#bnExport");   // export-and-continue
   })()]);
   check("backup nudge export produced a recipe", (await dl.suggestedFilename()).endsWith(".s3mod"));
@@ -4063,6 +4092,7 @@ if (ON) { const page = await newPage();
     return [fh];
   };`);
   await gotoIsoTab(page); await page.click("#isoPick"); await page.waitForSelector("#isoTabs", { timeout: 8000 });
+  await openSession(page);
   await page.click("#isoClose"); await page.waitForSelector("#isoRecent .recent", { timeout: 3000 });
   check("last-opened chip shows the ISO name", (await page.textContent("#isoReopen")).includes("synth.iso"));
   await page.click("#isoReopen"); await page.waitForSelector("#isoTabs", { timeout: 8000 });
@@ -4074,6 +4104,7 @@ if (ON) { const page = await newPage();
   await page.click('.mtab[data-mode="iso"]');
   check("prior ISO reopens automatically on the next visit", await until(page, () => !!document.querySelector("#isoTabs"), undefined, 8000));
   // Closing it must STAY closed — no bounce straight back into the disc just closed.
+  await openSession(page);
   await page.click("#isoClose"); await page.waitForSelector("#isoRecent .recent");
   await page.waitForTimeout(300);
   check("close stays closed (no auto-reopen loop)", !(await page.$("#isoTabs")));
@@ -4598,8 +4629,10 @@ if (ON) { const page = await newPage(); await loadIso(page);
   const orig = +(await page.inputValue(l4inp)), nv = orig === 123 ? 45 : 123;
   await page.fill(l4inp, String(nv)); await page.dispatchEvent(l4inp, "change"); await page.waitForTimeout(50);
   check("undo enabled after an edit", !(await page.locator("#isoUndoBtn").isDisabled()));
+  await openSession(page);
   await page.click("#isoUndoBtn"); await page.waitForTimeout(50);
   check("after undo: undo disabled + redo enabled", (await page.locator("#isoUndoBtn").isDisabled()) && !(await page.locator("#isoRedoBtn").isDisabled()));
+  await openSession(page);
   await page.click("#isoRedoBtn"); await page.waitForTimeout(50);
   check("after redo: undo enabled again", !(await page.locator("#isoUndoBtn").isDisabled()));
   const r = await save(page); check("redo restored the edit to disk", r.u8(l4b) === nv);
@@ -4711,8 +4744,96 @@ if (ON) { const page = await newPage(); await loadIso(page);
 
 head("Close returns to loader");
 if (ON) { const page = await newPage(); await loadIso(page);
+  await openSession(page);
   await page.click("#isoClose"); await page.waitForTimeout(80);
   check("Close shows loader again", !!(await page.$("#isoPick")) && !(await page.$("#isoTabs")));
+  await page.context().close();
+}
+
+// The rail session panel starts collapsed on desktop (v1.160.0, Kevin on the live
+// photo: it held the bottom third of the rail though it is only needed once you are
+// finished). Same pattern as the small-screen sheet, one size up: a slim strip at
+// the rail foot (short disc identity, pill mirror, one reveal button), the full
+// panel behind the button, session actions fold it away again, Undo/Redo do not.
+head("Rail session panel — collapsed until you need it");
+if (ON) { const page = await newPage();
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await loadIso(page);
+  const rail = () => page.evaluate(() => {
+    const sess = document.querySelector(".rail-session"), tabs = document.querySelector("#isoTabs"),
+      bar = document.querySelector("#isoBar"), btn = document.querySelector("#railBarReveal"),
+      save = document.querySelector("#isoSaveBtn"), pill = document.querySelector("#railStripDirty");
+    const vis = (el) => { const r = el.getBoundingClientRect(); return getComputedStyle(el).display !== "none" && r.height > 0; };
+    return { open: sess.classList.contains("open"), aria: btn.getAttribute("aria-expanded"),
+      sessH: Math.round(sess.getBoundingClientRect().height), saveVis: vis(save),
+      tabsClient: tabs.clientHeight, tabsScroll: tabs.scrollHeight,
+      pillHidden: pill.hidden, pillText: pill.textContent, hot: btn.classList.contains("hot"),
+      name: document.querySelector("#railBarStrip .rs-name").textContent,
+      barHome: bar.closest(".iso-rail") ? "rail" : bar.closest(".iso-card") ? "card" : "?" };
+  });
+  let r = await rail();
+  check("the rail session panel starts collapsed", !r.open && r.aria === "false", `aria=${r.aria}`);
+  check("...so the Save button is not on screen yet", !r.saveVis);
+  check("...and the whole panel is one slim strip", r.sessH <= 60, `${r.sessH}px`);
+  check("the strip still names the loaded disc", /s\.iso/.test(r.name), r.name);
+  check("the nav list fits without scrolling at 1440x1080", r.tabsScroll - r.tabsClient <= 20,
+    `${r.tabsScroll} of content in ${r.tabsClient}`);
+  const collapsedTabs = r.tabsClient;
+  await page.click("#railBarReveal");
+  r = await rail();
+  check("the reveal button expands the panel", r.open && r.aria === "true" && r.saveVis);
+  check("...and the nav gives the space back", collapsedTabs - r.tabsClient >= 400,
+    `${collapsedTabs} -> ${r.tabsClient}`);
+  check("every session action is in the expanded panel",
+    await page.evaluate(() => ["isoSaveBtn", "isoUndoBtn", "isoRedoBtn", "isoRecipeBtn", "isoXdeltaBtn",
+      "isoImportBtn", "isoResetBtn", "isoClose", "isoStatus"].every((id) => !!document.getElementById(id))));
+  await page.click("#railBarReveal");
+  r = await rail();
+  check("the same button collapses it again", !r.open && r.aria === "false" && !r.saveVis);
+  // Stage an edit: the strip's pill and the button's glow track it while collapsed.
+  await page.click('#isoTabs [data-v="food"]');
+  await page.fill('input.fd[data-kind="heal"] >> nth=0', "321");
+  await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
+  await flushBadge(page);
+  r = await rail();
+  check("an edit lights the collapsed strip's pill", !r.pillHidden && /unsaved/.test(r.pillText), r.pillText);
+  check("...and the reveal button takes the save glow", r.hot);
+  // A full edit-then-save flow through the expanded panel (save() expands it first).
+  const rd = await save(page);
+  check("the save wrote the staged byte", rd.u16(FOOD.off + FOOD.heal) === 321);
+  r = await rail();
+  check("saving folds the panel away again", !r.open && r.aria === "false");
+  check("...and the strip pill and glow clear", r.pillHidden && !r.hot);
+  // Undo/Redo are mid-editing actions: they leave the panel open.
+  await page.fill('input.fd[data-kind="heal"] >> nth=0', "222");
+  await page.dispatchEvent('input.fd[data-kind="heal"] >> nth=0', "change");
+  await openSession(page);
+  await page.click("#isoUndoBtn"); await page.waitForTimeout(80);
+  r = await rail();
+  check("Undo leaves the panel open", r.open);
+  await page.click("#isoRedoBtn"); await page.waitForTimeout(80);
+  r = await rail();
+  check("Redo leaves the panel open", r.open);
+  // Resize across the breakpoint in both directions: the bar node travels between
+  // the rail and the card, and the two collapses (rail panel, small-screen sheet)
+  // keep their own state instead of fighting over the moved node.
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.waitForTimeout(300);
+  r = await rail();
+  check("shrinking below the breakpoint moves the bar back to the card", r.barHome === "card", r.barHome);
+  const sheet = await page.evaluate(() => ({ sheet: document.querySelector("#isoBar").classList.contains("sheet"),
+    open: document.querySelector("#isoBar").classList.contains("open") }));
+  check("...as the small-screen sheet, starting closed", sheet.sheet && !sheet.open);
+  await page.click("#isoBarReveal");
+  check("the small-screen reveal still opens the sheet",
+    await page.evaluate(() => document.querySelector("#isoBar").classList.contains("open")));
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  await page.waitForTimeout(300);
+  r = await rail();
+  check("growing back restores the bar to the rail", r.barHome === "rail", r.barHome);
+  check("...with the sheet state cleared, not carried into the rail",
+    await page.evaluate(() => { const b = document.querySelector("#isoBar");
+      return !b.classList.contains("sheet") && !b.classList.contains("open"); }));
   await page.context().close();
 }
 
