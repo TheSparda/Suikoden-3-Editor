@@ -914,6 +914,7 @@ Editor/
 tools/pcsx2/        PCSX2 automation: boot a patched ISO and read the tables back out of the
                     running game, plus RAM snapshot/diff tooling for research
 docs/               research write-ups (see below)
+mcp/                the MCP server: lets an AI tool edit ISOs and saves (see mcp/README.md)
 ```
 
 ### Verifying a change against the real game — `tools/pcsx2/`
