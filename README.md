@@ -45,6 +45,22 @@ than two ports that can drift.
   file and shows hard-refresh guidance instead of a blank page. Optional files
   never fail the check.
 
+### Editing from an AI tool (MCP)
+
+The repo also ships a local Model Context Protocol server in [`mcp/`](mcp/), so an
+AI tool such as Claude Code or Claude Desktop can inspect and edit ISOs and saves
+directly, with the same staged review model and the same validation as the web
+editor. It runs entirely on your own machine over stdio (there is no network
+endpoint), it works on copies only and never writes a file it opened, and features
+disabled in the editor stay disabled there too. Requirements: Node 18 or newer,
+Python 3, and a checkout of this repo. Register it with Claude Code like this:
+
+```sh
+claude mcp add suikoden-3-editor -- node /path/to/Suikoden-3-Editor/mcp/server.mjs
+```
+
+Full guide, tool list and known gaps: [mcp/README.md](mcp/README.md).
+
 ### Save Editor
 
 Open a save with **Choose file…** or drag it in — no ISO needed. Supported containers:
