@@ -3,6 +3,7 @@
 **Status:** offsets and semantics proved from the game's own code plus a 69-save corpus.
 **Editing them was play-tested 2026-11-27 and does not take effect** (the game rebuilds
 the sight state from story progress at the Trinity Site) — see [§6](#6-what-is-not-proven).
+**The web panel was made read-only in editor v1.159.0** — see [§5](#5-what-the-editor-does-with-this).
 
 Suikoden III's Trinity Sight is the between-chapters screen with the flames on it: pick a
 point of view, get that character's next chapter. Six flames — Hugo, Chris, Geddoe, then
@@ -120,16 +121,22 @@ Two behaviours in this table are also in the code rather than only in the data:
 ## 5. What the editor does with this
 
 `Editor/s3save.py`: `TRINITY_POVS`, `STAGE_BASE`, `decode_trinity()`, `apply_trinity_edits()`,
-`trinity_reference()`. The web editor's **Trinity Sight** panel is six flame checkboxes over
-`0x34` plus one chapter dropdown per POV over `0x3B0`, and a row for the merged story.
+`trinity_reference()`. The web editor's **Trinity Sight** panel shows the six flames over
+`0x34` plus one progress counter per POV over `0x3B0`, and a row for the merged story.
 
-The dropdowns offer the **lowest stage a real save was seen holding in that chapter** — the
-chapter's opening state, which is what "put this POV at chapter N" wants. A save whose
-current stage is mid-chapter keeps that value as a selectable "stage N (as saved)" option, so
-opening the panel and changing nothing cannot quietly rewind anyone.
+The counters decode against the **lowest stage a real save was seen holding in that
+chapter** — the chapter's opening state. A save whose current stage is mid-chapter simply
+shows that stage, named by the chapter it falls in.
+
+Since editor **v1.159.0** the web panel is **read-only**: it displays each flame as lit or
+dark and each POV's recorded stage, with no edit controls, and the web save flow never
+invokes `apply_trinity_edits()` — the panel cannot unlock a point of view, because the game
+rebuilds chapter availability from story progress when a save loads (§6). The s3save
+function remains for research, with its tests.
 
 Covered by `web/tests/save_roundtrip.py` (engine: bits, slots, chapter decode, no-op rules)
-and the Trinity block in `web/tests/e2e.mjs` (UI → review list → write payload).
+and the Trinity block in `web/tests/e2e.mjs` (the readout renders the recorded state, and
+no edit route — panel, JSON import or write payload — carries a Trinity change).
 
 ## 6. What is **not** proven
 
