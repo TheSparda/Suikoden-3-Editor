@@ -3248,16 +3248,33 @@
     try { mod = JSON.parse(await file.text()); } catch (e) { return setStatus("Not a valid recipe file.", "err"); }
     if (mod.format !== "s3mod") return setStatus("Not an s3mod recipe.", "err");
     if (mod.versionWord && mod.versionWord !== VERSION_VAL) return setStatus("Recipe is for a different game/region.", "err");
+    // The disabled attack-rune lists patch may not arrive by recipe either: cut its
+    // four words out of every run before anything is staged, byte-wise, so a run that
+    // merely crosses one of the words still lands its other bytes, and count what was
+    // held back for the status line.
+    let atkHeld = 0;
+    const runs = [];
+    for (const p of mod.patches || []) {
+      const nb = hexBytes(p.new), ob = p.old ? hexBytes(p.old) : null;
+      const off = +p.off;
+      let i = 0;
+      while (i < nb.length) {
+        if (atkBlockedAt(off + i)) { atkHeld++; i++; continue; }
+        let j = i + 1;
+        while (j < nb.length && !atkBlockedAt(off + j)) j++;
+        runs.push({ off: off + i, nb: nb.subarray(i, j), ob: ob ? ob.subarray(i, j) : null });
+        i = j;
+      }
+    }
     // Only pay for the deferred tables when the recipe actually reaches outside the ELF
     // block — most don't, and a recipe that stays inside it has no reason to wait on a read.
-    if ((mod.patches || []).some((p) => !inBlk(+p.off, (p.new || "").length >> 1))) {
+    if (runs.some((r) => !inBlk(r.off, r.nb.length))) {
       const err = await tablesForPatch();
       if (err) return setStatus(err, "err");
     }
     let applied = 0, mism = 0;
-    for (const p of mod.patches || []) {
-      const nb = hexBytes(p.new), ob = p.old ? hexBytes(p.old) : null;
-      const off = +p.off;
+    for (const r of runs) {
+      const { off, nb, ob } = r;
       if (!inBlk(off, nb.length)) {
         if (inAux(off, nb.length)) {                 // aux windows (potch overlay)
           const w = auxWin(off, nb.length);
@@ -3271,7 +3288,7 @@
       applied += nb.length;
     }
     drawView();
-    setStatus(`Applied recipe — ${applied} byte(s)${mism ? `, ${mism} run(s) didn't match expected originals` : ""}. Review, then Save to write.`, mism ? "warn" : "ok");
+    setStatus(`Applied recipe — ${applied} byte(s)${mism ? `, ${mism} run(s) didn't match expected originals` : ""}${atkHeld ? `, ${atkHeld} byte(s) of the disabled attack-rune lists patch were not applied` : ""}. Review, then Save to write.`, (mism || atkHeld) ? "warn" : "ok");
   }
   const hexBytes = (h) => { const o = new Uint8Array(h.length / 2); for (let i = 0; i < o.length; i++) o[i] = parseInt(h.substr(i * 2, 2), 16); return o; };
 
@@ -3325,22 +3342,42 @@
       }
       if (!edits.length) return setStatus("This patch changes nothing on this disc — it may already be applied.", "warn");
 
-      if (edits.some((e) => !inBlk(e.off, e.bytes.length))) {
+      // The disabled attack-rune lists patch is held back here too: an .xdelta may not
+      // apply what the editor itself will not. Cut its four words out of the staged
+      // edits byte-wise, the same cut the recipe path makes.
+      let atkHeld = 0;
+      const staged = [];
+      for (const e of edits) {
+        let i = 0;
+        while (i < e.bytes.length) {
+          if (atkBlockedAt(e.off + i)) { atkHeld++; i++; continue; }
+          let j = i + 1;
+          while (j < e.bytes.length && !atkBlockedAt(e.off + j)) j++;
+          staged.push({ off: e.off + i, bytes: e.bytes.subarray(i, j) });
+          i = j;
+        }
+      }
+      if (!staged.length)
+        return setStatus("This patch only writes the attack-rune spell lists patch, which is " +
+          "disabled in this editor (play-tested in November 2026: it does not work). Nothing was applied.", "warn");
+
+      if (staged.some((e) => !inBlk(e.off, e.bytes.length))) {
         const err = await tablesForPatch();
         if (err) return setStatus(err, "err");
       }
-      const outside = edits.filter((e) => !inBlk(e.off, e.bytes.length) && !inAux(e.off, e.bytes.length));
+      const outside = staged.filter((e) => !inBlk(e.off, e.bytes.length) && !inAux(e.off, e.bytes.length));
       if (outside.length) {
         const n = outside.reduce((a, e) => a + e.bytes.length, 0);
         return setStatus(`This patch changes ${n} byte(s) outside the region this editor can edit ` +
           `(first at 0x${hex(outside[0].off, 8)}) — nothing was applied. Apply it with xdelta3 instead: ` +
           `xdelta3 -d -s "<pristine ISO>" patch.xdelta out.iso`, "err");
       }
-      edits.forEach((e) => (inBlk(e.off, e.bytes.length) ? writeBytes(e.off, e.bytes) : auxWriteBytes(e.off, e.bytes)));
-      const n = edits.reduce((a, e) => a + e.bytes.length, 0);
+      staged.forEach((e) => (inBlk(e.off, e.bytes.length) ? writeBytes(e.off, e.bytes) : auxWriteBytes(e.off, e.bytes)));
+      const n = staged.reduce((a, e) => a + e.bytes.length, 0);
       TEXTS = null; gearCache = null; dropDescCaches();         // staged bytes can move strings
       drawView();
-      setStatus(`Applied patch — ${n} byte(s) in ${edits.length} run(s), checksum-verified. ` +
+      setStatus(`Applied patch — ${n} byte(s) in ${staged.length} run(s), checksum-verified. ` +
+        `${atkHeld ? `${atkHeld} byte(s) of the disabled attack-rune lists patch were not applied. ` : ""}` +
         `Review, then Save to write.`, "ok");
     } catch (e) {
       setStatus(e.message || String(e), "err");
@@ -6095,6 +6132,11 @@
   // (lab FIXES_2026-11-27.md). Both compares in BOTH functions must go: leave one
   // standing and its case still collapses. All four stock words byte-verified on a
   // pristine SLUS-20387.
+  //
+  // DISABLED in the editor since v1.159.0: the play test failed and the fix run proved
+  // the design cannot work, so this table stays for research and so the Test tab card
+  // can still read a disc's state, but nothing in the editor applies it. See
+  // atkBlockedAt() below for the routes that are closed.
   const ATKLIST = [
     { off: 0x123EF4, stock: 0x10620011, what: "runeSpellCount — the category-1 compare (beq, count forced to 1)" },
     { off: 0x123EFC, stock: 0x10620010, what: "runeSpellCount — the category-2 compare (beq, count forced to 1)" },
@@ -6108,6 +6150,15 @@
     if (cur.every((v, i) => v === ATKLIST[i].stock)) return "stock";
     if (cur.every((v) => v === ATKLIST_NOP)) return "on";
     return "unknown";          // partially applied, or not this disc's code
+  }
+  // The disabled patch's bytes, fenced off from every apply route. The Test tab card
+  // renders its switch disabled and wires no handler; the Changes code audit no longer
+  // reports these four words, so the switchboard (which is fed by the audit) has no row
+  // that could switch them back on; and the two import paths below cut these bytes out
+  // of anything they stage, byte-wise, so a recipe or .xdelta that carries the NOPs
+  // lands its other edits and has these held back. atkBlockedAt() is the shared test.
+  function atkBlockedAt(off) {
+    return ATKLIST.some((c) => off >= c.off && off < c.off + 4);
   }
 
   // ---- unlimited rune casts: stop the charge drain (Test tab) ------------------
@@ -6534,12 +6585,19 @@
     };
   }
 
-  // ---- Attack-rune spell lists: the global form --------------------------------
+  // ---- Attack-rune spell lists: the global form (DISABLED) ----------------------
+  // Play-tested in November 2026 and disabled in v1.159.0: as a standalone patch it
+  // does not work, and the fix run proved the design cannot be made to work, so this
+  // card is a write-up and a state readout, not a control. The select renders disabled
+  // and no handler is wired to it; the table still shows what the disc in front of you
+  // holds at the four words, which is the one thing a disc patched by an older build
+  // leaves worth knowing. The Runes tab's per-rune spell-list control is the working
+  // form of the same idea and stays fully enabled.
   function drawAtkList(host) {
     const st = atkListState();
     if (st === "absent" || st === "unknown") {
       host.innerHTML = `<div class="warnbox">The binding compares aren't where this build expects
-        them, or are only partly NOP-ed — no edit offered. Expected four branch words at
+        them, or are only partly NOP-ed — nothing to show. Expected four branch words at
         ${ATKLIST.map((c) => "0x" + c.off.toString(16).toUpperCase()).join(", ")}, each either
         its stock compare or a nop.</div>`;
       return;
@@ -6554,49 +6612,34 @@
     }).join("");
     host.innerHTML = `
       <div class="card" style="margin:0 0 12px">
-        <div class="bag-h">Attack-rune spell lists — all of them at once <span class="u">patches game code · played: does not open the list</span></div>
+        <div class="bag-h">Attack-rune spell lists — all of them at once <span class="u">disabled · play-tested: does not work</span></div>
         <div class="muted" style="margin:0 0 8px" data-sum="NOP the two compares in each of the engine's rune-spell binding functions and every special-attack rune lists all its filled slots at once, keeping its type at execution time.">Everything that reads which
           spells a rune grants goes through two small functions, and each of them collapses the
           answer to <b>one spell, slot 1</b>, for a rune whose type-and-element word is exactly
           the special-attack one. That is why filling a special-attack rune's free slots changes
-          nothing in battle. This replaces the two compares in each function with a
+          nothing in battle. This patch replaced the two compares in each function with a
           <code>nop</code>, so no rune's binding collapses and <b>every</b> special-attack rune
           lists all its filled slots at once.</div>
-        <div class="muted" style="margin:0 0 8px" data-sum="The per-rune form of the same fix is the spell-list control on the Runes tab; this global form differs by keeping each rune's type at execution time, so added spells travel down the attack-rune path.">The <b>Runes</b> tab carries the per-rune form of
-          the same fix: its spell-list control sets one rune's type to “Magic / support”. The
-          difference matters: this global form leaves every rune's type alone, so slot 1 stays a
-          <b>free attack-rune action</b>, and the added spells then execute down that same
-          attack-rune path. The per-slot MP gate applies either way, so a low-level character
-          may still find the later slots greyed.</div>
-        <div class="warnbox" style="margin:0 0 8px" data-sum="Play-tested 2026-11-26/27: added spells display in the battle rune list, but choosing the rune still fires slot 1 at once and they could not be selected or cast. The element-0 gate blocks them."><b>Play-tested: it does not open the list.</b> In a running game
-          (2026-11-26 and 2026-11-27, PCSX2) the added spells <b>do</b> appear in the battle
-          rune list with their charges, so the binding half works. But choosing the rune still
-          fires slot 1 at once, and the added spells could not be selected or cast. The blocker
-          is the battle menu's second gate, the one the per-rune play test found: a rune with
-          element 0 is treated as a single-action attack rune whatever the binding serves, and
-          this patch does not touch any rune's element. A follow-up patch that masked the
-          category for every consumer of the type-and-element word changed nothing either;
-          the gate reads the element, not the category. Both compares in <b>both</b> functions
-          are NOP-ed together (leaving one standing would keep its case collapsed), and
-          setting this back to Stock restores all four words exactly. The Runes tab's
-          per-rune control, which sets the element with the type, is the form that works.</div>
+        <div class="warnbox" style="margin:0 0 8px" data-sum="Play-tested in November 2026: added spells display in the battle rune list but cannot be selected or cast, so this patch is disabled. The per-rune form on the Runes tab works."><b>Disabled: play-tested in November 2026, and it does not work as a standalone patch.</b>
+          In a running game (2026-11-26 and 2026-11-27, PCSX2) the added spells <b>do</b> appear
+          in the battle rune list with their charges, so the binding half works. But choosing
+          the rune still fires slot 1 at once, and the added spells could not be selected or
+          cast: the battle menu treats a rune with element 0 as a single-action attack rune
+          whatever the binding serves, and this patch touches no rune's element. A follow-up
+          patch that masked the category for every consumer of the type-and-element word
+          changed nothing either; the gate reads the element, not the category. So the switch
+          below is disabled for good, and a recipe or .xdelta patch carrying these four words
+          has them held back on import. The <b>Runes</b> tab's per-rune spell-list control,
+          which sets the element with the type, is the form that works.</div>
         <label class="field" style="max-width:460px">
           <span>Special-attack rune spell lists</span>
-          <select id="alSel">
+          <select id="alSel" disabled>
             <option value="0"${on ? "" : " selected"}>Stock — slot 1 only, as the game ships</option>
             <option value="1"${on ? " selected" : ""}>Lists on — every filled slot, for every attack rune</option>
           </select></label>
         <table class="invtbl" style="margin-top:10px"><thead><tr><th>Offset</th><th>Word</th><th>What</th><th>State</th></tr></thead>
           <tbody>${rows}</tbody></table>
       </div>`;
-    q("#alSel", host).onchange = (e) => {
-      const want = e.target.value === "1";
-      ATKLIST.forEach((c) => {
-        writeW(c.off, 4, want ? ATKLIST_NOP : c.stock);
-        reg(c.off, 4, "word", "Attack-rune spell lists", c.what);
-      });
-      drawView();
-    };
   }
 
   // ---- Unlimited rune casts -----------------------------------------------------
@@ -11049,8 +11092,10 @@ LOAD: request the model             ; 0x16E0FF8, the only issuer</pre>
         const nm = (REF.names && REF.names.list2 && REF.names.list2[String(id)]) || `roster ${id}`;
         imm(off, MOUNTS.horse.STOCK[id] || 0, "Mounts", `assigned horse · ${nm}`, horseRisk);
       } }
-    ATKLIST.forEach((c) => word(c.off, c.stock, "Attack-rune spell lists", c.what,
-      "rewritten engine code: with these compares NOP-ed, every special-attack rune lists all its filled spell slots. Play-tested 2026-11-26/27: the added spells display in the battle rune list with their charges, but choosing the rune still fires slot 1 at once and the added spells could not be selected or cast; the menu's element-0 gate is not touched by this patch. The Runes tab's per-rune spell-list control is the working form"));
+    // The attack-rune lists patch (ATKLIST) is deliberately NOT audited: it is disabled
+    // in this editor (play-tested November 2026, it does not work), so it produces no
+    // audit entries, no restore rows and no switchboard switches. A disc that arrives
+    // carrying its NOPs keeps them; the Test tab card still shows the four words' state.
     MPCAST_T1.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,
       "rewritten engine code: with the five consumption calls NOP-ed (the field resolver plus the four battle spend sites), casts never spend rune charges: unlocked levels cast forever, locked levels stay locked, and enemy casters with character records stop draining too. Play-verified 2026-11-27"));
     MPCAST_T2.forEach((c) => word(c.off, c.stock, "Unlimited rune casts", c.what,

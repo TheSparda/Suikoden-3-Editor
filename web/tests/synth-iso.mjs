@@ -263,10 +263,10 @@ export const HORSE_CLAMP = [
   { off: 0x14762C, stock: 0x2C420002, alt: 0x2C420100 },
 ];
 // Attack-rune spell lists (iso.js ATKLIST): the four compares in the rune→spell binding
-// accessors that the Test tab can NOP. Planted stock because two controls read them: the
-// Changes tab's code audit (an unplanted zero would have the fixture report four code
-// patches it does not carry) and the Test tab's control, which reads a zero as "already
-// NOP-ed" and would offer the patch as already on.
+// accessors the Test tab used to NOP. The patch is disabled since v1.159.0 (play-tested:
+// it does not work), but the card still reads the words to display the disc's state, and
+// a zero reads as "already NOP-ed" — so the fixture plants the stock words, and the
+// recipe / .xdelta hold-back tests have real stock bytes to refuse against.
 export const ATK_LIST = [
   { off: 0x123EF4, stock: 0x10620011 },
   { off: 0x123EFC, stock: 0x10620010 },
