@@ -104,6 +104,28 @@ simply the default on every load at these sizes.
 7. The global filter box is hidden on the Test and Changes views (neither reads it) and
    labelled per view everywhere else ("filter spells..." and so on).
 
+## Addendum (v1.160.0): the rail session panel collapses too
+
+Kevin, on a photo of the live editor (2026-11-28): the session panel takes up
+too much space, since you only need it once you are finished. The desktop rail
+now applies the small-screen pattern one size up. The session panel starts
+collapsed on every load: a slim strip at the rail foot carries a short disc
+identity (the name, truncated; the full identity rides in its title), a mirror
+of the unsaved-changes pill (synced by updateDirtyBadge, the same path as the
+mobile strip's mirror), and one reveal button labelled "Save & session". While
+changes are unsaved the button takes the Save button's gold glow, so the dirty
+state is never hidden by the collapse. Expanding shows the disc line and the
+full action bar exactly as before; a session action (Save, exports, Apply
+patch, Revert all, Close) folds the panel away again, while Undo/Redo leave it
+open. The freed height goes to the nav list, whose rows also tightened slightly
+(5px chip padding, 8px group margins), so at a 1080px-tall viewport the whole
+tree fits without scrolling; shorter windows scroll less than before. State
+lives on .rail-session, which never moves, while the bar node keeps travelling
+between rail and card: the sheet classes only bite inside the small-screen
+media query and the rail hiding only inside .rail-session in the desktop
+query, so crossing the breakpoint in either direction cannot strand the bar in
+the other layout's collapsed state. Nothing is persisted.
+
 ## Out of scope (follow-ups, not in this build)
 
 - Blurb hierarchy redesign (warnings never folded, three tiers).
