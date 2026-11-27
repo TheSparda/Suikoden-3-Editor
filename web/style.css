@@ -743,6 +743,9 @@ summary .edmark.solo { margin-left:auto; }
   font-weight:600; padding:2px 10px 4px; }
 button.morebtn { display:none; }
 
+/* the rail session strip only exists in the desktop rail (its block below) */
+.railstrip { display:none; }
+
 @media (max-width:1023px) {
   /* no rail: the group wrappers collapse so the chips form the one scrolling strip */
   .iso-rail { display:none; }
@@ -760,13 +763,30 @@ button.morebtn { display:none; }
   .iso-rail #isoTabs { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
     flex-direction:column; flex-wrap:nowrap; gap:0; padding:0 2px 0 0; margin:0 0 4px;
     -webkit-mask-image:none; mask-image:none; scrollbar-width:thin; scroll-snap-type:none; }
-  .iso-rail .navgroup { display:flex; flex-direction:column; gap:2px; margin-bottom:12px; }
+  .iso-rail .navgroup { display:flex; flex-direction:column; gap:2px; margin-bottom:8px; }
   .iso-rail #isoTabs .chip { flex:0 0 auto; display:flex; align-items:center; text-align:left;
-    border-color:transparent; border-radius:8px; padding:7px 10px; font-size:13.5px; color:var(--ink); }
+    border-color:transparent; border-radius:8px; padding:5px 10px; font-size:13.5px; color:var(--ink); }
   .iso-rail #isoTabs .chip.on { border-color:var(--acc); }
   .iso-rail .vcount { margin-left:auto; }
   .rail-session { margin-top:auto; border-top:1px solid var(--line); padding-top:10px; }
   .rail-disc { font-size:13px; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* The session panel starts collapsed (Kevin, on the live-editor photo: it
+     holds the bottom third of the rail though it is only needed once you are
+     finished). The strip is its whole footprint until revealed: a short disc
+     identity, the unsaved-changes pill mirror, one reveal button. The disc
+     line and the action bar show only while the panel is open. */
+  .railstrip { display:flex; align-items:center; gap:8px; }
+  .railstrip .rs-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:12.5px; color:var(--mut); }
+  #railBarReveal { display:inline-flex; align-items:center; flex:none; min-height:34px;
+    font-weight:600; font-size:13px; padding:5px 10px; transition:box-shadow .35s ease; }
+  /* The collapsed strip's button takes the Save button's gold glow while
+     changes are unsaved, so dirty state is never hidden by the collapse.
+     Gold, never red: emphasis, not an error. */
+  #railBarReveal.hot { box-shadow:inset 0 1px 0 var(--sel-edge), 0 0 16px 3px rgba(227,165,103,.5); }
+  html.theme-parchment #railBarReveal.hot { box-shadow:inset 0 1px 0 var(--sel-edge), 0 0 16px 3px rgba(149,131,83,.45); }
+  .rail-session:not(.open) .rail-disc, .rail-session:not(.open) #isoBar { display:none; }
+  .rail-session.open .railstrip { margin-top:10px; }
   /* the action bar as the rail's session panel: one column, nothing sticky */
   .iso-rail .toolbar { position:static; flex-direction:column; align-items:stretch; gap:8px;
     box-shadow:none; border-top:0; padding:0; margin:0; }
@@ -801,15 +821,15 @@ button.morebtn { display:none; }
   /* scroll room so the fixed strip never covers the card's last row */
   .iso-card { margin-bottom:56px; }
 }
-@media (prefers-reduced-motion: reduce) { #isoBar.sheet { transition:none; } }
+@media (prefers-reduced-motion: reduce) { #isoBar.sheet { transition:none; } #railBarReveal { transition:none; } }
 
 /* ================= fire theme: crest, fretwork, boot panel =================
    Art: the True Fire Rune crest (crest.webp, alpha prepared from the fan
    render) and a lazy key-art backdrop for the boot screen (boot-art.webp).
    Fretwork: the key art frame's diamond lattice as an original SVG tile. */
 .crest { width:34px; height:34px; object-fit:contain; flex:none; }
-.rail-head { display:flex; align-items:center; gap:9px; padding:2px 10px 12px;
-  position:relative; margin-bottom:10px; }
+.rail-head { display:flex; align-items:center; gap:9px; padding:2px 10px 8px;
+  position:relative; margin-bottom:6px; }
 .rail-head .crest { width:28px; height:28px; }
 .rail-title { font-family:var(--titlefont); letter-spacing:.14em; font-size:13px;
   color:var(--acc2); text-transform:uppercase; }

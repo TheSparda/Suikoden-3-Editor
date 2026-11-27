@@ -3453,6 +3453,30 @@
     else if (SMALL_MQ.addListener) SMALL_MQ.addListener(syncBarSheet);
   }
 
+  // ---- desktop rail session panel ------------------------------------------------
+  // The same collapse, one size up (Kevin, on a photo of the live editor: the
+  // session panel "takes up too much space since you only need it once you are
+  // finished"). At desktop widths the rail's session panel starts collapsed too:
+  // a slim strip at the rail foot (#railBarStrip) carries a short disc identity,
+  // a mirror of the unsaved-changes pill and the reveal button; the disc line and
+  // the action bar show only while the panel is open. The state lives on
+  // .rail-session, which never moves, while the bar node travels between the rail
+  // and the card — so the two collapses cannot fight over the moved node: the
+  // sheet classes live on the bar and only bite inside the small-screen media
+  // query, and the rail hiding is scoped to .rail-session inside the desktop
+  // query. Nothing is persisted: collapsed is the default on every load, exactly
+  // as on small screens.
+  function setRailOpen(open) {
+    const sess = q(".rail-session"), btn = q("#railBarReveal"); if (!sess) return;
+    sess.classList.toggle("open", !!open);
+    if (btn) { btn.setAttribute("aria-expanded", open ? "true" : "false"); btn.textContent = open ? "▾ Save & session" : "▴ Save & session"; }
+  }
+  // Taking a session action (Save, exports, Apply patch, Revert all, Close) folds
+  // the session UI away again in whichever layout is showing it: the sheet on
+  // small screens, the rail panel on desktop. Undo/Redo deliberately do not call
+  // this: they are mid-editing actions, not finishing ones.
+  function collapseSession() { setSheetOpen(false); setRailOpen(false); }
+
   function renderEditor(size) {
     const root = q("#isoRoot");
     const sm = saveMode();
@@ -3469,6 +3493,11 @@
             <div class="rail-disc"><b class="acc2">${esc2(isoName)}</b>
               <span class="muted"> · ${fmtSize(size)} · USA SLUS-20387 ✓</span></div>
             <div class="slot" id="railBarSlot"></div>
+            <div class="railstrip" id="railBarStrip">
+              <span class="rs-name" title="${esc2(isoName)} · ${fmtSize(size)} · USA SLUS-20387 ✓">${esc2(isoName)}</span>
+              <span class="pill" id="railStripDirty" hidden></span>
+              <button id="railBarReveal" class="bar-reveal" aria-expanded="false" aria-controls="isoBar">▴ Save &amp; session</button>
+            </div>
           </div>
         </aside>
         <div class="iso-main">
@@ -3507,13 +3536,14 @@
       </div>`;
     qa("[data-v]", root).forEach((b) => (b.onclick = () => { VIEW = b.dataset.v; SEARCH = ""; q("#isoSearch").value = ""; drawView(); }));
     q("#isoSearch").oninput = (e) => { SEARCH = e.target.value.toLowerCase(); drawView(); };
-    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; setSheetOpen(false); BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; resetTables(); renderLoader(); };
-    // In sheet mode (small screens) taking a session action collapses the sheet again:
-    // the strip's pill still shows whether anything remains unsaved afterwards.
-    q("#isoSaveBtn").onclick = (e) => { setSheetOpen(false); saveIso(e); };
-    q("#isoRecipeBtn").onclick = (e) => { setSheetOpen(false); exportRecipe(e); };
-    q("#isoXdeltaBtn").onclick = (e) => { setSheetOpen(false); exportXdelta(e); };
-    q("#isoImportBtn").onclick = () => { setSheetOpen(false); q("#isoRecipeFile").click(); };
+    q("#isoClose").onclick = () => { if (anyChanges() && !confirm("Discard staged edits and close this ISO?")) return; collapseSession(); BUF = DV = ORIG = ODV = isoHandle = isoFile = null; AUX = []; resetTables(); renderLoader(); };
+    // Taking a session action folds the session UI away again in both layouts
+    // (the sheet on small screens, the rail panel on desktop): the strips' pills
+    // still show whether anything remains unsaved afterwards.
+    q("#isoSaveBtn").onclick = (e) => { collapseSession(); saveIso(e); };
+    q("#isoRecipeBtn").onclick = (e) => { collapseSession(); exportRecipe(e); };
+    q("#isoXdeltaBtn").onclick = (e) => { collapseSession(); exportXdelta(e); };
+    q("#isoImportBtn").onclick = () => { collapseSession(); q("#isoRecipeFile").click(); };
     // One import button, two formats — dispatch on the VCDIFF magic rather than the file
     // name, so a patch saved as "mod.bin" (or a recipe as ".txt") still lands in the right path.
     q("#isoRecipeFile").onchange = async (e) => {
@@ -3523,7 +3553,7 @@
       const isVcdiff = head[0] === 0xd6 && head[1] === 0xc3 && head[2] === 0xc4;
       if (isVcdiff) applyXdelta(f); else importRecipe(f);
     };
-    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); setSheetOpen(false); BUF.set(ORIG); auxRevertAll(); dropDescCaches(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
+    q("#isoResetBtn").onclick = () => { if (!anyChanges()) return setStatus("Nothing to revert.", "warn"); collapseSession(); BUF.set(ORIG); auxRevertAll(); dropDescCaches(); resetUndo(); drawView(); setStatus("Reverted all staged changes.", "ok"); };
     q("#isoUndoBtn").onclick = undo;
     q("#isoRedoBtn").onclick = redo;
     // Small screens only (CSS decides when it shows): folds the session-level actions
@@ -3534,6 +3564,7 @@
       q("#isoMoreBtn").textContent = open ? "Less ▴" : "More ▾";
     };
     q("#isoBarReveal").onclick = () => setSheetOpen(!q("#isoBar").classList.contains("open"));
+    q("#railBarReveal").onclick = () => setRailOpen(!q(".rail-session").classList.contains("open"));
     placeChrome();
     syncBarSheet();
     updateUndoUI();
@@ -3553,6 +3584,12 @@
     // the sheet), so edit state stays visible while the bar is collapsed.
     const stripPill = q("#isoStripDirty");
     if (stripPill) { stripPill.hidden = badge.hidden; stripPill.textContent = badge.textContent; }
+    // The collapsed desktop rail strip mirrors the pill the same way, and its
+    // reveal button takes the Save button's glow while anything is unsaved, so
+    // the dirty state is never hidden by either collapse.
+    const railPill = q("#railStripDirty"), railBtn = q("#railBarReveal");
+    if (railPill) { railPill.hidden = badge.hidden; railPill.textContent = badge.textContent; }
+    if (railBtn) railBtn.classList.toggle("hot", anyChanges());
     // One label per save mode, the same one renderEditor starts with. This line used to
     // overwrite it with the in-place wording unconditionally, so in stream mode the button
     // promised "save to ISO" while the header card said it saves a copy to downloads.
